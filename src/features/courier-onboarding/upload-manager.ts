@@ -66,25 +66,20 @@ export type DocumentUploader = (
 ) => Promise<{ storagePath: string }>;
 
 /**
- * Extrae la extensión canónica del archivo según su nombre o tipo MIME.
+ * Extrae la extensión canónica del archivo prioritariamente según su tipo MIME efectivo (PR358-H06).
  */
 export function getDocumentExtension(file: File): string {
-  const parts = file.name.split('.');
-  if (parts.length > 1) {
-    const ext = parts.pop()?.trim().toLowerCase();
-    if (ext) return ext;
-  }
-
   switch (file.type) {
+    case 'image/jpeg':
+      return 'jpg';
     case 'image/png':
       return 'png';
     case 'image/webp':
       return 'webp';
     case 'application/pdf':
       return 'pdf';
-    case 'image/jpeg':
     default:
-      return 'jpg';
+      throw new Error('Tipo de archivo no soportado para documentos');
   }
 }
 

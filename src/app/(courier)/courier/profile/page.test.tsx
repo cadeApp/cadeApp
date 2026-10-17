@@ -107,4 +107,48 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
 
     expect(await renderPage()).toMatchObject({ insuranceStatus: 'rejected' });
   });
+
+  describe('T-356 / CC-025: Proyección de vigentes y motivos de rechazo', () => {
+    it('ignora versiones históricas con is_current === false y proyecta la vigente', async () => {
+      mocks.documents = [
+        { kind: 'license', status: 'rejected', rejection_code: 'expired', is_current: false } as any,
+        { kind: 'license', status: 'submitted', is_current: true } as any,
+      ];
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        licenseStatus: 'submitted',
+        licenseRejectionMessage: null,
+      });
+    });
+
+    it('proyecta dniFrontStatus y dniBackStatus de forma independiente', async () => {
+      mocks.documents = [
+        { kind: 'dni_front', status: 'verified', is_current: true } as any,
+        { kind: 'dni_back', status: 'rejected', rejection_code: 'illegible', is_current: true } as any,
+      ];
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        dniFrontStatus: 'verified',
+        dniFrontRejectionMessage: null,
+        dniBackStatus: 'rejected',
+        dniBackRejectionMessage: 'Documento borroso, ilegible o cortado.',
+      });
+    });
+
+    it('proyecta mensaje seguro del catálogo y courierId', async () => {
+      mocks.documents = [
+        { kind: 'license', status: 'rejected', rejection_code: 'expired', is_current: true } as any,
+      ];
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        courierId: 'courier-123',
+        licenseStatus: 'rejected',
+        licenseRejectionMessage: 'Documento vencido o no vigente.',
+      });
+    });
+  });
 });
+

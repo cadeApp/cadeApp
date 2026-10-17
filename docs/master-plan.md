@@ -30,7 +30,7 @@ Su función es de intermediario tecnológico: da visibilidad, confianza y coordi
 | D5 | Piloto | **Gratis.** La duración la fijan ustedes en los términos del piloto (por ejemplo, 2 días) y lo cierran cuando vean que funciona. |
 | D6 | Cobro del abono | Después del piloto, los comercios que se adhieran pagan en forma directa y el admin activa la suscripción a mano. Mercado Pago Suscripciones queda para el futuro. **No habrá facturación** (decisión humana; ver disenso X3). |
 | D7 | Cercanía | **Lista única por ciudad**: todos los repartidores disponibles ven todas las solicitudes abiertas de Aguilares, sin ranking por cercanía ni GPS. |
-| D8 | DNI y selfie | Se guardan **mientras el repartidor esté activo** y se borran **30 días después de la baja** (o del rechazo). **Quedan fuera del backup.** |
+| D8 | DNI y selfie | Se guardan **mientras el repartidor esté activo** y se borran **30 días después de la baja** (o del rechazo); las versiones históricas reemplazadas se borran **30 días después de su reemplazo/obsolescencia** (Decisión B). **Quedan fuera del backup.** |
 | D9 | Licencia y seguro | **Opcionales.** Quien sube más documentación verificada gana prioridad y visibilidad. |
 | D10 | Pruebas | **E2E de todos los flujos** antes de pasar a producción. |
 | D11 | Ambientes | local → `develop` → `staging` → `main` (producción) en GitHub. |

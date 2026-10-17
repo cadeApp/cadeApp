@@ -6,6 +6,7 @@ import {
   findRequestIdByNotesMarker,
 } from '../fixtures';
 import { formatArs, formatPhone } from '@/lib/format';
+import { extractValidArgentineTenDigits } from '@/lib/whatsapp';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { LoginPage, MerchantPage, TripPage } from '../pages';
 
@@ -83,12 +84,12 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // DoD Invariante 2: Aceptación concurrente en dos pestañas (PR160-H02)
+  // DoD Invariante 2: Aceptación concurrente en dos sesiones independientes (PR360-H05 / R01 / PR160-H02)
   // ---------------------------------------------------------------------------
-  test('DoD: Falla si se aceptan dos ofertas para la misma solicitud en dos pestañas concurrentes', async ({
-    context,
+  test('DoD: Aceptación concurrente en dos sesiones independientes navega a /trips/[id] y converge', async ({
+    browser,
     stagingContext,
-  }) => {
+  }, testInfo) => {
     // Precrear explícitamente las dos ofertas que competirán en concurrencia
     await seedOffersForFirstRequest(stagingContext);
 
@@ -101,84 +102,217 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       throw new Error('[E2E Error] No merchant user seeded in stagingContext');
     }
 
-    // Pestañas bajo el contexto provisto por Playwright (configurado con baseURL)
-    const tab1 = await context.newPage();
-    const loginPage = new LoginPage(tab1);
-    await loginPage.navigate();
-    await loginPage.login(merchant.email, merchant.password);
+    const context1 = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
+    const context2 = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
 
-    const merchantPage1 = new MerchantPage(tab1);
-    await merchantPage1.gotoRequestDetail(targetRequestId);
-    await waitForNoSkeletons(tab1);
+    try {
+      // Sesión 1: Comercio autenticado en contexto 1
+      const page1 = await context1.newPage();
+      const loginPage1 = new LoginPage(page1);
+      await loginPage1.navigate();
+      await loginPage1.login(merchant.email, merchant.password);
 
-    // Segunda pestaña bajo el mismo contexto (mismo comercio autenticado)
-    const tab2 = await context.newPage();
-    const merchantPage2 = new MerchantPage(tab2);
-    await merchantPage2.gotoRequestDetail(targetRequestId);
-    await waitForNoSkeletons(tab2);
+      // Sesión 2: Mismo comercio autenticado en contexto 2 independiente
+      const page2 = await context2.newPage();
+      const loginPage2 = new LoginPage(page2);
+      await loginPage2.navigate();
+      await loginPage2.login(merchant.email, merchant.password);
 
-    // Tab 1 abre modal sobre la primera oferta
-    await merchantPage1.acceptOfferButton.first().click();
-    await expect(merchantPage1.confirmAcceptButton).toBeVisible();
+      const merchantPage1 = new MerchantPage(page1);
+      await merchantPage1.gotoRequestDetail(targetRequestId);
+      await waitForNoSkeletons(page1);
 
-    // Tab 2 abre modal sobre la segunda oferta
-    await merchantPage2.acceptOfferButton.nth(1).click();
-    await expect(merchantPage2.confirmAcceptButton).toBeVisible();
+      const merchantPage2 = new MerchantPage(page2);
+      await merchantPage2.gotoRequestDetail(targetRequestId);
+      await waitForNoSkeletons(page2);
 
-    // Disparar las confirmaciones en paralelo real mediante barrera Promise.all
-    await Promise.all([
-      merchantPage1.confirmAcceptButton.click(),
-      merchantPage2.confirmAcceptButton.click(),
-    ]);
+      // Sesión 1 abre modal sobre la primera oferta
+      await merchantPage1.acceptOfferButton.first().click();
+      await expect(merchantPage1.confirmAcceptButton).toBeVisible();
 
-    // Al menos una pestaña debe reflejar rechazo específico por concurrencia ALREADY_MATCHED.
-    // Los locators pertenecen a páginas distintas: no usar locator.or() entre frames/pages.
-    const alert1 = merchantPage1.alreadyMatchedAlert;
-    const alert2 = merchantPage2.alreadyMatchedAlert;
-    await expect
-      .poll(
-        async () => (await alert1.isVisible()) || (await alert2.isVisible()),
-        {
-          message: 'Una de las dos pestañas debe mostrar el rechazo ALREADY_MATCHED',
-          timeout: 10000,
-          intervals: [250, 500, 1000],
-        }
-      )
-      .toBe(true);
+      // Sesión 2 abre modal sobre la segunda oferta
+      await merchantPage2.acceptOfferButton.nth(1).click();
+      await expect(merchantPage2.confirmAcceptButton).toBeVisible();
 
-    // Oráculo de estado final: convergencia observada server-side con expect.poll
-    await expect
-      .poll(
-        async () => {
-          const inspection = await getRequestInspectionData(stagingContext, targetRequestId);
-          const acceptedOffers = inspection.offers.filter((o) => o.status === 'accepted');
-          const nonAcceptedOffers = inspection.offers.filter((o) => o.status !== 'accepted');
-          return {
-            requestStatus: inspection.requestStatus,
-            acceptedOfferId: inspection.acceptedOfferId,
-            acceptedCount: acceptedOffers.length,
-            nonAcceptedCount: nonAcceptedOffers.length,
-            matchedWinner: acceptedOffers[0]?.id === inspection.acceptedOfferId,
-          };
-        },
-        {
-          message:
-            'Debe haber exactamente 1 oferta accepted, la otra no accepted, request en matched y accepted_offer_id coincidente',
-          timeout: 10000,
-          intervals: [250, 500, 1000],
-        }
-      )
-      .toEqual({
-        requestStatus: 'matched',
-        acceptedOfferId: expect.any(String),
-        acceptedCount: 1,
-        nonAcceptedCount: 1,
-        matchedWinner: true,
+      // Disparar las confirmaciones en paralelo real mediante barrera Promise.all
+      await Promise.all([
+        merchantPage1.confirmAcceptButton.click(),
+        merchantPage2.confirmAcceptButton.click(),
+      ]);
+
+      // Al menos una sesión debe reflejar rechazo específico por concurrencia ALREADY_MATCHED
+      const alert1 = merchantPage1.alreadyMatchedAlert;
+      const alert2 = merchantPage2.alreadyMatchedAlert;
+      let loserIndex: 1 | 2 | null = null;
+      await expect
+        .poll(
+          async () => {
+            const is1 = await alert1.isVisible().catch(() => false);
+            if (is1) {
+              loserIndex = 1;
+              return true;
+            }
+            const is2 = await alert2.isVisible().catch(() => false);
+            if (is2) {
+              loserIndex = 2;
+              return true;
+            }
+            return false;
+          },
+          {
+            message: 'Una de las dos sesiones debe mostrar el rechazo ALREADY_MATCHED',
+            timeout: 10000,
+            intervals: [250, 500, 1000],
+          }
+        )
+        .toBe(true);
+
+      expect(loserIndex).not.toBeNull();
+      const winnerPage = loserIndex === 1 ? page2 : page1;
+      const loserPage = loserIndex === 1 ? page1 : page2;
+      const loserMerchantPage = loserIndex === 1 ? merchantPage1 : merchantPage2;
+
+      // PR360-H02 / H05: En el actor perdedor, verificar alerta ALREADY_MATCHED y 0 botones Aceptar antes de forzar navegación
+      await expect(loserMerchantPage.alreadyMatchedAlert).toBeVisible();
+      await expect(loserPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // PR360-R01: Esperar explícitamente a que la sesión ganadora complete la navegación a /trips/[id]
+      await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`), {
+        timeout: 15000,
       });
+      await waitForNoSkeletons(winnerPage);
 
-    // Tras refrescar la pestaña ganadora, renderiza la vista de viaje o asignación sin duplicados
-    await tab1.reload();
-    await waitForNoSkeletons(tab1);
+      // Oráculo de estado final en DB: exactamente 1 oferta accepted y request en matched
+      let finalInspection: Awaited<ReturnType<typeof getRequestInspectionData>> | null = null;
+      await expect
+        .poll(
+          async () => {
+            const inspection = await getRequestInspectionData(stagingContext, targetRequestId);
+            finalInspection = inspection;
+            const acceptedOffers = inspection.offers.filter((o) => o.status === 'accepted');
+            const nonAcceptedOffers = inspection.offers.filter((o) => o.status !== 'accepted');
+            return {
+              requestStatus: inspection.requestStatus,
+              acceptedOfferId: inspection.acceptedOfferId,
+              acceptedCount: acceptedOffers.length,
+              nonAcceptedCount: nonAcceptedOffers.length,
+              matchedWinner: acceptedOffers[0]?.id === inspection.acceptedOfferId,
+            };
+          },
+          {
+            message:
+              'Debe haber exactamente 1 oferta accepted, la otra no accepted, request en matched y accepted_offer_id coincidente',
+            timeout: 10000,
+            intervals: [250, 500, 1000],
+          }
+        )
+        .toEqual({
+          requestStatus: 'matched',
+          acceptedOfferId: expect.any(String),
+          acceptedCount: 1,
+          nonAcceptedCount: 1,
+          matchedWinner: true,
+        });
+
+      // PR360-H05: Oráculos completos y no condicionales (sin envoltorios que oculten fallas)
+      const inspectionData =
+        finalInspection ?? (await getRequestInspectionData(stagingContext, targetRequestId));
+      const acceptedOffer = inspectionData.offers.find(
+        (o) => o.id === inspectionData.acceptedOfferId
+      );
+      expect(acceptedOffer).toBeDefined();
+      if (!acceptedOffer) {
+        throw new Error('acceptedOffer no encontrada en inspectionData');
+      }
+
+      // Resolver courier asignado a partir del stagingContext
+      const courier = stagingContext.courierUsers?.find(
+        (c) => c.id === acceptedOffer.courierId
+      );
+      expect(courier).toBeDefined();
+      if (!courier) {
+        throw new Error(
+          `courier con id ${acceptedOffer.courierId} no encontrado en stagingContext.courierUsers`
+        );
+      }
+
+      // H05: En la sesión ganadora, verificar la vista del viaje con datos auténticos
+      const tripPageWinner = new TripPage(winnerPage);
+      await expect(tripPageWinner.assignedStatus).toBeVisible();
+      await expect(
+        winnerPage.getByRole('heading', { level: 2, name: /repartidor asignado/i })
+      ).toBeVisible();
+      await expect(
+        winnerPage.getByRole('heading', { level: 3, name: courier.displayName })
+      ).toBeVisible();
+      const courierCard = winnerPage
+        .getByRole('heading', { level: 2, name: /repartidor asignado/i })
+        .locator('..')
+        .locator('..');
+      const acceptedAmount = courierCard.getByText(formatArs(acceptedOffer.amountArs), {
+        exact: true,
+      });
+      await expect(acceptedAmount).toHaveCount(1);
+      await expect(acceptedAmount).toBeVisible();
+      const paymentLabel = courierCard.getByText(/Medio de pago:\s*Efectivo/i);
+      await expect(paymentLabel).toHaveCount(1);
+      await expect(paymentLabel).toBeVisible();
+
+      // Contacto de repartidor habilitado post-match con enlace real WhatsApp
+      const waLink = winnerPage.getByRole('link', { name: /^whatsapp$/i });
+      await expect(waLink).toBeVisible();
+      expect(courier.phone).toBeDefined();
+      if (courier.phone) {
+        const rawTenDigits = extractValidArgentineTenDigits(courier.phone);
+        await expect(waLink).toHaveAttribute('href', new RegExp(`wa\\.me/549${rawTenDigits}`));
+      }
+
+      // PR360-R02 - A) En la sesión ganadora, ejecutar reload() mientras sigue en /trips/[id]
+      await winnerPage.reload();
+      await waitForNoSkeletons(winnerPage);
+      await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      await expect(tripPageWinner.assignedStatus).toBeVisible();
+      await expect(
+        winnerPage.getByRole('heading', { level: 3, name: courier.displayName })
+      ).toBeVisible();
+      await expect(acceptedAmount).toHaveCount(1);
+      await expect(acceptedAmount).toBeVisible();
+      await expect(paymentLabel).toHaveCount(1);
+      await expect(paymentLabel).toBeVisible();
+      await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // PR360-R02 - B) Back en el historial del navegador: replace sustituyó la entrada actual.
+      // Esperar a que la navegación termine; en cualquier destino jamás mostrar selector ni botones Aceptar.
+      await winnerPage.goBack();
+      await waitForNoSkeletons(winnerPage);
+      if (winnerPage.url().includes(`/merchant/requests/${targetRequestId}`)) {
+        await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      }
+      await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // PR360-R02 - C) Independientemente de dónde terminó Back, navegar directamente a /merchant/requests/[id]
+      // debe redirigir server-side canónicamente al viaje y no mostrar botones Aceptar
+      await winnerPage.goto(`/merchant/requests/${targetRequestId}`);
+      await waitForNoSkeletons(winnerPage);
+      await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // H05: La sesión perdedora, al navegar directamente a /merchant/requests/[id], es redirigida al viaje
+      await loserPage.goto(`/merchant/requests/${targetRequestId}`);
+      await waitForNoSkeletons(loserPage);
+      await expect(loserPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      await expect(loserPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // En el dashboard del comercio, "Ver detalle" vincula a /trips/[id]
+      const merchantDashPage = new MerchantPage(winnerPage);
+      await merchantDashPage.navigate();
+      await waitForNoSkeletons(winnerPage);
+      const detailLink = winnerPage.getByRole('link', { name: /ver detalle/i }).first();
+      await expect(detailLink).toHaveAttribute('href', `/trips/${targetRequestId}`);
+    } finally {
+      await context1.close();
+      await context2.close();
+    }
   });
 
   // ---------------------------------------------------------------------------

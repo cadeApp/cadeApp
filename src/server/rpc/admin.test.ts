@@ -19,6 +19,7 @@ const ADMIN_ID = '00000000-0000-4000-8000-0000000000a1';
 const MERCHANT_ID = '00000000-0000-4000-8000-0000000000b1';
 const COURIER_1_ID = '00000000-0000-4000-8000-0000000000c1';
 const DOC_1_ID = '00000000-0000-4000-8000-0000000000d1';
+const DOC_2_ID = '00000000-0000-4000-8000-0000000000d2';
 
 const ADMIN_RPC_NAMES = [
   'admin_decide_courier',
@@ -161,6 +162,12 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
           kind: 'license',
           status: 'submitted',
         },
+        {
+          documentId: DOC_2_ID,
+          courierId: COURIER_1_ID,
+          kind: 'insurance',
+          status: 'submitted',
+        },
       ],
     });
 
@@ -171,6 +178,7 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
             documentId: args?.p_document_id as string,
             decision: args?.p_decision as 'verified' | 'rejected',
             reason: (args?.p_reason as string | null) ?? undefined,
+            rejectionCode: (args?.p_rejection_code as any) ?? undefined,
           });
           if (!res.ok) {
             return { data: null, error: { message: res.code } };
@@ -190,6 +198,18 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
     expect(okRes.data.documentId).toBe(DOC_1_ID);
     expect(okRes.data.status).toBe('verified');
     expect(okRes.data.docLevel).toBeGreaterThanOrEqual(1);
+
+    const rejectRes = await adminVerifyDocumentRpc(caller, {
+      documentId: DOC_2_ID,
+      decision: 'rejected',
+      reason: 'Foto borrosa e ilegible',
+      rejectionCode: 'illegible',
+    });
+    expect(rejectRes.ok).toBe(true);
+    if (!rejectRes.ok) return;
+    expect(rejectRes.data.documentId).toBe(DOC_2_ID);
+    expect(rejectRes.data.status).toBe('rejected');
+    expect(rejectRes.data.rejectionCode).toBe('illegible');
   });
 
   it('5. adminSetSubscriptionRpc actualiza la suscripción del comercio', async () => {
@@ -293,8 +313,9 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
       admin_update_setting: ['VALIDATION_ERROR'],
     };
     const raisedBy = (text: string, fn: string): Set<string> => {
-      const blocks = text.split(/create or replace function /i);
-      const body = blocks.find((b) => b.startsWith(fn + '('));
+      const blocks = text.split(/create (?:or replace )?function /i);
+      // La definición vigente es la última en el orden de las migraciones (T-369 redefine dos de estas RPC).
+      const body = blocks.findLast((b) => b.startsWith(fn + '('));
       if (!body) throw new Error(`sin objetivo: no encontré ${fn} en la migración`);
       const codes = new Set([...body.matchAll(/message = '([A-Z0-9_]+)'/g)].map((m) => m[1] ?? ''));
       if (/perform app_private\.assert_admin_aal2\(\)/.test(body)) {
@@ -314,7 +335,13 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
         };
       });
 
-    for (const r of check(sql)) {
+    // T-369 / CC-029 redefine admin_set_subscription y admin_update_setting: se verifica su versión vigente; el resto
+    // de las RPC admin se sigue verificando contra rpc_admin_v1.
+    const t369Sql = fs.readFileSync(
+      path.resolve(process.cwd(), 'supabase/migrations/20261017090000_t369_publication_credits.sql'),
+      'utf8',
+    );
+    for (const r of check(sql + '\n' + t369Sql)) {
       expect({ name: r.name, missing: r.missing, undeclared: r.undeclared }).toEqual({
         name: r.name,
         missing: [],

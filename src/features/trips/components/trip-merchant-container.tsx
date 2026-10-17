@@ -32,7 +32,7 @@ export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
 
       if (res.ok) {
         notify.success('El repartidor fue reportado. Solicitud republicada para recibir nuevas ofertas.');
-        router.refresh();
+        router.push(`/merchant/requests/${trip.id}`);
       } else {
         notify.error('No se pudo reportar al repartidor.');
       }

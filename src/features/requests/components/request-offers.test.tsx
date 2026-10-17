@@ -7,7 +7,20 @@ import { requestsCopy } from '../copy';
 import type { MerchantOfferItem, MerchantRequestDetail } from '../types';
 import type { RpcOutput } from '@/domain';
 
-// Mock server actions
+const { mockPush, mockReplace, mockRefresh } = vi.hoisted(() => ({
+  mockPush: vi.fn(),
+  mockReplace: vi.fn(),
+  mockRefresh: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: mockReplace,
+    refresh: mockRefresh,
+  }),
+}));
+
 const mockAcceptOfferAction = vi.fn();
 vi.mock('@/features/offers/actions', () => ({
   acceptOfferAction: (...args: unknown[]) => mockAcceptOfferAction(...args),
@@ -527,4 +540,240 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       expect(container.textContent).toContain('Transferencia');
     });
   });
+
+  describe('T-359: Redirección y estado post-aceptación', () => {
+    it('DoD 1 / H04: al aceptar una oferta con éxito, navega a /trips/[id] con router.replace', async () => {
+      mockAcceptOfferAction.mockResolvedValue({
+        ok: true,
+        data: {
+          status: 'matched',
+          requestId: mockRequest.id,
+          acceptedOfferId: '11111111-1111-1111-1111-111111111111',
+          matchedAt: '2026-09-24T01:30:00Z',
+          idempotent: false,
+        },
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith(`/trips/${mockRequest.id}`);
+      });
+    });
+
+    it('H02: carrera concurrente con ALREADY_MATCHED bloquea inmediatamente todos los botones Aceptar e impide nuevas acciones de match', async () => {
+      mockAcceptOfferAction.mockResolvedValue({
+        ok: false,
+        code: 'ALREADY_MATCHED',
+        message: 'La solicitud ya fue asignada',
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons.length).toBeGreaterThan(0);
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+        expect(mockRefresh).toHaveBeenCalled();
+      });
+
+      // Modal cerrado tras reconciliación
+      expect(screen.queryByRole('button', { name: /sí, aceptar/i })).toBeNull();
+
+      // Bloqueo inmediato: ningún botón Aceptar debe estar visible en la vista mientras se reconcilia
+      const remainingAcceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(remainingAcceptButtons).toHaveLength(0);
+      expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('H02: carrera con REQUEST_EXPIRED bloquea inmediatamente todos los botones Aceptar e impide nuevas acciones de match', async () => {
+      mockAcceptOfferAction.mockResolvedValue({
+        ok: false,
+        code: 'REQUEST_EXPIRED',
+        message: 'La solicitud ha expirado',
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons.length).toBeGreaterThan(0);
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+        expect(mockRefresh).toHaveBeenCalled();
+      });
+
+      // Modal cerrado
+      expect(screen.queryByRole('button', { name: /sí, aceptar/i })).toBeNull();
+
+      // Bloqueo inmediato
+      const remainingAcceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(remainingAcceptButtons).toHaveLength(0);
+      expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('H02: error transitorio permite reintento y no activa latch de reconciliación permanente', async () => {
+      mockAcceptOfferAction.mockResolvedValueOnce({
+        ok: false,
+        code: 'UNKNOWN_ERROR',
+        message: 'Fallo de conexión',
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+      });
+
+      // El modal permanece abierto con mensaje de error para permitir reintentar
+      expect(screen.getByRole('button', { name: /sí, aceptar/i })).toBeDefined();
+      expect(mockRefresh).not.toHaveBeenCalled();
+    });
+
+    it('H03: no muestra botón Aceptar si expiresAt ya venció en la solicitud', () => {
+      const expiredRequest = {
+        ...mockRequest,
+        expiresAt: new Date(Date.now() - 60000).toISOString(),
+      };
+
+      render(<RequestOffersList request={expiredRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons).toHaveLength(0);
+      expect(screen.getByText('Expirada')).toBeDefined();
+    });
+
+    it('H03: deshabilita aceptación al transicionar a vencida mediante reloj y bloquea confirmación abierta', async () => {
+      vi.useFakeTimers();
+      const nearFutureExpiresAt = new Date(Date.now() + 5000).toISOString();
+      const expiringRequest = {
+        ...mockRequest,
+        expiresAt: nearFutureExpiresAt,
+      };
+
+      render(<RequestOffersList request={expiringRequest} initialOffers={initialOffers} />);
+
+      // Inicialmente vigente
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons.length).toBeGreaterThan(0);
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(screen.getByRole('button', { name: /sí, aceptar/i })).toBeDefined();
+
+      // Avanzamos el tiempo para que expire
+      act(() => {
+        vi.advanceTimersByTime(6000);
+      });
+
+      // Intentar confirmar con la solicitud ya vencida
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+      expect(mockRefresh).toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it('H03: no ofrece botón Aceptar sobre ofertas con status withdrawn o rejected', () => {
+      const mixedOffers: MerchantOfferItem[] = [
+        {
+          ...initialOffers[0]!,
+          id: 'offer-withdrawn',
+          status: 'withdrawn',
+        },
+        {
+          ...initialOffers[1]!,
+          id: 'offer-rej',
+          status: 'rejected',
+        },
+      ];
+
+      render(<RequestOffersList request={mockRequest} initialOffers={mixedOffers} />);
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons).toHaveLength(0);
+      expect(screen.getByText('Retirada')).toBeDefined();
+      expect(screen.getByText('Rechazada')).toBeDefined();
+    });
+
+    it('H03: no ofrece botón Aceptar si request.status es draft, matched, cancelled o expired', () => {
+      const statuses = ['draft', 'matched', 'cancelled', 'expired'] as const;
+
+      for (const st of statuses) {
+        const req = {
+          ...mockRequest,
+          status: st,
+        };
+
+        const { unmount } = render(
+          <RequestOffersList request={req} initialOffers={initialOffers} />
+        );
+
+        const acceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+        expect(acceptButtons).toHaveLength(0);
+        unmount();
+      }
+    });
+
+    it('DoD 2: si la solicitud ya está en estado matched, ofrece enlace al viaje', () => {
+      const matchedRequest = {
+        ...mockRequest,
+        status: 'matched' as const,
+        acceptedOfferId: '11111111-1111-1111-1111-111111111111',
+      };
+
+      render(<RequestOffersList request={matchedRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons).toHaveLength(0);
+
+      const tripLinks = screen.getAllByRole('link', { name: /ver viaje|ver detalle/i });
+      expect(tripLinks.length).toBeGreaterThanOrEqual(1);
+      expect(tripLinks[0]?.getAttribute('href')).toBe(`/trips/${mockRequest.id}`);
+    });
+
+    it('DoD 3: muestra badge Oferta aceptada para la oferta aceptada', () => {
+      const mixedOffers: MerchantOfferItem[] = [
+        {
+          ...initialOffers[0]!,
+          id: 'offer-acc',
+          status: 'accepted',
+        },
+        {
+          ...initialOffers[1]!,
+          id: 'offer-pend',
+          status: 'pending',
+        },
+      ];
+
+      render(<RequestOffersList request={mockRequest} initialOffers={mixedOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons).toHaveLength(1);
+      expect(screen.getByText('Oferta aceptada')).toBeDefined();
+    });
+  });
 });
+
