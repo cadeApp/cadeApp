@@ -25,9 +25,10 @@ export type LiveServerResult<T> =
   | { readonly ok: true; readonly data: T }
   | { readonly ok: false; readonly error: string; readonly status: number };
 
-function formatApproxDistanceKm(distanceM: number | null): string {
+// Sin distancia calculada devuelve null: la UI lo dice en vez de inventar un valor (T-363).
+function formatApproxDistanceKm(distanceM: number | null): string | null {
   if (!distanceM || distanceM <= 0) {
-    return '1,0';
+    return null;
   }
   const km = distanceM / 1000;
   const rounded = Math.round(km * 2) / 2;

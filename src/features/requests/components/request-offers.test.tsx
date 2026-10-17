@@ -145,6 +145,25 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
     expect(screen.getAllByText(/Seguro verificado/i).length).toBeGreaterThan(0);
   });
 
+  it('T-363: sin distancia calculada muestra «Distancia no calculada» y nunca «· km» vacío', () => {
+    const { container } = render(
+      <RequestOffersList
+        request={{ ...mockRequest, approxDistanceKm: null }}
+        initialOffers={initialOffers}
+      />
+    );
+
+    expect(screen.getByText('Distancia no calculada')).toBeTruthy();
+    const text = container.textContent ?? '';
+    expect(text).not.toMatch(/·\s*km/);
+    expect(text).not.toMatch(/\bkm\b/);
+  });
+
+  it('T-363: con distancia calculada la muestra como aproximada en km', () => {
+    render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+    expect(screen.getByText('≈ 2,5 km')).toBeTruthy();
+  });
+
   it('DoD: Ordenamiento por doc_level (por defecto) y por precio', () => {
     render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
 
