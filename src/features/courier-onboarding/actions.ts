@@ -8,7 +8,7 @@ import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/error
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import type { SupabaseRpcCaller } from '@/server/rpc/offers';
-import { courierOnboardingSchema } from './schemas';
+import { courierOnboardingSchema, courierUpdateVehicleSchema } from './schemas';
 import { logoutAction } from '@/features/auth/server';
 import { areCurrentLegalVersions } from '@/features/legal';
 
@@ -303,3 +303,91 @@ export async function courierOnboardingAction(
     redirectTo: '/onboarding/status',
   });
 }
+
+export interface CourierUpdateVehicleResult {
+  readonly redirectTo: string;
+}
+
+export async function updateCourierVehicleAction(
+  input: unknown
+): Promise<ActionResult<CourierUpdateVehicleResult, DomainErrorCode>> {
+  // 1. Cliente autenticado y verificación de sesión
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  // 2. Verificación de rol del actor (debe ser courier)
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'courier') {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  // 3. Validación de datos de entrada
+  const parsed = courierUpdateVehicleSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  // 4. Verificación de existencia del legajo courier
+  const { data: existingCourier, error: courierFetchError } = await supabase
+    .from('couriers')
+    .select('profile_id, status, vehicle_type')
+    .eq('profile_id', user.id)
+    .maybeSingle<{ profile_id: string; status: string; vehicle_type: string | null }>();
+
+  if (courierFetchError) {
+    return err('INTERNAL_ERROR');
+  }
+  if (!existingCourier) {
+    return err('NOT_FOUND');
+  }
+  // T-334: vehicle_type is the completed-onboarding marker. Query-string edit mode
+  // does not grant the right to set it for a first-time applicant.
+  if (existingCourier.vehicle_type === null || !['pending', 'approved'].includes(existingCourier.status)) {
+    return err('INVALID_STATE_TRANSITION');
+  }
+
+  // 6. Actualización de vehículo en couriers
+  const courierUpdatePayload: TablesUpdate<'couriers'> = {
+    vehicle_type: parsed.data.vehicleType,
+    vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
+  };
+
+  const { data: updatedCourier, error: courierUpdateError } = await supabase
+    .from('couriers')
+    .update(courierUpdatePayload as never)
+    .eq('profile_id', user.id)
+    .not('vehicle_type', 'is', null)
+    .in('status', ['pending', 'approved'])
+    .select('profile_id')
+    .maybeSingle<{ profile_id: string }>();
+
+  if (courierUpdateError) {
+    return err('INTERNAL_ERROR');
+  }
+  if (!updatedCourier || updatedCourier.profile_id !== user.id) {
+    return err('NOT_FOUND');
+  }
+
+  return ok({
+    redirectTo: '/courier/profile',
+  });
+}
+
