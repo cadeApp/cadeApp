@@ -77,13 +77,19 @@ class PsqlSession {
     return output;
   }
 
-  /** Confirma que la sentencia sigue esperando un lock (no terminó en `ms`). */
-  async assertBlocked(pending, ms = 1_000) {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-    assert.ok(
-      !this.output.slice(pending.outputStart).includes(pending.marker),
-      `[CC-030][${this.label}] se esperaba que la sentencia quedara bloqueada por el advisory lock`
-    );
+  /** Confirma que la sentencia quedó esperando un advisory lock no concedido, sin haber terminado. */
+  async assertBlocked(pending, timeoutMs = 8_000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      assert.ok(
+        !this.output.slice(pending.outputStart).includes(pending.marker),
+        `[CC-030][${this.label}] la sentencia terminó en vez de esperar el advisory lock`
+      );
+      const waiting = runSql("select count(*) from pg_locks where locktype = 'advisory' and not granted;");
+      if (Number(waiting) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`[CC-030][${this.label}] la sentencia nunca quedó esperando el advisory lock`);
   }
 
   close() {
