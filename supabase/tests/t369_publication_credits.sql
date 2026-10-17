@@ -600,10 +600,15 @@ select is((pg_temp.current_charge(pg_temp.id('5301'))).state, 'reserved', 'publi
 select is(pg_temp.available(pg_temp.m_flow()), 19, 'la reserva descuenta del disponible');
 select is(pg_temp.err(pg_temp.match(pg_temp.m_flow(), pg_temp.courier1(), pg_temp.id('5301'))), null, 'flujo: match');
 select is((pg_temp.current_charge(pg_temp.id('5301'))).state, 'consumed', 'el match consume la reserva');
+select isnt(
+  pg_temp.err(pg_temp.rpc(pg_temp.courier2(), 'aal1', format('select public.submit_offer(%L::uuid, 1500, 15, null)', pg_temp.id('5301')))),
+  null,
+  'no se puede ofertar sobre una solicitud ya asignada'
+);
 select is(
-  pg_temp.err(pg_temp.match(pg_temp.m_flow(), pg_temp.courier2(), pg_temp.id('5301'))),
-  'INVALID_STATE_TRANSITION',
-  'un segundo match no vuelve a consumir'
+  (pg_temp.current_charge(pg_temp.id('5301'))).state || ':' || pg_temp.charge_count(pg_temp.id('5301'))::text,
+  'consumed:1',
+  'un intento sobre una asignada no crea ni vuelve a consumir cargos'
 );
 select is(
   pg_temp.err(pg_temp.rpc(pg_temp.m_flow(), 'aal1', format('select public.report_no_show(%L::uuid, true)', pg_temp.id('5301')))),
