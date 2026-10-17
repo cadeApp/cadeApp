@@ -33,3 +33,10 @@ No asignar AG nuevo ni alterar AGENTS.md sin validar máximo de todas las ramas 
 - Dos runs sucesivos CANCELLED con resolve-preview success y Playwright sin log sustentan un gate operativo pendiente, no un fallo de aserción. El grupo de concurrencia compartida podría influir, pero sin evidencia de cola no atribuirle causalidad.
 - Cuando unit/DB CI del SHA integrado están verdes, el paso mínimo para cerrar es una ejecución E2E real del mismo SHA, no modificar producción ni provocar un commit vacío.
 - Approval-policy es control de aprobación de P2 por P1, no un defecto a reparar debilitando checks.
+
+## Ronda 5
+
+- Diferenciar el éxito **observado** de todos los Chromium (87/87, incluyendo T-362) del resultado final del job con `global-settings` rojo. No resumir como E2E global verde ni como fallo de la tarea.
+- Las cifras declaradas en bitácora pueden diferir del log real (77 vs 87 Chromium); usar siempre el dato del run, SHA y job.
+- Cuando el último SHA probado y HEAD nuevo difieren SOLO en bitácora, el E2E probado sigue representando el mismo código funcional. No pedir otro CI green por docs.
+- No inferir bypass de subscripción por falta de alerta: el test falla antes del oráculo SQL; abrir issue separado con traza y RCA pendiente (#405), sin modificar T-362 ni reducir el gate.

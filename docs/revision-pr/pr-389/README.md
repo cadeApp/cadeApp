@@ -71,3 +71,11 @@ CI del SHA funcional: 140/140 archivos, 2593/2593 tests, DB Files=27 Tests=2420 
 | dfe467ada888fe5893e9216842ecb06ca8c12a7d | Sin hallazgos nuevos de código, atrás de develop: 0; gate E2E cancelado, aprobación humana pendiente | [ronda-4.md](revisiones/ronda-4.md) |
 
 CI sobre código integrado: 142 archivos y 2.685 tests unit PASS; DB 29 archivos y 2.735 tests PASS. E2E Preview #39061870840 CANCELLED antes de ejecutar Playwright (se confirmó target SHA). La reejecución autorizada del mismo run no requiere cambio de código ni de workflow. Una actualización exclusivamente documental de la revisión/bitácora NO exige otro CI GREEN.
+
+## Ronda 5 — 2026-10-17
+
+| SHA funcional | Resultado | Informe |
+|---|---|---|
+| ae05b35cf46b5217f37932c76fdff9cad2fe996a | T-362 E2E PASS (44.9s), Chromium 87/87 PASS; E2E global FAIL por T-306, issue #405; aprobación pendiente | [ronda-5.md](revisiones/ronda-5.md) |
+
+El HEAD de PR 37c7e8a solo cambia bitácora respecto de ae05b35: no invalida E2E de T-362. El run #39064324483 terminó con 87 tests Chromium PASS (no 77 como cita la bitácora), pero el job total FAIL por global-settings T-306 DoD1. Issue separado #405. No repetir CI solo por documentación.

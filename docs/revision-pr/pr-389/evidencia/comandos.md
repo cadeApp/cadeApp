@@ -253,3 +253,17 @@ Comprobación de hashes de blobs entre 059270f y dfe467a:
 - request-states.spec.ts: una aserción ajena a T-362, anterior a su sección.
 
 No corrí tests locales ni mutaciones; no certificar como verificado-runtime. No pedir un nuevo CI GREEN solo porque se añadió ronda 4, ni por registrar luego una corrida E2E en la bitácora.
+
+---
+
+## Ronda 5 — evidencia inspeccionada de E2E real
+
+- Run E2E: https://github.com/cadeApp/cadeApp/actions/runs/39064324483; job 117488688553; target SHA ae05b35cf46b5217f37932c76fdff9cad2fe996a según checkout del job.
+- Log observado: `87 passed (21.9m)` en chromium; `✓ 76 [chromium] ... request-states.spec.ts:1149 ... T-362 ... (44.9s)`.
+- Global-settings: `subscription.global-settings.spec.ts:107`, error en 136; fail inicial + retry1 + retry2, locator de alerta suscripción vencida no encontrado. Job global conclusion=failure, 2 pruebas global-settings restantes did not run.
+- Bitácora cita 77 chromium: diferencia documental frente al dato real 87.
+- Comparación ae05b35..37c7e8a: un único archivo modificado, docs/tasks/log/T-362.md, 25 líneas. Comparación con develop: behind=0, ahead=12, mergeable=true.
+- Issue segregado: https://github.com/cadeApp/cadeApp/issues/405. No diagnosticar causa ni omitir test T-306.
+- Run nuevo por push exclusivamente documental: 39066467970 in_progress al momento de la lectura; resultado no anticipado. No exigir CI nuevo solo por cambio de log/revisión.
+
+No ejecuté Playwright localmente ni mutaciones locales. La verificación de H01/H02/R01/R02 fue independiente mediante lectura del log y matching SHA del E2E real ejecutado por CI sobre código sin cambios funcionales posteriores. R03 permanece sin reproducción autónoma.
