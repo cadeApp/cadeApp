@@ -267,3 +267,44 @@ for(const [name,target,mutate] of changes){const fn=controls.find(c=>c[0]===targ
 ### Pendiente
 
 P1 debe decidir si: A) botón Aceptar visible pero deshabilitado con test corregido para estado disabled; B) visible habilitado y RPC rechaza (no recomendado por UX); C) conservar ocultación y corregir el E2E T-366 en PR separada. Recomendación C: `await expect(page.getByRole('button',{name:/^aceptar$/i})).toHaveCount(0)`, manteniendo `expectRpcFailure(..., 'REQUEST_EXPIRED')`. Como `request-states.spec.ts` NO está entre los archivos permitidos de T-359, no autorizar que agy lo edite en #360 sin resolución formal. Sí está permitido en ficha T-366; se puede usar una PR específica T-366 desde develop tras elección P1. No se editó producto ni CI. No aprobar ni mergear.
+
+## Ronda 11 — 2026-10-17 · SHA autor inspeccionado `c6381ff4ee7de88e183c388d29bf0eac8ddb7d21`; SHA código `082d6bd6d0b72e566532bcaf143467a4b64bbb29`
+
+- **Sincronización/alcance:** commit `acff7544` integra develop `293c3a27` (PR #393, autorización excepcional de T-366 dentro de #360). Delta `acff7544..082d6bd6`: solo `e2e/specs/request-states.spec.ts` (+1/-1, aserción T-366 §5.1) y `docs/tasks/log/T-359.md`. Delta `082d6bd6..c6381ff4`: SOLO bitácora (+9/-3 aprox.), ningún código/test. Ficha en develop confirma permiso. En rama del autor no hubo ediciones nuevas de `docs/revision-pr/pr-360/**`.
+- **CI del SHA funcional `082d6bd6d0b72e566532bcaf143467a4b64bbb29`:** [run 39014884270](https://github.com/cadeApp/cadeApp/actions/runs/39014884270), job unit `117346670989`, `Test Files 138 passed (138), Tests 2540 passed (2540)`; workflows 79/79 y ADR 6/6. DB job `117346644314`, último `Files=27, Tests=2420, Result: PASS`, `db:types --local` completado. Otros jobs typecheck/lint/build/audit/bundle-budget/approval-policy SUCCESS. Fallas RED de mutaciones de otras tareas dentro del DB job son deliberadas y restituidas; no contarlas como errores finales o mutación de T-359.
+- **E2E auténtico del SHA funcional `082d6bd6d0b72e566532bcaf143467a4b64bbb29`:** [run 39014931158](https://github.com/cadeApp/cadeApp/actions/runs/39014931158), attempt 2, job `117352218062`. `resolve-preview` identificó `PR interna #360 contra develop`, deployment `dpl_8cSG4BHpJmLkXTsLqfyzy9zzS1HG`; `report-preview-status` marcó explícitamente `TARGET_SHA: 082d6bd6d0b72e566532bcaf143467a4b64bbb29` y commit status `e2e-preview=success`. Aunque `workflow_run.head_sha` del dispatch muestra develop `293c3a27`, **el target real** fue `082d6bd6d0b72e566532bcaf143467a4b64bbb29`. Chromium `81 passed (23.2m)`, `1 flaky`; T-359 aceptación concurrente PASS 39s, T-360 feed PASS 50s, T-366 expirada/reconciliación PASS 37.2s. `global-settings` 3 passed (1.0m).
+- **Flaky T-314 no relacionado al diff:** `e2e/specs/map-privacy.spec.ts:503` obtuvo HTTP 500 de `/api/live/available-requests` en intento y retry #1; el segundo retry tuvo PASS. El código endpoint/spec no pertenece al diff de esta PR. No atribuir causa sin evidencia. El comentario de autor para `c6381ff4` dice `100% GREEN`; esto describe conclusión final, **no** que cada test haya pasado en primer intento. Comunicar la diferencia.
+- **CI/Preview del HEAD documental posterior `c6381ff4ee7de88e183c388d29bf0eac8ddb7d21`:** en último chequeo `approval-policy`, unit, typecheck, lint, build, audit y bundle-budget SUCCESS; `db-tests` aún `in_progress` y `e2e-preview=pending`. **No certificar HEAD posterior usando green de `082d6bd6`.**
+- **Inspector propio ESTÁTICO** sobre cinco archivos del SHA funcional, vía GitHub: 6/6 controles base PASS y 4/4 mutantes de cadenas detectados (M1 restaurar aserción anterior, M2 cambiar RPC, M3 permitir Aceptar vencidas, M4 usar método global en multi-drop). No se ejecutó Vitest ni Playwright mutado en checkout; `verificado_en_sha` permanece NULL. `git ls-remote` no pudo resolver github.com desde el contenedor del revisor, por eso no se hizo checkout propio.
+
+Harness reproducible (si se dispone de checkout; NO ejecutado con node por el revisor desde worktree):
+
+```js
+// Control ESTÁTICO reproducible; ejecutarlo desde la raíz de un checkout del SHA analizado.
+// Guardar como /tmp/pr360-r11-static.mjs; node /tmp/pr360-r11-static.mjs
+// NO es ejecución Vitest/Playwright ni requiere DB.
+import {readFileSync} from 'node:fs';
+const s={
+ spec:readFileSync('e2e/specs/request-states.spec.ts','utf8'),
+ offers:readFileSync('src/features/requests/components/request-offers-list.tsx','utf8'),
+ h03:readFileSync('src/features/requests/components/request-offers.test.tsx','utf8'),
+ main:readFileSync('e2e/specs/main-flow.spec.ts','utf8'),
+ merchant:readFileSync('src/features/trips/components/trip-merchant-view.tsx','utf8')
+};
+const checks=[
+ ['R05 ausencia',x=>x.spec.includes("await expect(page.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);")],
+ ['R05 rechazo RPC',x=>x.spec.includes("merchantClientA.rpc('accept_offer', { p_offer_id: pendingOfferId })")&&x.spec.includes("'REQUEST_EXPIRED'")],
+ ['H03 bloqueo UI',x=>x.offers.includes("request.status === 'published' && !isExpired && !isReconciling;")&&x.offers.includes("isAcceptableStatus && (!offer.status || offer.status === 'pending')")],
+ ['H03 unit sin boton',x=>x.h03.includes("H03: no muestra botón Aceptar si expiresAt ya venció")&&x.h03.includes("expect(acceptButtons).toHaveLength(0)")],
+ ['R04 monto de pago scoped',x=>x.main.includes("courierCard.getByText(/Medio de pago:\\s*Efectivo/i)")&&(x.main.match(/expect\(paymentLabel\)\.toHaveCount\(1\)/g)||[]).length===2],
+ ['R04 metodo por drop',x=>x.merchant.includes("formatRecipientPaymentMethod(drop.recipientPaymentMethod)")&&x.merchant.includes("formatRecipientPaymentMethod(singleDrop.recipientPaymentMethod)")]
+];
+const mutate=[
+ ['M1 old assertion','R05 ausencia',x=>({...x,spec:x.spec.replace("await expect(page.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);","await expect(page.getByRole('button', { name: /aceptar/i })).toBeVisible({ timeout: 10000 });")})],
+ ['M2 bad RPC','R05 rechazo RPC',x=>({...x,spec:x.spec.replace("merchantClientA.rpc('accept_offer', { p_offer_id: pendingOfferId })","merchantClientA.rpc('accept_offer_DISABLED', { p_offer_id: pendingOfferId })")})],
+ ['M3 expired button allowed','H03 bloqueo UI',x=>({...x,offers:x.offers.replace("request.status === 'published' && !isExpired && !isReconciling;","request.status === 'published' && !isReconciling;")})],
+ ['M4 wrong multi payment','R04 metodo por drop',x=>({...x,merchant:x.merchant.replace("formatRecipientPaymentMethod(drop.recipientPaymentMethod)","formatRecipientPaymentMethod(trip.recipientPaymentMethod)")})]
+];
+for(const [name,fn] of checks){const ok=fn(s);console.log('BASE',ok?'PASS':'FAIL',name);if(!ok)process.exitCode=1;}
+for(const [name,target,mut] of mutate){const fn=checks.find(x=>x[0]===target)[1];const killed=fn(s)&&!fn(mut(s));console.log('STATIC MUTANT',killed?'DETECTED':'MISSED',name);if(!killed)process.exitCode=1;}
+```

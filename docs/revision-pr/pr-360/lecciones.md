@@ -57,3 +57,10 @@ No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
 - T-366 asume que una solicitud `published` con `expires_at` vencido debe seguir mostrando el botón `Aceptar`, mientras el DoD T-366 dice ofertas vencidas no aceptables. La contradicción está en la expectativa, no prueba que el producto esté roto. Corregir no equivale a saltarse el test si se mantiene oráculo RPC `REQUEST_EXPIRED` y se exige explícitamente `toHaveCount(0)` en UI.
 - Las pruebas de medio de pago de la opción C están ancladas por Card y distinguen cash, transfer, to_agree. Los 4 mutantes del revisor fueron textuales, no de ejecución Vitest; distinguir ambos niveles de evidencia es obligatorio.
 - Las nuevas decisiones de UX que cruzan T-359/T-366 deben quedar registradas en la ficha canónica de la tarea propietaria; no modificar test fuera de alcance de la PR para conseguir verde.
+
+## Ronda 11 — SHA funcional vs commit de bitácora y flakiness
+
+- Un informe/documento posterior que sólo cambia bitácora vuelve a disparar CI/E2E: no trasladar automáticamente el GREEN anterior al nuevo SHA. Verificar commit status independiente antes de mergear.
+- En repositorios con `repository_dispatch`, `workflow_run.head_sha` puede ser el SHA de develop; usar `report-preview-status.TARGET_SHA`, identidad PR y commit status `e2e-preview` de la rama para demostrar cuál Preview se testeó.
+- El caso T-314 devolvió HTTP 500 dos veces y pasó al tercer intento; no inventar causa ni silenciarlo, registrar follow-up fuera de T-359. Gate SUCCESS con flaky NO es 100% de primeras ejecuciones verdes.
+- Mutaciones textuales estáticas detectadas NO cumplen por sí solas la regla de mutaciones runtime independientes del revisor: `arreglado-sin-verificar` es el estado correcto.
