@@ -7,7 +7,8 @@ import { CourierFeed } from './components/courier-feed';
 import { OfferSheet } from './components/offer-sheet';
 import { MyOffersList } from './components/my-offers-list';
 import { OFFERS_COPY } from './copy';
-import type { AvailableRequestItem, CourierOfferItem } from './schemas';
+import type { AvailableRequestItem, CourierOfferItem, ActiveTripSummary } from './schemas';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -33,11 +34,21 @@ vi.mock('@/lib/supabase/browser', () => ({
   })),
 }));
 
+const mockReadActiveTripsAction = vi.fn();
+vi.mock('./actions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./actions')>();
+  return {
+    ...actual,
+    readActiveTripsAction: (...args: unknown[]) => mockReadActiveTripsAction(...args),
+  };
+});
+
 describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockChannel.on.mockReturnValue(mockChannel);
     mockChannel.subscribe.mockReturnValue(mockChannel);
+    mockReadActiveTripsAction.mockResolvedValue({ courierId: 'test-courier', trips: [] });
   });
 
   afterEach(() => {
@@ -138,7 +149,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
 
       await screen.findByText(/estamos revisando tus datos/i);
       expect(rowOf(/DNI frente y dorso/)?.textContent).toContain('Pendiente');
-      expect(rowOf(/Selfie de seguridad/)?.textContent).toContain('Pendiente');
+      expect(rowOf(/Selfie con el DNI/)?.textContent).toContain('Pendiente');
       expect(screen.queryByText('Cargado')).toBeNull();
     });
   });
@@ -746,6 +757,234 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       expect(screen.getByRole('textbox', { name: OFFERS_COPY.amountLabel })).toBeDefined();
       expect(screen.getByText(OFFERS_COPY.offerSheetTitle)).toBeDefined();
       expect(screen.getByRole('button', { name: OFFERS_COPY.submitOfferButton })).toBeDefined();
+    });
+  });
+
+  describe('T-360: Resumen de viajes activos en feed de repartidor', () => {
+    const courierId = 'courier-active-123';
+
+    const singleDropTrip: ActiveTripSummary = {
+      id: '11111111-2222-3333-4444-555555555555',
+      status: 'matched',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Sur',
+      dropsCount: 1,
+      amountArs: 2000,
+      matchedAt: '2026-10-15T00:00:00Z',
+    };
+
+    const inTransitTrip: ActiveTripSummary = {
+      id: '22222222-3333-4444-5555-666666666666',
+      status: 'in_transit',
+      pickupZoneName: 'Barrio Norte',
+      dropoffZoneName: 'Centro',
+      dropsCount: 1,
+      amountArs: 2800,
+      matchedAt: '2026-10-15T00:10:00Z',
+    };
+
+    const multiDropTrip: ActiveTripSummary = {
+      id: '33333333-4444-5555-6666-777777777777',
+      status: 'matched',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: null,
+      dropsCount: 3,
+      amountArs: 4500,
+      matchedAt: '2026-10-15T00:20:00Z',
+    };
+
+    function renderWithClient(ui: React.ReactElement) {
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: {
+            retry: false,
+            staleTime: 0,
+          },
+        },
+      });
+      return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+    }
+
+    it('1. ubicación relativa: la sección de viajes activos se renderiza estrictamente después de AvailabilitySwitch y antes del encabezado de Solicitudes abiertas', () => {
+      const { container } = renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[singleDropTrip]}
+        />
+      );
+
+      const switchLabel = screen.getByText('Disponible');
+      const activeSection = container.querySelector('section[aria-labelledby="active-trips-title"]');
+      const feedHeading = screen.getByText(OFFERS_COPY.feedTitle);
+
+      expect(activeSection).not.toBeNull();
+      if (!activeSection) throw new Error('Sección no encontrada');
+
+      // switchLabel debe preceder a activeSection
+      const switchPos = switchLabel.compareDocumentPosition(activeSection);
+      expect(switchPos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      // activeSection debe preceder a feedHeading
+      const feedPos = activeSection.compareDocumentPosition(feedHeading);
+      expect(feedPos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('2. con 0 viajes activos oculta la sección completamente del DOM', () => {
+      const { container } = renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[]}
+        />
+      );
+
+      expect(screen.queryByText(OFFERS_COPY.activeTripsTitle)).toBeNull();
+      expect(container.querySelector('section[aria-labelledby="active-trips-title"]')).toBeNull();
+    });
+
+    it('3. con 1 y N viajes renderiza encabezado con contador y tarjetas con enlace a /trips/[id]', () => {
+      renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[singleDropTrip, inTransitTrip]}
+        />
+      );
+
+      expect(screen.getByRole('heading', { level: 2, name: OFFERS_COPY.activeTripsTitle })).toBeDefined();
+      expect(screen.getByText('2')).toBeDefined();
+
+      const links = screen.getAllByRole('link', { name: OFFERS_COPY.viewTripButton });
+      expect(links).toHaveLength(2);
+      expect(links[0]?.getAttribute('href')).toBe(`/trips/${singleDropTrip.id}`);
+      expect(links[1]?.getAttribute('href')).toBe(`/trips/${inTransitTrip.id}`);
+    });
+
+    it('4. labels de estado: matched muestra "Aceptado · Por retirar" e in_transit muestra "En camino"', () => {
+      renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[singleDropTrip, inTransitTrip]}
+        />
+      );
+
+      expect(screen.getByText(OFFERS_COPY.activeTripStatus.matched)).toBeDefined();
+      expect(screen.getByText(OFFERS_COPY.activeTripStatus.in_transit)).toBeDefined();
+    });
+
+    it('5. multi-drop con dropsCount=3 muestra monto con "por entrega", resumen "3 entregas" y omite zona individual', () => {
+      renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[multiDropTrip]}
+        />
+      );
+
+      // Muestra "por entrega" junto al importe en multi-drop
+      expect(screen.getByText(OFFERS_COPY.perDropSuffix)).toBeDefined();
+      expect(screen.getByText(OFFERS_COPY.multiDropSummary(3))).toBeDefined();
+      expect(screen.getByText(multiDropTrip.pickupZoneName)).toBeDefined();
+    });
+
+    it('5b. single-drop no muestra la etiqueta "por entrega"', () => {
+      renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[singleDropTrip]}
+        />
+      );
+
+      expect(screen.queryByText(OFFERS_COPY.perDropSuffix)).toBeNull();
+    });
+
+    it('6. isAvailable=false conserva la sección de viajes activos visible y accesible', () => {
+      renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={false}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[singleDropTrip]}
+        />
+      );
+
+      // Sección de viajes activos debe estar visible
+      expect(screen.getByRole('heading', { level: 2, name: OFFERS_COPY.activeTripsTitle })).toBeDefined();
+      expect(screen.getByText(singleDropTrip.pickupZoneName)).toBeDefined();
+
+      // Mensaje de no disponible también debe verse
+      expect(screen.getByText(OFFERS_COPY.unavailableAlertTitle)).toBeDefined();
+    });
+
+    it('7. error accesible con role="alert" y botón reintentar: no muestra viajes obsoletos ni cero engañoso', async () => {
+      mockReadActiveTripsAction.mockRejectedValue(new Error('PG down'));
+
+      renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+        />
+      );
+
+      const errorTitle = await screen.findByText(OFFERS_COPY.activeTripsErrorTitle);
+      expect(errorTitle).toBeDefined();
+      const alert = errorTitle.closest('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(screen.getByText(OFFERS_COPY.activeTripsErrorDescription)).toBeDefined();
+
+      // Botón reintentar dentro de la alerta de viajes activos presente y con texto correcto
+      const retryBtn = alert?.querySelector('button');
+      expect(retryBtn).not.toBeNull();
+      expect(retryBtn?.textContent).toContain(OFFERS_COPY.retryButton);
+
+      // No se muestra cero ni tarjetas obsoletas
+      expect(screen.queryByText(OFFERS_COPY.viewTripButton)).toBeNull();
+    });
+
+    it('8. ausencia total en DOM de datos sensibles (teléfono, notas, dirección privada)', () => {
+      const { container } = renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[singleDropTrip, multiDropTrip]}
+        />
+      );
+
+      const html = container.innerHTML;
+      // Verificamos que no existan datos privados del destinatario
+      expect(html).not.toMatch(/3865/);
+      expect(html).not.toMatch(/Laura/);
+      expect(html).not.toMatch(/Belgrano 1220/);
+      expect(html).not.toMatch(/Frente a la plaza/);
     });
   });
 });

@@ -120,3 +120,84 @@ export async function getMerchantAccountProfile(): Promise<MerchantAccountProfil
     paidUntil: merchant.paid_until,
   };
 }
+
+export interface MerchantProfileFormData {
+  readonly businessName: string;
+  readonly phone: string;
+  readonly defaultPickupAddress: string;
+  readonly defaultPickupZoneId: string | null;
+  readonly defaultPickupLat: number | null;
+  readonly defaultPickupLng: number | null;
+  readonly notes: string | null;
+  readonly isComplete: boolean;
+}
+
+export async function getMerchantProfileForEdit(): Promise<MerchantProfileFormData | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw new Error(`Error de autenticación al obtener perfil de comercio: ${authError.message}`);
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  interface MerchantRow {
+    readonly business_name: string;
+    readonly default_pickup_address: string | null;
+    readonly default_pickup_lat: number | null;
+    readonly default_pickup_lng: number | null;
+    readonly default_pickup_zone_id: string | null;
+    readonly notes: string | null;
+  }
+
+  interface ProfileRow {
+    readonly phone: string | null;
+  }
+
+  const [{ data: merchant, error: merchantError }, { data: profile, error: profileError }] =
+    await Promise.all([
+      supabase
+        .from('merchants')
+        .select(
+          'business_name, default_pickup_address, default_pickup_lat, default_pickup_lng, default_pickup_zone_id, notes'
+        )
+        .eq('profile_id', user.id)
+        .maybeSingle<MerchantRow>(),
+      supabase
+        .from('profiles')
+        .select('phone')
+        .eq('id', user.id)
+        .maybeSingle<ProfileRow>(),
+    ]);
+
+  if (merchantError) {
+    throw new Error(`Error al consultar comercio: ${merchantError.message}`);
+  }
+
+  if (profileError) {
+    throw new Error(`Error al consultar perfil: ${profileError.message}`);
+  }
+
+  if (!merchant) {
+    return null;
+  }
+
+  const isComplete = Boolean(merchant.business_name && merchant.business_name.trim().length > 0);
+
+  return {
+    businessName: merchant.business_name ?? '',
+    phone: profile?.phone ?? '',
+    defaultPickupAddress: merchant.default_pickup_address ?? '',
+    defaultPickupZoneId: merchant.default_pickup_zone_id ?? null,
+    defaultPickupLat: merchant.default_pickup_lat ?? null,
+    defaultPickupLng: merchant.default_pickup_lng ?? null,
+    notes: merchant.notes ?? null,
+    isComplete,
+  };
+}

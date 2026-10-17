@@ -309,6 +309,44 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       }
     });
 
+    it('T-363: sin approx_distance_m la vía en vivo devuelve approxDistanceKm null (no inventa 1,0)', async () => {
+      const row = { ...makeRequestRow(1), approx_distance_m: null };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: null,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return reqBuilder;
+        if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.data).toHaveLength(1);
+        expect(result.data.data[0]?.approxDistanceKm).toBeNull();
+      }
+    });
+
     it('T-342 D3: no lee ni transporta indicaciones ni monto exacto de cambio antes del match', async () => {
       const row = {
         ...makeRequestRow(1),

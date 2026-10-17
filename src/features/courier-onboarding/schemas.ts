@@ -9,7 +9,7 @@ export const dniSchema = z
   .regex(DNI_REGEX, 'El DNI debe tener 7 u 8 dígitos numéricos');
 
 export const ARGENTINA_PLATE_REGEX =
-  /^(?:[A-Z]{2}\s?\d{3}\s?[A-Z]{2}|[A-Z]\s?\d{3}\s?[A-Z]{3}|[A-Z]{3}\s?\d{3})$/i;
+  /^(?:[A-Z]{2}\s?\d{3}\s?[A-Z]{2}|[A-Z]\s?\d{3}\s?[A-Z]{3}|[A-Z]{3}\s?\d{3}|\d{3}\s?[A-Z]{3})$/i;
 
 export const vehiclePlateSchema = z
   .string({ required_error: 'La patente es obligatoria' })
@@ -68,7 +68,14 @@ export const courierOnboardingSchema = z
         });
       }
     }
-  });
+  })
+  .transform((data) => ({
+    ...data,
+    vehiclePlate:
+      data.vehicleType === 'moto' || data.vehicleType === 'car'
+        ? (data.vehiclePlate?.trim() ?? null)
+        : null,
+  }));
 
 export type CourierOnboardingInput = z.infer<typeof courierOnboardingSchema>;
 

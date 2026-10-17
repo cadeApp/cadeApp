@@ -61,6 +61,15 @@ describe('GET & POST /api/cron/sweep', () => {
 
   it('ejecuta el barrido y responde 200 cuando el CRON_SECRET es válido', async () => {
     const mockStorageRemove = vi.fn().mockResolvedValue({ data: [], error: null });
+    const reconciliationRpc = vi.fn().mockResolvedValue({
+      data: {
+        expiredRequestIds: ['req-1'],
+        expiredOfferCourierIdsByRequest: {},
+        expiredCount: 1,
+        hasMore: false,
+      },
+      error: null,
+    });
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'courier_documents') {
         return {
@@ -95,6 +104,10 @@ describe('GET & POST /api/cron/sweep', () => {
       if (table === 'delivery_requests') {
         return {
           select: vi.fn().mockReturnValue({
+            in: vi.fn().mockResolvedValue({
+              data: [{ id: 'req-1', merchant_id: 'merchant-1' }],
+              error: null,
+            }),
             eq: vi.fn().mockReturnValue({
               lte: vi.fn().mockResolvedValue({
                 data: [{ id: 'req-1', merchant_id: 'merchant-1' }],
@@ -181,6 +194,7 @@ describe('GET & POST /api/cron/sweep', () => {
     });
 
     setAdminClientMock({
+      rpc: reconciliationRpc,
       from: mockFrom,
       storage: {
         from: vi.fn().mockReturnValue({
@@ -211,6 +225,13 @@ describe('GET & POST /api/cron/sweep', () => {
     });
     const responsePost = await POST(reqPost);
     expect(responsePost.status).toBe(200);
+    expect(reconciliationRpc).toHaveBeenCalledTimes(2);
+    expect(reconciliationRpc).toHaveBeenNthCalledWith(1, 'reconcile_expired_requests_cron', {
+      p_limit: 200,
+    });
+    expect(reconciliationRpc).toHaveBeenNthCalledWith(2, 'reconcile_expired_requests_cron', {
+      p_limit: 200,
+    });
   });
 
   it('responde 500 con error sanitizado si runSweep lanza excepción', async () => {

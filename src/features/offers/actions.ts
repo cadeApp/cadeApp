@@ -11,7 +11,9 @@ import {
   withdrawOfferFormSchema,
   acceptOfferFormSchema,
   takeRequestFormSchema,
+  type ActiveTripSummary,
 } from './schemas';
+import { getActiveTripsForCourier } from '@/features/trips/server';
 
 export type SubmitOfferResult = RpcOutput<'submit_offer'>;
 export type WithdrawOfferResult = RpcOutput<'withdraw_offer'>;
@@ -204,5 +206,17 @@ export async function takeRequestAction(
   revalidatePath('/courier/feed');
   revalidatePath('/courier/offers');
   return ok(rpcResult.data);
+}
+
+export async function readActiveTripsAction(): Promise<{
+  courierId: string;
+  trips: ActiveTripSummary[];
+}> {
+  try {
+    return await getActiveTripsForCourier();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error al consultar viajes activos';
+    throw new Error(message);
+  }
 }
 

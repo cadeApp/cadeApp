@@ -8,6 +8,13 @@ import type { TripDetails } from './types';
 import { TripCourierView } from './components/trip-courier-view';
 import { TripMerchantView } from './components/trip-merchant-view';
 import { buildGoogleMapsDirectionsUrl } from './maps';
+import {
+  buildTripRoutePlan,
+  MAX_NAVIGATION_URL_LENGTH,
+  MAX_NAVIGATION_WAYPOINTS,
+  type TripRouteInput,
+  type TripRoutePlan,
+} from './route-points';
 import { CourierFeed, type AvailableRequestItem } from '@/features/offers';
 
 // Mocks para CourierFeed
@@ -36,6 +43,7 @@ vi.mock('@/lib/supabase/browser', () => ({
 }));
 
 // Variables de control de mocks para simulación de estados de Google Maps
+const { mockFitBounds } = vi.hoisted(() => ({ mockFitBounds: vi.fn() }));
 let mockLoadingStatus = 'LOADED';
 let mockPublicApiKey = 'test-google-maps-api-key';
 let mockPublicMapId = 'test-map-id';
@@ -64,6 +72,8 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     FAILED: 'FAILED',
   },
   useApiLoadingStatus: () => mockLoadingStatus,
+  // Como el SDK real: sin mapa cargado (SDK fallido) useMap devuelve null
+  useMap: () => (mockLoadingStatus === 'LOADED' ? { fitBounds: mockFitBounds } : null),
   APIProvider: ({
     children,
     onError,
@@ -100,6 +110,23 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     >
       {children}
     </div>
+  ),
+  Marker: ({
+    position,
+    title,
+    label,
+  }: {
+    position?: { lat: number; lng: number };
+    title?: string;
+    label?: string;
+  }) => (
+    <div
+      data-testid="mock-legacy-marker"
+      data-lat={position?.lat}
+      data-lng={position?.lng}
+      data-title={title}
+      data-label={label}
+    />
   ),
   Pin: ({
     background,
@@ -220,6 +247,7 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
     mockPublicApiKey = 'test-google-maps-api-key';
     mockPublicMapId = 'test-map-id';
     mockOnError = null;
+    mockFitBounds.mockClear();
 
     mockChannel.on.mockReturnValue(mockChannel);
     mockChannel.subscribe.mockReturnValue(mockChannel);
@@ -546,6 +574,510 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
       const mapsLink = screen.getByRole('link', { name: /abrir en google maps/i });
       expect(mapsLink).toBeDefined();
       expect(mapsLink.getAttribute('href')).toContain('https://www.google.com/maps/dir/?api=1');
+    });
+  });
+
+  describe('5. T-363 — Fallback honesto: coordenadas faltantes, Map ID ausente y distancia no calculada', () => {
+    const tripWithoutCoords: TripDetails = {
+      ...baseTrip,
+      pickupLat: null,
+      pickupLng: null,
+      dropoffLat: null,
+      dropoffLng: null,
+      routeDistanceM: null,
+    };
+
+    it('sin coordenadas y con proveedor disponible explica la falta de ubicación exacta (nunca «modo simplificado»)', () => {
+      render(<TripCourierView trip={tripWithoutCoords} />);
+
+      const fallback = screen.getByTestId('route-map-fallback');
+      expect(fallback.textContent).toMatch(/sin ubicación exacta en el mapa/i);
+      expect(fallback.textContent).toMatch(/retiro/i);
+      expect(fallback.textContent).toMatch(/entrega/i);
+      expect(fallback.textContent).not.toMatch(/modo simplificado/i);
+      expect(screen.queryByTestId('mock-google-map')).toBeNull();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+    });
+
+    it('con retiro geolocalizado y entrega sin pin: fallback nombra solo la entrega y Google Maps usa el punto válido y la dirección escrita', () => {
+      const partialTrip: TripDetails = { ...baseTrip, dropoffLat: null, dropoffLng: null };
+      render(<TripCourierView trip={partialTrip} />);
+
+      const fallback = screen.getByTestId('route-map-fallback');
+      expect(fallback.textContent).toMatch(/sin ubicación exacta en el mapa/i);
+      expect(screen.getByTestId('route-map-missing-points').textContent).toMatch(/^.*entrega.*$/i);
+      expect(screen.getByTestId('route-map-missing-points').textContent).not.toMatch(/retiro/i);
+
+      const href = screen.getByRole('link', { name: /abrir en google maps/i }).getAttribute('href') ?? '';
+      const url = new URL(href);
+      expect(url.searchParams.get('origin')).toBe(`${baseTrip.pickupLat},${baseTrip.pickupLng}`);
+      expect(url.searchParams.get('destination')).toBe(baseTrip.dropoffAddress);
+    });
+
+    it('coordenadas fuera de Aguilares o no finitas se tratan como faltantes y nunca llegan al mapa ni al enlace', () => {
+      const invalidTrip: TripDetails = {
+        ...baseTrip,
+        pickupLat: 0,
+        pickupLng: 0,
+        dropoffLat: Number.NaN,
+        dropoffLng: -65.61,
+      };
+      render(<TripCourierView trip={invalidTrip} />);
+
+      expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      const href = screen.getByRole('link', { name: /abrir en google maps/i }).getAttribute('href') ?? '';
+      const url = new URL(href);
+      expect(url.searchParams.get('origin')).toBe(baseTrip.pickupAddress);
+      expect(url.searchParams.get('destination')).toBe(baseTrip.dropoffAddress);
+      expect(href).not.toContain('NaN');
+      expect(url.searchParams.get('origin')).not.toBe('0,0');
+    });
+
+    it('sin Map ID configurado los dos pines se dibujan con Marker clásico (AdvancedMarker exige Map ID)', () => {
+      mockPublicMapId = '';
+      render(<TripCourierView trip={baseTrip} />);
+
+      expect(screen.getByTestId('mock-google-map')).toBeDefined();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      const legacy = screen.getAllByTestId('mock-legacy-marker');
+      expect(legacy).toHaveLength(2);
+      const positions = legacy.map((m) => ({
+        lat: Number(m.getAttribute('data-lat')),
+        lng: Number(m.getAttribute('data-lng')),
+      }));
+      expect(positions).toContainEqual({ lat: baseTrip.pickupLat, lng: baseTrip.pickupLng });
+      expect(positions).toContainEqual({ lat: baseTrip.dropoffLat, lng: baseTrip.dropoffLng });
+    });
+
+    it('sin distancia calculada dice «Distancia no calculada» y no muestra ningún valor en km', () => {
+      render(<TripCourierView trip={{ ...baseTrip, routeDistanceM: null }} />);
+
+      const distance = screen.getByTestId('route-map-distance');
+      expect(distance.textContent).toBe('Distancia no calculada');
+      expect(screen.getByTestId('trip-route-map').textContent).not.toMatch(/\bkm\b/);
+    });
+
+    it('multi-drop con una entrega sin pin: no dibuja un recorrido parcial y Google Maps incluye todas las entregas en orden', () => {
+      const dropTemplate: NonNullable<TripDetails['drops']>[number] = {
+        id: '00000000-0000-4000-8000-0000000000d1',
+        position: 1,
+        dropoffZoneName: 'Centro',
+        dropoffAddress: 'Mitre 10, Aguilares',
+        recipientName: 'Cliente A',
+        recipientPhone: '3865100000',
+        deliveryNotes: null,
+        cashChangeAmount: null,
+        packageType: 'chico',
+        recipientPaymentMethod: 'transfer',
+        needsChange: false,
+        approxDistanceM: null,
+        status: 'pending',
+        deliveredAt: null,
+        failedReason: null,
+        dropoffLat: -27.43,
+        dropoffLng: -65.61,
+      };
+      const multiTrip: TripDetails = {
+        ...baseTrip,
+        dropsCount: 2,
+        drops: [
+          dropTemplate,
+          {
+            ...dropTemplate,
+            id: '00000000-0000-4000-8000-0000000000d2',
+            position: 2,
+            dropoffZoneName: 'Norte',
+            dropoffAddress: 'Mitre 20, Aguilares',
+            recipientName: 'Cliente B',
+            recipientPhone: '3865200000',
+            dropoffLat: null,
+            dropoffLng: null,
+          },
+        ],
+      };
+      render(<TripCourierView trip={multiTrip} />);
+
+      expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+      expect(screen.getByTestId('route-map-missing-points').textContent).toMatch(/entrega 2/i);
+      expect(screen.getByTestId('route-map-missing-points').textContent).not.toMatch(/entrega 1/i);
+
+      const href = screen.getByRole('link', { name: /abrir en google maps/i }).getAttribute('href') ?? '';
+      const url = new URL(href);
+      expect(url.searchParams.get('origin')).toBe(`${baseTrip.pickupLat},${baseTrip.pickupLng}`);
+      expect(url.searchParams.get('waypoints')).toBe('-27.43,-65.61');
+      expect(url.searchParams.get('destination')).toBe('Mitre 20, Aguilares');
+    });
+
+    it('una entrega intermedia sin pin viaja como dirección escrita en waypoints, sin saltearla', () => {
+      const plan = buildTripRoutePlan({
+        pickupAddress: 'San Martín 450, Centro',
+        pickupZoneName: 'Centro',
+        pickupLat: -27.4333,
+        pickupLng: -65.6167,
+        dropoffAddress: 'Mitre 10, Aguilares',
+        dropoffZoneName: 'Centro',
+        drops: [
+          { position: 2, dropoffAddress: 'Mitre 20, Aguilares', dropoffZoneName: 'Norte', dropoffLat: -27.42, dropoffLng: -65.6 },
+          { position: 1, dropoffAddress: 'Mitre 10, Aguilares', dropoffZoneName: 'Centro', dropoffLat: null, dropoffLng: null },
+        ],
+      });
+
+      expect(plan.canDrawMap).toBe(false);
+      expect(plan.missing.map((stop) => stop.label)).toEqual(['Entrega 1']);
+      expect(plan.navigationLegs).toHaveLength(1);
+      const url = new URL(plan.navigationLegs[0]?.url ?? '');
+      expect(url.searchParams.get('origin')).toBe('-27.4333,-65.6167');
+      expect(url.searchParams.get('waypoints')).toBe('Mitre 10, Aguilares');
+      expect(url.searchParams.get('destination')).toBe('-27.42,-65.6');
+    });
+
+    it('cuando Google Maps falla con coordenadas válidas el fallback lo dice y no lo confunde con falta de ubicación', () => {
+      mockLoadingStatus = 'FAILED';
+      render(<TripCourierView trip={baseTrip} />);
+
+      const fallback = screen.getByTestId('route-map-fallback');
+      expect(fallback.textContent).toMatch(/no pudimos conectar con google maps/i);
+      expect(fallback.textContent).not.toMatch(/sin ubicación exacta/i);
+      expect(screen.queryByTestId('route-map-missing-points')).toBeNull();
+    });
+  });
+
+  describe('6. PR386-H01 — Navegación en tramos: ≤3 paradas intermedias y ≤2048 caracteres por enlace', () => {
+    function dropCoordinate(position: number) {
+      return { lat: Number((-27.44 + position * 0.004).toFixed(4)), lng: Number((-65.63 + position * 0.003).toFixed(4)) };
+    }
+
+    function routeInput(
+      positions: readonly number[],
+      options: {
+        address?: (position: number) => string;
+        withoutCoordinates?: readonly number[];
+        pickupAddress?: string;
+      } = {}
+    ): TripRouteInput {
+      const address = options.address ?? ((position: number) => `Calle ${position} 100, Aguilares`);
+      return {
+        pickupAddress: options.pickupAddress ?? 'San Martín 450, Aguilares',
+        pickupZoneName: 'Centro',
+        pickupLat: -27.4333,
+        pickupLng: -65.6167,
+        dropoffAddress: address(1),
+        dropoffZoneName: 'Centro',
+        drops: positions.map((position) => {
+          const missing = options.withoutCoordinates?.includes(position) ?? false;
+          const coordinate = dropCoordinate(position);
+          return {
+            position,
+            dropoffAddress: address(position),
+            dropoffZoneName: 'Centro',
+            dropoffLat: missing ? null : coordinate.lat,
+            dropoffLng: missing ? null : coordinate.lng,
+          };
+        }),
+      };
+    }
+
+    function urlStops(url: string): string[] {
+      const params = new URL(url).searchParams;
+      const waypoints = params.get('waypoints');
+      return [
+        params.get('origin') ?? '',
+        ...(waypoints ? waypoints.split('|') : []),
+        params.get('destination') ?? '',
+      ];
+    }
+
+    /** Verifica cada tramo contra el recorrido completo esperado y devuelve las URLs. */
+    function expectContinuousLegs(plan: TripRoutePlan, expectedLabels: readonly string[]): string[] {
+      const legs = plan.navigationLegs;
+      expect(legs.length).toBeGreaterThan(0);
+      const urls: string[] = [];
+      legs.forEach((leg, index) => {
+        expect(leg.stops.length).toBeGreaterThanOrEqual(2);
+        expect(leg.stops.length - 2).toBeLessThanOrEqual(MAX_NAVIGATION_WAYPOINTS);
+        if (index > 0) {
+          expect(leg.stops[0]).toBe(legs[index - 1]?.stops.at(-1));
+        }
+        expect(leg.url).not.toBeNull();
+        const url = leg.url ?? '';
+        expect(url.length).toBeLessThanOrEqual(MAX_NAVIGATION_URL_LENGTH);
+        expect(new URL(url).origin + new URL(url).pathname).toBe('https://www.google.com/maps/dir/');
+        expect(urlStops(url).length - 2).toBeLessThanOrEqual(MAX_NAVIGATION_WAYPOINTS);
+        // La URL lleva exactamente las paradas del tramo: coordenada válida o dirección escrita íntegra
+        expect(urlStops(url)).toEqual(
+          leg.stops.map((stop) =>
+            stop.coordinate ? `${stop.coordinate.lat},${stop.coordinate.lng}` : stop.address
+          )
+        );
+        urls.push(url);
+      });
+      const sequence = legs.flatMap((leg, index) =>
+        (index === 0 ? leg.stops : leg.stops.slice(1)).map((stop) => stop.label)
+      );
+      expect(sequence).toEqual(expectedLabels);
+      return urls;
+    }
+
+    const labels = (n: number) =>
+      n === 1 ? ['Retiro', 'Entrega'] : ['Retiro', ...Array.from({ length: n }, (_, i) => `Entrega ${i + 1}`)];
+
+    it('1 entrega: un solo enlace sin paradas intermedias', () => {
+      const plan = buildTripRoutePlan(routeInput([1]));
+      const urls = expectContinuousLegs(plan, labels(1));
+      expect(urls).toHaveLength(1);
+      expect(new URL(urls[0] ?? '').searchParams.get('waypoints')).toBeNull();
+    });
+
+    it('4 entregas: un solo enlace con exactamente 3 paradas intermedias', () => {
+      const plan = buildTripRoutePlan(routeInput([1, 2, 3, 4]));
+      const urls = expectContinuousLegs(plan, labels(4));
+      expect(urls).toHaveLength(1);
+      expect(urlStops(urls[0] ?? '')).toHaveLength(5);
+    });
+
+    it('5 entregas: tramo 1 retiro→entrega 4 por 1/2/3 y tramo 2 entrega 4→entrega 5', () => {
+      const plan = buildTripRoutePlan(routeInput([1, 2, 3, 4, 5]));
+      expectContinuousLegs(plan, labels(5));
+      expect(plan.navigationLegs.map((leg) => leg.stops.map((stop) => stop.label))).toEqual([
+        ['Retiro', 'Entrega 1', 'Entrega 2', 'Entrega 3', 'Entrega 4'],
+        ['Entrega 4', 'Entrega 5'],
+      ]);
+    });
+
+    it('8 entregas: dos tramos que cubren las 8 en orden repitiendo la parada fronteriza', () => {
+      const plan = buildTripRoutePlan(routeInput([1, 2, 3, 4, 5, 6, 7, 8]));
+      expectContinuousLegs(plan, labels(8));
+      expect(plan.navigationLegs.map((leg) => leg.stops.map((stop) => stop.label))).toEqual([
+        ['Retiro', 'Entrega 1', 'Entrega 2', 'Entrega 3', 'Entrega 4'],
+        ['Entrega 4', 'Entrega 5', 'Entrega 6', 'Entrega 7', 'Entrega 8'],
+      ]);
+    });
+
+    it('entradas desordenadas: los tramos siguen el orden canónico de position', () => {
+      const plan = buildTripRoutePlan(routeInput([3, 1, 5, 2, 4]));
+      expectContinuousLegs(plan, labels(5));
+    });
+
+    it('entrega intermedia sin coordenada: viaja como dirección escrita y la continuidad se mantiene', () => {
+      const plan = buildTripRoutePlan(routeInput([1, 2, 3, 4, 5], { withoutCoordinates: [2, 4] }));
+      const urls = expectContinuousLegs(plan, labels(5));
+      expect(urlStops(urls[0] ?? '')).toContain('Calle 2 100, Aguilares');
+      expect(urlStops(urls[0] ?? '').at(-1)).toBe('Calle 4 100, Aguilares');
+      expect(urlStops(urls[1] ?? '')[0]).toBe('Calle 4 100, Aguilares');
+    });
+
+    it('direcciones largas con acentos: subdivide por largo sin recortar ni perder paradas', () => {
+      const longAddress = (position: number) => `${'é'.repeat(120)} ${position}`;
+      const plan = buildTripRoutePlan(
+        routeInput([1, 2, 3, 4, 5], {
+          address: longAddress,
+          withoutCoordinates: [1, 2, 3, 4, 5],
+          pickupAddress: longAddress(0),
+        })
+      );
+      const urls = expectContinuousLegs(plan, labels(5));
+      // Con el largo, cada enlace admite menos paradas que el límite de waypoints
+      expect(urls.length).toBeGreaterThan(2);
+      for (const url of urls) {
+        for (const stop of urlStops(url).filter((value) => !value.includes(','))) {
+          expect(stop).toMatch(/^é{120} \d$/);
+        }
+      }
+    });
+
+    it('si ni el par origen/destino entra en 2048 caracteres el tramo queda manual (sin URL) y sin truncar', () => {
+      const huge = 'Á'.repeat(200);
+      const plan = buildTripRoutePlan({
+        pickupAddress: huge,
+        pickupZoneName: 'Centro',
+        pickupLat: null,
+        pickupLng: null,
+        dropoffAddress: 'Ä'.repeat(200),
+        dropoffZoneName: 'Centro',
+      });
+      expect(plan.navigationLegs).toHaveLength(1);
+      expect(plan.navigationLegs[0]?.url).toBeNull();
+      expect(plan.navigationLegs[0]?.stops.map((stop) => stop.address)).toEqual([
+        huge,
+        'Ä'.repeat(200),
+      ]);
+    });
+
+    function tripDrops(count: number): NonNullable<TripDetails['drops']> {
+      return Array.from({ length: count }, (_, index) => {
+        const position = index + 1;
+        const coordinate = dropCoordinate(position);
+        return {
+          id: `00000000-0000-4000-8000-0000000001${String(position).padStart(2, '0')}`,
+          position,
+          dropoffZoneName: 'Centro',
+          dropoffAddress: `Calle ${position} 100, Aguilares`,
+          recipientName: `Cliente ${position}`,
+          recipientPhone: '3865100000',
+          deliveryNotes: null,
+          cashChangeAmount: null,
+          packageType: 'chico',
+          recipientPaymentMethod: 'transfer',
+          needsChange: false,
+          approxDistanceM: null,
+          status: 'pending',
+          deliveredAt: null,
+          failedReason: null,
+          dropoffLat: coordinate.lat,
+          dropoffLng: coordinate.lng,
+        };
+      });
+    }
+
+    it('R07 con 5 entregas muestra «Abrir tramo 1 de 2» y «Abrir tramo 2 de 2» con enlaces seguros', () => {
+      render(<TripCourierView trip={{ ...baseTrip, dropsCount: 5, drops: tripDrops(5) }} />);
+
+      expect(screen.queryByRole('link', { name: /abrir en google maps/i })).toBeNull();
+      const first = screen.getByRole('link', { name: /abrir tramo 1 de 2/i });
+      const second = screen.getByRole('link', { name: /abrir tramo 2 de 2/i });
+      for (const link of [first, second]) {
+        expect(link.getAttribute('target')).toBe('_blank');
+        expect(link.getAttribute('rel')).toContain('noopener');
+        expect(link.getAttribute('rel')).toContain('noreferrer');
+        expect((link.getAttribute('href') ?? '').length).toBeLessThanOrEqual(MAX_NAVIGATION_URL_LENGTH);
+      }
+      expect(first.textContent).toContain('Retiro → Entrega 1 → Entrega 2 → Entrega 3 → Entrega 4');
+      expect(second.textContent).toContain('Entrega 4 → Entrega 5');
+      expect(urlStops(second.getAttribute('href') ?? '')).toHaveLength(2);
+    });
+
+    it('R07 con un tramo no navegable muestra instrucciones manuales sin href', () => {
+      const huge = 'Á'.repeat(200);
+      render(
+        <TripCourierView
+          trip={{
+            ...baseTrip,
+            pickupAddress: huge,
+            dropoffAddress: 'Ä'.repeat(200),
+            pickupLat: null,
+            pickupLng: null,
+            dropoffLat: null,
+            dropoffLng: null,
+          }}
+        />
+      );
+
+      expect(screen.queryByRole('link', { name: /google maps|tramo/i })).toBeNull();
+      const manual = screen.getByTestId('route-navigation-manual-leg');
+      expect(manual.textContent).toMatch(/demasiado largas/i);
+      expect(manual.textContent).toContain(huge);
+    });
+
+    it('C06 (comercio) con 5 entregas no expone enlaces de navegación externa', () => {
+      render(<TripMerchantView trip={{ ...baseTrip, dropsCount: 5, drops: tripDrops(5) }} />);
+      expect(screen.queryByRole('link', { name: /google maps|tramo/i })).toBeNull();
+    });
+  });
+
+  describe('7. PR386-H02 — El mapa encuadra todos los pines con fitBounds', () => {
+    it('ajusta los límites a los extremos del área de Aguilares (lat −27.48 y −27.38)', () => {
+      render(
+        <TripCourierView
+          trip={{
+            ...baseTrip,
+            pickupLat: -27.48,
+            pickupLng: -65.62,
+            dropoffLat: -27.38,
+            dropoffLng: -65.6,
+          }}
+        />
+      );
+
+      expect(screen.getByTestId('mock-google-map')).toBeDefined();
+      expect(mockFitBounds).toHaveBeenCalled();
+      expect(mockFitBounds).toHaveBeenLastCalledWith(
+        { north: -27.38, south: -27.48, east: -65.6, west: -65.62 },
+        expect.any(Number)
+      );
+    });
+
+    it('con 5 entregas los límites contienen el retiro y todas las entregas; al cambiar las entregas se reajusta', () => {
+      const drops = [
+        { lat: -27.47, lng: -65.64 },
+        { lat: -27.45, lng: -65.62 },
+        { lat: -27.43, lng: -65.6 },
+        { lat: -27.41, lng: -65.59 },
+        { lat: -27.39, lng: -65.585 },
+      ];
+      const makeTrip = (points: typeof drops): TripDetails => ({
+        ...baseTrip,
+        dropsCount: points.length,
+        drops: points.map((point, index) => ({
+          id: `00000000-0000-4000-8000-0000000002${String(index + 1).padStart(2, '0')}`,
+          position: index + 1,
+          dropoffZoneName: 'Centro',
+          dropoffAddress: `Calle ${index + 1}, Aguilares`,
+          recipientName: `Cliente ${index + 1}`,
+          recipientPhone: '3865100000',
+          deliveryNotes: null,
+          cashChangeAmount: null,
+          packageType: 'chico',
+          recipientPaymentMethod: 'transfer',
+          needsChange: false,
+          approxDistanceM: null,
+          status: 'pending',
+          deliveredAt: null,
+          failedReason: null,
+          dropoffLat: point.lat,
+          dropoffLng: point.lng,
+        })),
+      });
+
+      const { rerender } = render(<TripCourierView trip={makeTrip(drops)} />);
+      expect(mockFitBounds).toHaveBeenLastCalledWith(
+        { north: -27.39, south: -27.47, east: -65.585, west: -65.64 },
+        expect.any(Number)
+      );
+
+      const callsBefore = mockFitBounds.mock.calls.length;
+      rerender(<TripCourierView trip={makeTrip(drops.slice(0, 2))} />);
+      expect(mockFitBounds.mock.calls.length).toBeGreaterThan(callsBefore);
+      expect(mockFitBounds).toHaveBeenLastCalledWith(
+        { north: -27.4333, south: -27.47, east: -65.6167, west: -65.64 },
+        expect.any(Number)
+      );
+    });
+
+    it('con puntos coincidentes encuadra con margen mínimo que contiene el punto (sin zoom extremo)', () => {
+      render(
+        <TripCourierView
+          trip={{ ...baseTrip, dropoffLat: baseTrip.pickupLat, dropoffLng: baseTrip.pickupLng }}
+        />
+      );
+
+      expect(mockFitBounds).toHaveBeenCalled();
+      const [bounds] = mockFitBounds.mock.lastCall as [
+        { north: number; south: number; east: number; west: number },
+        number,
+      ];
+      expect(bounds.north - bounds.south).toBeGreaterThanOrEqual(0.0019);
+      expect(bounds.east - bounds.west).toBeGreaterThanOrEqual(0.0019);
+      expect(bounds.north).toBeGreaterThan(baseTrip.pickupLat ?? 0);
+      expect(bounds.south).toBeLessThan(baseTrip.pickupLat ?? 0);
+      expect(bounds.east).toBeGreaterThan(baseTrip.pickupLng ?? 0);
+      expect(bounds.west).toBeLessThan(baseTrip.pickupLng ?? 0);
+    });
+
+    it('offline o con el SDK fallido no hay mapa ni ajuste de cámara', () => {
+      Object.defineProperty(navigator, 'onLine', { value: false, writable: true, configurable: true });
+      const { unmount } = render(<TripCourierView trip={baseTrip} />);
+      expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+      expect(mockFitBounds).not.toHaveBeenCalled();
+      unmount();
+
+      Object.defineProperty(navigator, 'onLine', { value: true, writable: true, configurable: true });
+      mockLoadingStatus = 'FAILED';
+      render(<TripCourierView trip={baseTrip} />);
+      expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+      expect(mockFitBounds).not.toHaveBeenCalled();
     });
   });
 });

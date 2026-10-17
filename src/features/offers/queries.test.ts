@@ -317,6 +317,20 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     ).toBe(true);
   });
 
+  it('T-363: sin approx_distance_m el feed devuelve approxDistanceKm null (no inventa 1,0) y respeta el contrato en vivo', async () => {
+    mockFeedRows([
+      { ...feedRow(1, 'chico', 'cash'), approx_distance_m: null },
+      { ...feedRow(2, 'chico', 'cash'), approx_distance_m: 2500 },
+    ]);
+
+    const result = await getAvailableRequests();
+
+    expect(result.requests.map((r) => r.approxDistanceKm)).toEqual([null, '2,5']);
+    expect(
+      liveFeedResponseSchema.safeParse({ data: result.requests, nextCursor: null }).success
+    ).toBe(true);
+  });
+
   it('T-343 / PR275-H01: un tipo de paquete fuera del dominio es un error de lectura, no un feed vacío', async () => {
     mockFeedRows([feedRow(1, 'chico', 'cash'), feedRow(2, 'small', 'cash')]);
 
