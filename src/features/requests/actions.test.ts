@@ -417,6 +417,16 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
 
       const result = await createDeliveryRequestAction(validFormInput);
       expect(result).toEqual({ ok: false, code: 'PUBLICATION_CREDITS_EXHAUSTED' });
+      // Si alguien devuelve este código sin ejecutar la RPC real, el test debe fallar.
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockRpc).toHaveBeenCalledWith('create_and_publish_multi_drop', {
+        p_payload: expect.objectContaining({
+          requestId: validRequestId,
+          drops: expect.arrayContaining([
+            expect.objectContaining({ dropoffAddress: 'San Martín 450' }),
+          ]),
+        }),
+      });
     });
 
     it('devuelve INTERNAL_ERROR ante fallo inesperado de la RPC', async () => {

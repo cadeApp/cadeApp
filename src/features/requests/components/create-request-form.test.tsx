@@ -384,6 +384,21 @@ describe('T-340: CreateRequestForm multi-drop', () => {
     const expected = getDomainErrorMessage('PUBLICATION_CREDITS_EXHAUSTED');
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain(expected);
+    // No alcanza con mostrar el mismo texto: el submit válido tiene que invocar la Action.
+    await waitFor(() => {
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: expect.any(String),
+          drops: expect.arrayContaining([
+            expect.objectContaining({
+              dropoffAddress: 'Av. Sarmiento 1200',
+              recipientConsentDeclared: true,
+            }),
+          ]),
+        })
+      );
+    });
     expect(notify.error).toHaveBeenCalledWith(expected);
     expect(notify.success).not.toHaveBeenCalled();
   });
