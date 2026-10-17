@@ -32,3 +32,11 @@ No hay hallazgo de corrección de contrato: PUBLICATION_CREDITS_EXHAUSTED es cor
 - [Lecciones](lecciones.md)
 
 **No aprobar ni mergear hasta que H01 sea cerrado, la rama integre develop y approval-policy esté verde.** Los cambios solo documentales de esta carpeta o de la bitácora no requieren otro CI GREEN por sí solos.
+
+## Ronda 2 — 2026-10-17
+
+| Ronda | SHA revisado | Resultado | Informe |
+|---|---|---|---|
+| 2 | `672425967bebfc18e5bb80e32139be35bd0a3e7b` | H01 y A01 arreglados-verificados; CI success; E2E rerun pendiente, no merge aún | [ronda-2.md](revisiones/ronda-2.md) |
+
+RED independiente en PR aislada [#409](https://github.com/cadeApp/cadeApp/pull/409), cerrada SIN merge. GREEN real en CI [#39075002912](https://github.com/cadeApp/cadeApp/actions/runs/39075002912). E2E previo 86+3 PASS sobre mismo código productivo; run nuevo #39075070502 attempt 2 pendiente. La R2 deja sin bloqueantes el **código**, no certifica los gates operativos pendientes.

@@ -111,3 +111,20 @@ La falla del test objetivo debe ser semántica (expect spy not called). El scrip
 - Después de merge de develop, verificar que el plan tenga una sola fila T-371, que la ficha tenga encabezados exactos y que el DoD siga marcado según evidencia.
 - Esta tarea NO modifica workflows, src/server ni schema; no correr SQL administrativo desde estación local. E2E usa sólo CI confiable.
 - El commit de revisión modifica únicamente docs/revision-pr/pr-407/. No exigir otro CI sólo por la carpeta/bitácora.
+
+
+---
+
+## Ronda 2 — reproducción remota de GREEN y RED
+
+SHA funcional `672425967bebfc18e5bb80e32139be35bd0a3e7b`; CI GREEN https://github.com/cadeApp/cadeApp/actions/runs/39075002912; unit job 117520264350: 141 archivos, 2670 tests PASS; typecheck/lint/build/audit/bundle-budget/db-tests SUCCESS.
+
+Mutación aislada en https://github.com/cadeApp/cadeApp/pull/409, **CLOSED / NEVER MERGE**; último SHA `dab6c3903b3e47b5771f5a1127a78fe8cdea2253`.
+Mutant CI https://github.com/cadeApp/cadeApp/actions/runs/39075230095: typecheck SUCCESS, build SUCCESS; unit job 117521016731 FAIL 2 archivos / 17 tests fallidos, 2653 passed. Específicamente:
+- actions.test.ts:421 — T-371 propaga PUBLICATION_CREDITS_EXHAUSTED → `expected "vi.fn()" to be called 1 times, but got 0 times` (el mutante se salta la llamada a RPC).
+- create-request-form.test.tsx — T-371 muestra alerta de créditos agotados → MISMO error de spy no llamado (el mutante evita el action y simula el mensaje).
+El primer mutante 3d53a36 producía error de tipo; explícitamente descartado. La PR de mutación quedó cerrada sin merge. Estos dos RED específicos son genuinos y corresponden a clases de fallas distintas. La rama real no contiene mutaciones.
+
+E2E antes del arreglo unitario (sin cambios productivos): https://github.com/cadeApp/cadeApp/actions/runs/39069904081, 86 Chromium + 3 global-settings PASS. E2E nuevo SHA: run 39075070502, intento 1 CANCELLED, intento 2 fue solicitado a través de las operaciones confiables de GitHub, pendiente de resultado.
+
+No hubo test local/runner independiente en nuestra máquina; los logs GitHub originales sí fueron examinados.
