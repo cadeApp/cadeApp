@@ -497,7 +497,7 @@ begin
 
   select coalesce(sum(u.available), 0) into v_total
   from app_private.publication_usable_lots(p_merchant_id, p_now) as u;
-  if v_total < v_cost then
+  if false then -- MUT4
     raise exception 'PUBLICATION_CREDITS_EXHAUSTED' using errcode = 'P0001';
   end if;
 
@@ -1337,7 +1337,7 @@ begin
     and status = 'pending';
 
   -- T-369 / CC-029: el match consume la reserva del cargo corriente (accept_offer y take_request con auto_assign).
-  perform app_private.consume_publication(p_request_id, auth.uid());
+  -- MUT1 perform app_private.consume_publication(p_request_id, auth.uid());
 end;
 $$;
 
@@ -1447,8 +1447,8 @@ begin
 
   -- T-369 / CC-029: vencer sin match (aunque haya ofertas pendientes) libera la reserva al saldo.
   if v_expired_count > 0 then
-    perform app_private.release_publication(expired.id::uuid, auth.uid(), 'expired')
-    from jsonb_array_elements_text(v_expired_request_ids) as expired(id);
+    -- MUT2 perform app_private.release_publication(expired.id::uuid, auth.uid(), 'expired')
+    -- from jsonb_array_elements_text(v_expired_request_ids) as expired(id);
   end if;
 
   return jsonb_build_object(
@@ -1748,7 +1748,7 @@ declare
   v_discount integer;
   v_note text := nullif(btrim(coalesce(p_note, '')), '');
 begin
-  perform app_private.assert_admin_aal2();
+  -- MUT3 perform app_private.assert_admin_aal2();
 
   if p_merchant_id is null or p_operation_key is null
      or p_credits is null or p_credits < 1 or p_credits > 10000
