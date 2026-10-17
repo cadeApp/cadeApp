@@ -16,3 +16,10 @@ No se asigna numeración `AG-` global sin comprobar todas las ramas remotas. Est
 - Un control negativo que **detecta** el comportamiento malo al evaluar la expectativa opuesta no necesariamente prueba que el mismo test GREEN hubiera fallado. `expectInvariant:false` es un interruptor de prueba que evita las aserciones originales y puede dar una certificación RED de apariencia convincente. Requerir ejecución de la prueba idéntica y captura de **AssertionError específico** bajo mutación; no mutar oracle/expectations.
 - Las carreras con locks deben distinguir el bloqueo esperado de la operación ya terminada sin convertir un timeout en prueba de invariante. Para H03, `allowDone` puede ser independiente del resultado esperado y los asserts quedar idénticos.
 - El CI de concurrencia T-369 sí se ejecutó en dos pasadas; no confundir **probar la función en verde** con **probar sensibilidad del test**.
+
+
+## Ronda 3 — cierre de PR397-R01
+
+- La señal RED relevante es un `AssertionError` emitido por **la misma función y expectativa** que pasa en GREEN. Evitar versiones `expectInvariant:false` o asserts inversos para certificar el fallo; mutar únicamente SQL y confirmar que el test original falló por la invariante.
+- Un helper de mutaciones robusto filtra causa del fallo: aceptar solo `assert.AssertionError` específico (con etiqueta de caso), no timeouts, errores de conexión ni sintaxis. Se observó en CI RED real H01 `5 !== 3` y H03 `true !== false`, con los respectivos GREEN después de restaurar.
+- Importa distinguir verificación automática estática propia de ejecución SQL externa: se comprobó el oráculo por inspección instrumentada 8/8, y se contrastó la evidencia real de GitHub Actions; no se ejecutó PostgreSQL en el entorno del revisor.
