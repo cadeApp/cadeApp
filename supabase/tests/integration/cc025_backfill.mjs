@@ -206,6 +206,7 @@ async function runBackfillTest() {
     setupPreMigrationFixture(ids);
 
     // 3. Aplicar la migración CC-025 Fase C real con Supabase CLI
+    // --include-all: la Fase C ya no es la última migración (T-369 agrega una posterior que queda registrada).
     runCommand(pnpmCmd, ['supabase', 'migration', 'up', '--include-all'], 'Aplicando migración CC-025 Fase C con pnpm supabase migration up');
 
     // 4. Verificar aserciones

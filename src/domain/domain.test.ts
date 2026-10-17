@@ -2139,7 +2139,8 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         expect(code(await mk('published', merch, { expiresAt: past }).republish_request({ requestId: REQ_1 }))).toBe('ok'); // S15 (H02)
         expect(code(await mk('published', merch).cancel_request({ requestId: REQ_1 }))).toBe('ok'); // C01
         expect(code(await mk('matched', cour1).mark_picked_up({ requestId: REQ_1 }))).toBe('ok'); // C02
-        expect(code(await mk('draft', merch, { subExpired: true }).publish_request({ requestId: REQ_1 }))).toBe('SUBSCRIPTION_INACTIVE'); // C03
+        // C03 — CC-029 (T-369): con el piloto apagado, expired sin créditos ni plan se bloquea con PUBLICATION_CREDITS_EXHAUSTED.
+        expect(code(await mk('draft', merch, { subExpired: true }).publish_request({ requestId: REQ_1 }))).toBe('PUBLICATION_CREDITS_EXHAUSTED'); // C03
         expect(code(await mk('expired', merch).republish_request({ requestId: REQ_1 }))).toBe('ok'); // C04
 
         // D03, H14 y CC-015: admin en in_transit sin aal2 recibe AAL2_REQUIRED; sin incidente recibe INVALID_STATE_TRANSITION; con incidente pasa a ok

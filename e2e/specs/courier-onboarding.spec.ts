@@ -68,7 +68,9 @@ async function resetCourierToPendingOnboarding(courierId: string): Promise<void>
 /**
  * Enrola y verifica un factor TOTP para el admin conservando el secret para uso en el navegador (H04).
  */
-async function enrollAdminTotpFactor(admin: UserCredentials): Promise<{ secret: string }> {
+async function enrollAdminTotpFactor(
+  admin: UserCredentials
+): Promise<{ secret: string; client: Awaited<ReturnType<typeof createAuthenticatedClient>> }> {
   const adminClient = await createAuthenticatedClient(admin);
   const { data: factors, error: listErr } = await adminClient.auth.mfa.listFactors();
   if (listErr) {
@@ -98,7 +100,7 @@ async function enrollAdminTotpFactor(admin: UserCredentials): Promise<{ secret: 
     throw new Error(`[E2E MFA Error] Falló verificación inicial de factor: ${verifyErr.message}`);
   }
 
-  return { secret };
+  return { secret, client: adminClient };
 }
 
 /**
@@ -232,6 +234,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     // 1. Simular registro previo de DNI para courier 1 calculando dni_hmac
     const hmacSecret = requireDniHmacSecret();
     const dniHmac = createHmac('sha256', hmacSecret).update(testDni).digest('hex');
+
+    // Limpiar dni_hmac huérfano si quedó de una corrida previa en Develop
+    await dbAdmin
+      .from('couriers')
+      .update({ dni_hmac: null })
+      .eq('dni_hmac', dniHmac)
+      .neq('profile_id', courier1.id);
 
     const { error: seedDniErr } = await dbAdmin
       .from('couriers')
@@ -805,6 +814,279 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       sessionStorage.getItem('cadeapp_onboarding_dni')
     );
     expect(savedDni).toBe('38123456');
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-356 / CC-025: Recarga de documento rechazado con motivo seguro de catálogo público
+  // ---------------------------------------------------------------------------
+  test('T-356 / CC-025: Recarga de documento rechazado con motivo seguro y actualización a En revisión sin mutar aprobados', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+
+    try {
+      // 1. Precondición en DB: repartidor con onboarding completo y moto
+      await resetCourierToPendingOnboarding(courier.id);
+      const uniqueDni = `39${Math.floor(100000 + Math.random() * 900000)}`;
+      const secret = process.env.DNI_HMAC_SECRET ?? 'development_dni_hmac_secret_cadeapp';
+      const dniHmac = createHmac('sha256', secret).update(uniqueDni).digest('hex');
+
+      await dbAdmin
+        .from('couriers')
+        .update({
+          status: 'pending',
+          vehicle_type: 'moto',
+          vehicle_plate: 'AB 123 CD',
+          dni_hmac: dniHmac,
+          license_status: 'submitted',
+          insurance_status: 'none',
+        })
+        .eq('profile_id', courier.id);
+
+      // Subir documentos base con license en 'submitted' (PR358-R03: rechazo real mediante admin_verify_document)
+      const dummyPng = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      for (const kind of ['dni_front', 'dni_back', 'selfie', 'license'] as const) {
+        await dbAdmin.storage
+          .from(COURIER_DOCS_BUCKET)
+          .upload(`courier/${courier.id}/${kind}_base.png`, dummyPng, {
+            contentType: 'image/png',
+            upsert: true,
+          });
+      }
+
+      const { data: insertedDocs, error: insertErr } = await dbAdmin
+        .from('courier_documents')
+        .insert([
+          {
+            courier_id: courier.id,
+            kind: 'dni_front',
+            storage_path: `courier/${courier.id}/dni_front_base.png`,
+            status: 'verified',
+            is_current: true,
+          },
+          {
+            courier_id: courier.id,
+            kind: 'dni_back',
+            storage_path: `courier/${courier.id}/dni_back_base.png`,
+            status: 'verified',
+            is_current: true,
+          },
+          {
+            courier_id: courier.id,
+            kind: 'selfie',
+            storage_path: `courier/${courier.id}/selfie_base.png`,
+            status: 'verified',
+            is_current: true,
+          },
+          {
+            courier_id: courier.id,
+            kind: 'license',
+            storage_path: `courier/${courier.id}/license_base.png`,
+            status: 'submitted',
+            is_current: true,
+            rejection_code: null,
+          },
+        ])
+        .select('id, kind');
+
+      if (insertErr || !insertedDocs) {
+        throw new Error(`[E2E Error] Falló inserción de documentos base: ${insertErr?.message}`);
+      }
+
+      const licenseDoc = insertedDocs.find((d) => d.kind === 'license');
+      if (!licenseDoc) {
+        throw new Error('[E2E Error] No se encontró el documento de licencia insertado');
+      }
+
+      // 2. PR358-R03: Rechazar la licencia mediante la RPC real admin_verify_document con AAL2 y nota centinela privada
+      const admin = await seedAdminUser(stagingContext);
+      const { secret: totpSecret, client: adminClient } = await enrollAdminTotpFactor(admin);
+
+      const sentinelPrivateNote = `PRIVATE_SENTINEL_NOTE_${stagingContext.testRunId}`;
+      const { data: rejectData, error: rejectError } = await adminClient.rpc(
+        'admin_verify_document',
+        {
+          p_document_id: licenseDoc.id,
+          p_decision: 'rejected',
+          p_reason: sentinelPrivateNote,
+          p_rejection_code: 'illegible',
+        }
+      );
+
+      expect(rejectError).toBeNull();
+      expect(rejectData).toMatchObject({
+        documentId: licenseDoc.id,
+        status: 'rejected',
+        rejectionCode: 'illegible',
+      });
+
+      // 3. Iniciar sesión como repartidor y navegar a /courier/profile
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+
+      // 4. Verificar estado UI:
+      // DNI y Selfie figuran como validados
+      await expect(page.getByText('Validado por admin').first()).toBeVisible();
+
+      // Licencia figura como «Rechazado / requiere corrección» y muestra el motivo seguro del catálogo
+      await expect(page.getByText('Rechazado / requiere corrección').first()).toBeVisible();
+      await expect(page.getByText('Documento borroso, ilegible o cortado.')).toBeVisible();
+
+      // Invariante PR358-R03: la nota interna centinela jamás se filtra en el DOM del cliente
+      const pageHtml = await page.content();
+      expect(pageHtml).not.toContain(sentinelPrivateNote);
+
+      // Solo la licencia ofrece el botón/acción «Reemplazar»
+      const replaceLicenseInput = page.locator('#file-input-license');
+      await expect(replaceLicenseInput).toBeAttached();
+
+      // 5. Subir nuevo archivo para la licencia
+      await replaceLicenseInput.setInputFiles({
+        name: 'licencia_corregida.png',
+        mimeType: 'image/png',
+        buffer: DUMMY_2X2_PNG,
+      });
+
+      // La tarjeta transiciona a «En revisión manual» con mensaje de éxito confirmado
+      const successBadge = page
+        .locator('[data-slot="document-replacement-card"][data-kind="license"]')
+        .getByText(COURIER_ONBOARDING_COPY.underReviewBadge);
+      await expect(successBadge).toBeVisible({ timeout: 20000 });
+
+      const successMsg = page.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess);
+      await expect(successMsg).toBeVisible();
+
+      // 6. PR358-R03: Inspección administrativa en el navegador de la nueva versión submitted y versión histórica
+      await page.context().clearCookies();
+      await page.evaluate(() => {
+        window.localStorage.clear();
+        window.sessionStorage.clear();
+      });
+
+      await page.goto(`/login?redirectTo=%2Fadmin%2Fapplicants%2F${courier.id}`);
+      await waitForNoSkeletons(page);
+
+      const emailInput = page.getByLabel(/^email$/i);
+      const passwordInput = page.getByLabel(/^contraseña$/i);
+      const loginSubmitBtn = page.getByRole('button', {
+        name: /iniciar sesión|ingresar|continuar/i,
+      });
+      await waitForFormHydration(loginSubmitBtn);
+      await emailInput.fill(admin.email);
+      await passwordInput.fill(admin.password);
+      await loginSubmitBtn.click();
+
+      // Doble factor TOTP en navegador
+      await page.waitForURL((url) => url.pathname.includes('/login/mfa'), { timeout: 15000 });
+      await waitForNoSkeletons(page);
+
+      const totpInput = page.locator('#totp-code');
+      await expect(totpInput).toBeVisible();
+      const totpCode = generateTotp(totpSecret);
+      await totpInput.fill(totpCode);
+
+      const verifyMfaBtn = page.getByRole('button', {
+        name: new RegExp(ADMIN_COPY.mfa.verifyButton, 'i'),
+      });
+      await expect(verifyMfaBtn).toBeVisible();
+      await verifyMfaBtn.click();
+
+      await page.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+      await waitForNoSkeletons(page);
+
+      await page.goto(`/admin/applicants/${courier.id}`);
+      await waitForNoSkeletons(page);
+
+      // Verificación en consola de administración:
+      // A) Pestaña histórica marcada como (Histórico) y botones deshabilitados
+      const historicalTab = page.getByRole('tab', { name: /Licencia de Conducir.*Histórico/i });
+      await expect(historicalTab).toBeVisible();
+
+      // B) Pestaña vigente sin (Histórico)
+      const currentTab = page
+        .getByRole('tab', { name: /Licencia de Conducir/i })
+        .filter({ hasNotText: '(Histórico)' });
+      await expect(currentTab).toBeVisible();
+
+      // Al seleccionar la pestaña histórica:
+      await historicalTab.click();
+      await page.getByRole('button', { name: /Cargar documento seguro/i }).click();
+      await expect(page.getByText('Documento histórico (no admite revisión).')).toBeVisible();
+
+      const rejectDocBtn = page.getByRole('button', {
+        name: new RegExp(ADMIN_COPY.detail.rejectDocument, 'i'),
+      });
+      const verifyDocBtn = page.getByRole('button', {
+        name: new RegExp(ADMIN_COPY.detail.verifyDocument, 'i'),
+      });
+      await expect(rejectDocBtn).toBeDisabled();
+      await expect(verifyDocBtn).toBeDisabled();
+
+      // Al seleccionar la versión vigente:
+      await currentTab.click();
+      await page.getByRole('button', { name: /Cargar documento seguro/i }).click();
+      await expect(page.getByText('Documento histórico (no admite revisión).')).not.toBeVisible();
+      await expect(page.getByText(ADMIN_COPY.detail.viewer.validityQuestion)).toBeVisible();
+      await expect(rejectDocBtn).toBeEnabled();
+      await expect(verifyDocBtn).toBeEnabled();
+
+      // 7. Verificación estricta en base de datos:
+      const { data: licenseRows } = await dbAdmin
+        .from('courier_documents')
+        .select('id, kind, status, is_current, storage_path, rejection_code')
+        .eq('courier_id', courier.id)
+        .eq('kind', 'license')
+        .order('uploaded_at', { ascending: false });
+
+      expect(licenseRows).toHaveLength(2);
+      // El documento nuevo es el vigente en estado submitted
+      expect(licenseRows?.[0]?.is_current).toBe(true);
+      expect(licenseRows?.[0]?.status).toBe('submitted');
+      expect(licenseRows?.[0]?.rejection_code).toBeNull();
+      expect(licenseRows?.[0]?.storage_path).toMatch(
+        new RegExp(`^courier/${courier.id}/license_\\d+\\.jpg$`)
+      );
+
+      // El documento anterior pasó a histórico (is_current = false) conservando estado rejected
+      expect(licenseRows?.[1]?.is_current).toBe(false);
+      expect(licenseRows?.[1]?.status).toBe('rejected');
+      expect(licenseRows?.[1]?.rejection_code).toBe('illegible');
+
+      // Los otros documentos continúan vigentes e inalterados
+      const { data: otherRows } = await dbAdmin
+        .from('courier_documents')
+        .select('kind, status, is_current')
+        .eq('courier_id', courier.id)
+        .in('kind', ['dni_front', 'dni_back', 'selfie']);
+
+      expect(otherRows).toHaveLength(3);
+      for (const row of otherRows ?? []) {
+        expect(row.status).toBe('verified');
+        expect(row.is_current).toBe(true);
+      }
+    } finally {
+      // Limpieza de datos en DB y Storage
+      await resetCourierToPendingOnboarding(courier.id);
+      const { data: files } = await dbAdmin.storage
+        .from(COURIER_DOCS_BUCKET)
+        .list(`courier/${courier.id}`);
+      if (files && files.length > 0) {
+        await dbAdmin.storage
+          .from(COURIER_DOCS_BUCKET)
+          .remove(files.map((f) => `courier/${courier.id}/${f.name}`));
+      }
+    }
   });
 
   // ---------------------------------------------------------------------------

@@ -128,6 +128,13 @@ export const PLATFORM_SETTING_KEYS = [
   'pilot_terms_version',
   'subscription_grace_days',
   'max_drops_per_request',
+  // CC-029 (T-369): créditos de publicación y planes post-piloto
+  'publication_drops_per_credit',
+  'carryover_base_pct',
+  'carryover_step_pct',
+  'carryover_cap_pct',
+  'launch_discount_pct',
+  'loose_credit_reference_price_ars',
 ] as const;
 export type PlatformSettingKey = (typeof PLATFORM_SETTING_KEYS)[number];
 export const platformSettingKeySchema = z.enum(PLATFORM_SETTING_KEYS);

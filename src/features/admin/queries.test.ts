@@ -350,6 +350,94 @@ describe('Admin Queries (T-122 DoD)', () => {
       }
     });
 
+    it('CC-025 / T-356: getApplicantDetail proyecta isCurrent, rejectionCode y ordena vigentes primero', async () => {
+      const mockSupabase = {
+        from: vi.fn((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: {
+                      profile_id: 'courier-history',
+                      status: 'pending',
+                      vehicle_type: 'moto',
+                      vehicle_plate: 'AB 123 CD',
+                      dni_hmac: 'a1b2c3d4e5f6',
+                      doc_level: 1,
+                      license_status: 'submitted',
+                      insurance_status: 'none',
+                      decided_at: null,
+                      decided_by: null,
+                      deactivated_at: null,
+                      profiles: {
+                        display_name: 'Carlos Revisor',
+                        phone: '3865999999',
+                        created_at: '2026-10-10T10:00:00Z',
+                      },
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  order: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: 'doc-old',
+                        kind: 'license',
+                        storage_path: 'courier-history/license_1.webp',
+                        status: 'rejected',
+                        uploaded_at: '2026-10-10T10:05:00Z',
+                        is_current: false,
+                        rejection_code: 'IMAGE_BLURRY',
+                      },
+                      {
+                        id: 'doc-new',
+                        kind: 'license',
+                        storage_path: 'courier-history/license_2.webp',
+                        status: 'submitted',
+                        uploaded_at: '2026-10-11T12:00:00Z',
+                        is_current: true,
+                        rejection_code: null,
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return {};
+        }),
+      };
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const detail = await getApplicantDetail('courier-history');
+      expect(detail).not.toBeNull();
+      expect(detail?.documents).toHaveLength(2);
+
+      // El vigente va primero
+      expect(detail?.documents[0]?.id).toBe('doc-new');
+      expect(detail?.documents[0]?.isCurrent).toBe(true);
+      expect(detail?.documents[0]?.status).toBe('submitted');
+      expect(detail?.documents[0]?.rejectionCode).toBeNull();
+
+      // El histórico va segundo
+      expect(detail?.documents[1]?.id).toBe('doc-old');
+      expect(detail?.documents[1]?.isCurrent).toBe(false);
+      expect(detail?.documents[1]?.status).toBe('rejected');
+      expect(detail?.documents[1]?.rejectionCode).toBe('IMAGE_BLURRY');
+    });
+
     it('retorna null si el repartidor no existe', async () => {
       const mockSupabase = {
         from: vi.fn((table: string) => {

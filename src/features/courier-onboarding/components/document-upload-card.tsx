@@ -18,6 +18,8 @@ export interface DocumentUploadCardProps {
   fileName?: string;
   /** Ícono del estado idle; éxito y error usan siempre los mismos íconos. */
   icon?: LucideIcon;
+  /** Texto personalizado para la acción en estado idle (por defecto 'Subir'). */
+  actionLabel?: string;
   onFileSelected: (file: File) => void;
 }
 
@@ -34,6 +36,7 @@ export function DocumentUploadCard({
   compressing = false,
   fileName,
   icon: IdleIcon = Camera,
+  actionLabel,
   onFileSelected,
 }: DocumentUploadCardProps) {
   const inputId = `file-input-${kind}`;
@@ -115,7 +118,7 @@ export function DocumentUploadCard({
             </span>
           ) : (
             <span className="text-sm font-semibold text-primary-dark">
-              {COURIER_ONBOARDING_COPY.btnUpload}
+              {actionLabel ?? COURIER_ONBOARDING_COPY.btnUpload}
             </span>
           )}
         </div>
