@@ -121,6 +121,24 @@ export interface PublicationPlanItem {
   readonly sort: number;
 }
 
+/** CC-029 addendum D01-B: posición de la última fila de una página del catálogo (orden `sort, id`). */
+export interface PublicationPlansCursor {
+  readonly sort: number;
+  readonly id: string;
+}
+
+/** Una página del catálogo (`admin_list_publication_plans`, máximo 50 filas). */
+export interface PublicationPlansPage {
+  readonly items: readonly PublicationPlanItem[];
+  readonly nextCursor: PublicationPlansCursor | null;
+}
+
+/** Página pedida del catálogo, tal como llega por la URL de `/admin/merchants/plans`. */
+export interface PublicationPlansQuery {
+  readonly activeOnly: boolean;
+  readonly after: PublicationPlansCursor | null;
+}
+
 export interface AdminMerchantHeader {
   readonly id: string;
   readonly businessName: string;

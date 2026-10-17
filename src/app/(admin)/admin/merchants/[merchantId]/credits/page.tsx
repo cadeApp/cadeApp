@@ -27,7 +27,7 @@ export default async function MerchantCreditsPage({ params, searchParams }: Merc
   const [merchant, credits, plans] = await Promise.all([
     getAdminMerchantHeader(merchantId),
     getAdminMerchantPublicationCredits({ merchantId, beforeId }),
-    getPublicationPlans(),
+    getPublicationPlans({ activeOnly: true }),
   ]);
   if (!merchant) notFound();
 
@@ -50,7 +50,8 @@ export default async function MerchantCreditsPage({ params, searchParams }: Merc
       <MerchantCreditsView
         merchant={merchant}
         data={credits.data}
-        plans={plans.ok ? plans.data : []}
+        plans={plans.ok ? plans.data.items : []}
+        plansNextCursor={plans.ok ? plans.data.nextCursor : null}
         currentBeforeId={beforeId}
       />
     </div>

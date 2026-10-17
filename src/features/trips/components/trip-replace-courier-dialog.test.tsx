@@ -150,6 +150,46 @@ describe('T-369 / CC-029 D-C2b — diálogo de «sacar al repartidor»', () => {
     expect(mocks.republishTripAction).not.toHaveBeenCalled();
   });
 
+  it('si falla el reporte de no-show, el error queda en el diálogo, no republica y el reintento lo limpia', async () => {
+    let resolveRetry: (value: { ok: true; data: Record<string, never> }) => void = () => undefined;
+    mocks.merchantReportNoShowAction
+      .mockResolvedValueOnce({ ok: false, code: 'INVALID_STATE_TRANSITION' })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRetry = resolve; }));
+    render(<TripMerchantContainer trip={trip} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de repartidor' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reportar que no se presentó' }));
+
+    const alert = await within(screen.getByRole('alertdialog')).findByRole('alert');
+    expect(alert.textContent).toBe(getDomainErrorMessage('INVALID_STATE_TRANSITION'));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(mocks.republishTripAction).not.toHaveBeenCalled();
+    expect(mocks.push).not.toHaveBeenCalled();
+
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Reportar que no se presentó' }));
+    await waitFor(() => expect(within(screen.getByRole('alertdialog')).queryByRole('alert')).toBeNull());
+    resolveRetry({ ok: true, data: {} });
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith(`/merchant/requests/${REQUEST_ID}`));
+    expect(mocks.merchantReportNoShowAction).toHaveBeenCalledTimes(2);
+    expect(mocks.republishTripAction).not.toHaveBeenCalled();
+  });
+
+  it('cerrar el diálogo tras un no-show fallido limpia el error', async () => {
+    mocks.merchantReportNoShowAction.mockResolvedValue({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+    render(<TripMerchantContainer trip={trip} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de repartidor' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reportar que no se presentó' }));
+    expect((await within(screen.getByRole('alertdialog')).findByRole('alert')).textContent).toBe(
+      getDomainErrorMessage('INVALID_STATE_TRANSITION')
+    );
+
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Volver' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de repartidor' }));
+    const reopened = await screen.findByRole('alertdialog');
+    expect(within(reopened).queryByRole('alert')).toBeNull();
+    expect(mocks.republishTripAction).not.toHaveBeenCalled();
+  });
+
   it('sin créditos, el rechazo queda visible en el diálogo con acceso a Mi plan y se puede reintentar', async () => {
     mocks.republishTripAction
       .mockResolvedValueOnce({ ok: false, code: 'PUBLICATION_CREDITS_EXHAUSTED' })

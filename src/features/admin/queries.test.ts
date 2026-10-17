@@ -11,6 +11,7 @@ import {
   getRecentSettingChanges,
   getPublicationPlans,
   getAdminMerchantPublicationCredits,
+  parsePublicationPlansParams,
 } from './queries';
 
 vi.mock('@/server/supabase/server', () => ({
@@ -1083,9 +1084,9 @@ describe('T-369 / CC-029: catálogo de planes y créditos del comercio', () => {
     vi.clearAllMocks();
   });
 
-  const PLAN_ROWS = [
-    { id: 'f0000000-0000-4000-8000-000000000001', code: 'plan-40', name: 'Plan 40', kind: 'quota', monthly_credits: 40, reference_price_ars: 20000, active: true, sort: 1 },
-    { id: 'f0000000-0000-4000-8000-000000000002', code: 'ilimitado', name: 'Ilimitado', kind: 'unlimited', monthly_credits: null, reference_price_ars: null, active: false, sort: 2 },
+  const PLAN_ITEMS = [
+    { id: 'f0000000-0000-4000-8000-000000000001', code: 'plan-40', name: 'Plan 40', kind: 'quota', monthlyCredits: 40, referencePriceArs: 20000, active: true, sort: 1 },
+    { id: 'f0000000-0000-4000-8000-000000000002', code: 'ilimitado', name: 'Ilimitado', kind: 'unlimited', monthlyCredits: null, referencePriceArs: null, active: false, sort: 1 },
   ];
 
   function mockAdminSession(role: string | null, aal: 'aal1' | 'aal2') {
@@ -1097,62 +1098,75 @@ describe('T-369 / CC-029: catálogo de planes y créditos del comercio', () => {
           getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({ data: { currentLevel: aal }, error: null }),
         },
       },
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({ data: role ? { role } : null, error: null }),
-          }),
-        }),
-      }),
+      from: vi.fn(),
       rpc,
     } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
     return rpc;
   }
 
-  function mockServiceRole(rows: unknown[] | null, error: { message: string } | null = null) {
-    const limit = vi.fn().mockResolvedValue({ data: rows, error });
-    const secondOrder = vi.fn().mockReturnValue({ limit });
-    const firstOrder = vi.fn().mockReturnValue({ order: secondOrder });
-    const from = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ order: firstOrder }) });
-    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({ from } as unknown as ReturnType<
-      typeof adminSupabase.createAdminClient
-    >);
-    return { from, firstOrder };
-  }
+  it('PR402-H04: el catálogo se pide a admin_list_publication_plans con la sesión, nunca con service role', async () => {
+    const rpc = mockAdminSession('admin', 'aal2');
+    rpc.mockResolvedValue({ data: { items: PLAN_ITEMS, nextCursor: null }, error: null });
+    await expect(getPublicationPlans()).resolves.toEqual({ ok: true, data: { items: PLAN_ITEMS, nextCursor: null } });
+    expect(rpc).toHaveBeenCalledWith('admin_list_publication_plans', {
+      p_limit: 50,
+      p_after_sort: null,
+      p_after_id: null,
+      p_active_only: false,
+    });
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
 
-  it('sin admin con AAL2 no usa service role', async () => {
-    mockServiceRole(PLAN_ROWS);
-    for (const [role, aal, code] of [
-      [null, 'aal2', 'UNAUTHENTICATED'],
-      ['merchant', 'aal2', 'UNAUTHORIZED_ACTOR'],
-      ['admin', 'aal1', 'AAL2_REQUIRED'],
-    ] as const) {
-      mockAdminSession(role, aal);
+  it('PR402-H04: los rechazos de autorización de la RPC llegan tal cual a la página', async () => {
+    for (const code of ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'AAL2_REQUIRED'] as const) {
+      const rpc = mockAdminSession('admin', 'aal1');
+      rpc.mockResolvedValue({ data: null, error: { message: code, code: 'P0001' } });
       await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code });
     }
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
   });
 
-  it('admin con AAL2: lee el catálogo ordenado y lo mapea a camelCase', async () => {
-    mockAdminSession('admin', 'aal2');
-    const { from, firstOrder } = mockServiceRole(PLAN_ROWS);
-    await expect(getPublicationPlans()).resolves.toEqual({
-      ok: true,
-      data: [
-        { id: PLAN_ROWS[0]?.id, code: 'plan-40', name: 'Plan 40', kind: 'quota', monthlyCredits: 40, referencePriceArs: 20000, active: true, sort: 1 },
-        { id: PLAN_ROWS[1]?.id, code: 'ilimitado', name: 'Ilimitado', kind: 'unlimited', monthlyCredits: null, referencePriceArs: null, active: false, sort: 2 },
-      ],
+  it('PR402-H03: pasa el cursor (sort, id) y el filtro, y devuelve el cursor siguiente', async () => {
+    const rpc = mockAdminSession('admin', 'aal2');
+    const next = { sort: 1, id: PLAN_ITEMS[0]?.id };
+    rpc.mockResolvedValue({ data: { items: [PLAN_ITEMS[0]], nextCursor: next }, error: null });
+    const result = await getPublicationPlans({
+      activeOnly: true,
+      after: { sort: 0, id: 'f0000000-0000-4000-8000-000000000099' },
     });
-    expect(from).toHaveBeenCalledWith('publication_plans');
-    expect(firstOrder).toHaveBeenCalledWith('sort', { ascending: true });
+    expect(result).toEqual({ ok: true, data: { items: [PLAN_ITEMS[0]], nextCursor: next } });
+    expect(rpc).toHaveBeenCalledWith('admin_list_publication_plans', {
+      p_limit: 50,
+      p_after_sort: 0,
+      p_after_id: 'f0000000-0000-4000-8000-000000000099',
+      p_active_only: true,
+    });
   });
 
-  it('un error o un tipo desconocido no se muestran como catálogo', async () => {
-    mockAdminSession('admin', 'aal2');
-    mockServiceRole(null, { message: 'boom' });
+  it('una respuesta fuera del contrato o un error de base no se muestran como catálogo', async () => {
+    const rpc = mockAdminSession('admin', 'aal2');
+    rpc.mockResolvedValueOnce({ data: { items: [{ ...PLAN_ITEMS[0], kind: 'gold' }], nextCursor: null }, error: null });
     await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
-    mockServiceRole([{ ...PLAN_ROWS[0], kind: 'gold' }]);
+    rpc.mockResolvedValueOnce({ data: { items: PLAN_ITEMS, nextCursor: { sort: 1 } }, error: null });
     await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom', code: 'XX000' } });
+    await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+
+  it('PR402-H03: la URL del catálogo solo arma un cursor completo y válido', () => {
+    const id = 'f0000000-0000-4000-8000-000000000050';
+    expect(parsePublicationPlansParams({ afterSort: '3', afterId: id, active: '1' })).toEqual({
+      activeOnly: true,
+      after: { sort: 3, id },
+    });
+    expect(parsePublicationPlansParams({})).toEqual({ activeOnly: false, after: null });
+    for (const raw of [{ afterSort: '3' }, { afterId: id }, { afterSort: 'x', afterId: id }, { afterSort: '3', afterId: 'nope' }, { afterSort: '-1', afterId: id }]) {
+      expect(parsePublicationPlansParams(raw).after).toBeNull();
+    }
+    expect(parsePublicationPlansParams({ afterSort: ['4', '9'], afterId: [id], active: ['0'] })).toEqual({
+      activeOnly: false,
+      after: { sort: 4, id },
+    });
   });
 
   it('el saldo del comercio se pide por RPC con la sesión, de a 50 y con el cursor recibido', async () => {

@@ -10,7 +10,7 @@ import { Card } from '@/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table';
 import { formatCivilDate } from '../audit-format';
 import { ADMIN_COPY } from '../copy';
-import type { AdminMerchantHeader, PublicationPlanItem } from '../types';
+import type { AdminMerchantHeader, PublicationPlanItem, PublicationPlansCursor } from '../types';
 import { GrantCreditsDialog, RegisterPeriodDialog } from './publication-credits-dialogs';
 
 const COPY = ADMIN_COPY.credits;
@@ -23,7 +23,9 @@ type Period = NonNullable<Balance['currentPeriod']>;
 export interface MerchantCreditsViewProps {
   readonly merchant: AdminMerchantHeader;
   readonly data: CreditsData;
+  /** Primera página de planes activos; el diálogo de registro pide las siguientes. */
   readonly plans: readonly PublicationPlanItem[];
+  readonly plansNextCursor: PublicationPlansCursor | null;
   /** Cursor de la página actual del libro; si existe, se ofrece volver a los más recientes. */
   readonly currentBeforeId: number | null;
 }
@@ -32,7 +34,13 @@ export interface MerchantCreditsViewProps {
  * CC-029: saldo, plan y libro de un comercio para el admin, con acreditación de créditos sueltos y registro de
  * períodos. Todo valor sale de `admin_get_merchant_publication_credits`; la UI no recalcula saldos.
  */
-export function MerchantCreditsView({ merchant, data, plans, currentBeforeId }: MerchantCreditsViewProps) {
+export function MerchantCreditsView({
+  merchant,
+  data,
+  plans,
+  plansNextCursor,
+  currentBeforeId,
+}: MerchantCreditsViewProps) {
   const [dialog, setDialog] = React.useState<'grant' | 'register' | null>(null);
   const { balance, movements, nextCursor } = data;
   const basePath = `/admin/merchants/${merchant.id}/credits`;
@@ -163,6 +171,7 @@ export function MerchantCreditsView({ merchant, data, plans, currentBeforeId }: 
       <RegisterPeriodDialog
         merchant={merchant}
         plans={plans}
+        plansNextCursor={plansNextCursor}
         open={dialog === 'register'}
         onClose={() => setDialog(null)}
       />

@@ -7,6 +7,7 @@ import { err, ok, type ActionResult, type DomainErrorCode } from '@/domain/error
 import {
   adminDecideCourierRpc,
   adminGrantPublicationCreditsRpc,
+  adminListPublicationPlansRpc,
   adminRegisterPlanPeriodRpc,
   adminUpsertPublicationPlanRpc,
   adminSetSubscriptionRpc,
@@ -35,7 +36,7 @@ import {
   registerPlanPeriodSchema,
   upsertPublicationPlanSchema,
 } from './schemas';
-import { platformSettingKeySchema, type RpcOutput } from '@/domain';
+import { RPC_CONTRACTS, platformSettingKeySchema, type RpcOutput } from '@/domain';
 
 interface AuthenticatedAdmin {
   readonly id: string;
@@ -458,5 +459,29 @@ export async function upsertPublicationPlanAction(
 
   revalidatePath('/admin/merchants/plans');
   revalidatePath('/admin/audit');
+  return ok(rpcResult.data);
+}
+
+/**
+ * CC-029 addendum D01-B: página siguiente del catálogo para el diálogo de registro de plan (PR402-H03). Valida el
+ * cursor, exige admin con AAL2 y llama a `admin_list_publication_plans` con la sesión, que vuelve a verificarlo.
+ */
+export async function listPublicationPlansAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'admin_list_publication_plans'>, DomainErrorCode>> {
+  const parsed = RPC_CONTRACTS.admin_list_publication_plans.inputSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const rpcResult = await adminListPublicationPlansRpc(authResult.data.supabase, parsed.data);
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
   return ok(rpcResult.data);
 }

@@ -25,17 +25,51 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { upsertPublicationPlanAction } from '../actions';
 import { ADMIN_COPY } from '../copy';
 import { publicationPlanFormSchema, type PublicationPlanFormInput } from '../schemas';
-import type { PublicationPlanItem } from '../types';
+import type { PublicationPlanItem, PublicationPlansCursor } from '../types';
 
 const COPY = ADMIN_COPY.plans;
 
-export interface PublicationPlansManagerProps {
-  readonly plans: readonly PublicationPlanItem[];
+const PAGINATION_COPY = {
+  filterLabel: 'Filtrar planes',
+  all: 'Todos',
+  activeOnly: 'Solo activos',
+  pagesLabel: 'Paginación del catálogo',
+  next: 'Planes siguientes',
+  first: 'Volver al principio',
+} as const;
+
+const BASE_PATH = '/admin/merchants/plans';
+
+/** URL de una página del catálogo: el cursor `(sort, id)` es de la última fila de la página anterior. */
+export function publicationPlansHref(activeOnly: boolean, after: PublicationPlansCursor | null): string {
+  const params = new URLSearchParams();
+  if (activeOnly) params.set('active', '1');
+  if (after) {
+    params.set('afterSort', String(after.sort));
+    params.set('afterId', after.id);
+  }
+  const query = params.toString();
+  return query ? `${BASE_PATH}?${query}` : BASE_PATH;
 }
 
-/** CC-029 (D2): catálogo editable por el admin vía `admin_upsert_publication_plan`. */
-export function PublicationPlansManager({ plans }: PublicationPlansManagerProps) {
+export interface PublicationPlansManagerProps {
+  /** Una página del catálogo (máximo 50), en orden `(sort, id)`. */
+  readonly plans: readonly PublicationPlanItem[];
+  /** Cursor de la página siguiente; `null` si es la última. */
+  readonly nextCursor: PublicationPlansCursor | null;
+  readonly activeOnly: boolean;
+  /** `false` si la página se pidió con cursor: se ofrece volver al principio. */
+  readonly isFirstPage: boolean;
+}
+
+/**
+ * CC-029 (D2): catálogo editable por el admin vía `admin_upsert_publication_plan`. Se lee de a 50 con
+ * `admin_list_publication_plans` (addendum D01-B) y se recorre con enlaces por cursor.
+ */
+export function PublicationPlansManager({ plans, nextCursor, activeOnly, isFirstPage }: PublicationPlansManagerProps) {
   const [editing, setEditing] = React.useState<PublicationPlanItem | 'new' | null>(null);
+  const linkClass =
+    'inline-flex min-h-12 items-center rounded-lg px-3 text-sm font-medium underline-offset-4 hover:underline';
 
   return (
     <div className="space-y-6">
@@ -56,6 +90,23 @@ export function PublicationPlansManager({ plans }: PublicationPlansManagerProps)
           </Button>
         </div>
       </div>
+
+      <nav aria-label={PAGINATION_COPY.filterLabel} className="flex flex-wrap gap-2">
+        <Link
+          href={publicationPlansHref(false, null)}
+          aria-current={activeOnly ? undefined : 'page'}
+          className={`${linkClass} ${activeOnly ? 'text-muted-foreground' : 'bg-muted text-foreground'}`}
+        >
+          {PAGINATION_COPY.all}
+        </Link>
+        <Link
+          href={publicationPlansHref(true, null)}
+          aria-current={activeOnly ? 'page' : undefined}
+          className={`${linkClass} ${activeOnly ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
+        >
+          {PAGINATION_COPY.activeOnly}
+        </Link>
+      </nav>
 
       {plans.length === 0 ? (
         <EmptyState title={COPY.title} description={COPY.empty} />
@@ -104,6 +155,23 @@ export function PublicationPlansManager({ plans }: PublicationPlansManagerProps)
           </Table>
         </Card>
       )}
+
+      {nextCursor || !isFirstPage ? (
+        <nav aria-label={PAGINATION_COPY.pagesLabel} className="flex flex-wrap justify-between gap-3">
+          {!isFirstPage ? (
+            <Link href={publicationPlansHref(activeOnly, null)} className={`${linkClass} text-muted-foreground`}>
+              {PAGINATION_COPY.first}
+            </Link>
+          ) : (
+            <span />
+          )}
+          {nextCursor ? (
+            <Link href={publicationPlansHref(activeOnly, nextCursor)} className={`${linkClass} text-foreground`}>
+              {PAGINATION_COPY.next}
+            </Link>
+          ) : null}
+        </nav>
+      ) : null}
 
       <Dialog open={editing !== null} onOpenChange={(open) => (open ? undefined : setEditing(null))}>
         {editing !== null ? (

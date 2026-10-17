@@ -19,7 +19,11 @@ import {
 import { Input } from '@/ui/input';
 import { notify } from '@/ui/notify';
 import { Textarea } from '@/ui/textarea';
-import { grantPublicationCreditsAction, registerPlanPeriodAction } from '../actions';
+import {
+  grantPublicationCreditsAction,
+  listPublicationPlansAction,
+  registerPlanPeriodAction,
+} from '../actions';
 import { ADMIN_COPY } from '../copy';
 import {
   PUBLICATION_GRANT_SOURCES,
@@ -28,28 +32,93 @@ import {
   type GrantCreditsFormInput,
   type RegisterPeriodFormInput,
 } from '../schemas';
-import type { AdminMerchantHeader, PublicationPlanItem } from '../types';
+import type { AdminMerchantHeader, PublicationPlanItem, PublicationPlansCursor } from '../types';
 
 const COPY = ADMIN_COPY.credits;
 
+const RECOVERY_COPY = {
+  uncertain:
+    'No pudimos confirmar si se registró. Volvé a confirmar: se reintenta la misma operación y no se duplica.',
+  storageUnavailable:
+    'Este navegador no deja guardar la operación en curso, así que no la enviamos para no arriesgar un duplicado. Abrí el panel en una ventana común del navegador y revisá el libro antes de reintentar.',
+  loadMorePlans: 'Ver más planes',
+  loadingMorePlans: 'Cargando planes...',
+  loadMoreError: (detail: string) => `No pudimos cargar más planes. ${detail}`,
+} as const;
+
+// ---------------------------------------------------------------------------
+// PR402-H01: intento pendiente con clave de idempotencia estable
+// ---------------------------------------------------------------------------
+
+type PendingOperationKind = 'admin_grant_publication_credits' | 'admin_register_plan_period';
+type FingerprintField = string | number | boolean | null;
+
+const PENDING_PREFIX = 'cadeapp.admin.publication-op.v1.';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Clave de idempotencia estable por operación: reintentar el mismo payload (p. ej. tras un corte de red) reusa la
- * clave y la RPC responde `idempotent: true` sin duplicar; un payload distinto usa otra clave. Se descarta al cerrar.
+ * Digest SHA-512 (Web Crypto) del payload canónico: tipo de RPC, comercio y campos en orden fijo. En storage no queda
+ * el payload en claro (ni comercio, ni cantidad, ni nota). Solo en el cliente y con Web Crypto (contexto seguro); si
+ * no, `null`.
  */
-function useOperationKey() {
-  const ref = React.useRef<{ readonly key: string; readonly payload: string } | null>(null);
-  return React.useMemo(
-    () => ({
-      forPayload(payload: unknown): string {
-        const canonical = JSON.stringify(payload);
-        if (ref.current?.payload !== canonical) {
-          ref.current = { key: crypto.randomUUID(), payload: canonical };
-        }
-        return ref.current.key;
-      },
-    }),
-    []
-  );
+async function fingerprintOf(kind: PendingOperationKind, fields: readonly FingerprintField[]): Promise<string | null> {
+  if (typeof window === 'undefined' || !globalThis.crypto?.subtle) return null;
+  try {
+    const canonical = JSON.stringify([1, kind, ...fields]);
+    const digest = await globalThis.crypto.subtle.digest('SHA-512', new TextEncoder().encode(canonical));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Devuelve la clave del intento pendiente con ese payload o crea una y la guarda ANTES de enviar. Así, si la respuesta
+ * se pierde y el diálogo se reabre o la página se recarga en la misma pestaña, el reintento usa la misma clave y la
+ * RPC responde `idempotent: true`. Si no se puede guardar, `null`: no se envía con una clave que se perdería.
+ * No cubre otra pestaña ni otro navegador (sessionStorage es por pestaña).
+ */
+async function reservePendingOperation(
+  kind: PendingOperationKind,
+  fields: readonly FingerprintField[]
+): Promise<{ readonly storageKey: string; readonly operationKey: string } | null> {
+  const fingerprint = await fingerprintOf(kind, fields);
+  if (!fingerprint) return null;
+  const storageKey = `${PENDING_PREFIX}${fingerprint}`;
+  try {
+    const stored = window.sessionStorage.getItem(storageKey);
+    if (stored) {
+      const parsed: unknown = JSON.parse(stored);
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'key' in parsed &&
+        typeof parsed.key === 'string' &&
+        UUID_PATTERN.test(parsed.key)
+      ) {
+        return { storageKey, operationKey: parsed.key };
+      }
+    }
+    const operationKey = globalThis.crypto.randomUUID();
+    window.sessionStorage.setItem(storageKey, JSON.stringify({ key: operationKey, createdAt: Date.now() }));
+    return { storageKey, operationKey };
+  } catch {
+    return null;
+  }
+}
+
+/** Resultado definitivo (éxito o rechazo de la RPC): una operación idéntica posterior es una nueva intención. */
+function settlePendingOperation(storageKey: string) {
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // Sin storage no hay nada que limpiar.
+  }
+}
+
+/** `INTERNAL_ERROR` o una excepción de red no dicen si la RPC llegó a escribir: el intento sigue pendiente. */
+function isUncertainFailure(code: string) {
+  return code === 'INTERNAL_ERROR';
 }
 
 interface DialogBaseProps {
@@ -94,7 +163,6 @@ export function GrantCreditsDialog({ merchant, open, onClose }: DialogBaseProps)
 
 function GrantCreditsForm({ merchant, onClose }: Omit<DialogBaseProps, 'open'>) {
   const router = useRouter();
-  const operationKey = useOperationKey();
   const [step, setStep] = React.useState<'form' | 'confirm' | 'done'>('form');
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -121,21 +189,35 @@ function GrantCreditsForm({ merchant, onClose }: Omit<DialogBaseProps, 'open'>) 
     };
     setPending(true);
     setError(null);
+    const reservation = await reservePendingOperation('admin_grant_publication_credits', [
+      payload.merchantId,
+      payload.credits,
+      payload.source,
+      payload.note,
+    ]);
+    if (!reservation) {
+      setPending(false);
+      setError(RECOVERY_COPY.storageUnavailable);
+      notify.error(RECOVERY_COPY.storageUnavailable);
+      return;
+    }
     try {
-      const res = await grantPublicationCreditsAction({ ...payload, operationKey: operationKey.forPayload(payload) });
+      const res = await grantPublicationCreditsAction({ ...payload, operationKey: reservation.operationKey });
       if (!res.ok) {
+        if (!isUncertainFailure(res.code)) settlePendingOperation(reservation.storageKey);
         const message = getDomainErrorMessage(res.code);
         setError(message);
         notify.error(message);
         return;
       }
+      settlePendingOperation(reservation.storageKey);
       setResult(res.data);
       setStep('done');
       notify.success(res.data.idempotent ? COPY.grant.alreadyRegistered : COPY.grant.success);
       router.refresh();
     } catch {
-      setError(COPY.connectionError);
-      notify.error(COPY.connectionError);
+      setError(RECOVERY_COPY.uncertain);
+      notify.error(RECOVERY_COPY.uncertain);
     } finally {
       setPending(false);
     }
@@ -241,25 +323,60 @@ function GrantCreditsForm({ merchant, onClose }: Omit<DialogBaseProps, 'open'>) 
 // ---------------------------------------------------------------------------
 
 export interface RegisterPeriodDialogProps extends DialogBaseProps {
+  /** Primera página de planes activos (`admin_list_publication_plans`, `activeOnly`). */
   readonly plans: readonly PublicationPlanItem[];
+  /** Cursor para pedir la página siguiente; `null` si no hay más. */
+  readonly plansNextCursor: PublicationPlansCursor | null;
 }
 
-export function RegisterPeriodDialog({ merchant, plans, open, onClose }: RegisterPeriodDialogProps) {
+export function RegisterPeriodDialog({ merchant, plans, plansNextCursor, open, onClose }: RegisterPeriodDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       {open ? (
         <DialogContent>
-          <RegisterPeriodForm merchant={merchant} plans={plans} onClose={onClose} />
+          <RegisterPeriodForm merchant={merchant} plans={plans} plansNextCursor={plansNextCursor} onClose={onClose} />
         </DialogContent>
       ) : null}
     </Dialog>
   );
 }
 
-function RegisterPeriodForm({ merchant, plans, onClose }: Omit<RegisterPeriodDialogProps, 'open'>) {
+/** PR402-H03: planes activos ya cargados más los que se piden por cursor con «Ver más planes». */
+function useActivePlanPages(initialPlans: readonly PublicationPlanItem[], initialCursor: PublicationPlansCursor | null) {
+  const [plans, setPlans] = React.useState(initialPlans);
+  const [cursor, setCursor] = React.useState(initialCursor);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function loadMore() {
+    if (!cursor || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await listPublicationPlansAction({ activeOnly: true, afterSort: cursor.sort, afterId: cursor.id });
+      if (!res.ok) {
+        setError(RECOVERY_COPY.loadMoreError(getDomainErrorMessage(res.code)));
+        return;
+      }
+      setPlans((current) => {
+        const known = new Set(current.map((plan) => plan.id));
+        return [...current, ...res.data.items.filter((plan) => !known.has(plan.id))];
+      });
+      setCursor(res.data.nextCursor);
+    } catch {
+      setError(RECOVERY_COPY.loadMoreError(getDomainErrorMessage('INTERNAL_ERROR')));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return { plans, hasMore: cursor !== null, loading, error, loadMore };
+}
+
+function RegisterPeriodForm({ merchant, plans, plansNextCursor, onClose }: Omit<RegisterPeriodDialogProps, 'open'>) {
   const router = useRouter();
-  const operationKey = useOperationKey();
-  const activePlans = plans.filter((plan) => plan.active);
+  const planPages = useActivePlanPages(plans, plansNextCursor);
+  const activePlans = planPages.plans.filter((plan) => plan.active);
   const [step, setStep] = React.useState<'form' | 'confirm' | 'done'>('form');
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -286,21 +403,35 @@ function RegisterPeriodForm({ merchant, plans, onClose }: Omit<RegisterPeriodDia
     };
     setPending(true);
     setError(null);
+    const reservation = await reservePendingOperation('admin_register_plan_period', [
+      payload.merchantId,
+      payload.planId,
+      payload.isPurchase,
+      payload.note,
+    ]);
+    if (!reservation) {
+      setPending(false);
+      setError(RECOVERY_COPY.storageUnavailable);
+      notify.error(RECOVERY_COPY.storageUnavailable);
+      return;
+    }
     try {
-      const res = await registerPlanPeriodAction({ ...payload, operationKey: operationKey.forPayload(payload) });
+      const res = await registerPlanPeriodAction({ ...payload, operationKey: reservation.operationKey });
       if (!res.ok) {
+        if (!isUncertainFailure(res.code)) settlePendingOperation(reservation.storageKey);
         const message = getDomainErrorMessage(res.code);
         setError(message);
         notify.error(message);
         return;
       }
+      settlePendingOperation(reservation.storageKey);
       setResult(res.data);
       setStep('done');
       notify.success(res.data.idempotent ? COPY.register.alreadyRegistered : COPY.register.success);
       router.refresh();
     } catch {
-      setError(COPY.connectionError);
-      notify.error(COPY.connectionError);
+      setError(RECOVERY_COPY.uncertain);
+      notify.error(RECOVERY_COPY.uncertain);
     } finally {
       setPending(false);
     }
@@ -331,6 +462,18 @@ function RegisterPeriodForm({ merchant, plans, onClose }: Omit<RegisterPeriodDia
               ))
             )}
             <ErrorMessage message={form.formState.errors.planId?.message ?? null} />
+            {planPages.hasMore ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={planPages.loading}
+                aria-busy={planPages.loading ? 'true' : 'false'}
+                onClick={planPages.loadMore}
+              >
+                {planPages.loading ? RECOVERY_COPY.loadingMorePlans : RECOVERY_COPY.loadMorePlans}
+              </Button>
+            ) : null}
+            <ErrorMessage message={planPages.error} />
           </fieldset>
           <fieldset className="space-y-2">
             <legend className="text-sm font-semibold text-foreground">{COPY.register.purchaseLabel}</legend>

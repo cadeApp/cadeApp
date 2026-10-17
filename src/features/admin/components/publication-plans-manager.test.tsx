@@ -23,25 +23,29 @@ const PLAN: PublicationPlanItem = {
 };
 const UNLIMITED: PublicationPlanItem = { ...PLAN, id: 'f0000000-0000-4000-8000-000000000002', code: 'ilimitado', name: 'Ilimitado', kind: 'unlimited', monthlyCredits: null, referencePriceArs: null, active: false, sort: 2 };
 
+function renderManager(overrides: Partial<React.ComponentProps<typeof PublicationPlansManager>> = {}) {
+  render(<PublicationPlansManager plans={[PLAN]} nextCursor={null} activeOnly={false} isFirstPage {...overrides} />);
+}
+
 describe('T-369 / CC-029 — catálogo de planes (admin)', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(cleanup);
 
   it('lista los planes con tipo, cupo, precio informativo y estado', () => {
-    render(<PublicationPlansManager plans={[PLAN, UNLIMITED]} />);
+    renderManager({ plans: [PLAN, UNLIMITED] });
     const rows = within(screen.getByRole('table', { name: 'Planes de publicación' })).getAllByRole('row').slice(1);
     expect(rows[0]?.textContent).toContain('Plan 40plan-40Con cupo40$ 20.000Activo1');
     expect(rows[1]?.textContent).toContain('IlimitadoilimitadoIlimitado——Inactivo2');
   });
 
   it('vacío: invita a crear el primero', () => {
-    render(<PublicationPlansManager plans={[]} />);
+    renderManager({ plans: [] });
     expect(screen.getByText('Todavía no hay planes. Creá el primero.')).toBeTruthy();
   });
 
   it('crear: un plan con cupo exige créditos y el ilimitado los manda en null', async () => {
     mocks.upsert.mockResolvedValue({ ok: true, data: { ...UNLIMITED, planId: UNLIMITED.id } });
-    render(<PublicationPlansManager plans={[]} />);
+    renderManager({ plans: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Nuevo plan' }));
     const dialog = screen.getByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('Nombre'), { target: { value: 'Ilimitado' } });
@@ -70,7 +74,7 @@ describe('T-369 / CC-029 — catálogo de planes (admin)', () => {
 
   it('editar: precarga el plan y muestra PLAN_IN_USE si se cambia el cupo de uno en uso', async () => {
     mocks.upsert.mockResolvedValue({ ok: false, code: 'PLAN_IN_USE' });
-    render(<PublicationPlansManager plans={[PLAN]} />);
+    renderManager({ plans: [PLAN] });
     fireEvent.click(screen.getByRole('button', { name: 'Editar el plan Plan 40' }));
     const dialog = screen.getByRole('dialog');
     const credits = within(dialog).getByLabelText('Créditos por mes') as HTMLInputElement;
@@ -80,5 +84,39 @@ describe('T-369 / CC-029 — catálogo de planes (admin)', () => {
     expect((await within(dialog).findByRole('alert')).textContent).toBe(getDomainErrorMessage('PLAN_IN_USE'));
     expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({ planId: PLAN.id, monthlyCredits: 50 }));
     expect(mocks.refresh).not.toHaveBeenCalled();
+  });
+
+  it('PR402-H03 pagina por cursor (sort, id) y conserva el filtro de activos', () => {
+    const cursor = { sort: 3, id: 'f0000000-0000-4000-8000-000000000050' };
+    renderManager({ nextCursor: cursor });
+    const pages = screen.getByRole('navigation', { name: 'Paginación del catálogo' });
+    expect(within(pages).getByRole('link', { name: 'Planes siguientes' }).getAttribute('href')).toBe(
+      `/admin/merchants/plans?afterSort=3&afterId=${cursor.id}`
+    );
+    expect(within(pages).queryByRole('link', { name: 'Volver al principio' })).toBeNull();
+    const filter = screen.getByRole('navigation', { name: 'Filtrar planes' });
+    expect(within(filter).getByRole('link', { name: 'Todos' }).getAttribute('aria-current')).toBe('page');
+    expect(within(filter).getByRole('link', { name: 'Solo activos' }).getAttribute('href')).toBe('/admin/merchants/plans?active=1');
+    cleanup();
+
+    renderManager({ nextCursor: cursor, activeOnly: true, isFirstPage: false });
+    const activePages = screen.getByRole('navigation', { name: 'Paginación del catálogo' });
+    expect(within(activePages).getByRole('link', { name: 'Planes siguientes' }).getAttribute('href')).toBe(
+      `/admin/merchants/plans?active=1&afterSort=3&afterId=${cursor.id}`
+    );
+    expect(within(activePages).getByRole('link', { name: 'Volver al principio' }).getAttribute('href')).toBe(
+      '/admin/merchants/plans?active=1'
+    );
+    expect(within(screen.getByRole('navigation', { name: 'Filtrar planes' })).getByRole('link', { name: 'Solo activos' }).getAttribute('aria-current')).toBe('page');
+    cleanup();
+
+    renderManager({ isFirstPage: false });
+    const lastPage = screen.getByRole('navigation', { name: 'Paginación del catálogo' });
+    expect(within(lastPage).queryByRole('link', { name: 'Planes siguientes' })).toBeNull();
+    expect(within(lastPage).getByRole('link', { name: 'Volver al principio' })).toBeTruthy();
+    cleanup();
+
+    renderManager();
+    expect(screen.queryByRole('navigation', { name: 'Paginación del catálogo' })).toBeNull();
   });
 });

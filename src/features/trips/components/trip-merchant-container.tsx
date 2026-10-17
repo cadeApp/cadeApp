@@ -38,6 +38,8 @@ export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
 
   const handleReportNoShow = () => {
     startTransition(async () => {
+      setReplaceError(null);
+      setReplaceCreditsExhausted(false);
       const res = await merchantReportNoShowAction({
         requestId: trip.id,
         republish: true,
@@ -48,6 +50,8 @@ export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
         setReplaceOpen(false);
         router.push(`/merchant/requests/${trip.id}`);
       } else {
+        // Desde el diálogo D-C2b el error queda visible en él (role="alert"); el toast no es la única señal.
+        if (replaceOpen) setReplaceError(getDomainErrorMessage(res.code));
         notify.error('No se pudo reportar al repartidor.');
       }
     });
