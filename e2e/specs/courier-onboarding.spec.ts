@@ -954,6 +954,12 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await expect(successMsg).toBeVisible();
 
       // 6. PR358-R03: Inspección administrativa en el navegador de la nueva versión submitted y versión histórica
+      await page.context().clearCookies();
+      await page.evaluate(() => {
+        window.localStorage.clear();
+        window.sessionStorage.clear();
+      });
+
       await page.goto(`/login?redirectTo=%2Fadmin%2Fapplicants%2F${courier.id}`);
       await waitForNoSkeletons(page);
 
