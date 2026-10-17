@@ -737,6 +737,110 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       }
     });
 
+    describe('T-367: Visualización de avatar autorizado del repartidor en su perfil', () => {
+      it('renderiza la foto del avatar con alt accesible y estilos definidos cuando avatarUrl está disponible', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'verified',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: 'https://test-storage.local/courier-docs/courier/carlos/avatar_123.jpg?token=valid',
+            }}
+          />
+        );
+
+        const img = screen.getByRole('img', { name: 'Foto de perfil de Carlos Gómez' });
+        expect(img).toBeDefined();
+        expect(img.getAttribute('src')).toBe(
+          'https://test-storage.local/courier-docs/courier/carlos/avatar_123.jpg?token=valid'
+        );
+        expect(img.className).toContain('object-cover');
+      });
+
+      it('muestra el ícono genérico User si avatarUrl es null o undefined', () => {
+        const { container } = render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: null,
+            }}
+          />
+        );
+
+        expect(screen.queryByRole('img', { name: /foto de perfil/i })).toBeNull();
+        const svg = container.querySelector('svg.lucide-user');
+        expect(svg).not.toBeNull();
+      });
+
+      it('hace fallback al ícono User si la imagen de avatarUrl dispara error de carga (onError)', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: 'https://test-storage.local/courier-docs/courier/carlos/expired.jpg',
+            }}
+          />
+        );
+
+        const img = screen.getByRole('img', { name: 'Foto de perfil de Carlos Gómez' });
+        expect(img).toBeDefined();
+
+        fireEvent.error(img);
+
+        expect(screen.queryByRole('img', { name: 'Foto de perfil de Carlos Gómez' })).toBeNull();
+      });
+
+      it('invariante de seguridad: jamás renderiza DNI o selfie como avatar si no hay avatarUrl', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: null,
+            }}
+          />
+        );
+
+        expect(screen.queryByRole('img', { name: /foto de perfil/i })).toBeNull();
+        expect(screen.queryByRole('img', { name: /selfie/i })).toBeNull();
+        expect(screen.queryByRole('img', { name: /dni/i })).toBeNull();
+      });
+    });
+
     describe('T-334: repartidor recién registrado sin onboarding enviado', () => {
       const freshCourier = {
         displayName: 'Repartidor Nuevo',

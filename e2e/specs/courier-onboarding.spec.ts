@@ -1493,4 +1493,76 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         .eq('profile_id', courier.id);
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // T-367: Avatar autorizado en /courier/profile
+  // ---------------------------------------------------------------------------
+  test('T-367: Cadete habilitado con avatar verificado ve su foto real en /courier/profile, con fallback si no está verificado', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere courier en stagingContext');
+    }
+    const dbAdmin = createAdminClient();
+
+    // 1. Subir archivo real de prueba a courier-docs para el avatar
+    const storagePath = `courier/${courier.id}/avatar_test_${Date.now()}.png`;
+    const { error: uploadError } = await dbAdmin.storage
+      .from(COURIER_DOCS_BUCKET)
+      .upload(storagePath, DUMMY_2X2_PNG, {
+        contentType: 'image/png',
+        upsert: true,
+      });
+    expect(uploadError).toBeNull();
+
+    try {
+      // 2. Insertar/actualizar documento kind='avatar' con status='verified' e is_current=true
+      await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id).eq('kind', 'avatar');
+      const { error: docInsertError } = await dbAdmin.from('courier_documents').insert({
+        courier_id: courier.id,
+        kind: 'avatar',
+        status: 'verified',
+        storage_path: storagePath,
+        is_current: true,
+      });
+      expect(docInsertError).toBeNull();
+
+      // Asegurar que el courier está aprobado
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier.id);
+
+      // 3. Iniciar sesión y navegar a /courier/profile
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+
+      // 4. Verificar que se renderiza la imagen del avatar con alt accesible
+      const avatarImg = page.locator('img[alt^="Foto de perfil de"]');
+      await expect(avatarImg).toBeVisible();
+      const src = await avatarImg.getAttribute('src');
+      expect(src).toContain(storagePath);
+      expect(src).toContain('token=');
+
+      // 5. Verificar aislamiento y fallback cuando el avatar está rechazado
+      await dbAdmin
+        .from('courier_documents')
+        .update({ status: 'rejected' })
+        .eq('courier_id', courier.id)
+        .eq('kind', 'avatar');
+
+      await page.reload();
+      await waitForNoSkeletons(page);
+
+      // Con avatar rechazado, no muestra la imagen y muestra el ícono de fallback
+      await expect(page.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
+      await expect(page.locator('svg.lucide-user').first()).toBeVisible();
+    } finally {
+      // Cleanup
+      await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove([storagePath]);
+      await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id).eq('kind', 'avatar');
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier.id);
+    }
+  });
 });
