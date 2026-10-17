@@ -34,3 +34,8 @@ Sin embargo, el último kilómetro del DoD exige datos actualizados en `TripMerc
 ## R4 — Selector semántico y gate cancelado
 
 El nuevo E2E integra dos sesiones reales, `get_trip_details` pre/post, cambio de vehículo y recarga del comercio. En la ejecución de `25a0a5ea` falló antes del primer oráculo UI porque `getByText('Repartidor asignado')` matcheó también un mensaje de coordinación del viaje. El agy respondió con una corrección correcta y mínima: `getByRole('heading', { name: 'Repartidor asignado' })` en `523b4989`, sin relajar aserciones. **No darlo por verificado**: la corrida Preview del nuevo SHA fue CANCELLED, con status error; se requiere GREEN real posterior. Cuando se hagan assertions sobre tipo/patente, usar ámbito de la tarjeta, no página global que puede contener comentarios de fixtures. El status CI unit verde jamás sustituye Playwright. El E2E cancelado tampoco acredita fallo de producto.
+
+
+## R5 — los checks de un merge y no exigir CI por documentación
+
+Al integrar develop hubo un build rojo en `next/font` (Montserrat), que pasó al repetir el job en el **mismo SHA** sin cambiar aplicación. La evidencia correcta es el intento fallido y el GREEN del mismo commit; no abrir una corrección especulativa de `layout.tsx` desde T-357. El E2E del SHA combinado demostró de punta a punta el viaje entre sesiones y la lectura de `get_trip_details`. Si después solo se actualiza revisión o bitácora, **no se exige un nuevo CI GREEN por el commit documental**: los checks se atribuyen al SHA de código previamente validado, y el informe registra explícitamente la diferencia. Se conserva el estado `arreglado-sin-verificar` de hallazgos cuyo mutante independiente en runtime no se ejecutó, sin falsificar la prueba.
