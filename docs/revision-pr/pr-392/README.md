@@ -11,3 +11,12 @@
 [Informe R1](revisiones/ronda-1.md) · [Evidencia](evidencia/comandos.md) · [Hallazgos](hallazgos.jsonl) · [Prompt agy](prompt-agy-ronda-1.md).
 
 **CI:** 39003514873 SUCCESS (135/2492 Vitest, 26/2341 pgTAP), approval-policy 39003514915 FAIL por informe independiente faltante. **Staging NO desplegado**; la prueba DB fue efímera, no remoto. No aprobar/mergear.
+
+
+## Ronda 2 — 2026-10-17
+
+| Ronda | SHA release | Dictamen |
+|---|---|---|
+| 2 | `a53164916189e4b5d93f51cee285db24523747db` | H01 corregido en PR body por inspección; **SIN BLOQUEANTES de implementación**, pendiente sección de approval-policy, SHA completo correcto y autorización del merge. |
+
+[Informe R2](revisiones/ronda-2.md) · [Evidencia](evidencia/comandos.md) · [Prompt agy](prompt-agy-ronda-2.md). CI #39004412632 PASS (135/2492 unit, 26/2341 pgTAP); approval-policy #39004741813 FAIL por formato del body. No hay deploy de staging ni merge.

@@ -11,3 +11,12 @@
 7. `migrate.yml` y `deploy.yml` idénticos al staging actual. migrate-staging ejecuta db push al push de staging, luego tipos; deploy-staging se dispara por workflow_run success del mismo SHA, health, e2e-staging. La rama staging no se alteró en esta sesión.
 
 **Prueba adicional solicitada a autor antes del merge:** recorrido exhaustivo de consumidores old-staging sobre delivery_requests/offers, rol y operaciones directas; actualizar body con matriz y rollout forward-only. **E2E real staging sólo después de autorización y merge**; no presentarlo anticipadamente como PASS.
+
+
+## Ronda 2 — 2026-10-17 (GitHub solo lectura)
+- `get_pr_info PR392`: body editado 05:02 UTC, HEAD real `a53164916189e4b5d93f51cee285db24523747db`, base staging `86c98cae`, state open, merged false.
+- `compare a531649...HEAD`: identical, 0 nuevos commits, 0 archivos cambiados. Body rectifica H01, incluye matriz RPC/admin antigua, rollback forward-only y STOP de staging.
+- CI sobre HEAD [39004412632](https://github.com/cadeApp/cadeApp/actions/runs/39004412632): unit 135/2492 PASS, db-tests 26/2341 pgTAP PASS, restantes tests técnicos PASS.
+- [approval-policy 39004741813](https://github.com/cadeApp/cadeApp/actions/runs/39004741813): FAIL, literalmente falta informe SIN BLOQUEANTES. `.github/workflows/approval-policy.mjs` hasCompleteReport() parsea sección específica del body y seis rótulos literales. Workflow `approval-policy.yml` dispara al editar PR.
+- SHA inventado en body `a5316491d9d9f52f3e07080fae9910d93ea6b6b7`: GitHub GET commit devolvió 422. Real `a53164916189e4b5d93f51cee285db24523747db`.
+- El revisor no ejecutó DB/Docker/Supabase, ni deploy/E2E staging, ni `node docs/revision-pr/analizar.mjs verificacion` sin clon. H01 queda `arreglado-sin-verificar` (code inspection y CI de autor, no prueba staging).
