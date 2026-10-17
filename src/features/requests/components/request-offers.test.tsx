@@ -87,6 +87,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       insuranceStatus: 'verified',
       docLevel: 2,
       createdAt: '2026-09-24T01:00:00.000Z',
+      status: 'pending',
     },
     {
       id: '33333333-3333-3333-3333-333333333333',
@@ -100,6 +101,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       insuranceStatus: 'none',
       docLevel: 1,
       createdAt: '2026-09-24T01:05:00.000Z',
+      status: 'pending',
     },
     {
       id: '55555555-5555-5555-5555-555555555555',
@@ -113,6 +115,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       insuranceStatus: 'rejected',
       docLevel: 0,
       createdAt: '2026-09-24T01:02:00.000Z',
+      status: 'pending',
     },
   ];
 
@@ -527,4 +530,121 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       expect(container.textContent).toContain('Transferencia');
     });
   });
+
+  describe('T-365: defensa de ofertas elegibles y estados terminales en RequestOffersList', () => {
+    it('impide botón Aceptar si offer.status es cancelled, rejected, expired, withdrawn o ausente', () => {
+      const mixedOffers: MerchantOfferItem[] = [
+        {
+          id: '11111111-1111-1111-1111-111111111111',
+          courierId: '22222222-2222-2222-2222-222222222222',
+          courierName: 'Joaquín Cancelado',
+          vehicleType: 'motorcycle',
+          amountArs: 1800,
+          etaMinutes: 10,
+          message: null,
+          licenseStatus: 'verified',
+          insuranceStatus: 'verified',
+          docLevel: 2,
+          createdAt: '2026-09-24T01:00:00.000Z',
+          status: 'cancelled' as unknown as MerchantOfferItem['status'],
+        },
+        {
+          id: '22222222-2222-2222-2222-222222222222',
+          courierId: '33333333-3333-3333-3333-333333333333',
+          courierName: 'Micaela Rechazada',
+          vehicleType: 'bicycle',
+          amountArs: 1400,
+          etaMinutes: 20,
+          message: null,
+          licenseStatus: 'verified',
+          insuranceStatus: 'none',
+          docLevel: 1,
+          createdAt: '2026-09-24T01:05:00.000Z',
+          status: 'rejected',
+        },
+        {
+          id: '33333333-3333-3333-3333-333333333333',
+          courierId: '44444444-4444-4444-4444-444444444444',
+          courierName: 'Carlos Sin Status',
+          vehicleType: 'auto',
+          amountArs: 2000,
+          etaMinutes: 15,
+          message: null,
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          docLevel: 0,
+          createdAt: '2026-09-24T01:02:00.000Z',
+        },
+      ];
+
+      render(<RequestOffersList request={mockRequest} initialOffers={mixedOffers} />);
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /aceptar/i });
+      expect(acceptButtons).toHaveLength(0);
+    });
+
+    it('impide botón Aceptar si request.status no es published (ej: matched)', () => {
+      render(
+        <RequestOffersList
+          request={{ ...mockRequest, status: 'matched' }}
+          initialOffers={initialOffers}
+        />
+      );
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /aceptar/i });
+      expect(acceptButtons).toHaveLength(0);
+    });
+
+    it('cierra el modal si la oferta seleccionada pasa a terminal o desaparece', async () => {
+      const { rerender } = render(
+        <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+      );
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      // Cambia la oferta seleccionada a cancelled
+      const updatedOffers: MerchantOfferItem[] = [
+        {
+          ...initialOffers[0]!,
+          status: 'cancelled' as unknown as MerchantOfferItem['status'],
+        },
+        initialOffers[1]!,
+        initialOffers[2]!,
+      ];
+
+      rerender(<RequestOffersList request={mockRequest} initialOffers={updatedOffers} />);
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+    });
+
+    it('tras OFFER_NOT_PENDING presenta error apropiado en el modal y refetchea', async () => {
+      mockAcceptOfferAction.mockResolvedValueOnce({
+        ok: false,
+        code: 'OFFER_NOT_PENDING',
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Esta oferta ya no está disponible.')).toBeDefined();
+      });
+    });
+  });
 });
+
+

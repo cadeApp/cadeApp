@@ -1126,6 +1126,72 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       );
     });
 
+    it('T-365: getMerchantRequestWithOffers filtra por status=pending en DB antes de paginar', async () => {
+      const offersEqCalls: unknown[][] = [];
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [
+            {
+              courierId: courierUuid(1),
+              displayName: 'Carlos',
+              vehicleType: 'moto',
+              licenseStatus: 'verified',
+              insuranceStatus: 'verified',
+              docLevel: 2,
+            },
+          ],
+        },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: mockRequestRow, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            const builder: any = {
+              select: vi.fn(() => builder),
+              eq: vi.fn((...args: unknown[]) => {
+                offersEqCalls.push(args);
+                return builder;
+              }),
+              order: vi.fn(() => builder),
+              limit: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: validUuid,
+                    courier_id: courierUuid(1),
+                    amount_ars: 2000,
+                    eta_minutes: 15,
+                    message: null,
+                    status: 'pending',
+                    created_at: '2026-09-26T12:00:00.000Z',
+                  },
+                ],
+                error: null,
+              }),
+            };
+            return builder;
+          }
+          if (table === 'delivery_request_drops') return mockDropsTable();
+          return {};
+        }),
+        rpc: withPrivateFields(couriersRpc),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(offersEqCalls).toEqual([
+        ['request_id', validUuid],
+        ['status', 'pending'],
+      ]);
+    });
+
     function mockMerchantDetailClient(offers: readonly unknown[], rpc: ReturnType<typeof vi.fn>) {
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: vi.fn((table: string) => {

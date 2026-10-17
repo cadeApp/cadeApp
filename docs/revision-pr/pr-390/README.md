@@ -1,0 +1,11 @@
+# PR #390 — T-365
+- Revisor: revisión independiente ChatGPT (no autor KiraK72)
+- Ronda 1: 2026-10-17; SHA del código revisado: `6f8ff6d81862e21c622c0e5d88a803867d68f403`.
+- Base de comparación original: `cf65ce256f8fb45a9d9bc890f4531b1ae03cbea6`; `develop` avanzó a `50c99b00e1235b426dc98a98aa0183592d6fba50`.
+- Resultado: **CON BLOQUEANTES PARA MERGE**, Draft; falta implementación, CC de proyección y evidencia RED/GREEN/E2E.
+- Decisiones de Lautaro073 2026-10-17: 1-A RPC segura sobre datos persistidos; 2-A cronología en detalle del pedido; 3-A motivo normalizado permitido.
+- Diff real: solo `docs/tasks/log/T-365.md` (+32 líneas, 2 commits). No se aprobó, no se mergeó, no se implementó funcionalidad.
+- Inspección: `docs/tasks/T-365.md` leído de `develop`; `docs/revision-pr/COMO-ENTREGAR.md`, `README.md` y skill `revisar-pr` leídos.
+- Checks: **NO ejecutados independientemente**; el agente afirma typecheck/lint y 341 tests en baseline `develop`, no en el fix. No SQL ni E2E del arreglo; no Supabase/Docker local.
+- Ver `revisiones/ronda-1.md`, `hallazgos.jsonl`, `evidencia/comandos.md`, `lecciones.md`. Cada H corresponde a deuda preexistente/ausencia de implementación, no regresión introducida por el diff documental.
+- **Ronda 2 (2026-10-17):** revisado 6356f994. CI unit 135/2498, db 26/2341. Dos filtros corregidos; modalidad stale incompleta; 3 hallazgos nuevos H10-H12. Resultado **CON BLOQUEANTES**. Decisiones 1-A/2-A/3-A sin cambios; historia requiere CC externo. Informe en `revisiones/ronda-2.md`.

@@ -891,6 +891,40 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         ],
       ]);
     });
+
+    it('T-365: filtra por status=pending inmediatamente tras request_id y antes de order/limit', async () => {
+      const reqBuilder = {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { id: validUuid, merchant_id: mockUser.id },
+              error: null,
+            }),
+          }),
+        }),
+      };
+      const offersBuilder = createMockQueryBuilder([makeOfferRow(1, validUuid)]);
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return reqBuilder;
+        if (table === 'offers') return offersBuilder;
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: mockFrom,
+        rpc: makeCouriersRpc(validUuid, [1]),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await getRequestOffersLiveServer(validUuid);
+
+      expect(offersBuilder._calls.eq).toEqual([
+        ['request_id', validUuid],
+        ['status', 'pending'],
+      ]);
+    });
   });
 
   describe('3.2 getRequestOffersLiveServer — proyección de repartidores (CC-016)', () => {
