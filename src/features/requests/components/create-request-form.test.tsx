@@ -349,6 +349,60 @@ describe('T-340: CreateRequestForm multi-drop', () => {
     expect(notify.success).not.toHaveBeenCalled();
   });
 
+  it('T-371: si la publicación es rechazada por PUBLICATION_CREDITS_EXHAUSTED muestra la alerta correspondiente', async () => {
+    vi.mocked(actions.createDeliveryRequestAction).mockResolvedValueOnce({
+      ok: false,
+      code: 'PUBLICATION_CREDITS_EXHAUSTED',
+    });
+
+    render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: zoneCentro.id,
+          defaultPickupLat: -27.43,
+          defaultPickupLng: -65.61,
+          notes: '',
+        }}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Sarmiento 1200' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+      target: { value: 'Lucía Gómez' },
+    });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+      target: { value: '3815551234' },
+    });
+    fireEvent.click(screen.getByRole('checkbox'));
+
+    fireEvent.click(screen.getByRole('button', { name: /publicar solicitud/i }));
+
+    const expected = getDomainErrorMessage('PUBLICATION_CREDITS_EXHAUSTED');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(expected);
+    // No alcanza con mostrar el mismo texto: el submit válido tiene que invocar la Action.
+    await waitFor(() => {
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: expect.any(String),
+          drops: expect.arrayContaining([
+            expect.objectContaining({
+              dropoffAddress: 'Av. Sarmiento 1200',
+              recipientConsentDeclared: true,
+            }),
+          ]),
+        })
+      );
+    });
+    expect(notify.error).toHaveBeenCalledWith(expected);
+    expect(notify.success).not.toHaveBeenCalled();
+  });
+
   it('H09: con el mapa de entrega abierto, la vista presenta exactamente un input de dirección de entrega y una sola acción de GPS para entrega', async () => {
     render(
       <CreateRequestForm
