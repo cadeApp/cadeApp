@@ -319,6 +319,7 @@ export interface FakePlanPeriodRecord {
   carryoverMaterialized: boolean;
   readonly operationKey: string;
   readonly isPurchase: boolean;
+  readonly note: string | null;
   launchDiscountPct: number | null;
 }
 
@@ -333,6 +334,7 @@ export interface FakeCreditLotRecord {
   readonly operationKey: string | null;
   readonly refundChargeId: string | null;
   readonly refundSourceLotId: string | null;
+  readonly note: string | null;
   readonly createdSeq: number;
 }
 
@@ -712,6 +714,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           operationKey: null,
           refundChargeId: null,
           refundSourceLotId: null,
+          note: null,
           createdSeq: creditSeq,
         };
         lots.push(lot);
@@ -766,6 +769,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           operationKey: null,
           refundChargeId: charge.id,
           refundSourceLotId: lot.id,
+          note: null,
           createdSeq: creditSeq,
         };
         lots.push(refund);
@@ -983,11 +987,34 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     };
   }
 
+  /** D6 / 2-A: la primera compra consume el beneficio con el % vigente, aunque sea 0. */
   function applyLaunchDiscount(merchantId: string): number | null {
+    if (launchDiscounts.has(merchantId)) return null;
     const pct = settings.launchDiscountPct ?? 0;
-    if (pct <= 0 || launchDiscounts.has(merchantId)) return null;
     launchDiscounts.set(merchantId, pct);
     return pct;
+  }
+
+  /**
+   * H03: con un plan agendado al fin legacy (2-A), cambiar la gracia lo superpondría o dejaría un hueco. Se rechaza si
+   * un comercio tiene derecho legacy relevante con la gracia vieja o la nueva y un período sin terminar.
+   */
+  function graceChangeConflicts(nextGraceDays: number): boolean {
+    const ms = nowFn().getTime();
+    const graceDays = Math.max(settings.subscriptionGraceDays, nextGraceDays);
+    return [...merchants.values()].some((merchant) => {
+      if (merchant.subscriptionStatus !== 'pilot' && merchant.subscriptionStatus !== 'active') return false;
+      if (!merchant.paidUntil) return false;
+      const [y, m, d] = merchant.paidUntil.slice(0, 10).split('-').map(Number);
+      const endMs = Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + graceDays + 1) + AR_OFFSET_MS;
+      return endMs > ms && periods.some((p) => p.merchantId === merchant.merchantId && p.endsAtMs > ms);
+    });
+  }
+
+  /** Nota normalizada como la RPC: sin espacios alrededor y vacía = null. */
+  function normalizeNote(note: string | null | undefined): string | null {
+    const trimmed = note?.trim() ?? '';
+    return trimmed === '' ? null : trimmed;
   }
 
   function getWindowBucketKey(subject: string, action: string, currentNow: Date): string {
@@ -3023,6 +3050,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             settings = { ...settings, pilotTermsVersion: input.value };
             break;
           case 'subscription_grace_days':
+            if (input.value !== settings.subscriptionGraceDays && graceChangeConflicts(input.value)) {
+              return err('INVALID_SETTING_VALUE');
+            }
             settings = { ...settings, subscriptionGraceDays: input.value };
             break;
           case 'max_drops_per_request':
@@ -3086,9 +3116,15 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     admin_grant_publication_credits: (rawInput) =>
       executeRpc('admin_grant_publication_credits', rawInput, true, (input) => {
         if (!merchants.has(input.merchantId)) return err('NOT_FOUND');
+        const note = normalizeNote(input.note);
         const existing = lots.find((l) => l.operationKey === input.operationKey);
         if (existing) {
-          if (existing.merchantId !== input.merchantId || existing.granted !== input.credits || existing.source !== input.source) {
+          if (
+            existing.merchantId !== input.merchantId ||
+            existing.granted !== input.credits ||
+            existing.source !== input.source ||
+            existing.note !== note
+          ) {
             return err('IDEMPOTENCY_CONFLICT');
           }
           return ok({
@@ -3112,6 +3148,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           operationKey: input.operationKey,
           refundChargeId: null,
           refundSourceLotId: null,
+          note,
           createdSeq: creditSeq,
         };
         lots.push(lot);
@@ -3132,9 +3169,15 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       executeRpc('admin_register_plan_period', rawInput, true, (input) => {
         const merchant = merchants.get(input.merchantId);
         if (!merchant) return err('NOT_FOUND');
+        const note = normalizeNote(input.note);
         const existing = periods.find((p) => p.operationKey === input.operationKey);
         if (existing) {
-          if (existing.merchantId !== input.merchantId || existing.planId !== input.planId || existing.isPurchase !== input.isPurchase) {
+          if (
+            existing.merchantId !== input.merchantId ||
+            existing.planId !== input.planId ||
+            existing.isPurchase !== input.isPurchase ||
+            existing.note !== note
+          ) {
             return err('IDEMPOTENCY_CONFLICT');
           }
           return ok({
@@ -3196,6 +3239,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           carryoverMaterialized: false,
           operationKey: input.operationKey,
           isPurchase: input.isPurchase,
+          note,
           launchDiscountPct: null,
         };
         periods.push(period);
@@ -3212,6 +3256,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             operationKey: null,
             refundChargeId: null,
             refundSourceLotId: null,
+            note: null,
             createdSeq: creditSeq,
           };
           lots.push(lot);

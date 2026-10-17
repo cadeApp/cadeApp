@@ -50,7 +50,7 @@ create table public.merchant_plan_periods (
   constraint merchant_plan_periods_range check (ends_at > starts_at),
   constraint merchant_plan_periods_streak check (streak >= 1),
   constraint merchant_plan_periods_carryover_pct check (carryover_pct between 0 and 100),
-  constraint merchant_plan_periods_discount_pct check (launch_discount_pct is null or launch_discount_pct between 1 and 100),
+  constraint merchant_plan_periods_discount_pct check (launch_discount_pct is null or launch_discount_pct between 0 and 100),
   constraint merchant_plan_periods_note_length check (note is null or length(note) <= 500)
 );
 create index merchant_plan_periods_merchant_starts_idx on public.merchant_plan_periods (merchant_id, starts_at);
@@ -166,14 +166,15 @@ create trigger publication_credit_movements_immutable
   before update or delete on public.publication_credit_movements
   for each row execute function app_private.publication_movements_immutable();
 
--- 7. Descuento de lanzamiento: una sola vez por comercio (D6)
+-- 7. Descuento de lanzamiento: una sola vez por comercio (D6). Decisión 2-A de la revisión de la PR #397: la primera
+--    compra siempre consume el beneficio, aunque el % vigente sea 0; ajustes y cortesías no lo consumen.
 create table public.merchant_launch_discounts (
   merchant_id uuid primary key references public.merchants (profile_id) on delete cascade,
   pct integer not null,
   period_id uuid references public.merchant_plan_periods (id) on delete cascade,
   lot_id uuid references public.publication_credit_lots (id) on delete cascade,
   applied_at timestamptz not null default now(),
-  constraint merchant_launch_discounts_pct check (pct between 1 and 100),
+  constraint merchant_launch_discounts_pct check (pct between 0 and 100),
   constraint merchant_launch_discounts_one_target check ((period_id is null) <> (lot_id is null))
 );
 
@@ -587,7 +588,9 @@ declare
   v_charge public.publication_charges%rowtype;
   v_part record;
   v_new_lot_id uuid;
-  v_now timestamptz := now();
+  -- Instante real de la liberación (no el inicio de la transacción): un lote que vence durante una transacción larga
+  -- se trata como vencido y su parte vuelve como suelto (D-C7, revisión PR #397 H04). Se captura una sola vez.
+  v_now timestamptz := clock_timestamp();
 begin
   select * into v_charge from public.publication_charges
   where request_id = p_request_id and is_current
@@ -1507,6 +1510,24 @@ begin
     if jsonb_typeof(p_value) <> 'number' or (p_value::text)::numeric < 0 or (p_value::text)::numeric <> trunc((p_value::text)::numeric) then
       raise exception using errcode = 'P0001', message = 'INVALID_SETTING_VALUE';
     end if;
+    -- T-369 / CC-029 (H03, revisión PR #397): el fin legacy se calcula con la gracia vigente y un plan agendado por 2-A
+    -- empieza en ese fin. Cambiar la gracia mientras un comercio tiene derecho legacy todavía relevante (con la gracia
+    -- vieja o la nueva) y un período sin terminar lo superpondría o dejaría un hueco: se rechaza. El parámetro ya está
+    -- tomado FOR UPDATE; admin_register_plan_period y admin_set_subscription lo toman FOR SHARE después del comercio.
+    if v_old_value is distinct from p_value and exists (
+      select 1
+      from public.merchants as m
+      where m.subscription_status in ('pilot', 'active')
+        and m.paid_until is not null
+        and ((m.paid_until + greatest(coalesce((v_old_value #>> '{}')::integer, 0), (p_value #>> '{}')::integer) + 1)::timestamp
+             at time zone 'America/Argentina/Buenos_Aires') > clock_timestamp()
+        and exists (
+          select 1 from public.merchant_plan_periods as period
+          where period.merchant_id = m.profile_id and period.ends_at > clock_timestamp()
+        )
+    ) then
+      raise exception using errcode = 'P0001', message = 'INVALID_SETTING_VALUE';
+    end if;
   elsif p_key = 'max_drops_per_request' then
     if jsonb_typeof(p_value) <> 'number' or (p_value::text)::numeric < 1 or (p_value::text)::numeric <> trunc((p_value::text)::numeric) then
       raise exception using errcode = 'P0001', message = 'INVALID_SETTING_VALUE';
@@ -1597,6 +1618,8 @@ begin
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
+  -- H03 (revisión PR #397): misma gracia durante el control de superposición y el commit (comercio → parámetro).
+  perform 1 from public.platform_settings where key = 'subscription_grace_days' for share;
 
   v_target_status := p_subscription_status::public.merchant_subscription_status;
 
@@ -1764,7 +1787,9 @@ begin
 
   select * into v_lot from public.publication_credit_lots where operation_key = p_operation_key;
   if found then
-    if v_lot.merchant_id <> p_merchant_id or v_lot.granted <> p_credits or v_lot.source <> p_source then
+    -- Mismo payload completo, nota normalizada incluida (revisión PR #397 H02).
+    if v_lot.merchant_id <> p_merchant_id or v_lot.granted <> p_credits or v_lot.source <> p_source
+       or v_lot.note is distinct from v_note then
       raise exception using errcode = 'P0001', message = 'IDEMPOTENCY_CONFLICT';
     end if;
     select pct into v_discount from public.merchant_launch_discounts where lot_id = v_lot.id;
@@ -1780,20 +1805,18 @@ begin
   insert into public.publication_credit_movements (merchant_id, lot_id, kind, amount, actor_id, reason)
   values (p_merchant_id, v_lot.id, 'grant', p_credits, v_actor_id, p_source);
 
-  -- D6: primera compra con descuento de lanzamiento vigente (> 0); un ajuste no consume el beneficio.
+  -- D6 / 2-A: la primera compra consume el beneficio con el % vigente, aunque sea 0; un ajuste no lo consume.
   v_discount := null;
   if p_source = 'purchase' then
     v_pct := app_private.publication_setting_int('launch_discount_pct', 0);
     if v_pct > 100 then
       raise exception using errcode = 'P0001', message = 'INTERNAL_ERROR';
     end if;
-    if v_pct > 0 then
-      insert into public.merchant_launch_discounts (merchant_id, pct, lot_id)
-      values (p_merchant_id, v_pct, v_lot.id)
-      on conflict (merchant_id) do nothing;
-      if found then
-        v_discount := v_pct;
-      end if;
+    insert into public.merchant_launch_discounts (merchant_id, pct, lot_id)
+    values (p_merchant_id, v_pct, v_lot.id)
+    on conflict (merchant_id) do nothing;
+    if found then
+      v_discount := v_pct;
     end if;
   end if;
 
@@ -1854,10 +1877,14 @@ begin
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
+  -- H03 (revisión PR #397): la gracia con la que se agenda el período (2-A) no puede cambiar hasta el commit. Orden:
+  -- comercio → parámetro; admin_update_setting toma el parámetro FOR UPDATE y no bloquea comercios.
+  perform 1 from public.platform_settings where key = 'subscription_grace_days' for share;
 
   select * into v_period from public.merchant_plan_periods where operation_key = p_operation_key;
   if found then
-    if v_period.merchant_id <> p_merchant_id or v_period.plan_id <> p_plan_id or v_period.is_purchase <> p_is_purchase then
+    if v_period.merchant_id <> p_merchant_id or v_period.plan_id <> p_plan_id or v_period.is_purchase <> p_is_purchase
+       or v_period.note is distinct from v_note then
       raise exception using errcode = 'P0001', message = 'IDEMPOTENCY_CONFLICT';
     end if;
     return jsonb_build_object(
@@ -1934,14 +1961,12 @@ begin
     if v_pct > 100 then
       raise exception using errcode = 'P0001', message = 'INTERNAL_ERROR';
     end if;
-    if v_pct > 0 then
-      insert into public.merchant_launch_discounts (merchant_id, pct, period_id)
-      values (p_merchant_id, v_pct, v_period.id)
-      on conflict (merchant_id) do nothing;
-      if found then
-        v_discount := v_pct;
-        update public.merchant_plan_periods set launch_discount_pct = v_pct where id = v_period.id;
-      end if;
+    insert into public.merchant_launch_discounts (merchant_id, pct, period_id)
+    values (p_merchant_id, v_pct, v_period.id)
+    on conflict (merchant_id) do nothing;
+    if found then
+      v_discount := v_pct;
+      update public.merchant_plan_periods set launch_discount_pct = v_pct where id = v_period.id;
     end if;
   end if;
 

@@ -25,6 +25,9 @@ create function pg_temp.m_break() returns uuid language sql immutable as $$ sele
 create function pg_temp.m_pilot() returns uuid language sql immutable as $$ select pg_temp.id('110') $$;   -- piloto
 create function pg_temp.m_disc() returns uuid language sql immutable as $$ select pg_temp.id('111') $$;    -- descuento
 create function pg_temp.m_seq() returns uuid language sql immutable as $$ select pg_temp.id('112') $$;     -- secuencia sin saldo
+create function pg_temp.m_clock() returns uuid language sql immutable as $$ select pg_temp.id('113') $$;   -- H04 reloj real
+create function pg_temp.m_zero() returns uuid language sql immutable as $$ select pg_temp.id('114') $$;    -- H05 primera compra al 0 %
+create function pg_temp.m_note() returns uuid language sql immutable as $$ select pg_temp.id('115') $$;    -- H02 nota en idempotencia
 create function pg_temp.courier1() returns uuid language sql immutable as $$ select pg_temp.id('201') $$;
 create function pg_temp.courier2() returns uuid language sql immutable as $$ select pg_temp.id('202') $$;
 create function pg_temp.admin() returns uuid language sql immutable as $$ select pg_temp.id('301') $$;
@@ -204,6 +207,7 @@ from (values
   (pg_temp.m_cancel(), 'cancel', 'merchant'), (pg_temp.m_fidel(), 'fidel', 'merchant'),
   (pg_temp.m_break(), 'break', 'merchant'), (pg_temp.m_pilot(), 'pilot', 'merchant'),
   (pg_temp.m_disc(), 'disc', 'merchant'), (pg_temp.m_seq(), 'seq', 'merchant'),
+  (pg_temp.m_clock(), 'clock', 'merchant'), (pg_temp.m_zero(), 'zero', 'merchant'), (pg_temp.m_note(), 'note', 'merchant'),
   (pg_temp.courier1(), 'courier1', 'courier'), (pg_temp.courier2(), 'courier2', 'courier'),
   (pg_temp.admin(), 'admin', 'merchant')
 ) as ids(id, label, role)
@@ -473,6 +477,51 @@ select is(
 );
 select is(pg_temp.available(pg_temp.m_flow()), 20, 'el comercio tiene 20 créditos sueltos disponibles');
 
+-- H02 (revisión PR #397): la nota normalizada es parte del payload idempotente.
+create function pg_temp.grant_note(p_key uuid, p_note text) returns jsonb language sql as $$
+  select pg_temp.rpc(
+    pg_temp.admin(), 'aal2',
+    format('select public.admin_grant_publication_credits(%L::uuid, 4, %L, %L::uuid, %L)', pg_temp.m_note(), 'adjustment', p_key, p_note)
+  );
+$$;
+create function pg_temp.register_note(p_key uuid, p_note text) returns jsonb language sql as $$
+  select pg_temp.rpc(
+    pg_temp.admin(), 'aal2',
+    format('select public.admin_register_plan_period(%L::uuid, %L::uuid, false, %L::uuid, %L)', pg_temp.m_note(), (select quota5 from plans), p_key, p_note)
+  );
+$$;
+select is((pg_temp.grant_note(pg_temp.id('6211'), 'Compra por transferencia')->'data'->>'idempotent')::boolean, false, 'H02: acreditación con nota');
+select is(
+  pg_temp.err(pg_temp.grant_note(pg_temp.id('6211'), 'Otra nota')),
+  'IDEMPOTENCY_CONFLICT',
+  'H02: misma clave con otra nota da IDEMPOTENCY_CONFLICT'
+);
+select is(
+  pg_temp.err(pg_temp.grant_note(pg_temp.id('6211'), null)),
+  'IDEMPOTENCY_CONFLICT',
+  'H02: misma clave sin la nota original da IDEMPOTENCY_CONFLICT'
+);
+select is(
+  (pg_temp.grant_note(pg_temp.id('6211'), '  Compra por transferencia  ')->'data'->>'idempotent')::boolean,
+  true,
+  'H02: la misma nota con espacios alrededor es el mismo payload'
+);
+select is((pg_temp.grant_note(pg_temp.id('6212'), null)->'data'->>'idempotent')::boolean, false, 'H02: acreditación sin nota');
+select is((pg_temp.grant_note(pg_temp.id('6212'), '   ')->'data'->>'idempotent')::boolean, true, 'H02: nota en blanco equivale a sin nota');
+select is(pg_temp.err(pg_temp.grant_note(pg_temp.id('6212'), 'Nota nueva')), 'IDEMPOTENCY_CONFLICT', 'H02: agregar nota en el reintento da conflicto');
+select is(
+  (select count(*)::integer from public.publication_credit_movements m
+   join public.publication_credit_lots l on l.id = m.lot_id
+   where l.operation_key in (pg_temp.id('6211'), pg_temp.id('6212')) and m.kind = 'grant'),
+  2,
+  'H02: una fila de libro por clave'
+);
+select is(
+  (select count(*)::integer from public.audit_log where action = 'admin_grant_publication_credits' and target_id = pg_temp.m_note()::text),
+  2,
+  'H02: una fila de auditoría por clave'
+);
+
 -- Acceso directo bloqueado
 select is(
   (pg_temp.rpc(pg_temp.m_flow(), 'aal1', format(
@@ -548,6 +597,75 @@ select is(
   'el beneficio se registra una sola vez por comercio'
 );
 update public.platform_settings set value = '0'::jsonb where key = 'launch_discount_pct';
+
+-- H05 / decisión 2-A (revisión PR #397): la primera compra consume el beneficio aunque el % vigente sea 0.
+select is(
+  (pg_temp.grant_loose(pg_temp.m_zero(), 2, 'adjustment', pg_temp.id('6311'))->'data'->>'launchDiscountPct'),
+  null,
+  'H05: un ajuste con 0 % no devuelve descuento'
+);
+select is(
+  (pg_temp.register(pg_temp.m_zero(), (select quota5 from plans), false, pg_temp.id('6312'))->'data'->>'launchDiscountPct'),
+  null,
+  'H05: una cortesía con 0 % no devuelve descuento'
+);
+select is(
+  (select count(*)::integer from public.merchant_launch_discounts where merchant_id = pg_temp.m_zero()),
+  0,
+  'H05: ajuste y cortesía no consumen el beneficio'
+);
+select is(
+  (pg_temp.grant_loose(pg_temp.m_zero(), 3, 'purchase', pg_temp.id('6313'))->'data'->>'launchDiscountPct')::integer,
+  0,
+  'H05: la primera compra con 0 % devuelve launchDiscountPct = 0'
+);
+select is(
+  (select count(*)::integer || ':' || min(pct)::text from public.merchant_launch_discounts where merchant_id = pg_temp.m_zero()),
+  '1:0',
+  'H05: la primera compra al 0 % queda registrada una vez, con pct 0'
+);
+update public.platform_settings set value = '20'::jsonb where key = 'launch_discount_pct';
+select is(
+  (pg_temp.grant_loose(pg_temp.m_zero(), 3, 'purchase', pg_temp.id('6314'))->'data'->>'launchDiscountPct'),
+  null,
+  'H05: subir el % después no da descuento a la segunda compra'
+);
+select is(
+  (pg_temp.register(pg_temp.m_zero(), (select quota5 from plans), true, pg_temp.id('6315'))->'data'->>'launchDiscountPct'),
+  null,
+  'H05: una compra de plan posterior tampoco lo recibe'
+);
+select is(
+  (pg_temp.grant_loose(pg_temp.m_zero(), 3, 'purchase', pg_temp.id('6313'))->'data'->>'launchDiscountPct')::integer,
+  0,
+  'H05: el reintento de la primera compra devuelve 0 sin duplicar'
+);
+select is(
+  (select count(*)::integer from public.merchant_launch_discounts where merchant_id = pg_temp.m_zero()),
+  1,
+  'H05: sigue habiendo una sola fila de beneficio'
+);
+update public.platform_settings set value = '0'::jsonb where key = 'launch_discount_pct';
+
+-- H02: idempotencia del período con nota
+select is((pg_temp.register_note(pg_temp.id('6321'), 'Plan de cortesía')->'data'->>'idempotent')::boolean, false, 'H02: período con nota');
+select is(pg_temp.err(pg_temp.register_note(pg_temp.id('6321'), 'Otra nota')), 'IDEMPOTENCY_CONFLICT', 'H02: período con otra nota da IDEMPOTENCY_CONFLICT');
+select is(pg_temp.err(pg_temp.register_note(pg_temp.id('6321'), '')), 'IDEMPOTENCY_CONFLICT', 'H02: período sin la nota original da IDEMPOTENCY_CONFLICT');
+select is(
+  (pg_temp.register_note(pg_temp.id('6321'), ' Plan de cortesía ')->'data'->>'idempotent')::boolean,
+  true,
+  'H02: período con la misma nota normalizada es idempotente'
+);
+select is(
+  (select count(*)::integer from public.merchant_plan_periods where operation_key = pg_temp.id('6321')),
+  1,
+  'H02: un solo período por clave'
+);
+select is(
+  (select count(*)::integer from public.audit_log where action = 'admin_register_plan_period' and target_id = pg_temp.m_note()::text),
+  1,
+  'H02: una sola auditoría del período'
+);
 
 -- ============================================================================
 -- 6. Costo híbrido (prueba 2)
@@ -899,6 +1017,36 @@ select is(
   '2-A: acortar el legacy sin superponer se acepta'
 );
 
+-- H03 (revisión PR #397): con un plan agendado al fin legacy, la gracia global no puede cambiar.
+create function pg_temp.set_grace(p_days integer) returns text language sql as $$
+  select pg_temp.err(pg_temp.rpc(pg_temp.admin(), 'aal2', format('select public.admin_update_setting(%L, %L::jsonb)', 'subscription_grace_days', p_days::text)));
+$$;
+create temp table legacy_start as
+select starts_at from public.merchant_plan_periods where operation_key = pg_temp.id('6702');
+select is(pg_temp.set_grace(10), 'INVALID_SETTING_VALUE', 'H03: ampliar la gracia 3→10 superpondría legacy y plan: se rechaza');
+select is(pg_temp.set_grace(0), 'INVALID_SETTING_VALUE', 'H03: reducir la gracia 3→0 dejaría un hueco: se rechaza');
+select is(pg_temp.set_grace(3), null, 'H03: guardar el mismo valor no cambia derechos');
+select is(
+  (select value from public.platform_settings where key = 'subscription_grace_days'),
+  '3'::jsonb,
+  'H03: la gracia sigue en 3'
+);
+select is(
+  app_private.publication_legacy_end(pg_temp.m_legacy()) <= (select starts_at from legacy_start),
+  true,
+  'H03: el derecho legacy sigue terminando antes del plan agendado'
+);
+select is(pg_temp.err(pg_temp.register(pg_temp.m_legacy(), (select quota5 from plans), true, pg_temp.id('6703'))), null, 'H03: renovar el plan agendado');
+select is(pg_temp.set_grace(10), 'INVALID_SETTING_VALUE', 'H03: con la renovación la gracia sigue bloqueada');
+select is(
+  pg_temp.err(pg_temp.rpc(pg_temp.admin(), 'aal2', format(
+    'select public.admin_set_subscription(%L::uuid, %L, null, null)', pg_temp.m_legacy(), 'expired'))),
+  null,
+  'H03: sin derecho legacy vigente'
+);
+select is(pg_temp.set_grace(10), null, 'H03: sin legacy relevante la gracia se puede cambiar');
+select is(pg_temp.set_grace(3), null, 'H03: y volver a 3');
+
 -- ============================================================================
 -- 11. Fidelidad, arrastre al corte y conversión D-C7 (prueba 6, D-C7)
 -- ============================================================================
@@ -1006,6 +1154,51 @@ select is(
   (select granted from public.publication_credit_lots where merchant_id = pg_temp.m_fidel() and kind = 'carryover'),
   2,
   'el arrastre materializado es inmutable'
+);
+
+-- H04 (revisión PR #397): la liberación usa el instante real, no el inicio de la transacción. pgTAP corre en una sola
+-- transacción, así que un vencimiento entre transaction_timestamp() y clock_timestamp() ya pasó aunque now() no lo vea.
+select is(pg_temp.err(pg_temp.register(pg_temp.m_clock(), (select quota5 from plans), false, pg_temp.id('6811'))), null, 'H04: plan de 5');
+select is(pg_temp.err(pg_temp.publish(pg_temp.m_clock(), pg_temp.id('5711'), 1)), null, 'H04: reserva del lote de plan');
+update public.publication_credit_lots
+set expires_at = transaction_timestamp() + (clock_timestamp() - transaction_timestamp()) / 2
+where merchant_id = pg_temp.m_clock() and kind = 'plan';
+select ok(
+  (select expires_at > now() and expires_at < clock_timestamp() from public.publication_credit_lots
+   where merchant_id = pg_temp.m_clock() and kind = 'plan'),
+  'H04: el lote vence entre el inicio de la transacción y el instante actual'
+);
+select is(
+  pg_temp.err(pg_temp.rpc(pg_temp.m_clock(), 'aal1', format('select public.cancel_request(%L::uuid, null)', pg_temp.id('5711')))),
+  null,
+  'H04: cancelar antes del match libera la reserva'
+);
+select is(
+  (select count(*)::integer || ':' || coalesce(sum(granted), 0)::text from public.publication_credit_lots
+   where merchant_id = pg_temp.m_clock() and source = 'refund_conversion'),
+  '1:1',
+  'H04: la parte del lote vencido vuelve como un suelto nuevo'
+);
+select is(
+  (select refund_source_lot_id from public.publication_credit_lots where merchant_id = pg_temp.m_clock() and source = 'refund_conversion'),
+  (select id from public.publication_credit_lots where merchant_id = pg_temp.m_clock() and kind = 'plan'),
+  'H04: la conversión referencia el lote de origen'
+);
+select is(
+  pg_temp.err(pg_temp.rpc(pg_temp.m_clock(), 'aal1', format('select public.cancel_request(%L::uuid, null)', pg_temp.id('5711')))),
+  'INVALID_STATE_TRANSITION',
+  'H04: el reintento de la cancelación se rechaza'
+);
+select app_private.release_publication(pg_temp.id('5711'), pg_temp.m_clock(), 'retry');
+select is(
+  (select count(*)::integer from public.publication_credit_lots where merchant_id = pg_temp.m_clock() and source = 'refund_conversion'),
+  1,
+  'H04: liberar de nuevo no compensa dos veces'
+);
+select is(
+  (select coalesce(sum(u.available), 0)::integer from app_private.publication_usable_lots(pg_temp.m_clock(), clock_timestamp()) as u),
+  1,
+  'H04: al instante actual queda exactamente el crédito convertido'
 );
 
 -- Racha y tope: renovaciones anticipadas consecutivas

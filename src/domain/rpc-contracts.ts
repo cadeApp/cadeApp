@@ -739,7 +739,7 @@ export const publicationLotSourceSchema = z.enum(['purchase', 'adjustment', 'pla
 export const publicationModeSchema = z.enum(['pilot', 'legacy_paid', 'unlimited', 'credits']);
 export const publicationMovementKindSchema = z.enum(['grant', 'reserve', 'consume', 'unconsume', 'release', 'convert']);
 const publicationNoteSchema = z.string().trim().max(500).nullable().optional();
-const launchDiscountPctSchema = z.number().int().min(1).max(100).nullable();
+const launchDiscountPctSchema = z.number().int().min(0).max(100).nullable();
 
 export const publicationPeriodSummarySchema = z.object({
   periodId: uuidSchema,

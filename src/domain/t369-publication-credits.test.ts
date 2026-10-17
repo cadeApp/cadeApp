@@ -483,3 +483,83 @@ describe('T-369 / CC-029 — fake: administración y bordes', () => {
     expect((await t.balance()).lots).toHaveLength(1);
   });
 });
+
+describe('T-369 / CC-029 — fake: correcciones de la revisión de la PR #397', () => {
+  const quota = (code: string) => ({
+    planId: null,
+    code,
+    name: code,
+    kind: 'quota' as const,
+    monthlyCredits: 5,
+    referencePriceArs: null,
+    active: true,
+    sort: 1,
+  });
+
+  it('H02: la nota normalizada forma parte del payload idempotente de acreditaciones y períodos', async () => {
+    const t = setup();
+    t.asAdmin();
+    const grant = (operationKey: string, note: string | null) =>
+      t.fake.admin_grant_publication_credits({ merchantId: MERCHANT, credits: 4, source: 'adjustment', operationKey, note });
+    expect((await grant(key(1), 'Compra por transferencia')).ok).toBe(true);
+    expect(await grant(key(1), 'Otra nota')).toEqual({ ok: false, code: 'IDEMPOTENCY_CONFLICT' });
+    expect(await grant(key(1), null)).toEqual({ ok: false, code: 'IDEMPOTENCY_CONFLICT' });
+    const retry = await grant(key(1), '  Compra por transferencia  ');
+    expect(retry.ok && retry.data.idempotent).toBe(true);
+    expect((await grant(key(2), null)).ok).toBe(true);
+    const blank = await grant(key(2), '   ');
+    expect(blank.ok && blank.data.idempotent).toBe(true);
+    expect(await grant(key(2), 'Nota nueva')).toEqual({ ok: false, code: 'IDEMPOTENCY_CONFLICT' });
+
+    const plan = await t.fake.admin_upsert_publication_plan(quota('plan-a'));
+    if (!plan.ok) throw new Error(plan.code);
+    const register = (note: string | null) =>
+      t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(3), note });
+    expect((await register('Plan de cortesía')).ok).toBe(true);
+    expect(await register('Otra nota')).toEqual({ ok: false, code: 'IDEMPOTENCY_CONFLICT' });
+    expect(await register('')).toEqual({ ok: false, code: 'IDEMPOTENCY_CONFLICT' });
+    const periodRetry = await register(' Plan de cortesía ');
+    expect(periodRetry.ok && periodRetry.data.idempotent).toBe(true);
+    expect((await t.balance()).available).toBe(13);
+  });
+
+  it('H03: con un plan agendado al fin legacy no se puede ampliar ni reducir la gracia', async () => {
+    const t = setup();
+    t.setMerchant('active', '2026-11-30');
+    t.asMerchant();
+    t.asAdmin();
+    const plan = await t.fake.admin_upsert_publication_plan(quota('plan-a'));
+    if (!plan.ok) throw new Error(plan.code);
+    const scheduled = await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(1) });
+    expect(scheduled.ok && scheduled.data.startsAt).toBe('2026-12-04T03:00:00.000Z');
+    expect(await t.fake.admin_update_setting({ key: 'subscription_grace_days', value: 10 })).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
+    expect(await t.fake.admin_update_setting({ key: 'subscription_grace_days', value: 0 })).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
+    expect((await t.fake.admin_update_setting({ key: 'subscription_grace_days', value: 3 })).ok).toBe(true);
+
+    expect((await t.fake.admin_set_subscription({ merchantId: MERCHANT, subscriptionStatus: 'expired', paidUntil: null })).ok).toBe(true);
+    expect((await t.fake.admin_update_setting({ key: 'subscription_grace_days', value: 10 })).ok).toBe(true);
+  });
+
+  it('H05 / 2-A: la primera compra al 0 % consume el beneficio; ajuste y cortesía no', async () => {
+    const t = setup({ settings: { launchDiscountPct: 0 } });
+    const adjustment = await t.grant(1, 1, 'adjustment');
+    expect(adjustment.ok && adjustment.data.launchDiscountPct).toBeNull();
+    t.asAdmin();
+    const plan = await t.fake.admin_upsert_publication_plan(quota('plan-a'));
+    if (!plan.ok) throw new Error(plan.code);
+    const courtesy = await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(2) });
+    expect(courtesy.ok && courtesy.data.launchDiscountPct).toBeNull();
+
+    const first = await t.grant(1, 3, 'purchase');
+    expect(first.ok && first.data.launchDiscountPct).toBe(0);
+    t.asAdmin();
+    await t.fake.admin_update_setting({ key: 'launch_discount_pct', value: 20 });
+    const second = await t.grant(1, 4, 'purchase');
+    expect(second.ok && second.data.launchDiscountPct).toBeNull();
+    t.asAdmin();
+    const planPurchase = await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: true, operationKey: key(5) });
+    expect(planPurchase.ok && planPurchase.data.launchDiscountPct).toBeNull();
+    const retry = await t.grant(1, 3, 'purchase');
+    expect(retry.ok && retry.data).toMatchObject({ idempotent: true, launchDiscountPct: 0 });
+  });
+});
