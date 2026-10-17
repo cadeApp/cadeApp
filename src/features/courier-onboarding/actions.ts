@@ -1,11 +1,14 @@
 'use server';
 
 import { createHmac } from 'node:crypto';
+import { revalidatePath } from 'next/cache';
 import { createClient } from '@/server/supabase/server';
 import { createAdminClient } from '@/server/supabase/admin';
 import { serverEnv } from '@/server/env';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
+import { replaceCourierDocumentInputSchema } from '@/domain/rpc-contracts';
+import { replaceCourierDocumentRpc, type ReplaceCourierDocumentResult } from '@/server/rpc/courier';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import type { SupabaseRpcCaller } from '@/server/rpc/offers';
 import { courierOnboardingSchema, courierUpdateVehicleSchema } from './schemas';
@@ -302,6 +305,70 @@ export async function courierOnboardingAction(
   return ok({
     redirectTo: '/onboarding/status',
   });
+}
+
+/**
+ * CC-025 / T-356: Acción de servidor autenticada para reemplazar un documento rechazado del repartidor.
+ * Invoca la RPC transaccional `replace_courier_document` con validación estricta de sesión, rol courier,
+ * y prefijo canónico `courier/<user.id>/<kind>_`.
+ */
+export async function replaceCourierDocumentAction(
+  input: unknown
+): Promise<ActionResult<ReplaceCourierDocumentResult, DomainErrorCode>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'courier') {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const parsed = replaceCourierDocumentInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const expectedPrefix = `courier/${user.id}/${parsed.data.kind}_`;
+  if (
+    !parsed.data.storagePath.startsWith(expectedPrefix) ||
+    parsed.data.storagePath.includes('..') ||
+    parsed.data.storagePath.length > 500
+  ) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const rpcResult = await replaceCourierDocumentRpc(supabase, {
+    kind: parsed.data.kind,
+    storagePath: parsed.data.storagePath,
+    ...(parsed.data.idempotencyKey ? { idempotencyKey: parsed.data.idempotencyKey } : {}),
+  });
+
+  if (!rpcResult.ok) {
+    return rpcResult;
+  }
+
+  revalidatePath('/courier/profile');
+  revalidatePath('/courier/onboarding/status');
+
+  return ok(rpcResult.data);
 }
 
 export interface CourierUpdateVehicleResult {
