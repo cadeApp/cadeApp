@@ -10,3 +10,9 @@
 Las decisiones humanas **1-A y 2-A** fueron explícitas el 2026-10-17 y no las tomó el revisor unilateralmente.
 
 No se asigna numeración `AG-` global sin comprobar todas las ramas remotas. Esta ronda abre hallazgos; ninguna corrección está verificada. En nueva ronda, volver a observar el HEAD y probar cada regresión.
+
+## Ronda 2 — PR397-R01
+
+- Un control negativo que **detecta** el comportamiento malo al evaluar la expectativa opuesta no necesariamente prueba que el mismo test GREEN hubiera fallado. `expectInvariant:false` es un interruptor de prueba que evita las aserciones originales y puede dar una certificación RED de apariencia convincente. Requerir ejecución de la prueba idéntica y captura de **AssertionError específico** bajo mutación; no mutar oracle/expectations.
+- Las carreras con locks deben distinguir el bloqueo esperado de la operación ya terminada sin convertir un timeout en prueba de invariante. Para H03, `allowDone` puede ser independiente del resultado esperado y los asserts quedar idénticos.
+- El CI de concurrencia T-369 sí se ejecutó en dos pasadas; no confundir **probar la función en verde** con **probar sensibilidad del test**.
