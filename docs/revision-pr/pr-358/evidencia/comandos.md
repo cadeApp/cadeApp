@@ -240,3 +240,25 @@ Este harness fue redactado para ejecutar desde un checkout; en la sesión se eje
 
 ### No ejecutado
 - `pnpm test` local del checkout, `node docs/revision-pr/analizar.mjs verificacion`, `git merge-tree` local, Docker/DB local/remota o Playwright por el revisor. La compatibilidad y checks de CI se leyeron directamente en GitHub.
+
+## Ronda 6: verificación final del gate E2E de PR #358 (2026-10-17)
+
+**SHA exacto del PR:** `83b39ca55470582e0a5c1eb0b9c8a1b8f468d983`. **SHA funcional:** `ed4a118f12a2ee384b67d60c875ec8d5bfb6e8ad`. `compare_commits(ed4a118f,83b39ca)` = 1 commit de documentación; solo `docs/revision-pr/pr-358/{README.md,evidencia/comandos.md,hallazgos.jsonl,lecciones.md,revisiones/ronda-5.md}`. Sin cambios funcionales.
+
+Herramientas GitHub efectivamente usadas por el revisor: `get_pr_info`, `fetch_pr_comments`, `compare_commits`, `fetch_workflow_run_jobs`, `fetch_workflow_job_logs` de jobs `117456835108`, `117456788184`, `117461967880`, `117456551228`, `117456551190`, `fetch` de `pulls/358`, `commits/<SHA>/status`, `commits/<SHA>/check-runs`, `actions/runs/39053537841`, Issues #363/#399.
+
+**E2E run:** https://github.com/cadeApp/cadeApp/actions/runs/39053537841
+- E2E job `117456835108`: checkout explícito `ref: 83b39ca55470582e0a5c1eb0b9c8a1b8f468d983`; `HEAD is now at 83b39ca`; ref DB `kaosdpmqlrtmvsqmceso`; pasos `Verify Supabase Develop target=success`, `Health check=success`, `Run preview E2E gate=success`.
+- Línea literal de resumen de Chromium: `86 passed (22.1m)`.
+- Línea literal de resumen global-settings: `3 passed (56.2s)`.
+- Caso literal en log: `✓ 13 [chromium] ... courier-onboarding.spec.ts:822 ... T-356 / CC-025: Recarga de documento rechazado con motivo seguro y actualización a En revisión sin mutar aprobados (29.5s)`.
+- Status job `117461967880`: `RESULT: success`, `TARGET_SHA: 83b39ca55470582e0a5c1eb0b9c8a1b8f468d983`, `DEPLOYMENT_ID: dpl_8vY5a3Sxd4WkDARM6nJCyFWwiGNy`.
+- API commit status en SHA: `e2e-preview: success`, URL run 39053537841.
+- Matiz: `actions/runs/39053537841` anuncia `head_sha=711a2f7` porque la lógica del workflow de confianza reside en `develop`. **No** es el commit probado; el checkout explícito y `TARGET_SHA` prueban que las suites corrieron para PR `83b39ca`.
+- Run anterior https://github.com/cadeApp/cadeApp/actions/runs/39052264162 E2E `cancelled`; no declararlo verde ni contabilizar 53 subtests parciales como suite completa.
+
+**CI completo:** https://github.com/cadeApp/cadeApp/actions/runs/39053456434 (SHA 83b39ca), seven jobs success. Log `unit` job `117456551228` muestra `Test Files 139 passed (139)`, `Tests 2618 passed (2618)`; `db-tests` job `117456551190` muestra en último bloque `Files=27, Tests=2420, Result: PASS`. `approval-policy` https://github.com/cadeApp/cadeApp/actions/runs/39053455229 success, sin implicar independencia.
+
+**Estado al verificar:** PR OPEN/Draft, `mergeable=true`, `mergeable_state=clean`, 0 behind develop. T-370 #399 OPEN y CC-025 #363 OPEN. No modificación funcional remota, no aprobación/merge, no promoción staging/main.
+
+**Límites:** en esta ronda no se corrió `pnpm`, Vitest, pgTAP o Playwright en clon del revisor ni mutación adicional. Los tests reportados se atribuyen al job real de GitHub y se leyeron en su log. No se fabricaron pruebas RED/GREEN ni se alteró su aserción.

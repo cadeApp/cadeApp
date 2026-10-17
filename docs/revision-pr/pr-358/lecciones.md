@@ -39,3 +39,10 @@ Sin numerar AG hasta contrastar máximo en ramas; pruebas independientes no ejec
 - **P06/P08:** test de ruta persistida debe seguir el MIME realmente producido por el compresor, no la extensión de nombre; cambiar .png→.jpg en la aserción E2E es una actualización fundada, no necesariamente adulteración. Se contrastó compresor, helper y SQL.
 - **Verificación independiente acotada:** ejecutar el cuerpo original extraído en V8 permite una mutación auténtica sobre la función pure JS/TS sin clone ni secretos: GREEN 10, RED 7, GREEN 10. No equivale a correr el módulo importado con Vitest, Storage ni E2E. Describir exactamente ese límite.
 - **Gate de release:** CI unit/pgTAP verde y approval-policy verde no sustituyen Playwright pendiente. Ronda terminada sin nuevos defectos detectados, con bloqueo de validación E2E explícito.
+
+## Ronda 6 — Cierre de gate sin nueva numeración AG
+
+- **Comprobar el checkout, no confiar en `workflow_run.head_sha`:** los E2E de workflow confiable declaran HEAD de `develop`, pero hacen checkout explícito de SHA de PR; verificar job checkout y target del status publicado.
+- **No confundir cancelación con fallo funcional:** run anterior quedó cancelled; el run sucesor pasó 86+3 casos sobre descendiente exclusivamente documental. Sólo el sucesor justifica gate verde.
+- **Separar decisión de merge y rollout:** T-356 puede quedar lista para develop con T-370 #399 abierta como gate anterior a staging/main, según decisión previa del usuario.
+- **No sumar ronda de CI por documentación:** la validación fue completada para el SHA exacto anterior al commit documental de cierre; el código no cambió.

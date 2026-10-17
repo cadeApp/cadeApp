@@ -48,3 +48,7 @@ Crear, revisar y mergear primero el CC #363 en PR independiente, reconciliar fic
 ## Ronda 5 — 2026-10-17
 
 **Sin nuevos bloqueantes de código; gate E2E del HEAD pendiente.** HEAD revisado `ed4a118f12a2ee384b67d60c875ec8d5bfb6e8ad` (R5); `PR358-H06` **arreglado-verificado** con prueba independiente de cuerpo fuente MIME (10 GREEN → 7 RED propios → 10 GREEN), CI del HEAD 139 suites / 2618 unit y 27 archivos / 2420 pgTAP PASS. E2E [39052264162](https://github.com/cadeApp/cadeApp/actions/runs/39052264162) estaba en ejecución; no mergear mientras falte su resultado. Reporte [ronda-5](revisiones/ronda-5.md), [evidencia](evidencia/comandos.md). T-370 #399 permanece gate pre-staging/main, no impedimento propio para develop.
+
+## Ronda 6 — 2026-10-17 · Gate E2E final
+
+**SIN BLOQUEANTES PARA MERGE A DEVELOP (requiere autorización humana)**. HEAD `83b39ca5` probado realmente por E2E [39053537841](https://github.com/cadeApp/cadeApp/actions/runs/39053537841): **86/86 Chromium y 3/3 global-settings PASS**, caso T-356 PASS. CI del mismo SHA [39053456434](https://github.com/cadeApp/cadeApp/actions/runs/39053456434) completo en verde (2618 unit, 2420 pgTAP); `e2e-preview: success` publicado; mergeable clean, 0 behind develop. La limpieza T-370 [#399](https://github.com/cadeApp/cadeApp/issues/399) es gate pre-staging/main, no de develop. No aprobación ni merge por el revisor. [Informe R6](revisiones/ronda-6.md), [evidencia](evidencia/comandos.md). No repetir CI por commit documental exclusivamente.
