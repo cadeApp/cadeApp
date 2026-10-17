@@ -387,6 +387,38 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
       expect(result).toEqual({ ok: false, code: 'DROP_LIMIT_EXCEEDED' });
     });
 
+    it('T-371: propaga PUBLICATION_CREDITS_EXHAUSTED cuando la RPC rechaza la publicación', async () => {
+      const mockRpc = vi.fn().mockResolvedValue(rejectedRpcResponse('PUBLICATION_CREDITS_EXHAUSTED'));
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return { insert: vi.fn().mockResolvedValue({ data: null, error: null }) };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+        rpc: mockRpc,
+      } as unknown as MockedServerClient);
+
+      const result = await createDeliveryRequestAction(validFormInput);
+      expect(result).toEqual({ ok: false, code: 'PUBLICATION_CREDITS_EXHAUSTED' });
+    });
+
     it('devuelve INTERNAL_ERROR ante fallo inesperado de la RPC', async () => {
       const mockRpc = vi.fn().mockResolvedValue({
         data: null,
