@@ -194,11 +194,12 @@ export async function adminVerifyDocumentRpc(
     return err('VALIDATION_ERROR');
   }
 
-  const { documentId, decision, reason } = parsedInput.data;
+  const { documentId, decision, reason, rejectionCode } = parsedInput.data;
   const { data, error } = await client.rpc('admin_verify_document', {
     p_document_id: documentId,
     p_decision: decision,
     p_reason: reason ?? null,
+    p_rejection_code: rejectionCode ?? null,
   });
 
   if (error) {

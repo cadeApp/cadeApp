@@ -19,6 +19,7 @@ const ADMIN_ID = '00000000-0000-4000-8000-0000000000a1';
 const MERCHANT_ID = '00000000-0000-4000-8000-0000000000b1';
 const COURIER_1_ID = '00000000-0000-4000-8000-0000000000c1';
 const DOC_1_ID = '00000000-0000-4000-8000-0000000000d1';
+const DOC_2_ID = '00000000-0000-4000-8000-0000000000d2';
 
 const ADMIN_RPC_NAMES = [
   'admin_decide_courier',
@@ -161,6 +162,12 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
           kind: 'license',
           status: 'submitted',
         },
+        {
+          documentId: DOC_2_ID,
+          courierId: COURIER_1_ID,
+          kind: 'insurance',
+          status: 'submitted',
+        },
       ],
     });
 
@@ -171,6 +178,7 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
             documentId: args?.p_document_id as string,
             decision: args?.p_decision as 'verified' | 'rejected',
             reason: (args?.p_reason as string | null) ?? undefined,
+            rejectionCode: (args?.p_rejection_code as any) ?? undefined,
           });
           if (!res.ok) {
             return { data: null, error: { message: res.code } };
@@ -190,6 +198,18 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
     expect(okRes.data.documentId).toBe(DOC_1_ID);
     expect(okRes.data.status).toBe('verified');
     expect(okRes.data.docLevel).toBeGreaterThanOrEqual(1);
+
+    const rejectRes = await adminVerifyDocumentRpc(caller, {
+      documentId: DOC_2_ID,
+      decision: 'rejected',
+      reason: 'Foto borrosa e ilegible',
+      rejectionCode: 'illegible',
+    });
+    expect(rejectRes.ok).toBe(true);
+    if (!rejectRes.ok) return;
+    expect(rejectRes.data.documentId).toBe(DOC_2_ID);
+    expect(rejectRes.data.status).toBe('rejected');
+    expect(rejectRes.data.rejectionCode).toBe('illegible');
   });
 
   it('5. adminSetSubscriptionRpc actualiza la suscripción del comercio', async () => {

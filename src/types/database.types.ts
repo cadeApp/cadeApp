@@ -83,9 +83,12 @@ export type Database = {
         Row: {
           courier_id: string
           id: string
+          idempotency_key: string | null
+          is_current: boolean
           kind: Database["public"]["Enums"]["courier_document_kind"]
           purge_after: string | null
           purged_at: string | null
+          rejection_code: string | null
           status: Database["public"]["Enums"]["document_review_status"]
           storage_path: string
           uploaded_at: string
@@ -93,9 +96,12 @@ export type Database = {
         Insert: {
           courier_id: string
           id?: string
+          idempotency_key?: string | null
+          is_current?: boolean
           kind: Database["public"]["Enums"]["courier_document_kind"]
           purge_after?: string | null
           purged_at?: string | null
+          rejection_code?: string | null
           status?: Database["public"]["Enums"]["document_review_status"]
           storage_path: string
           uploaded_at?: string
@@ -103,9 +109,12 @@ export type Database = {
         Update: {
           courier_id?: string
           id?: string
+          idempotency_key?: string | null
+          is_current?: boolean
           kind?: Database["public"]["Enums"]["courier_document_kind"]
           purge_after?: string | null
           purged_at?: string | null
+          rejection_code?: string | null
           status?: Database["public"]["Enums"]["document_review_status"]
           storage_path?: string
           uploaded_at?: string
@@ -878,7 +887,12 @@ export type Database = {
         Returns: Json
       }
       admin_verify_document: {
-        Args: { p_decision: string; p_document_id: string; p_reason?: string }
+        Args: {
+          p_decision: string
+          p_document_id: string
+          p_reason?: string
+          p_rejection_code?: string
+        }
         Returns: Json
       }
       calculate_route_distance: {
@@ -923,6 +937,12 @@ export type Database = {
       }
       mark_picked_up: { Args: { p_request_id: string }; Returns: Json }
       publish_request: { Args: { p_request_id: string }; Returns: Json }
+      reconcile_expired_requests: { Args: never; Returns: Json }
+      reconcile_expired_requests_cron: {
+        Args: { p_limit?: number }
+        Returns: Json
+      }
+      replace_courier_document: { Args: { p_payload: Json }; Returns: Json }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }
         Returns: Json
@@ -936,6 +956,10 @@ export type Database = {
         Returns: Json
       }
       set_availability: { Args: { p_available: boolean }; Returns: Json }
+      submit_courier_onboarding_documents: {
+        Args: { p_documents: Json }
+        Returns: Json
+      }
       submit_offer: {
         Args: {
           p_amount_ars: number
@@ -953,6 +977,7 @@ export type Database = {
         }
         Returns: Json
       }
+      update_my_merchant_profile: { Args: { p_patch: Json }; Returns: Json }
       withdraw_offer: { Args: { p_offer_id: string }; Returns: Json }
     }
     Enums: {

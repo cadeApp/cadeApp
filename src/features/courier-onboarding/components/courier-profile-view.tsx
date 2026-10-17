@@ -22,6 +22,7 @@ import { Button, buttonVariants } from '@/ui/button';
 import { BrandLogo } from '@/ui/brand-logo';
 import { cn } from '@/ui/cn';
 import { logoutAction } from '@/features/auth';
+import { COURIER_ONBOARDING_COPY } from '../copy';
 import {
   type DocumentReviewStatus,
   type CourierReviewStatus,
@@ -173,7 +174,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
             Todavía no completaste tu legajo de repartidor
           </h2>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Subí tu documento, selfie y tipo de movilidad para iniciar la revisión.
+            Subí tu documento, selfie con el DNI y tipo de movilidad para iniciar la revisión.
           </p>
         </div>
         <div className="flex justify-center">
@@ -248,7 +249,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
               Todavía no enviaste tu registro
             </h2>
             <p className="text-sm text-muted-foreground">
-              Para empezar la revisión, terminá de cargar tu documento, selfie y vehículo.
+              Para empezar la revisión, terminá de cargar tu documento, selfie con el DNI y vehículo.
             </p>
           </div>
           <Link
@@ -320,7 +321,9 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
               ) : (
                 <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               )}
-              <span className="font-medium text-foreground">Selfie de identidad</span>
+              <span className="font-medium text-foreground">
+                {COURIER_ONBOARDING_COPY.selfieTitle}
+              </span>
             </div>
             {getDocStatusBadge(profile.selfieStatus)}
           </div>

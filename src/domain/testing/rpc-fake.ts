@@ -14,6 +14,7 @@ import {
   type CourierDocumentKind,
   type CourierStatus,
   type DeliveryRequestStatus,
+  type DocumentRejectionCode,
   type DocumentReviewStatus,
   type IncidentKind,
   type IncidentStatus,
@@ -214,6 +215,11 @@ export interface FakeSeedMerchant {
   readonly paidUntil?: string | null;
   readonly businessName?: string;
   readonly phone?: string | null;
+  readonly defaultPickupAddress?: string | null;
+  readonly defaultPickupZoneId?: string | null;
+  readonly defaultPickupLat?: number | null;
+  readonly defaultPickupLng?: number | null;
+  readonly notes?: string | null;
 }
 
 export interface FakeMerchantRecord {
@@ -222,6 +228,11 @@ export interface FakeMerchantRecord {
   paidUntil: string | null;
   businessName: string;
   phone: string | null;
+  defaultPickupAddress: string | null;
+  defaultPickupZoneId: string | null;
+  defaultPickupLat: number | null;
+  defaultPickupLng: number | null;
+  notes: string | null;
 }
 
 export interface FakeSeedDocument {
@@ -229,6 +240,11 @@ export interface FakeSeedDocument {
   readonly courierId: string;
   readonly kind: CourierDocumentKind;
   readonly status: DocumentReviewStatus;
+  readonly isCurrent?: boolean;
+  readonly rejectionCode?: DocumentRejectionCode | null;
+  readonly storagePath?: string;
+  readonly purgeAfter?: string | null;
+  readonly idempotencyKey?: string | null;
 }
 
 export interface FakeDocumentRecord {
@@ -236,6 +252,11 @@ export interface FakeDocumentRecord {
   readonly courierId: string;
   readonly kind: CourierDocumentKind;
   status: DocumentReviewStatus;
+  isCurrent: boolean;
+  rejectionCode: DocumentRejectionCode | null;
+  storagePath: string;
+  purgeAfter: string | null;
+  idempotencyKey: string | null;
 }
 
 export interface FakeSeedIncident {
@@ -267,6 +288,8 @@ export interface FakeIncidentRecord {
 export interface FakeRpcOptions {
   readonly settings: FakePlatformSettings;
   readonly now?: () => Date;
+  /** Solo para probar que el adaptador rechaza una salida RPC que viola su contrato. */
+  readonly invalidOutputFor?: RpcName;
   readonly initialActor?: Partial<FakeActorContext>;
   readonly initialRequests?: readonly FakeSeedRequest[];
   readonly initialOffers?: readonly FakeSeedOffer[];
@@ -285,7 +308,9 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly seedCourier: (courier: FakeSeedCourier) => void;
   readonly deleteCourier: (courierId: string) => void;
   readonly seedMerchant: (merchant: FakeSeedMerchant) => void;
+  readonly deleteMerchant: (merchantId: string) => void;
   readonly seedDocument: (doc: FakeSeedDocument) => void;
+  readonly getDocument: (documentId: string) => FakeDocumentRecord | undefined;
   readonly seedIncident: (incident: FakeSeedIncident) => void;
   readonly getIncident: (incidentId: string) => FakeIncidentRecord | undefined;
   readonly getRequest: (requestId: string) => FakeRequestRecord | undefined;
@@ -309,6 +334,8 @@ const DEFAULT_ACTOR: FakeActorContext = {
 };
 
 const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } = {
+  update_my_merchant_profile: ['merchant'],
+  reconcile_expired_requests: ['merchant'],
   create_and_publish_multi_drop: ['merchant'],
   publish_request: ['merchant'],
   cancel_request: ['merchant', 'admin'],
@@ -330,6 +357,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   get_trip_details: ['merchant', 'courier'],
   get_request_offer_couriers: ['merchant'],
   get_merchant_request_private_fields: ['merchant'],
+  replace_courier_document: ['courier'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
   admin_verify_document: ['admin'],
@@ -569,12 +597,40 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   }
 
   function putMerchant(m: FakeSeedMerchant) {
+    const prev = merchants.get(m.merchantId);
     merchants.set(m.merchantId, {
       merchantId: m.merchantId,
       subscriptionStatus: m.subscriptionStatus,
       paidUntil: m.paidUntil ?? null,
-      businessName: m.businessName ?? 'Comercio',
-      phone: m.phone ?? '3865222222',
+      businessName: m.businessName ?? prev?.businessName ?? 'Comercio',
+      phone: m.phone ?? prev?.phone ?? '3865222222',
+      defaultPickupAddress: m.defaultPickupAddress ?? prev?.defaultPickupAddress ?? null,
+      defaultPickupZoneId: m.defaultPickupZoneId ?? prev?.defaultPickupZoneId ?? null,
+      defaultPickupLat: m.defaultPickupLat ?? prev?.defaultPickupLat ?? null,
+      defaultPickupLng: m.defaultPickupLng ?? prev?.defaultPickupLng ?? null,
+      notes: m.notes ?? prev?.notes ?? null,
+    });
+  }
+
+  function putDocument(d: FakeSeedDocument) {
+    const isCurrent = d.isCurrent !== false;
+    if (isCurrent) {
+      for (const existing of documents.values()) {
+        if (existing.courierId === d.courierId && existing.kind === d.kind) {
+          existing.isCurrent = false;
+        }
+      }
+    }
+    documents.set(d.documentId, {
+      documentId: d.documentId,
+      courierId: d.courierId,
+      kind: d.kind,
+      status: d.status,
+      isCurrent,
+      rejectionCode: d.rejectionCode ?? null,
+      storagePath: d.storagePath ?? `courier/${d.courierId}/${d.kind}_default.jpg`,
+      purgeAfter: d.purgeAfter ?? null,
+      idempotencyKey: d.idempotencyKey ?? null,
     });
   }
 
@@ -614,7 +670,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   (options.initialOffers ?? []).forEach((o) => offers.set(o.offerId, { ...o }));
   (options.initialCouriers ?? []).forEach(putCourier);
   (options.initialMerchants ?? []).forEach(putMerchant);
-  (options.initialDocuments ?? []).forEach((d) => documents.set(d.documentId, { ...d }));
+  (options.initialDocuments ?? []).forEach(putDocument);
   (options.initialIncidents ?? []).forEach(putIncident);
 
   function checkCourierEligibility(): ActionResult<
@@ -659,9 +715,11 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       (rpcName === 'get_trip_details' ||
         rpcName === 'get_request_offer_couriers' ||
         rpcName === 'get_merchant_request_private_fields' ||
+        rpcName === 'reconcile_expired_requests' ||
         rpcName === 'report_incident' ||
         rpcName === 'submit_offer' ||
-        rpcName === 'take_request') &&
+        rpcName === 'take_request' ||
+        rpcName === 'replace_courier_document') &&
       (actor.consentStatus ?? 'active') !== 'active'
     ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
@@ -704,7 +762,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     }
     const result = handler(parsed.data as RpcInput<K>);
     if (result.ok) {
-      const outParsed = RPC_CONTRACTS[rpcName].outputSchema.safeParse(result.data);
+      const output = options.invalidOutputFor === rpcName ? {} : result.data;
+      const outParsed = RPC_CONTRACTS[rpcName].outputSchema.safeParse(output);
       if (!outParsed.success) {
         return err('VALIDATION_ERROR' as RpcErrorCode<K>);
       }
@@ -746,7 +805,11 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       couriers.delete(courierId);
     },
     seedMerchant: putMerchant,
-    seedDocument: (d) => documents.set(d.documentId, { ...d }),
+    deleteMerchant: (merchantId) => {
+      merchants.delete(merchantId);
+    },
+    seedDocument: putDocument,
+    getDocument: (documentId) => documents.get(documentId),
     seedIncident: putIncident,
     getIncident: (incidentId) => incidents.get(incidentId),
     getRequest: (requestId) => requests.get(requestId),
@@ -754,6 +817,82 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     getCourier: (courierId) => couriers.get(courierId),
     getSettings: () => ({ ...settings }),
     triggerErrorCode: async (code) => err(code),
+
+    update_my_merchant_profile: (rawInput) =>
+      executeRpc('update_my_merchant_profile', rawInput, false, (input) => {
+        const merchant = merchants.get(actor.userId);
+        if (!merchant) {
+          return err('NOT_FOUND');
+        }
+
+        if (input.businessName !== undefined) {
+          merchant.businessName = input.businessName;
+        }
+        if (input.phone !== undefined) {
+          merchant.phone = input.phone;
+        }
+        if (input.defaultPickupAddress !== undefined) {
+          merchant.defaultPickupAddress = input.defaultPickupAddress;
+        }
+        if (input.defaultPickupZoneId !== undefined) {
+          merchant.defaultPickupZoneId = input.defaultPickupZoneId;
+        }
+        if (input.defaultPickupLat !== undefined) {
+          merchant.defaultPickupLat = input.defaultPickupLat;
+        }
+        if (input.defaultPickupLng !== undefined) {
+          merchant.defaultPickupLng = input.defaultPickupLng;
+        }
+        if (input.notes !== undefined) {
+          merchant.notes = input.notes;
+        }
+
+        return ok({
+          profileId: merchant.merchantId,
+          businessName: merchant.businessName,
+          phone: merchant.phone ?? null,
+          defaultPickupAddress: merchant.defaultPickupAddress ?? null,
+          defaultPickupZoneId: merchant.defaultPickupZoneId ?? null,
+          defaultPickupLat: merchant.defaultPickupLat ?? null,
+          defaultPickupLng: merchant.defaultPickupLng ?? null,
+          notes: merchant.notes ?? null,
+        });
+      }),
+
+    reconcile_expired_requests: (rawInput) =>
+      executeRpc('reconcile_expired_requests', rawInput, false, () => {
+        const currentNow = nowFn();
+        const eligible = [...requests.values()]
+          .filter(
+            (request) =>
+              request.merchantId === actor.userId &&
+              request.status === 'published' &&
+              request.acceptedOfferId === null &&
+              isRequestExpired(request.status, request.expiresAt, currentNow)
+          )
+          .sort((left, right) => {
+            const leftExpiry = left.expiresAt ?? '';
+            const rightExpiry = right.expiresAt ?? '';
+            return leftExpiry.localeCompare(rightExpiry) || left.requestId.localeCompare(right.requestId);
+          });
+        const reconciled = eligible.slice(0, 50);
+        const reconciledIds = new Set(reconciled.map((request) => request.requestId));
+
+        for (const request of reconciled) {
+          request.status = 'expired';
+        }
+        for (const offer of offers.values()) {
+          if (reconciledIds.has(offer.requestId) && offer.status === 'pending') {
+            offer.status = 'expired';
+          }
+        }
+
+        return ok({
+          expiredRequestIds: reconciled.map((request) => request.requestId),
+          expiredCount: reconciled.length,
+          hasMore: eligible.length > reconciled.length,
+        });
+      }),
 
     create_and_publish_multi_drop: (rawInput) =>
       executeRpc('create_and_publish_multi_drop', rawInput, false, (input) => {
@@ -2099,6 +2238,102 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         });
       }),
 
+    replace_courier_document: (rawInput) =>
+      executeRpc('replace_courier_document', rawInput, false, (input) => {
+        const courier = couriers.get(actor.userId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'rejected' || courier.status === 'suspended') {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+
+        const prefix = `courier/${actor.userId}/${input.kind}_`;
+        if (!input.storagePath.startsWith(prefix) || input.storagePath.includes('..')) {
+          return err('VALIDATION_ERROR');
+        }
+
+        if (input.idempotencyKey) {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(input.idempotencyKey)) {
+            return err('VALIDATION_ERROR');
+          }
+
+          for (const d of documents.values()) {
+            if (d.courierId === actor.userId && d.kind === input.kind && d.idempotencyKey === input.idempotencyKey) {
+              if (d.storagePath !== input.storagePath) {
+                return err('VALIDATION_ERROR');
+              }
+              return ok({
+                documentId: d.documentId,
+                kind: d.kind,
+                status: d.status,
+                replacedDocumentId: null,
+                isCurrent: d.isCurrent,
+                idempotent: true,
+              });
+            }
+          }
+        }
+
+        let currentDoc: FakeDocumentRecord | undefined;
+        for (const d of documents.values()) {
+          if (d.courierId === actor.userId && d.kind === input.kind && d.isCurrent) {
+            currentDoc = d;
+            break;
+          }
+        }
+
+        if (!currentDoc) {
+          return err('NOT_FOUND');
+        }
+
+        if (currentDoc.status === 'submitted' && currentDoc.storagePath === input.storagePath) {
+          return ok({
+            documentId: currentDoc.documentId,
+            kind: currentDoc.kind,
+            status: currentDoc.status,
+            replacedDocumentId: null,
+            isCurrent: true,
+            idempotent: true,
+          });
+        }
+
+        if (currentDoc.status !== 'rejected') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        currentDoc.isCurrent = false;
+        currentDoc.purgeAfter = new Date(nowFn().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+        const newDocId = crypto.randomUUID();
+        const newDoc: FakeDocumentRecord = {
+          documentId: newDocId,
+          courierId: actor.userId,
+          kind: input.kind,
+          status: 'submitted',
+          isCurrent: true,
+          rejectionCode: null,
+          storagePath: input.storagePath,
+          purgeAfter: null,
+          idempotencyKey: input.idempotencyKey ?? null,
+        };
+        documents.set(newDocId, newDoc);
+
+        if (input.kind === 'license') {
+          courier.licenseStatus = 'submitted';
+        } else if (input.kind === 'insurance') {
+          courier.insuranceStatus = 'submitted';
+        }
+
+        return ok({
+          documentId: newDocId,
+          kind: input.kind,
+          status: 'submitted',
+          replacedDocumentId: currentDoc.documentId,
+          isCurrent: true,
+          idempotent: false,
+        });
+      }),
+
     calculate_route_distance: (rawInput) =>
       executeRpc('calculate_route_distance', rawInput, false, (input) => {
         if (
@@ -2180,13 +2415,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
         const doc = documents.get(input.documentId);
         if (!doc) return err('NOT_FOUND');
+        if (!doc.isCurrent) {
+          return err('INVALID_STATE_TRANSITION');
+        }
         if (doc.status !== 'submitted') {
           return err('INVALID_STATE_TRANSITION');
         }
         const courier = couriers.get(doc.courierId);
         if (!courier) return err('NOT_FOUND');
 
+        const rejectionCode = input.decision === 'rejected' ? (input.rejectionCode ?? 'other_safe') : null;
         doc.status = input.decision;
+        doc.rejectionCode = rejectionCode;
         if (doc.kind === 'license') courier.licenseStatus = input.decision;
         if (doc.kind === 'insurance') courier.insuranceStatus = input.decision;
         const docLevel = computeDocLevel(courier.licenseStatus, courier.insuranceStatus);
@@ -2196,6 +2436,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           courierId: doc.courierId,
           kind: doc.kind,
           status: doc.status,
+          rejectionCode,
           docLevel,
         });
       }),

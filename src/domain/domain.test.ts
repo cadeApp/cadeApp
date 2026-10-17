@@ -64,6 +64,325 @@ const REQ_MISSING = '30000000-0000-4000-8000-999999999999';
 const DOC_1 = '40000000-0000-4000-8000-000000000001';
 const DOC_2 = '40000000-0000-4000-8000-000000000002';
 
+describe('CC-026 — Contrato de reconciliación de vencimientos', () => {
+  it('declara y devuelve VALIDATION_ERROR cuando el caller intenta elegir el ámbito', async () => {
+    const contract = RPC_CONTRACTS.reconcile_expired_requests;
+    expect(contract.errorCodes).toContain('VALIDATION_ERROR');
+
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+    });
+    const forbiddenInput: unknown = { merchantId: MERCHANT_2 };
+
+    await expect(
+      fake.reconcile_expired_requests(forbiddenInput as unknown as Record<string, never>)
+    ).resolves.toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+  });
+
+  it('expone una RPC de comercio sin entrada, con resultado estricto sin datos privados', () => {
+    const entry = Object.entries(RPC_CONTRACTS).find(
+      ([rpcName]) => rpcName === 'reconcile_expired_requests'
+    );
+
+    expect(entry).toBeDefined();
+    if (!entry) return;
+
+    const [, contract] = entry;
+    expect(contract.inputSchema.safeParse({}).success).toBe(true);
+    expect(contract.inputSchema.safeParse({ merchantId: MERCHANT_2 }).success).toBe(false);
+    expect(
+      contract.outputSchema.safeParse({
+        expiredRequestIds: [REQ_1],
+        expiredCount: 1,
+        hasMore: false,
+      }).success
+    ).toBe(true);
+    expect(
+      contract.outputSchema.safeParse({
+        expiredRequestIds: [REQ_1],
+        expiredCount: 1,
+        hasMore: false,
+        recipientPhone: '+543865111111',
+      }).success
+    ).toBe(false);
+    expect(contract.errorCodes).toEqual(
+      expect.arrayContaining(['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'INTERNAL_ERROR'])
+    );
+  });
+
+  it('rechaza resultados de reconciliación con conteo, IDs o lote contradictorios', () => {
+    const schema = RPC_CONTRACTS.reconcile_expired_requests.outputSchema;
+    const overMerchantBatch = Array.from(
+      { length: 51 },
+      (_, index) => `30000000-0000-4000-8000-${String(index).padStart(12, '0')}`
+    );
+
+    expect(
+      schema.safeParse({
+        expiredRequestIds: [REQ_1],
+        expiredCount: 0,
+        hasMore: false,
+      }).success
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        expiredRequestIds: [REQ_1, REQ_1],
+        expiredCount: 2,
+        hasMore: false,
+      }).success
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        expiredRequestIds: overMerchantBatch,
+        expiredCount: 51,
+        hasMore: true,
+      }).success
+    ).toBe(false);
+  });
+
+  it('falla cerrado si una salida de reconciliación viola el contrato', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      invalidOutputFor: 'reconcile_expired_requests',
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(fake.getRequest(REQ_1)?.status).toBe('expired');
+  });
+
+  it('reconcilia únicamente solicitudes vencidas propias y expira sus ofertas pendientes', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+        {
+          requestId: REQ_2,
+          merchantId: MERCHANT_2,
+          status: 'published',
+          expiresAt: '2026-10-15T11:59:59.999Z',
+        },
+      ],
+      initialOffers: [
+        { offerId: DOC_1, requestId: REQ_1, courierId: COURIER_1, amountArs: 1500, status: 'pending' },
+        {
+          offerId: '40000000-0000-4000-8000-000000000003',
+          requestId: REQ_1,
+          courierId: COURIER_2,
+          amountArs: 1500,
+          status: 'withdrawn',
+        },
+        { offerId: DOC_2, requestId: REQ_2, courierId: COURIER_2, amountArs: 1500, status: 'pending' },
+      ],
+    });
+
+    const result = await fake.reconcile_expired_requests({});
+
+    expect(result).toEqual({
+      ok: true,
+      data: { expiredRequestIds: [REQ_1], expiredCount: 1, hasMore: false },
+    });
+    expect(fake.getRequest(REQ_1)?.status).toBe('expired');
+    expect(fake.getOffer(DOC_1)?.status).toBe('expired');
+    expect(fake.getOffer('40000000-0000-4000-8000-000000000003')?.status).toBe('withdrawn');
+    expect(fake.getRequest(REQ_2)?.status).toBe('published');
+    expect(fake.getOffer(DOC_2)?.status).toBe('pending');
+  });
+
+  it.each([
+    {
+      actor: { userId: '', role: null },
+      expectedCode: 'UNAUTHENTICATED',
+      label: 'anónimo sin identidad',
+    },
+    {
+      actor: { userId: COURIER_1, role: 'courier' as const },
+      expectedCode: 'UNAUTHORIZED_ACTOR',
+      label: 'repartidor',
+    },
+    {
+      actor: { userId: ADMIN_1, role: 'admin' as const },
+      expectedCode: 'UNAUTHORIZED_ACTOR',
+      label: 'admin ordinario',
+    },
+    {
+      actor: { userId: MERCHANT_1, role: 'merchant' as const, consentStatus: 'pending' as const },
+      expectedCode: 'UNAUTHORIZED_ACTOR',
+      label: 'comercio sin consentimiento activo',
+    },
+  ])('no reconcilia para $label', async ({ actor, expectedCode }) => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: actor,
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: false,
+      code: expectedCode,
+    });
+    expect(fake.getRequest(REQ_1)?.status).toBe('published');
+  });
+
+  it('reconcilia al comercio habilitado solo en el límite y preserva solicitudes no elegibles', async () => {
+    const exactLimitRequest = '30000000-0000-4000-8000-000000000010';
+    const beforeLimitRequest = '30000000-0000-4000-8000-000000000011';
+    const afterLimitRequest = '30000000-0000-4000-8000-000000000012';
+    const nullExpiryRequest = '30000000-0000-4000-8000-000000000013';
+    const acceptedRequest = '30000000-0000-4000-8000-000000000014';
+    const matchedRequest = '30000000-0000-4000-8000-000000000015';
+    const inTransitRequest = '30000000-0000-4000-8000-000000000016';
+    const deliveredRequest = '30000000-0000-4000-8000-000000000017';
+    const cancelledRequest = '30000000-0000-4000-8000-000000000018';
+    const expiredRequest = '30000000-0000-4000-8000-000000000019';
+    const otherMerchantRequest = '30000000-0000-4000-8000-000000000020';
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: [
+        {
+          requestId: beforeLimitRequest,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T11:59:59.999Z',
+        },
+        {
+          requestId: exactLimitRequest,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+        {
+          requestId: afterLimitRequest,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.001Z',
+        },
+        { requestId: nullExpiryRequest, merchantId: MERCHANT_1, status: 'published' },
+        {
+          requestId: acceptedRequest,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T11:59:59.999Z',
+          acceptedOfferId: DOC_1,
+        },
+        { requestId: matchedRequest, merchantId: MERCHANT_1, status: 'matched' },
+        { requestId: inTransitRequest, merchantId: MERCHANT_1, status: 'in_transit' },
+        { requestId: deliveredRequest, merchantId: MERCHANT_1, status: 'delivered' },
+        { requestId: cancelledRequest, merchantId: MERCHANT_1, status: 'cancelled' },
+        { requestId: expiredRequest, merchantId: MERCHANT_1, status: 'expired' },
+        {
+          requestId: otherMerchantRequest,
+          merchantId: MERCHANT_2,
+          status: 'published',
+          expiresAt: '2026-10-15T11:59:59.999Z',
+        },
+      ],
+    });
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: true,
+      data: {
+        expiredRequestIds: [beforeLimitRequest, exactLimitRequest],
+        expiredCount: 2,
+        hasMore: false,
+      },
+    });
+    expect(fake.getRequest(afterLimitRequest)?.status).toBe('published');
+    expect(fake.getRequest(nullExpiryRequest)?.status).toBe('published');
+    expect(fake.getRequest(acceptedRequest)?.status).toBe('published');
+    expect(fake.getRequest(matchedRequest)?.status).toBe('matched');
+    expect(fake.getRequest(inTransitRequest)?.status).toBe('in_transit');
+    expect(fake.getRequest(deliveredRequest)?.status).toBe('delivered');
+    expect(fake.getRequest(cancelledRequest)?.status).toBe('cancelled');
+    expect(fake.getRequest(expiredRequest)?.status).toBe('expired');
+    expect(fake.getRequest(otherMerchantRequest)?.status).toBe('published');
+  });
+
+  it.each([
+    { total: 50, expectedBatchSizes: [50] },
+    { total: 51, expectedBatchSizes: [50, 1] },
+    { total: 101, expectedBatchSizes: [50, 50, 1] },
+  ])('reconcilia $total vencimientos en lotes idempotentes', async ({ total, expectedBatchSizes }) => {
+    const requestIdFor = (index: number) =>
+      `30000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`;
+    const offerIdFor = (index: number) =>
+      `40000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`;
+    const requestIds = Array.from({ length: total }, (_, index) => requestIdFor(index));
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: requestIds.map((requestId) => ({
+        requestId,
+        merchantId: MERCHANT_1,
+        status: 'published' as const,
+        expiresAt: '2026-10-15T11:59:59.999Z',
+      })),
+      initialOffers: requestIds.map((requestId, index) => ({
+        offerId: offerIdFor(index),
+        requestId,
+        courierId: COURIER_1,
+        amountArs: 1500,
+        status: 'pending' as const,
+      })),
+    });
+
+    let completed = 0;
+    for (const expectedSize of expectedBatchSizes) {
+      const result = await fake.reconcile_expired_requests({});
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          expiredRequestIds: requestIds.slice(completed, completed + expectedSize),
+          expiredCount: expectedSize,
+          hasMore: completed + expectedSize < total,
+        },
+      });
+      completed += expectedSize;
+    }
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: true,
+      data: { expiredRequestIds: [], expiredCount: 0, hasMore: false },
+    });
+    expect(requestIds.every((requestId) => fake.getRequest(requestId)?.status === 'expired')).toBe(true);
+    expect(
+      requestIds.every((_, index) => fake.getOffer(offerIdFor(index))?.status === 'expired')
+    ).toBe(true);
+  });
+});
+
 describe('CC-002 — Contratos del ciclo de solicitudes', () => {
   const requestRpcs = [
     'publish_request',
@@ -455,6 +774,7 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       expect(canTransitionRequest('delivered', 'cancelled', 'admin')).toBe(false);
 
       expect(getEffectiveRequestStatus('published', past.toISOString(), now)).toBe('expired');
+      expect(getEffectiveRequestStatus('published', now.toISOString(), now)).toBe('expired');
       expect(getEffectiveRequestStatus('published', 'invalid-date', now)).toBe('published');
       expect(getEffectiveRequestStatus('draft', past.toISOString(), now)).toBe('draft');
 

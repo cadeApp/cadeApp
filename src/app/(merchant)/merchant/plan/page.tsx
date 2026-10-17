@@ -1,3 +1,4 @@
+import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Card } from '@/ui/card';
@@ -8,6 +9,34 @@ import { cn } from '@/ui/cn';
 import { Store, MapPin, Phone, MessageCircle, Info, CheckCircle2, LogOut } from 'lucide-react';
 import { getMerchantAccountProfile, getSubscriptionDisplay } from '@/features/merchants/server';
 import { logoutAction } from '@/features/auth/server';
+import { buildWhatsAppUrl } from '@/lib/whatsapp';
+import { z } from 'zod';
+
+/** Soporte configurado desde el servidor. Nunca construir un wa.me sin destinatario. */
+function getSupportWhatsAppHref(rawPhone: string | undefined): string | null {
+  const parsed = z.string().trim().regex(/^[+()\d\s-]{10,32}$/).safeParse(rawPhone);
+  if (!parsed.success) return null;
+
+  // Un prefijo internacional parcial no puede tratarse como diez dígitos nacionales.
+  // El helper compartido acepta dígitos sin prefijo: comprobamos aquí la forma internacional.
+  const digits = parsed.data.replace(/\D/g, '');
+  const incompleteInternationalPrefix = digits.startsWith('549')
+    ? digits.length !== 13
+    : digits.startsWith('54') && digits.length !== 12;
+  if (incompleteInternationalPrefix) {
+    return null;
+  }
+
+  try {
+    return buildWhatsAppUrl(
+      parsed.data,
+      'Hola cadeApp, quiero consultar sobre los planes para comercios.'
+    );
+  } catch {
+    // El helper también comprueba que el número nacional argentino tenga 10 dígitos.
+    return null;
+  }
+}
 
 export default async function MerchantPlanPage() {
   const profile = await getMerchantAccountProfile();
@@ -58,6 +87,7 @@ export default async function MerchantPlanPage() {
   }
 
   const subscription = getSubscriptionDisplay(profile.subscriptionStatus, profile.paidUntil);
+  const supportWhatsAppHref = getSupportWhatsAppHref(process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
@@ -166,7 +196,7 @@ export default async function MerchantPlanPage() {
               <li>Publicaciones de entregas ilimitadas</li>
               <li>Ofertas de repartidores en tiempo real</li>
               <li>Contacto directo por WhatsApp para coordinar</li>
-              <li>Abono mensual fijo (bonificado durante la etapa inicial)</li>
+              <li>Uso gratuito durante la etapa inicial del piloto</li>
             </ul>
           </div>
         </Card>
@@ -178,23 +208,35 @@ export default async function MerchantPlanPage() {
               Renovación y soporte comercial
             </h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Para seguir usando cadeApp vas a poder elegir un abono mensual fijo. Te vamos a avisar
-              con anticipación antes de cualquier cambio para que decidas cómo continuar.
+              Cuando finalice el piloto, te vamos a informar las opciones comerciales disponibles para
+              que puedas elegir cómo continuar. Durante el piloto no necesitás contratar un plan.
             </p>
           </div>
 
-          <a
-            href="https://wa.me/?text=Hola%20cadeApp,%20quiero%20consultar%20sobre%20el%20plan%20para%20comercios"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(
-              buttonVariants({ variant: 'outline', size: 'lg' }),
-              'w-full font-semibold'
-            )}
-          >
-            <MessageCircle className="text-success h-5 w-5" aria-hidden="true" />
-            <span>Hablar con cadeApp</span>
-          </a>
+          {supportWhatsAppHref ? (
+            <a
+              href={supportWhatsAppHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                buttonVariants({ variant: 'outline', size: 'lg' }),
+                'w-full font-semibold'
+              )}
+            >
+              <MessageCircle className="text-success h-5 w-5" aria-hidden="true" />
+              <span>Hablar con cadeApp</span>
+            </a>
+          ) : (
+            <>
+              <Button type="button" variant="outline" size="lg" disabled className="w-full font-semibold">
+                <MessageCircle className="h-5 w-5" aria-hidden="true" />
+                Hablar con cadeApp
+              </Button>
+              <p className="text-sm text-muted-foreground" role="status">
+                El contacto por WhatsApp no está disponible en este momento.
+              </p>
+            </>
+          )}
         </Card>
 
         {/* Nota educativa D14 */}
@@ -202,19 +244,23 @@ export default async function MerchantPlanPage() {
           <div className="flex items-start gap-3">
             <Info className="h-5 w-5 shrink-0 text-primary-dark" aria-hidden="true" />
             <div className="space-y-1">
-              <h3 className="text-sm font-semibold text-foreground">El pago del flete</h3>
+              <h3 className="text-sm font-semibold text-foreground">El pago del envío</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                El costo de cada entrega no pasa por cadeApp. Lo paga directamente quien recibe el
-                paquete al repartidor elegido, en efectivo o transferencia acordada.
+                El costo de cada envío lo paga quien recibe el paquete directamente al repartidor
+                elegido, en efectivo o por transferencia acordada. cadeApp no procesa ese pago.
               </p>
             </div>
           </div>
         </Card>
       </div>
 
-      {/* Sección 3: Estado legal pendiente T-311 y cierre de sesión */}
+      {/* Sección 3: Términos publicados del piloto y cierre de sesión */}
       <Card className="p-4 text-sm text-muted-foreground">
-        Términos y condiciones del Piloto (documento legal en publicación · T-311)
+        Consultá los{' '}
+        <Link href="/legal/pilot" className="font-medium text-primary-dark underline underline-offset-4">
+          Términos y condiciones del Piloto
+        </Link>
+        .
       </Card>
 
       <form action={handleLogout} className="pt-1">

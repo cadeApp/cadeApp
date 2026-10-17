@@ -8,7 +8,7 @@ export const liveAvailableRequestItemSchema = z.object({
   id: z.string().uuid(),
   pickupZoneName: z.string().min(1),
   dropoffZoneName: z.string().min(1),
-  approxDistanceKm: z.string(),
+  approxDistanceKm: z.string().nullable(),
   packageType: packageTypeSchema,
   recipientPaymentMethod: recipientPaymentMethodSchema,
   needsChange: z.boolean(),

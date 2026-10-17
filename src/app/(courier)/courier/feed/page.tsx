@@ -1,12 +1,13 @@
 import * as React from 'react';
 import { redirect } from 'next/navigation';
-import { CourierFeed } from '@/features/offers';
+import { CourierFeed, type ActiveTripSummary } from '@/features/offers';
 import {
   getAvailableRequests,
   getCourierStatusAndAvailability,
   getPlatformMinOfferArs,
 } from '@/features/offers/server';
 import { getCourierDocumentsStatus } from '@/features/courier-onboarding/server';
+import { getActiveTripsForCourier } from '@/features/trips/server';
 import { createClient } from '@/server/supabase/server';
 
 /** Hotfix T-325: un repartidor `pending` ve sus documentos persistidos, igual que en la pantalla de estado. */
@@ -39,6 +40,11 @@ export default async function CourierFeedPage() {
   const documents =
     statusInfo.status === 'pending' ? await getPendingCourierDocuments() : undefined;
 
+  let activeTripsResult: { courierId: string; trips: ActiveTripSummary[] } | undefined;
+  if (statusInfo.status === 'approved') {
+    activeTripsResult = await getActiveTripsForCourier();
+  }
+
   return (
     <CourierFeed
       courierStatus={statusInfo.status}
@@ -47,6 +53,8 @@ export default async function CourierFeedPage() {
       initialNextCursor={feedPage.nextCursor}
       minOfferArs={minOfferArs}
       documents={documents}
+      courierId={activeTripsResult?.courierId}
+      initialActiveTrips={activeTripsResult?.trips}
     />
   );
 }

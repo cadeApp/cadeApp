@@ -30,7 +30,7 @@ Su función es de intermediario tecnológico: da visibilidad, confianza y coordi
 | D5 | Piloto | **Gratis.** La duración la fijan ustedes en los términos del piloto (por ejemplo, 2 días) y lo cierran cuando vean que funciona. |
 | D6 | Cobro del abono | Después del piloto, los comercios que se adhieran pagan en forma directa y el admin activa la suscripción a mano. Mercado Pago Suscripciones queda para el futuro. **No habrá facturación** (decisión humana; ver disenso X3). |
 | D7 | Cercanía | **Lista única por ciudad**: todos los repartidores disponibles ven todas las solicitudes abiertas de Aguilares, sin ranking por cercanía ni GPS. |
-| D8 | DNI y selfie | Se guardan **mientras el repartidor esté activo** y se borran **30 días después de la baja** (o del rechazo). **Quedan fuera del backup.** |
+| D8 | DNI y selfie | Se guardan **mientras el repartidor esté activo** y se borran **30 días después de la baja** (o del rechazo); las versiones históricas reemplazadas se borran **30 días después de su reemplazo/obsolescencia** (Decisión B). **Quedan fuera del backup.** |
 | D9 | Licencia y seguro | **Opcionales.** Quien sube más documentación verificada gana prioridad y visibilidad. |
 | D10 | Pruebas | **E2E de todos los flujos** antes de pasar a producción. |
 | D11 | Ambientes | local → `develop` → `staging` → `main` (producción) en GitHub. |
@@ -95,7 +95,7 @@ draft ──publish──▶ published ──accept_offer──▶ matched ─�
 | `draft → published` | merchant dueño | Comercio en piloto o con suscripción activa (`paid_until >= hoy`). Campos obligatorios completos. `expires_at = now() + request_ttl_minutes`. |
 | `published → matched` | merchant dueño | Ver §6.1. |
 | `published → cancelled` | merchant dueño | Sin penalidad. Las ofertas `pending` pasan a `expired`. |
-| `published → expired` | sistema | `now() > expires_at`. La expiración es **perezosa**: toda lectura y toda RPC trata como expirada una solicitud vencida, y un barrido periódico la persiste y avisa. Así la corrección no depende del cron. |
+| `published → expired` | sistema | `now() >= expires_at`. La expiración es **perezosa**: toda lectura y toda RPC trata como expirada una solicitud vencida, y un barrido periódico la persiste y avisa. Así la corrección no depende del cron. |
 | `matched → in_transit` | courier asignado | Marca "retirado". |
 | `matched → published` (republicar) | merchant ("no llegó", con motivo `no_show`) o courier (cancela, con motivo) | Se registra el motivo y se cuenta para el admin. La oferta aceptada pasa a `cancelled`. Hay un nuevo `expires_at`. |
 | `matched → cancelled` | merchant dueño | Motivo obligatorio. Se notifica al repartidor. |
