@@ -60,11 +60,14 @@ create unique index courier_documents_unique_idempotency
   where (idempotency_key is not null);
 
 -- 4. RLS y permisos sobre courier_documents
--- PR364-H03: Revocar UPDATE y DELETE directos en tabla para cerrar bypass por API REST
-revoke update, delete on table public.courier_documents from public, anon, authenticated;
+-- PR364-H03 / PR364-R07 (Decisión A): Revocar INSERT, UPDATE y DELETE directos en tabla para cerrar bypass por API REST
+revoke insert, update, delete on table public.courier_documents from public, anon, authenticated;
 
 -- PR364-H03: Eliminar política write_admin FOR ALL permisiva heredada de rls_v1
 drop policy if exists courier_documents_write_admin on public.courier_documents;
+
+-- PR364-R07: Eliminar política courier_documents_insert_self (escrituras centralizadas exclusivamente en RPCs atómicas)
+drop policy if exists courier_documents_insert_self on public.courier_documents;
 
 -- Reemplazar select_admin: admin puede leer documentos vigentes e históricos para auditoría
 drop policy if exists courier_documents_select_admin on public.courier_documents;
@@ -82,27 +85,6 @@ create policy courier_documents_select_self on public.courier_documents
     and app_private.is_active_operational_actor()
   );
 
--- PR358-H01 / PR364-H05: Inserción restringida para alta inicial de onboarding
-drop policy if exists courier_documents_insert_self on public.courier_documents;
-create policy courier_documents_insert_self on public.courier_documents
-  for insert to authenticated
-  with check (
-    courier_id = auth.uid()
-    and app_private.is_active_operational_actor()
-    and status = 'submitted'
-    and coalesce(is_current, true) = true
-    and rejection_code is null
-    and idempotency_key is null
-    and purge_after is null
-    and purged_at is null
-    and not exists (
-      select 1 from public.courier_documents cd
-      where cd.courier_id = auth.uid()
-        and cd.kind = courier_documents.kind
-        and cd.is_current = true
-    )
-  );
-
 -- 5. RPC pública replace_courier_document (Decisión 4C)
 create or replace function public.replace_courier_document(p_payload jsonb)
 returns jsonb
@@ -115,6 +97,8 @@ declare
   v_kind_text text;
   v_kind public.courier_document_kind;
   v_storage_path text;
+  v_expected_prefix text;
+  v_storage_suffix text;
   v_idempotency_key text;
   v_current_id uuid;
   v_current_status public.document_review_status;
@@ -155,9 +139,18 @@ begin
 
   v_kind := v_kind_text::public.courier_document_kind;
 
-  -- Validar pertenencia canónica del path: courier/<v_actor_id>/<v_kind>_*
-  if v_storage_path not like ('courier/' || v_actor_id::text || '/' || v_kind_text || '_%')
+  -- PR364-R06: Validación canónica estricta con prefijo literal exacto courier/<v_actor_id>/<v_kind>_ y sufijo <timestamp>.<ext>
+  v_expected_prefix := 'courier/' || v_actor_id::text || '/' || v_kind_text || '_';
+
+  if left(v_storage_path, length(v_expected_prefix)) <> v_expected_prefix
      or v_storage_path like '%..%' then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  v_storage_suffix := substr(v_storage_path, length(v_expected_prefix) + 1);
+
+  if v_storage_suffix !~* '^[0-9]+[.](png|jpe?g|webp|pdf)$'
+     or v_storage_suffix like '%/%' then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 

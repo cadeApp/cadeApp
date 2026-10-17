@@ -513,7 +513,7 @@ select throws_ok(
   $$,
   '42501',
   NULL,
-  'Direct REST insert with alternative path is blocked by Phase C RLS courier_documents_insert_self (42501)'
+  'Direct REST insert with alternative path is blocked by Phase C REVOKE INSERT on courier_documents (42501)'
 );
 
 select results_eq(

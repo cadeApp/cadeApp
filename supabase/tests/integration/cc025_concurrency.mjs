@@ -271,7 +271,7 @@ async function runScenario2(adminId, courierId, docId) {
         begin
           v_res := public.replace_courier_document(jsonb_build_object(
             'kind', 'license',
-            'storagePath', 'courier/${courierId}/license_v2.jpg',
+            'storagePath', 'courier/${courierId}/license_1700000000000.jpg',
             'idempotencyKey', '00000000-0000-4000-8000-0000000001a2'
           ));
           raise notice '${courierResultMarker}:OK:%:END_${courierResultMarker}', v_res::text;
@@ -362,7 +362,7 @@ async function runScenario3B0AndReplaceLockOrder(adminId, courierId, docId) {
     on conflict (profile_id) do update set status = 'pending';
 
     insert into storage.objects (id, bucket_id, name, owner)
-    values (gen_random_uuid(), 'courier-docs', 'courier/${b0CourierId}/dni_front_v2.jpg', '${b0CourierId}')
+    values (gen_random_uuid(), 'courier-docs', 'courier/${b0CourierId}/dni_front_1700000000000.jpg', '${b0CourierId}')
     on conflict do nothing;
   `);
 
@@ -401,7 +401,7 @@ async function runScenario3B0AndReplaceLockOrder(adminId, courierId, docId) {
         begin
           v_res := public.replace_courier_document(jsonb_build_object(
             'kind', 'dni_front',
-            'storagePath', 'courier/${b0CourierId}/dni_front_v2.jpg'
+            'storagePath', 'courier/${b0CourierId}/dni_front_1700000000000.jpg'
           ));
           raise notice '${s2Marker}:OK:%:END_${s2Marker}', v_res::text;
         exception when others then
@@ -525,7 +525,7 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
           begin
             v_res := public.replace_courier_document(jsonb_build_object(
               'kind', 'license',
-              'storagePath', 'courier/${courierId}/license_v2.jpg',
+              'storagePath', 'courier/${courierId}/license_1700000000000.jpg',
               'idempotencyKey', '00000000-0000-4000-8000-0000000001a9'
             ));
             raise notice 'MUT_COURIER_OK:%', v_res::text;
@@ -601,6 +601,188 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
   }
 }
 
+async function runR06MutationCheck(courierId, docId) {
+  console.log('[CC-025][R06] --- Inicio de control de mutación RED->GREEN para R06 (prefijo Storage literal) ---');
+  const originalSql = fs.readFileSync(migrationPath, 'utf8');
+
+  try {
+    const badPath = `courier/${courierId}/licenseX1700000000000.png`;
+    const goodPath = `courier/${courierId}/license_1700000000000.png`;
+
+    runSql(`
+      update public.courier_documents
+      set status = 'rejected', rejection_code = 'illegible', is_current = true
+      where id = '${docId}';
+
+      update public.couriers
+      set status = 'pending', license_status = 'rejected'
+      where profile_id = '${courierId}';
+
+      insert into storage.objects (id, bucket_id, name, owner)
+      values
+        (gen_random_uuid(), 'courier-docs', '${badPath}', '${courierId}'),
+        (gen_random_uuid(), 'courier-docs', '${goodPath}', '${courierId}')
+      on conflict do nothing;
+    `);
+
+    // 1. Mutación: revertir la comprobación literal al viejo LIKE con comodín '_'
+    const mutatedSql = originalSql.replace(
+      "left(v_storage_path, length(v_expected_prefix)) <> v_expected_prefix",
+      "v_storage_path not like ('courier/' || v_actor_id::text || '/' || v_kind_text || '_%')"
+    );
+
+    assert.notEqual(mutatedSql, originalSql, '[CC-025][R06] La mutación debe modificar el SQL de producción.');
+    runSql(mutatedSql);
+    console.log('[CC-025][R06] Mutación aplicada: replace_courier_document usa LIKE en lugar de prefijo literal.');
+
+    // Ejecutar con badPath: bajo el LIKE mutado, 'licenseX...' coincide con 'license_%' y se acepta indebidamente -> RED!
+    const mutResult = runSql(`
+      set local role authenticated;
+      select set_config('request.jwt.claims', ${claimsSql(courierId, 'courier')}, true);
+      select public.replace_courier_document(jsonb_build_object(
+        'kind', 'license',
+        'storagePath', '${badPath}'
+      ));
+    `);
+
+    assert.ok(
+      mutResult.includes('submitted'),
+      `[CC-025][R06] RED esperado: la función mutada con LIKE debe aceptar indebidamente '${badPath}', obtenido: ${mutResult}`
+    );
+    console.log('[CC-025][R06] Control de mutación RED confirmado: LIKE acepta indebidamente licenseX... como coincidencia de license_%.');
+
+    // 2. Restaurar la migración original (GREEN)
+    runSql(originalSql);
+    console.log('[CC-025][R06] Migración original restaurada (GREEN).');
+
+    // Revertir estado del documento para que vuelva a estar rejected
+    runSql(`
+      update public.courier_documents
+      set status = 'rejected', rejection_code = 'illegible', is_current = true
+      where id = '${docId}';
+      delete from public.courier_documents where id <> '${docId}' and courier_id = '${courierId}';
+    `);
+
+    // Probar badPath bajo la migración original: debe fallar con VALIDATION_ERROR
+    let badPathError = null;
+    try {
+      runSql(`
+        set local role authenticated;
+        select set_config('request.jwt.claims', ${claimsSql(courierId, 'courier')}, true);
+        select public.replace_courier_document(jsonb_build_object(
+          'kind', 'license',
+          'storagePath', '${badPath}'
+        ));
+      `);
+    } catch (err) {
+      badPathError = err.message;
+    }
+
+    assert.ok(
+      badPathError && badPathError.includes('VALIDATION_ERROR'),
+      `[CC-025][R06] GREEN esperado: con prefijo literal, '${badPath}' debe fallar con VALIDATION_ERROR, obtenido: ${badPathError}`
+    );
+
+    // Probar goodPath bajo la migración original: debe triunfar
+    const goodResult = runSql(`
+      set local role authenticated;
+      select set_config('request.jwt.claims', ${claimsSql(courierId, 'courier')}, true);
+      select public.replace_courier_document(jsonb_build_object(
+        'kind', 'license',
+        'storagePath', '${goodPath}'
+      ));
+    `);
+
+    assert.ok(
+      goodResult.includes('submitted'),
+      `[CC-025][R06] GREEN esperado: '${goodPath}' debe reemplazar exitosamente, obtenido: ${goodResult}`
+    );
+    console.log('[CC-025][R06] Control de mutación GREEN confirmado: prefijo literal rechaza licenseX... y acepta license_... legítimo.');
+  } finally {
+    runSql(originalSql);
+  }
+}
+
+async function runR07MutationCheck(courierId) {
+  console.log('[CC-025][R07] --- Inicio de control de mutación RED->GREEN para R07 (revocación de INSERT directo) ---');
+  const originalSql = fs.readFileSync(migrationPath, 'utf8');
+
+  try {
+    const testDocId = crypto.randomUUID();
+    const testPath = `courier/${courierId}/avatar_direct_r07.jpg`;
+
+    // 1. Mutación: reintroducir GRANT INSERT a authenticated y política permisiva courier_documents_insert_self
+    const mutatedSql = originalSql
+      .replace(
+        'revoke insert, update, delete on table public.courier_documents from public, anon, authenticated;',
+        'revoke update, delete on table public.courier_documents from public, anon, authenticated;\ngrant insert on table public.courier_documents to authenticated;'
+      )
+      .replace(
+        'drop policy if exists courier_documents_insert_self on public.courier_documents;',
+        `create policy courier_documents_insert_self on public.courier_documents
+          for insert to authenticated
+          with check (
+            courier_id = auth.uid()
+            and status = 'submitted'
+            and coalesce(is_current, true) = true
+          );`
+      );
+
+    assert.notEqual(mutatedSql, originalSql, '[CC-025][R07] La mutación debe modificar el SQL de producción.');
+    runSql(mutatedSql);
+    console.log('[CC-025][R07] Mutación aplicada: GRANT INSERT y policy insert_self reintroducidos.');
+
+    // Bajo la mutación, el INSERT directo por REST entra sin llamar a la RPC -> RED!
+    runSql(`
+      set local role authenticated;
+      select set_config('request.jwt.claims', ${claimsSql(courierId, 'courier')}, true);
+      insert into public.courier_documents (id, courier_id, kind, storage_path, status, is_current)
+      values ('${testDocId}', '${courierId}', 'avatar', '${testPath}', 'submitted', true);
+    `);
+
+    const insertedCount = parseInt(
+      runSql(`select count(*) from public.courier_documents where id = '${testDocId}';`),
+      10
+    );
+    assert.equal(insertedCount, 1, `[CC-025][R07] RED esperado: bajo la mutación el INSERT directo entra con éxito (count = 1)`);
+    console.log('[CC-025][R07] Control de mutación RED confirmado: reintroducir GRANT INSERT permite el bypass directo por REST.');
+
+    // Limpiar fila insertada
+    runSql(`delete from public.courier_documents where id = '${testDocId}';`);
+
+    // 2. Restaurar la migración original de producción (GREEN)
+    runSql(originalSql);
+    console.log('[CC-025][R07] Migración original restaurada (GREEN).');
+
+    // Bajo la migración original, el INSERT directo debe fallar con SQLSTATE 42501
+    let directError = null;
+    try {
+      runSql(`
+        set local role authenticated;
+        select set_config('request.jwt.claims', ${claimsSql(courierId, 'courier')}, true);
+        insert into public.courier_documents (id, courier_id, kind, storage_path, status, is_current)
+        values ('${testDocId}', '${courierId}', 'avatar', '${testPath}', 'submitted', true);
+      `);
+    } catch (err) {
+      directError = err.message;
+    }
+
+    assert.ok(
+      directError && (directError.includes('42501') || directError.includes('permission denied')),
+      `[CC-025][R07] GREEN esperado: con INSERT revocado, el INSERT directo debe fallar con 42501, obtenido: ${directError}`
+    );
+
+    const directCount = parseInt(
+      runSql(`select count(*) from public.courier_documents where id = '${testDocId}';`),
+      10
+    );
+    assert.equal(directCount, 0, `[CC-025][R07] GREEN esperado: 0 filas insertadas tras el rechazo 42501.`);
+    console.log('[CC-025][R07] Control de mutación GREEN confirmado: REVOKE INSERT rechaza el bypass directo con 42501 y 0 filas.');
+  } finally {
+    runSql(originalSql);
+  }
+}
+
 async function main() {
   const adminId = crypto.randomUUID();
   const courierId = crypto.randomUUID();
@@ -631,7 +813,7 @@ async function main() {
     insert into storage.objects (id, bucket_id, name, owner)
     values
       (gen_random_uuid(), 'courier-docs', 'courier/${courierId}/license_initial.jpg', '${courierId}'),
-      (gen_random_uuid(), 'courier-docs', 'courier/${courierId}/license_v2.jpg', '${courierId}')
+      (gen_random_uuid(), 'courier-docs', 'courier/${courierId}/license_1700000000000.jpg', '${courierId}')
     on conflict do nothing;
 
     insert into public.courier_documents (id, courier_id, kind, storage_path, status, is_current)
@@ -642,6 +824,8 @@ async function main() {
   try {
     if (process.argv.includes('--mutation-check')) {
       await runDeadlockMutationCheck(adminId, courierId, docId);
+      await runR06MutationCheck(courierId, docId);
+      await runR07MutationCheck(courierId);
     } else {
       await runScenario1(adminId, courierId, docId);
       await runScenario2(adminId, courierId, docId);

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(65);
+select plan(78);
 
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025a1'::uuid $$;
 create function pg_temp.courier_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025c1'::uuid $$;
@@ -48,9 +48,9 @@ $$;
 -- Crear usuarios de prueba
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
 values
-  (pg_temp.admin_a(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc25.admin@example.test', 'pwd', '{"role":"merchant"}'::jsonb),
-  (pg_temp.courier_a(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc25.courierA@example.test', 'pwd', '{"role":"courier"}'::jsonb),
-  (pg_temp.courier_b(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc25.courierB@example.test', 'pwd', '{"role":"courier"}'::jsonb);
+  (pg_temp.admin_a(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc25.admin@example.test', 'pwd', '{"role":"merchant"}'::jsonb),
+  (pg_temp.courier_a(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc25.courierA@example.test', 'pwd', '{"role":"courier"}'::jsonb),
+  (pg_temp.courier_b(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc25.courierB@example.test', 'pwd', '{"role":"courier"}'::jsonb);
 
 update public.profiles
 set consent_status = 'active'
@@ -83,7 +83,38 @@ select ok(
   'courier_documents tiene check de catalogo seguro para rejection_code'
 );
 
--- 2a. PR364-R01: UPSERT (ON CONFLICT DO UPDATE) falla con SQLSTATE 42501 incluso en fila nueva por revocacion de UPDATE
+-- 2. Permisos y revocaciones directas (PR364-H03 / PR364-R07 / Decisión A)
+select ok(
+  not has_table_privilege('authenticated', 'public.courier_documents', 'INSERT'),
+  'PR364-R07: Privilegio INSERT en courier_documents esta revocado para authenticated'
+);
+
+select ok(
+  not has_table_privilege('anon', 'public.courier_documents', 'INSERT'),
+  'PR364-R07: Privilegio INSERT en courier_documents esta revocado para anon'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.courier_documents', 'UPDATE'),
+  'PR364-H03: Privilegio UPDATE en courier_documents esta revocado para authenticated'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.courier_documents', 'DELETE'),
+  'PR364-H03: Privilegio DELETE en courier_documents esta revocado para authenticated'
+);
+
+select ok(
+  has_table_privilege('authenticated', 'public.courier_documents', 'SELECT'),
+  'PR364-H04: Privilegio SELECT en courier_documents esta otorgado a authenticated'
+);
+
+select ok(
+  has_table_privilege('service_role', 'public.courier_documents', 'UPDATE'),
+  'service_role conserva privilegio UPDATE para purga cron sweep'
+);
+
+-- 2a. PR364-R01 / PR364-R07: UPSERT (ON CONFLICT DO UPDATE) falla con SQLSTATE 42501 por revocacion de INSERT/UPDATE
 select pg_temp.act_as(pg_temp.courier_a());
 
 select throws_matching(
@@ -100,35 +131,46 @@ select throws_matching(
     ) on conflict (id) do update set storage_path = excluded.storage_path;
   $$,
   '42501|permission denied',
-  'PR364-R01: INSERT ... ON CONFLICT DO UPDATE es rechazado con 42501 porque UPDATE esta revocado'
+  'PR364-R01: INSERT ... ON CONFLICT DO UPDATE es rechazado con 42501 porque INSERT y UPDATE estan revocados'
 );
 
--- 2b. PR364-R02: RLS bloquea INSERT directo con idempotency_key asignada (debe ser null)
+-- 2b. PR364-R07: INSERT directo inicial con ruta propia es RECHAZADO con 42501 aun sin documento previo
 select throws_matching(
   $$
     insert into public.courier_documents (
-      id, courier_id, kind, storage_path, status, is_current, idempotency_key
+      id, courier_id, kind, storage_path, status, is_current
     ) values (
       '00000000-0000-4000-8000-0000000025d1',
       '00000000-0000-4000-8000-0000000025c1',
       'license',
       'courier/00000000-0000-4000-8000-0000000025c1/license_initial.jpg',
       'submitted',
-      true,
-      '00000000-0000-4000-8000-000000000099'::uuid
+      true
     );
   $$,
-  'violates row-level security',
-  'PR364-R02: RLS rechaza INSERT directo con idempotency_key asignada'
+  '42501|permission denied',
+  'PR364-R07: INSERT directo inicial con ruta propia es rechazado con 42501 aun sin documento previo'
 );
 
-select is(
-  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a() and kind = 'license'),
-  0,
-  'PR364-R02: Cero filas insertadas tras intento con idempotency_key no null'
+-- 2c. PR364-R07: INSERT directo inicial con ruta inexistente o forjada tambien es RECHAZADO con 42501
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current
+    ) values (
+      '00000000-0000-4000-8000-0000000025d1',
+      '00000000-0000-4000-8000-0000000025c1',
+      'license',
+      'courier/00000000-0000-4000-8000-0000000025c1/license_nonexistent.jpg',
+      'submitted',
+      true
+    );
+  $$,
+  '42501|permission denied',
+  'PR364-R07: INSERT directo inicial con ruta inexistente es rechazado con 42501'
 );
 
--- 2c. RLS bloquea intentos directos de alterar status, rejection_code, is_current o courier_id en INSERT
+-- 2d. PR364-R07: INSERT directo forjando status, is_current=false, rejection_code, courier_id ajeno o idempotency_key es rechazado con 42501
 select throws_matching(
   $$
     insert into public.courier_documents (
@@ -142,8 +184,8 @@ select throws_matching(
       true
     );
   $$,
-  'violates row-level security',
-  'RLS bloquea INSERT directo intentando auto-verificar documento'
+  '42501|permission denied',
+  'PR364-R07: INSERT directo intentando auto-verificar documento es rechazado con 42501'
 );
 
 select throws_matching(
@@ -160,8 +202,8 @@ select throws_matching(
       'illegible'
     );
   $$,
-  'violates row-level security',
-  'RLS bloquea INSERT directo con rejection_code asignado'
+  '42501|permission denied',
+  'PR364-R07: INSERT directo con rejection_code es rechazado con 42501'
 );
 
 select throws_matching(
@@ -177,8 +219,8 @@ select throws_matching(
       false
     );
   $$,
-  'violates row-level security',
-  'RLS bloquea INSERT directo con is_current = false'
+  '42501|permission denied',
+  'PR364-R07: INSERT directo con is_current = false es rechazado con 42501'
 );
 
 select throws_matching(
@@ -194,53 +236,68 @@ select throws_matching(
       true
     );
   $$,
-  'violates row-level security',
-  'RLS bloquea INSERT directo asignando courier_id ajeno'
+  '42501|permission denied',
+  'PR364-R07: INSERT directo asignando courier_id ajeno es rechazado con 42501'
 );
 
--- 2d. Inserción inicial legítima permitida por RLS cuando no existe documento
-select lives_ok(
+select throws_matching(
   $$
     insert into public.courier_documents (
-      id, courier_id, kind, storage_path, status, is_current
+      id, courier_id, kind, storage_path, status, is_current, idempotency_key
     ) values (
       '00000000-0000-4000-8000-0000000025d1',
       '00000000-0000-4000-8000-0000000025c1',
       'license',
       'courier/00000000-0000-4000-8000-0000000025c1/license_initial.jpg',
       'submitted',
-      true
+      true,
+      '00000000-0000-4000-8000-000000000099'::uuid
     );
   $$,
-  'RLS permite la insercion inicial cuando no existe documento del mismo kind'
+  '42501|permission denied',
+  'PR364-R07: INSERT directo con idempotency_key asignada es rechazado con 42501'
 );
 
--- 3. Inserción directa duplicada BLOQUEADA por RLS (cierre de PR358-H01)
-select throws_matching(
+select is(
+  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a() and kind = 'license'),
+  0,
+  'PR364-R07: Cero filas insertadas tras intentos directos de INSERT denegados con 42501'
+);
+
+-- 3. Caso positivo auténtico: alta inicial legítima mediante RPC submit_courier_onboarding_documents (rol authenticated)
+select lives_ok(
   $$
-    insert into public.courier_documents (
-      id, courier_id, kind, storage_path, status, is_current
-    ) values (
-      '00000000-0000-4000-8000-0000000025d2',
-      '00000000-0000-4000-8000-0000000025c1',
-      'license',
-      'courier/00000000-0000-4000-8000-0000000025c1/license_second.jpg',
-      'submitted',
-      true
+    select public.submit_courier_onboarding_documents(
+      jsonb_build_array(
+        jsonb_build_object('kind', 'dni_front', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c1/dni_front_v1.jpg'),
+        jsonb_build_object('kind', 'dni_back', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c1/dni_back_v1.jpg'),
+        jsonb_build_object('kind', 'selfie', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c1/selfie_v1.jpg'),
+        jsonb_build_object('kind', 'avatar', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c1/avatar_v1.jpg'),
+        jsonb_build_object('kind', 'license', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c1/license_initial.jpg')
+      )
     );
   $$,
-  'violates row-level security',
-  'RLS bloquea INSERT directo cuando ya existe un documento del mismo kind (PR358-H01 cerrado)'
+  'Alta inicial de onboarding mediante RPC atómica funciona bajo rol authenticated'
 );
 
--- 4. Matriz RLS y permisos: UPDATE, DELETE e INSERT directos en courier_documents
+select is(
+  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a() and is_current = true),
+  5,
+  'RPC atómica crea exactamente 5 documentos vigentes para el courier_a'
+);
+
+create function pg_temp.courier_a_license_id() returns uuid language sql as $$
+  select id from public.courier_documents where courier_id = pg_temp.courier_a() and kind = 'license' and is_current = true limit 1
+$$;
+
+-- 4. Matriz de permisos directos en courier_documents: UPDATE, DELETE e INSERT directos REVOCADOS
 -- 4a. Courier propio: UPDATE y DELETE directos REVOCADOS
 select pg_temp.act_as(pg_temp.courier_a());
 select throws_matching(
   $$
     update public.courier_documents
     set status = 'verified'
-    where id = '00000000-0000-4000-8000-0000000025d1';
+    where id = pg_temp.courier_a_license_id();
   $$,
   '42501|permission denied',
   'Courier no puede hacer UPDATE directo (permiso UPDATE revocado en tabla)'
@@ -249,7 +306,7 @@ select throws_matching(
 select throws_matching(
   $$
     delete from public.courier_documents
-    where id = '00000000-0000-4000-8000-0000000025d1';
+    where id = pg_temp.courier_a_license_id();
   $$,
   '42501|permission denied',
   'DELETE directo revocado para usuarios autenticados'
@@ -261,7 +318,7 @@ select throws_matching(
   $$
     update public.courier_documents
     set status = 'verified'
-    where id = '00000000-0000-4000-8000-0000000025d1';
+    where id = pg_temp.courier_a_license_id();
   $$,
   '42501|permission denied',
   'Courier ajeno no puede hacer UPDATE directo'
@@ -270,19 +327,19 @@ select throws_matching(
 select throws_matching(
   $$
     delete from public.courier_documents
-    where id = '00000000-0000-4000-8000-0000000025d1';
+    where id = pg_temp.courier_a_license_id();
   $$,
   '42501|permission denied',
   'Courier ajeno no puede hacer DELETE directo'
 );
 
--- 4c. Admin AAL1: UPDATE, DELETE e INSERT directos REVOCADOS / BLOQUEADOS
+-- 4c. Admin AAL1: UPDATE, DELETE e INSERT directos REVOCADOS
 select pg_temp.act_as(pg_temp.admin_a(), 'aal1');
 select throws_matching(
   $$
     update public.courier_documents
     set status = 'verified'
-    where id = '00000000-0000-4000-8000-0000000025d1';
+    where id = pg_temp.courier_a_license_id();
   $$,
   '42501|permission denied',
   'Admin AAL1 no puede hacer UPDATE directo (debe usar RPC admin_verify_document con AAL2)'
@@ -291,7 +348,7 @@ select throws_matching(
 select throws_matching(
   $$
     delete from public.courier_documents
-    where id = '00000000-0000-4000-8000-0000000025d1';
+    where id = pg_temp.courier_a_license_id();
   $$,
   '42501|permission denied',
   'Admin AAL1 no puede hacer DELETE directo'
@@ -310,17 +367,17 @@ select throws_matching(
       true
     );
   $$,
-  'violates row-level security',
+  '42501|permission denied',
   'Admin AAL1 no puede hacer INSERT directo sobre courier_documents'
 );
 
--- 4d. Admin AAL2: UPDATE, DELETE e INSERT directos REVOCADOS / BLOQUEADOS
+-- 4d. Admin AAL2: UPDATE, DELETE e INSERT directos REVOCADOS
 select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
 select throws_matching(
   $$
     update public.courier_documents
     set status = 'verified'
-    where id = '00000000-0000-4000-8000-0000000025d1';
+    where id = pg_temp.courier_a_license_id();
   $$,
   '42501|permission denied',
   'Admin AAL2 no puede saltar la RPC auditada mediante UPDATE directo'
@@ -329,7 +386,7 @@ select throws_matching(
 select throws_matching(
   $$
     delete from public.courier_documents
-    where id = '00000000-0000-4000-8000-0000000025d1';
+    where id = pg_temp.courier_a_license_id();
   $$,
   '42501|permission denied',
   'Admin AAL2 no puede hacer DELETE directo'
@@ -348,7 +405,7 @@ select throws_matching(
       true
     );
   $$,
-  'violates row-level security',
+  '42501|permission denied',
   'Admin AAL2 no puede hacer INSERT directo sobre courier_documents'
 );
 
@@ -373,8 +430,8 @@ select throws_matching(
       true
     );
   $$,
-  'violates row-level security',
-  'Anon no puede hacer INSERT sobre courier_documents (bloqueado por RLS)'
+  '42501|permission denied',
+  'Anon no puede hacer INSERT sobre courier_documents'
 );
 
 select throws_matching(
@@ -399,7 +456,7 @@ select throws_ok(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_new.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg'
     ));
   $$,
   '42501'::char(5),
@@ -413,7 +470,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_new.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg'
     ));
   $$,
   'UNAUTHENTICATED',
@@ -426,7 +483,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025a1/license_new.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025a1/license_1700000000000.jpg'
     ));
   $$,
   'UNAUTHORIZED_ACTOR',
@@ -439,7 +496,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/license_new.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/license_1700000000000.jpg'
     ));
   $$,
   'VALIDATION_ERROR',
@@ -450,7 +507,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/../other/license_new.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/../other/license_1700000000000.jpg'
     ));
   $$,
   'VALIDATION_ERROR',
@@ -461,7 +518,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_new.jpg',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg',
       'idempotencyKey', 'not-a-valid-uuid'
     ));
   $$,
@@ -474,7 +531,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg'
     ));
   $$,
   'INVALID_STATE_TRANSITION',
@@ -486,7 +543,7 @@ select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
 select lives_ok(
   $$
     select public.admin_verify_document(
-      '00000000-0000-4000-8000-0000000025d1',
+      pg_temp.courier_a_license_id(),
       'rejected',
       'Nota interna admin: imagen borrosa y bordes cortados',
       'illegible'
@@ -496,12 +553,12 @@ select lives_ok(
 );
 
 select is(
-  (select rejection_code from public.courier_documents where id = '00000000-0000-4000-8000-0000000025d1'),
+  (select rejection_code from public.courier_documents where id = pg_temp.courier_a_license_id()),
   'illegible',
   'courier_documents almacena rejection_code seguro'
 );
 
--- 10. PR364-H01: Comprobación incondicional de objeto en Storage
+-- 10. PR364-H01 y PR364-R06: Comprobación incondicional de objeto en Storage y validación de prefijo literal / sufijo
 select pg_temp.act_as(pg_temp.courier_a());
 
 -- 10a. Bucket vacío (no existe objeto en courier-docs) -> falla con NOT_FOUND
@@ -509,7 +566,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg'
     ));
   $$,
   'NOT_FOUND',
@@ -519,7 +576,7 @@ select throws_matching(
 -- 10b. Objeto existe en bucket equivocado -> falla con NOT_FOUND
 select pg_temp.reset_actor();
 insert into storage.objects (id, bucket_id, name, owner)
-values ('00000000-0000-4000-8000-0000000025e1', 'other-bucket', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg', pg_temp.courier_a())
+values ('00000000-0000-4000-8000-0000000025e1', 'other-bucket', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg', pg_temp.courier_a())
 on conflict do nothing;
 
 select pg_temp.act_as(pg_temp.courier_a());
@@ -527,24 +584,73 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg'
     ));
   $$,
   'NOT_FOUND',
   'H01: replace_courier_document falla con NOT_FOUND cuando el objeto esta en bucket equivocado'
 );
 
+-- 10c. PR364-R06: Objeto existe en courier-docs pero con nombre incorrecto licenseX1700000000000.png (comodín _ en LIKE)
+select pg_temp.reset_actor();
+insert into storage.objects (id, bucket_id, name, owner)
+values ('00000000-0000-4000-8000-0000000025e5', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c1/licenseX1700000000000.png', pg_temp.courier_a())
+on conflict do nothing;
+
+select pg_temp.act_as(pg_temp.courier_a());
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'license',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/licenseX1700000000000.png'
+    ));
+  $$,
+  'VALIDATION_ERROR',
+  'PR364-R06: replace_courier_document rechaza storagePath licenseX... aun existiendo en Storage (prefijo literal no coincide)'
+);
+
+-- 10d. PR364-R06: Objeto existe en courier-docs pero con nombre incorrecto dniXfront_1700000000000.png (comodín _ dentro de dni_front)
+select pg_temp.reset_actor();
+insert into storage.objects (id, bucket_id, name, owner)
+values ('00000000-0000-4000-8000-0000000025e6', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c1/dniXfront_1700000000000.png', pg_temp.courier_a())
+on conflict do nothing;
+
+select pg_temp.act_as(pg_temp.courier_a());
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'dni_front',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/dniXfront_1700000000000.png'
+    ));
+  $$,
+  'VALIDATION_ERROR',
+  'PR364-R06: replace_courier_document rechaza storagePath dniXfront_... aun existiendo en Storage'
+);
+
+-- 10e. Verificar que los intentos rechazados en 10c y 10d NO generaron nuevas filas ni eventos de auditoría
+select is(
+  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a() and storage_path like '%1700000000000%'),
+  0,
+  'PR364-R06: Cero filas insertadas tras intentos con nombres de archivo invalidos'
+);
+
+select is(
+  (select count(*)::int from public.audit_log where action = 'replace_courier_document' and actor_id = pg_temp.courier_a()),
+  0,
+  'PR364-R06: Cero eventos de auditoria tras intentos con nombres de archivo invalidos'
+);
+
 -- 11. Courier reemplaza documento rechazado exitosamente cuando el objeto existe en courier-docs
 select pg_temp.reset_actor();
 insert into storage.objects (id, bucket_id, name, owner)
-values ('00000000-0000-4000-8000-0000000025e2', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg', pg_temp.courier_a())
+values ('00000000-0000-4000-8000-0000000025e2', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg', pg_temp.courier_a())
 on conflict do nothing;
 
 select pg_temp.act_as(pg_temp.courier_a());
 create table pg_temp.replace_res as
 select public.replace_courier_document(jsonb_build_object(
   'kind', 'license',
-  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg',
+  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg',
   'idempotencyKey', '00000000-0000-4000-8000-0000000000f1'
 )) as res;
 
@@ -568,7 +674,7 @@ select is(
 
 select is(
   (select res->>'replacedDocumentId' from pg_temp.replace_res),
-  '00000000-0000-4000-8000-0000000025d1',
+  pg_temp.courier_a_license_id()::text,
   'replace_courier_document referencia al documento reemplazado'
 );
 
@@ -576,13 +682,13 @@ select is(
 select pg_temp.reset_actor();
 
 select is(
-  (select is_current from public.courier_documents where id = '00000000-0000-4000-8000-0000000025d1'),
+  (select is_current from public.courier_documents where id = pg_temp.courier_a_license_id()),
   false,
   'Documento anterior queda marcado con is_current = false'
 );
 
 select ok(
-  (select purge_after > now() + interval '29 days' from public.courier_documents where id = '00000000-0000-4000-8000-0000000025d1'),
+  (select purge_after > now() + interval '29 days' from public.courier_documents where id = pg_temp.courier_a_license_id()),
   'Documento anterior conserva retencion de 30 dias (D8 / Decision B)'
 );
 
@@ -590,8 +696,8 @@ select ok(
 select pg_temp.act_as(pg_temp.courier_a());
 select is(
   (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a()),
-  1,
-  'PR364-H04: Courier dueno solo ve su documento vigente (is_current=true), no ve historicos'
+  5,
+  'PR364-H04: Courier dueno solo ve sus documentos vigentes (is_current=true), no ve historicos'
 );
 
 select pg_temp.act_as(pg_temp.courier_b());
@@ -604,7 +710,7 @@ select is(
 select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
 select is(
   (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a()),
-  2,
+  6,
   'PR364-H04: Admin puede ver documentos vigentes e historicos para revision y auditoria'
 );
 
@@ -613,7 +719,7 @@ select pg_temp.act_as(pg_temp.courier_a());
 create table pg_temp.retry_res as
 select public.replace_courier_document(jsonb_build_object(
   'kind', 'license',
-  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg',
+  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg',
   'idempotencyKey', '00000000-0000-4000-8000-0000000000f1'
 )) as res;
 
@@ -627,7 +733,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'license',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_other_path.jpg',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000001.jpg',
       'idempotencyKey', '00000000-0000-4000-8000-0000000000f1'
     ));
   $$,
@@ -647,7 +753,7 @@ select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
 select throws_matching(
   $$
     select public.admin_verify_document(
-      '00000000-0000-4000-8000-0000000025d1',
+      pg_temp.courier_a_license_id(),
       'verified'
     );
   $$,
@@ -673,7 +779,7 @@ select pg_temp.act_as(pg_temp.courier_a());
 create table pg_temp.retry_after_verified as
 select public.replace_courier_document(jsonb_build_object(
   'kind', 'license',
-  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg',
+  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_1700000000000.jpg',
   'idempotencyKey', '00000000-0000-4000-8000-0000000000f1'
 )) as res;
 
@@ -783,8 +889,8 @@ select lives_ok(
 select pg_temp.reset_actor();
 insert into storage.objects (id, bucket_id, name, owner)
 values
-  ('00000000-0000-4000-8000-0000000025e3', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c2/dni_front_v2.jpg', pg_temp.courier_b()),
-  ('00000000-0000-4000-8000-0000000025e4', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v2.jpg', pg_temp.courier_b())
+  ('00000000-0000-4000-8000-0000000025e3', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c2/dni_front_1700000000000.jpg', pg_temp.courier_b()),
+  ('00000000-0000-4000-8000-0000000025e4', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_1700000000000.jpg', pg_temp.courier_b())
 on conflict do nothing;
 
 select pg_temp.act_as(pg_temp.courier_b());
@@ -792,7 +898,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'dni_front',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_front_v2.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_front_1700000000000.jpg'
     ));
   $$,
   'INVALID_STATE_TRANSITION',
@@ -804,7 +910,7 @@ select lives_ok(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'dni_back',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v2.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_1700000000000.jpg'
     ));
   $$,
   'Courier reemplaza selectivamente dni_back rechazado'
@@ -848,7 +954,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'dni_back',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v2.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_1700000000000.jpg'
     ));
   $$,
   'UNAUTHORIZED_ACTOR',
@@ -863,7 +969,7 @@ select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
       'kind', 'dni_back',
-      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v2.jpg'
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_1700000000000.jpg'
     ));
   $$,
   'UNAUTHORIZED_ACTOR',

@@ -77,11 +77,12 @@ select is(
   'No duplicate current courier_documents rows exist for any (courier_id, kind)'
 );
 
--- 4. Permissions: authenticated role has UPDATE revoked in Phase C while service_role retains UPDATE for sweep
+-- 4. Permissions: authenticated role has INSERT and UPDATE revoked in Phase C while service_role retains UPDATE for sweep
 select ok(
-  not has_table_privilege('authenticated', 'public.courier_documents', 'UPDATE')
+  not has_table_privilege('authenticated', 'public.courier_documents', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.courier_documents', 'UPDATE')
   and has_table_privilege('service_role', 'public.courier_documents', 'UPDATE'),
-  'authenticated has UPDATE revoked in Phase C while service_role retains UPDATE privilege'
+  'authenticated has INSERT and UPDATE revoked in Phase C while service_role retains UPDATE privilege'
 );
 
 -- Setup test couriers
@@ -116,37 +117,54 @@ select pg_temp.act_as(pg_temp.test_courier());
 select is(current_user::text, 'authenticated', 'Actor current_user must be authenticated');
 select is(auth.uid(), pg_temp.test_courier(), 'Actor auth.uid() must match test courier');
 
--- Initial INSERT without new fields must succeed when no current document of that kind exists
-select lives_ok(
+-- Post-Phase-C: Direct INSERT without atomic RPC is denied with 42501 (PR364-R07)
+select throws_ok(
   $$
     insert into public.courier_documents (id, courier_id, kind, storage_path, status)
     values ('00000000-0000-4000-8000-000000025d02'::uuid, pg_temp.test_courier(), 'license', 'courier/exp_lic_new.jpg', 'submitted');
   $$,
-  'Initial INSERT without new fields succeeds under authenticated role when no current document of that kind exists'
+  '42501',
+  NULL,
+  'Direct INSERT without atomic RPC is denied with 42501 in Phase C (PR364-R07)'
 );
 
--- Post-Phase-C: Second direct INSERT for the same kind (even with different ID and path) is blocked by RLS (42501)
+-- Initial onboarding succeeds via submit_courier_onboarding_documents under authenticated role
+select lives_ok(
+  $$
+    select public.submit_courier_onboarding_documents(
+      jsonb_build_array(
+        jsonb_build_object('kind', 'dni_front', 'storage_path', 'courier/' || pg_temp.test_courier()::text || '/dni_front.jpg'),
+        jsonb_build_object('kind', 'dni_back', 'storage_path', 'courier/' || pg_temp.test_courier()::text || '/dni_back.jpg'),
+        jsonb_build_object('kind', 'selfie', 'storage_path', 'courier/' || pg_temp.test_courier()::text || '/selfie.jpg'),
+        jsonb_build_object('kind', 'avatar', 'storage_path', 'courier/' || pg_temp.test_courier()::text || '/avatar.jpg')
+      )
+    );
+  $$,
+  'Initial onboarding succeeds via atomic RPC submit_courier_onboarding_documents under authenticated role'
+);
+
+-- Post-Phase-C: Second direct INSERT for the same kind (even with different path) is blocked by 42501
 select throws_ok(
   $$
     insert into public.courier_documents (courier_id, kind, storage_path, status)
-    values (pg_temp.test_courier(), 'license', 'courier/exp_lic_1.jpg', 'submitted');
+    values (pg_temp.test_courier(), 'dni_front', 'courier/' || pg_temp.test_courier()::text || '/dni_front_1.jpg', 'submitted');
   $$,
   '42501',
   NULL,
-  'Second direct INSERT for existing current kind is blocked by Phase C RLS (42501)'
+  'Second direct INSERT for existing current kind is blocked with 42501'
 );
 
 select is(
-  (select count(*)::integer from public.courier_documents where id = '00000000-0000-4000-8000-000000025d02'::uuid),
+  (select count(*)::integer from public.courier_documents where courier_id = pg_temp.test_courier() and kind = 'dni_front'),
   1,
-  'Document with new ID has exactly 1 row'
+  'Document dni_front has exactly 1 row'
 );
 
 -- Post-Phase-C: Direct ON CONFLICT DO UPDATE (legacy UPSERT) is denied with 42501 because UPDATE privilege is revoked
 select throws_ok(
   $$
-    insert into public.courier_documents (id, courier_id, kind, storage_path, status)
-    values ('00000000-0000-4000-8000-000000025d02'::uuid, pg_temp.test_courier(), 'license', 'courier/exp_lic_retry.jpg', 'submitted')
+    insert into public.courier_documents (courier_id, kind, storage_path, status)
+    values (pg_temp.test_courier(), 'dni_front', 'courier/' || pg_temp.test_courier()::text || '/dni_front_retry.jpg', 'submitted')
     on conflict (id) do update set storage_path = excluded.storage_path;
   $$,
   '42501',
@@ -155,8 +173,8 @@ select throws_ok(
 );
 
 select is(
-  (select storage_path from public.courier_documents where id = '00000000-0000-4000-8000-000000025d02'::uuid),
-  'courier/exp_lic_new.jpg',
+  (select storage_path from public.courier_documents where courier_id = pg_temp.test_courier() and kind = 'dni_front'),
+  'courier/' || pg_temp.test_courier()::text || '/dni_front.jpg',
   'Storage path remains unchanged after denied update'
 );
 
