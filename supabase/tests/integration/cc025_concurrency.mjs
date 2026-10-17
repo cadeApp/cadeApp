@@ -190,7 +190,7 @@ async function runScenario1(adminId, courierId, docId) {
         begin
           v_res := public.replace_courier_document(jsonb_build_object(
             'kind', 'license',
-            'storagePath', 'courier/${courierId}/license_v2.jpg',
+            'storagePath', 'courier/${courierId}/license_1700000000000.jpg',
             'idempotencyKey', '00000000-0000-4000-8000-0000000001a1'
           ));
           raise notice '${courierResultMarker}:OK:%:END_${courierResultMarker}', v_res::text;
