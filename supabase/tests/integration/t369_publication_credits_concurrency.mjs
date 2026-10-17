@@ -754,10 +754,12 @@ async function expectInvariantFailure(id, scenario, expectedMessages) {
     if (!(err instanceof assert.AssertionError)) {
       throw new Error(`${TAG} ${id}: la ejecución mutada falló por una causa ajena a las invariantes: ${err}`);
     }
-    if (!expectedMessages.includes(err.message)) {
+    // Node agrega el diff («\n\n5 !== 3\n») después del mensaje propio: la primera línea es exactamente la invariante.
+    const headline = err.message.split('\n')[0];
+    if (!expectedMessages.includes(headline)) {
       throw new Error(`${TAG} ${id}: falló una aserción no esperada: ${err.message}`);
     }
-    console.log(`${TAG} ${id} RED: AssertionError «${err.message}» (actual ${JSON.stringify(err.actual)}, esperado ${JSON.stringify(err.expected)})`);
+    console.log(`${TAG} ${id} RED: AssertionError «${headline}» (actual ${JSON.stringify(err.actual)}, esperado ${JSON.stringify(err.expected)})`);
     return;
   }
   throw new Error(`${TAG} ${id}: la ejecución mutada pasó; la prueba no detecta la falta del control`);
