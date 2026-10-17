@@ -59,3 +59,6 @@ node /tmp/pr364-audit.cjs
 - En DB, **NO levantar Docker ni Supabase local** según política. Job CI db-tests del SHA publicado y su salida real; sin simular logs ni declarar rojo no corrido.
 
 **Checks finales que debe dejar el autor en CI para nueva ronda:** `pnpm typecheck && pnpm lint && pnpm test && pnpm build`; `db-tests` Files/Tests/Result; `node docs/revision-pr/analizar.mjs verificacion`; merge-tree comparado contra develop.
+
+## Ronda 5 — 2026-10-16
+GitHub inspect: migración C SQL 84-104, 158-162; PgTAP C 201-215, 425-460; Storage RLS v1 491-499; workflow CI 38986094196, unit 137/2484, pgTAP 27/2406, mutaciones autor B0 y C. E2E error BLOCKED. Mutaciones R06/R07 propuestas en evidencia/ronda-5.md, no ejecutadas por revisor. Tampoco analizar.mjs (sin clon local), no inventar salida.

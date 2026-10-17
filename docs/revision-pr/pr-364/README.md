@@ -59,3 +59,12 @@ CI real run 38702747664: 133 suites/2254 unit; 23 archivos/2262 pgTAP PASS. [Inf
 | 4 | `2251ee79122b914034bf0b28d0b2a2a3e07a4c09` | CON BLOQUEANTES: R04 (rollout), R05 (is_current ausente pre-migración); H02/H06 cuentan con CI real, RED→GREEN autor |
 
 CI verificado run 38711308994: 23 archivos / 2262 pgTAP PASS y 133 archivos unit PASS; revisión independiente NO ejecutó mutaciones DB. [Informe](revisiones/ronda-4.md) · [Prompt](prompt-agy-ronda-4.md) · [Evidencia](evidencia/ronda-4.md).
+
+
+## Ronda 5 — 2026-10-16
+
+| Ronda | SHA funcional | Dictamen |
+|---|---|---|
+| 5 | `d0924270b8da6aaefd087c336b7e330339053be0` | CON BLOQUEANTES altos R06 (LIKE) y R07 (INSERT directo); R04 rollout parcial; opción A de revocar INSERT aprobada por Lautaro073 |
+
+[Informe R5](revisiones/ronda-5.md) · [Evidencia](evidencia/ronda-5.md) · [Prompt agy](prompt-agy-ronda-5.md). CI 137/2484 unit y 27/2406 pgTAP verdes, pero e2e-preview **error BLOCKED**, NO verde. No merge ni aprobación.

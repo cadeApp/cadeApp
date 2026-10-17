@@ -36,3 +36,9 @@ Sin asignar AG nueva sin examinar ramas remotas, donde existe numeración duplic
 - R04, patrón P05: leer workflows reales de promoción, no aceptar un plan Markdown que los contradiga. migrate.yml ejecuta antes que deploy.yml para staging/main; publicar app y SQL desde un único SHA no constituye una entrega expand/contract.
 - H02/H06: los logs ahora sí muestran dos sesiones reales y migración original con mutación RED→GREEN. No negar la evidencia; distinguir SQL cruzado artificial del mutation-test de la definición de RPC.
 - R03: simulación de interleaving mediante mocks puede validar rama de código, pero no reemplaza el comportamiento PostgREST/RLS bajo sesiones simultáneas.
+
+
+## Ronda 5
+- R06/P07: LIKE trata '_' en nombre del kind como wildcard. Comparar prefijos literalmente y probar objeto real malnombrado.
+- R07/P08: UNIQUE vigente no impide primer INSERT directo sin objeto. Con writer RPC B0 + replace, revocar INSERT authenticated es mejor; decisión humana A explícita.
+- R04: gate staging exige desplegar y verificar B antes que C; migraciones corren antes que deploy y un E2E bloqueado no es verde.
