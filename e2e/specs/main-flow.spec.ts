@@ -254,7 +254,9 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       });
       await expect(acceptedAmount).toHaveCount(1);
       await expect(acceptedAmount).toBeVisible();
-      await expect(winnerPage.getByText(/Medio de pago:\s*Efectivo/i)).toBeVisible();
+      const paymentLabel = courierCard.getByText(/Medio de pago:\s*Efectivo/i);
+      await expect(paymentLabel).toHaveCount(1);
+      await expect(paymentLabel).toBeVisible();
 
       // Contacto de repartidor habilitado post-match con enlace real WhatsApp
       const waLink = winnerPage.getByRole('link', { name: /^whatsapp$/i });
@@ -275,6 +277,8 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       ).toBeVisible();
       await expect(acceptedAmount).toHaveCount(1);
       await expect(acceptedAmount).toBeVisible();
+      await expect(paymentLabel).toHaveCount(1);
+      await expect(paymentLabel).toBeVisible();
       await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
 
       // PR360-R02 - B) Back en el historial del navegador: replace sustituyó la entrada actual.
