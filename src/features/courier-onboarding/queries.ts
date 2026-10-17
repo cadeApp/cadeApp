@@ -129,6 +129,7 @@ export async function getCourierApprovedAvatarUrl(
     .eq('courier_id', courierId)
     .eq('kind', 'avatar')
     .eq('status', 'verified')
+    .eq('is_current', true)
     .is('purged_at', null)
     .order('uploaded_at', { ascending: false })
     .limit(1)
@@ -153,12 +154,21 @@ export async function getCourierApprovedAvatarUrl(
     return null;
   }
 
-  // 5. Validación de prefijo y contención de ruta (sin path traversal)
-  const expectedPrefix = `courier/${courierId}/`;
+  // 5. Validación de prefijo canónico y contención de ruta (sin path traversal)
+  const expectedPrefix = `courier/${courierId}/avatar_`;
+  const relativePath = avatarDoc.storage_path?.startsWith(`courier/${courierId}/`)
+    ? avatarDoc.storage_path.slice(`courier/${courierId}/`.length)
+    : null;
+  const isDecimalTimestampAndAllowedExt =
+    relativePath !== null &&
+    !relativePath.includes('/') &&
+    !avatarDoc.storage_path?.includes('..') &&
+    /^[^_]+_\d+\.(png|jpg|jpeg|webp)$/.test(relativePath);
+
   if (
     !avatarDoc.storage_path ||
     !avatarDoc.storage_path.startsWith(expectedPrefix) ||
-    avatarDoc.storage_path.includes('..')
+    !isDecimalTimestampAndAllowedExt
   ) {
     return null;
   }

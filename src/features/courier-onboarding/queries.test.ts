@@ -256,6 +256,15 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
   });
 
   describe('T-367: getCourierApprovedAvatarUrl', () => {
+    interface DocQueryBuilder {
+      select: ReturnType<typeof vi.fn>;
+      eq: ReturnType<typeof vi.fn>;
+      is: ReturnType<typeof vi.fn>;
+      order: ReturnType<typeof vi.fn>;
+      limit: ReturnType<typeof vi.fn>;
+      maybeSingle: ReturnType<typeof vi.fn>;
+    }
+
     function setupAvatarQueryMock(params: {
       authUserId?: string | null;
       userRole?: string;
@@ -286,6 +295,8 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
 
       mockCreateSignedUrl.mockResolvedValue(signedUrlResult);
 
+      let lastDocQuery: DocQueryBuilder | null = null;
+
       const fromMock = vi.fn((table: string) => {
         if (table === 'profiles') {
           return {
@@ -308,7 +319,7 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
           };
         }
         if (table === 'courier_documents') {
-          const docQuery: any = {
+          const docQuery: DocQueryBuilder = {
             select: vi.fn().mockReturnThis(),
             eq: vi.fn().mockReturnThis(),
             is: vi.fn().mockReturnThis(),
@@ -319,11 +330,13 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
               error: null,
             }),
           };
+          lastDocQuery = docQuery;
           return docQuery;
         }
         throw new Error(`Tabla no esperada: ${table}`);
       });
 
+      type SupabaseServerClient = Awaited<ReturnType<typeof serverSupabase.createClient>>;
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         auth: {
           getUser: vi.fn().mockResolvedValue({
@@ -331,20 +344,75 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
             error: null,
           }),
         },
-        from: fromMock as any,
-      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+        from: fromMock as unknown as SupabaseServerClient['from'],
+      } as unknown as SupabaseServerClient);
 
-      return { fromMock };
+      return { fromMock, getDocQuery: () => lastDocQuery };
     }
 
     it('retorna signedUrl para repartidor aprobado con avatar verified vigente y ruta canónica', async () => {
-      setupAvatarQueryMock({});
+      const { getDocQuery } = setupAvatarQueryMock({});
 
       const url = await getCourierApprovedAvatarUrl('courier-1');
 
       expect(url).toBe('https://test-storage.local/courier-docs/avatar_signed.jpg');
       expect(mockCreateSignedUrl).toHaveBeenCalledWith(
         'courier/courier-1/avatar_123.jpg',
+        COURIER_AVATAR_SIGNED_URL_TTL_SECONDS
+      );
+
+      const docQuery = getDocQuery();
+      expect(docQuery).not.toBeNull();
+      expect(docQuery?.eq).toHaveBeenCalledWith('courier_id', 'courier-1');
+      expect(docQuery?.eq).toHaveBeenCalledWith('kind', 'avatar');
+      expect(docQuery?.eq).toHaveBeenCalledWith('status', 'verified');
+      expect(docQuery?.eq).toHaveBeenCalledWith('is_current', true);
+      expect(docQuery?.is).toHaveBeenCalledWith('purged_at', null);
+    });
+
+    it.each([
+      ['selfie', 'courier/courier-1/selfie_123.jpg'],
+      ['dni_front', 'courier/courier-1/dni_front_123.jpg'],
+      ['license', 'courier/courier-1/license_123.jpg'],
+      ['insurance', 'courier/courier-1/insurance_123.jpg'],
+      ['non-decimal timestamp', 'courier/courier-1/avatar_abc.jpg'],
+      ['subdirectory path', 'courier/courier-1/sub/avatar_123.jpg'],
+      ['path traversal', 'courier/courier-1/../avatar_123.jpg'],
+    ])('rechaza kind avatar con path no canónico (%s: %s) y no llama a createSignedUrl', async (_, path) => {
+      setupAvatarQueryMock({
+        avatarDoc: {
+          kind: 'avatar',
+          status: 'verified',
+          storage_path: path,
+          is_current: true,
+        },
+      });
+
+      const url = await getCourierApprovedAvatarUrl('courier-1');
+
+      expect(url).toBeNull();
+      expect(mockCreateSignedUrl).not.toHaveBeenCalled();
+    });
+
+    it('retorna signedUrl para repartidor aprobado con avatar_123.png y firma la ruta exacta', async () => {
+      setupAvatarQueryMock({
+        avatarDoc: {
+          kind: 'avatar',
+          status: 'verified',
+          storage_path: 'courier/courier-1/avatar_123.png',
+          is_current: true,
+        },
+        signedUrlResult: {
+          data: { signedUrl: 'https://test-storage.local/courier-docs/avatar_signed.png' },
+          error: null,
+        },
+      });
+
+      const url = await getCourierApprovedAvatarUrl('courier-1');
+
+      expect(url).toBe('https://test-storage.local/courier-docs/avatar_signed.png');
+      expect(mockCreateSignedUrl).toHaveBeenCalledWith(
+        'courier/courier-1/avatar_123.png',
         COURIER_AVATAR_SIGNED_URL_TTL_SECONDS
       );
     });
