@@ -1,25 +1,33 @@
-# PR #403 — T-367 · Mostrar avatar aprobado del repartidor en su perfil
+# PR #403 — T-367 · Avatar aprobado del repartidor
 
 | Campo | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/403 |
-| Tarea | T-367 (#365, Fase 3 — QA/UX) |
-| Autor | asako669 |
+| Autor implementación | @asako669 |
 | Rama | `feat/T-367-avatar-perfil` → `develop` |
-| SHA ronda 1 | `7afd83d4` |
-| Estado | **Ronda 1: SIN BLOQUEANTES**. Apta para revisión de Lautaro073. |
+| SHA revisado R1 | `d1af180bbe7a0ac562dfe20fd5ed919aca3aa3c3` |
+| Estado | **CON BLOQUEANTES (4)**; no mergear |
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA | Resultado | Informe |
 |---|---|---|---|
-| 1 | `7afd83d4` | **SIN BLOQUEANTES** (0 bloqueantes, 0 mejoras) | [ronda 1](revisiones/ronda-1.md) |
+| 1 | `d1af180bbe7a0ac562dfe20fd5ed919aca3aa3c3` | 4 bloqueantes, 1 incidencia de proceso remediada por el revisor, 1 mejora | [ronda 1](revisiones/ronda-1.md) |
 
-## Resumen de cambios
-- `src/features/courier-onboarding/queries.ts`: Implementa `getCourierApprovedAvatarUrl` con verificación estricta de sesión, rol, estado `approved` del repartidor, y documento `avatar` verificado y vigente. Genera URL firmada server-side con TTL de 300 segundos desde el bucket privado `courier-docs`.
-- `src/app/(courier)/courier/profile/page.tsx`: Integra resolución de avatar autorizado para repartidor habilitado y lo proyecta a `CourierProfileData`.
-- `src/features/courier-onboarding/components/courier-profile-view.tsx`: Extiende `CourierProfileData` con `avatarUrl` y `avatarStatus`; renderiza `<Image ... unoptimized />` con alt accesible, recorte circular y fallback dinámico al ícono `<User />` en caso de error o ausencia.
-- `src/features/courier-onboarding/components.test.tsx`: Pruebas de renderizado con avatar, fallback por ausencia, fallback por error de carga (`onError`), e invariante de no exposición de DNI/selfie.
-- `src/features/courier-onboarding/queries.test.ts`: 9 pruebas unitarias de `getCourierApprovedAvatarUrl` (éxito, aislamiento cross-user, admin, pending, rejected, non-current, path traversal, error de Storage).
-- `src/app/(courier)/courier/profile/page.test.tsx`: 5 pruebas de integración para la página de perfil con resolución de avatar.
-- `e2e/specs/courier-onboarding.spec.ts`: Prueba E2E de visualización de foto en `/courier/profile` para cadete aprobado y fallback ante avatar rechazado.
+## Hallazgos
+
+| ID | Estado | Severidad | Motivo |
+|---|---|---|---|
+| PR403-H01 | Abierto | alto | Path de selfie/DNI puede firmarse como avatar |
+| PR403-H02 | Abierto | alto | E2E insuficiente y cancelada |
+| PR403-H03 | Abierto | medio | `any` nuevos |
+| PR403-H04 | Separado por revisor, pendiente de revalidación de commit | medio | Autorrevisión de agy |
+| PR403-H05 | Abierto | medio | DoD/RED no respaldados por evidencia |
+| PR403-H06 | Abierto (mejora) | bajo | Filtrar `is_current` en DB |
+
+Datos estructurados en [hallazgos.jsonl](hallazgos.jsonl). Método y comandos en [evidencia/comandos.md](evidencia/comandos.md).
+El informe creado por el autor se conserva exclusivamente como [autorrevision-agy-r1.md](revisiones/autorrevision-agy-r1.md).
+
+## Próximo paso
+
+El agy arregla código, tests y bitácora con el prompt del comentario de PR; no puede editar esta carpeta. Tras su push, la revisión ejecuta una ronda 2 independiente. No hay decisiones de alcance pendientes.
