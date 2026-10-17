@@ -1000,11 +1000,19 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await expect(historicalTab).toBeVisible();
 
       // B) Pestaña vigente sin (Histórico)
-      const currentTab = page.getByRole('tab', { name: /^Licencia de Conducir$/i });
+      const currentTab = page
+        .getByRole('tab', { name: /Licencia de Conducir/i })
+        .filter({ hasNotText: '(Histórico)' });
       await expect(currentTab).toBeVisible();
 
       // Al seleccionar la pestaña histórica:
       await historicalTab.click();
+      const loadHistoricalBtn = page.getByRole('button', {
+        name: new RegExp(ADMIN_COPY.detail.loadDocument, 'i'),
+      });
+      if (await loadHistoricalBtn.isVisible()) {
+        await loadHistoricalBtn.click();
+      }
       await expect(page.getByText('Documento histórico (no admite revisión).')).toBeVisible();
 
       const rejectDocBtn = page.getByRole('button', {
@@ -1018,8 +1026,14 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
       // Al seleccionar la versión vigente:
       await currentTab.click();
+      const loadCurrentBtn = page.getByRole('button', {
+        name: new RegExp(ADMIN_COPY.detail.loadDocument, 'i'),
+      });
+      if (await loadCurrentBtn.isVisible()) {
+        await loadCurrentBtn.click();
+      }
       await expect(page.getByText('Documento histórico (no admite revisión).')).not.toBeVisible();
-      await expect(page.getByText('En revisión')).toBeVisible();
+      await expect(page.getByText(ADMIN_COPY.detail.viewer.validityQuestion)).toBeVisible();
       await expect(rejectDocBtn).toBeEnabled();
       await expect(verifyDocBtn).toBeEnabled();
 
