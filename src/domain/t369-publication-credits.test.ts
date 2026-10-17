@@ -337,15 +337,16 @@ describe('T-369 / CC-029 — fake: administración y bordes', () => {
   it('parámetros nuevos: se guardan y base/tope se validan entre sí', async () => {
     const t = setup();
     t.asAdmin();
-    for (const [settingKey, value] of [
-      ['publication_drops_per_credit', 3],
-      ['carryover_base_pct', 10],
-      ['carryover_step_pct', 2],
-      ['carryover_cap_pct', 20],
-      ['launch_discount_pct', 15],
-      ['loose_credit_reference_price_ars', 900],
-    ] as const) {
-      expect((await t.fake.admin_update_setting({ key: settingKey, value })).ok).toBe(true);
+    const updates: RpcInput<'admin_update_setting'>[] = [
+      { key: 'publication_drops_per_credit', value: 3 },
+      { key: 'carryover_base_pct', value: 10 },
+      { key: 'carryover_step_pct', value: 2 },
+      { key: 'carryover_cap_pct', value: 20 },
+      { key: 'launch_discount_pct', value: 15 },
+      { key: 'loose_credit_reference_price_ars', value: 900 },
+    ];
+    for (const update of updates) {
+      expect((await t.fake.admin_update_setting(update)).ok).toBe(true);
     }
     expect(await t.fake.admin_update_setting({ key: 'carryover_base_pct', value: 21 })).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
     expect(await t.fake.admin_update_setting({ key: 'carryover_cap_pct', value: 9 })).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
