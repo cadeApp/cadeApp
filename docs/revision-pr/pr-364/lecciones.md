@@ -48,3 +48,10 @@ Sin asignar AG nueva sin examinar ramas remotas, donde existe numeración duplic
 - R06 / P07: comparación literal de prefijo de Storage evita comodín de LIKE; la prueba de mutación sobre la RPC debe demostrar aceptación indebida real (licenseX...) y restored GREEN, no solo detectar el texto del SQL.
 - R07 / P08: al mover INSERT documental exclusivamente a RPCs, las suites RLS antiguas positivas deben volverse negativas 42501 **con conteo cero**, conservando pruebas positivas RPC autenticadas y control de roles.
 - R04: no convertir CI efímero/Preview con migración bloqueada en permiso para aplicar C sobre un staging legacy; reservar referencia B-only y comprobar deploy real antes de contracción.
+
+
+## Ronda 7 — 2026-10-17
+- R04 (gate de release): la verificación independiente de `migrate-staging`, checkout de SHA exacto, Vercel alias real y E2E sobre URL de staging es distinta del CI efímero. Registrar **SHA del ambiente realmente desplegado**, no usar SHA del PR de contracción como si fuera el del deploy.
+- No inferir ausencia universal de escritores legacy por un `git grep` del código publicado: eso demuestra sólo que la versión actual no los contiene. Los clientes antiguos en caché requieren observabilidad o una política de transición.
+- Una ronda que integra develop sin alterar SQL C no exige repetir correcciones ya comprobadas por CI del autor, pero sí contrastar diff final, base, pruebas del HEAD y fuentes del despliegue real.
+- SHA inventado completo en comentario debe corregirse por copia del HEAD remoto exacto; la trazabilidad del check depende del hash completo.

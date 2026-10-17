@@ -69,3 +69,10 @@ GitHub inspect: migración C SQL 84-104, 158-162; PgTAP C 201-215, 425-460; Stor
 - `fetch_file` migración C líneas 62–70, 142–155; pgTAP C casos R07 y R06; rls_matrix líneas 540–555; runner cc025_concurrency.mjs R06/R07.
 - `fetch_commit_workflow_runs` / logs Actions CI 38993728305: unit 137/2515, DB 27/2420 PASS, R06 LIKE RED/restaurado GREEN, R07 GRANT+policy RED/restaurado 42501/0 filas GREEN. Es ejecución del autor, NO revisor. E2E 38993803372 BLOCKED.
 - No se ejecutó Docker/Supabase/psql, E2E ni `node docs/revision-pr/analizar.mjs verificacion` en esta sesión (sin clon local). No hay mutación independiente, `verificado_en_sha=null`.
+
+
+## Ronda 7 — 2026-10-17: inspección independiente de workflow remoto (no SQL propio)
+- API GitHub PR #364 HEAD `4b7117a425bb3aad9de58f8c961fd35a8c04165c`, base develop `256ae179`, `compare` anterior a R7: ahead 6 desde revisor R6, archivo SQL C sin cambios y pr-364/** intacta; compare develop ahead 39 behind 0.
+- API GitHub staging HEAD `fb7db3f035251a78e5a9e32f5e3465735a36ba4f`, PR #392 merged, migrate-staging #39006887225 job 117321063407 aplicó cuatro SQL y sin drift, deploy-staging #39006925376 jobs 117321173186 (same SHA/health) y 117321445165 (82/82 E2E staging). `fetch_file` staging writer confirma RPC B0. C no existe en staging (404).
+- API GitHub CI SHA `4b7117a425bb3aad9de58f8c961fd35a8c04165c` run #39011025442 SUCCESS: unit 137/2515, db-tests 27/2420, R06 LIKE RED/GREEN, R07 GRANT+policy RED/GREEN, backfill RED/GREEN, db:types sin drift. E2E-preview error BLOCKED / REQUIRES DEVELOP MIGRATION.
+- Revisor **no** ejecutó DB/Docker/Supabase/Playwright local ni mutaciones propias, `node docs/revision-pr/analizar.mjs verificacion` NO ejecutado (no hay clon). No atribuir como pruebas propias CI del autor. Fuente externa staging fue verificada por inspección independiente de los jobs y sus logs, anclada a SHA `fb7db3f035251a78e5a9e32f5e3465735a36ba4f`.

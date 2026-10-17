@@ -77,3 +77,12 @@ CI verificado run 38711308994: 23 archivos / 2262 pgTAP PASS y 133 archivos unit
 | 6 | `f6168c03fedaa34d843c4192f46c6af1aae7b680` | SIN BLOQUEANTES FUNCIONALES NUEVOS; R06/R07 arreglados por inspección+CI (sin DB propia), R04 rollout PARCIAL; **no merge** hasta gate staging y E2E autorizado |
 
 [Informe R6](revisiones/ronda-6.md) · [Evidencia](evidencia/ronda-6.md) · [Prompt de continuidad](prompt-agy-ronda-6.md). CI 38993728305: 137/2515 unit y 27/2420 pgTAP PASS; e2e-preview ERROR BLOCKED / REQUIRES DEVELOP MIGRATION. Sin aprobación, merge ni migración remota.
+
+
+## Ronda 7 — 2026-10-17
+
+| Ronda | SHA funcional | Dictamen |
+|---|---|---|
+| 7 | `4b7117a425bb3aad9de58f8c961fd35a8c04165c` | **SIN BLOQUEANTES NUEVOS**; R04 **arreglado-verificado** para gate B-only staging en SHA `fb7db3f035251a78e5a9e32f5e3465735a36ba4f`; CI 137/2515 unit, 27/2420 pgTAP PASS. Aptitud para decisión humana de merge solo a develop. E2E post-C pendiente de migración autorizada. |
+
+[Informe R7](revisiones/ronda-7.md) · [Evidencia](evidencia/ronda-7.md) · [Prompt agy](prompt-agy-ronda-7.md). El revisor no mergeó ni desplegó. R7 no modifica código funcional.
