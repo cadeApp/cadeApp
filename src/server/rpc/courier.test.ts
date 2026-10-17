@@ -50,6 +50,11 @@ describe('CC-025 — replaceCourierDocumentRpc', () => {
       }),
     ).toBe('UNAUTHORIZED_ACTOR');
     expect(
+      mapReplaceCourierDocumentRpcError({
+        message: 'CONSENT_REQUIRED',
+      }),
+    ).toBe('UNAUTHORIZED_ACTOR');
+    expect(
       mapReplaceCourierDocumentRpcError({ message: 'unexpected database failure' }),
     ).toBe('INTERNAL_ERROR');
   });

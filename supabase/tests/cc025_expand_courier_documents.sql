@@ -46,28 +46,42 @@ select has_column('public', 'courier_documents', 'idempotency_key', 'courier_doc
 select col_is_null('public', 'courier_documents', 'idempotency_key', 'idempotency_key must be nullable');
 select col_type_is('public', 'courier_documents', 'idempotency_key', 'text', 'idempotency_key type must be text');
 
--- 2. Guard constraint existence
+-- 2. Phase C contraction retired temporary expansion guard and installed permanent catalog check + unique current index
 select ok(
-  exists (
+  not exists (
     select 1 from pg_constraint
     where conrelid = to_regclass('public.courier_documents')
       and conname = 'courier_documents_expansion_guard'
+  )
+  and exists (
+    select 1 from pg_constraint
+    where conrelid = to_regclass('public.courier_documents')
+      and conname = 'courier_documents_rejection_code_check'
       and contype = 'c'
   ),
-  'Expansion guard constraint must exist'
+  'Temporary expansion guard is retired in Phase C and replaced by courier_documents_rejection_code_check'
 );
 
--- 3. Invariants on pre-existing rows: all rows must have is_current=true, rejection_code=NULL, idempotency_key=NULL
+-- 3. Invariants on pre-existing rows: at most 1 current row per (courier_id, kind)
 select is(
-  (select count(*)::integer from public.courier_documents where is_current is distinct from true or rejection_code is not null or idempotency_key is not null),
+  (
+    select count(*)::integer from (
+      select courier_id, kind
+      from public.courier_documents
+      where is_current = true
+      group by courier_id, kind
+      having count(*) > 1
+    ) dup
+  ),
   0,
-  'All existing courier_documents rows must satisfy expansion defaults (true, null, null)'
+  'No duplicate current courier_documents rows exist for any (courier_id, kind)'
 );
 
--- 4. Permissions: authenticated role MUST retain UPDATE privilege during expand phase (required by old UPSERT writer)
+-- 4. Permissions: authenticated role has UPDATE revoked in Phase C while service_role retains UPDATE for sweep
 select ok(
-  has_table_privilege('authenticated', 'public.courier_documents', 'UPDATE'),
-  'authenticated must retain UPDATE privilege on courier_documents during expand phase'
+  not has_table_privilege('authenticated', 'public.courier_documents', 'UPDATE')
+  and has_table_privilege('service_role', 'public.courier_documents', 'UPDATE'),
+  'authenticated has UPDATE revoked in Phase C while service_role retains UPDATE privilege'
 );
 
 -- Setup test couriers
@@ -95,30 +109,31 @@ insert into public.couriers (profile_id, status, available, vehicle_type, vehicl
 values (pg_temp.other_courier(), 'pending', false, 'moto', 'EXP99')
 on conflict (profile_id) do nothing;
 
--- 5. Old writer compatibility & actor verification (H01 & H02)
+-- 5. Initial insert & Phase C contraction enforcement (H01 & H02)
 select pg_temp.act_as(pg_temp.test_courier());
 
 -- H02: Explicitly assert current_user and auth.uid() within the active authenticated session
 select is(current_user::text, 'authenticated', 'Actor current_user must be authenticated');
 select is(auth.uid(), pg_temp.test_courier(), 'Actor auth.uid() must match test courier');
 
--- H01: Plain INSERT without new fields must succeed
+-- Initial INSERT without new fields must succeed when no current document of that kind exists
 select lives_ok(
+  $$
+    insert into public.courier_documents (id, courier_id, kind, storage_path, status)
+    values ('00000000-0000-4000-8000-000000025d02'::uuid, pg_temp.test_courier(), 'license', 'courier/exp_lic_new.jpg', 'submitted');
+  $$,
+  'Initial INSERT without new fields succeeds under authenticated role when no current document of that kind exists'
+);
+
+-- Post-Phase-C: Second direct INSERT for the same kind (even with different ID and path) is blocked by RLS (42501)
+select throws_ok(
   $$
     insert into public.courier_documents (courier_id, kind, storage_path, status)
     values (pg_temp.test_courier(), 'license', 'courier/exp_lic_1.jpg', 'submitted');
   $$,
-  'Old writer INSERT without new fields must succeed under authenticated role'
-);
-
--- H01: PostgREST-style UPSERT on NEW row (ON CONFLICT (id) DO UPDATE with new ID)
-select lives_ok(
-  $$
-    insert into public.courier_documents (id, courier_id, kind, storage_path, status)
-    values ('00000000-0000-4000-8000-000000025d02'::uuid, pg_temp.test_courier(), 'license', 'courier/exp_lic_new.jpg', 'submitted')
-    on conflict (id) do update set status = excluded.status;
-  $$,
-  'Old writer UPSERT (ON CONFLICT (id) DO UPDATE with new ID) must succeed under authenticated role'
+  '42501',
+  NULL,
+  'Second direct INSERT for existing current kind is blocked by Phase C RLS (42501)'
 );
 
 select is(
@@ -127,10 +142,7 @@ select is(
   'Document with new ID has exactly 1 row'
 );
 
--- H01 & H02: Collision on existing ID
--- When a courier attempts to execute the UPDATE branch on an existing row,
--- PostgreSQL evaluates RLS UPDATE policy courier_documents_write_admin (which requires admin)
--- and correctly denies it with SQLSTATE 42501 (pre-existing RLS limitation).
+-- Post-Phase-C: Direct ON CONFLICT DO UPDATE (legacy UPSERT) is denied with 42501 because UPDATE privilege is revoked
 select throws_ok(
   $$
     insert into public.courier_documents (id, courier_id, kind, storage_path, status)
@@ -139,7 +151,7 @@ select throws_ok(
   $$,
   '42501',
   NULL,
-  'Attempt to execute UPDATE branch on existing row as courier is denied by inherited courier_documents_write_admin policy (42501)'
+  'Direct UPSERT (ON CONFLICT DO UPDATE) as courier is denied by Phase C privilege revocation (42501)'
 );
 
 select is(
@@ -161,7 +173,7 @@ select throws_ok(
   'Different user cannot insert documents for another courier (RLS 42501)'
 );
 
--- 6. Guard enforcement: attempts to forge invalid values must fail with check constraint violation (23514)
+-- 6. Guard enforcement in Phase C: attempts by authenticated to forge is_current=false, rejection_code, or idempotency_key are rejected by RLS (42501)
 select pg_temp.act_as(pg_temp.test_courier());
 
 select throws_ok(
@@ -169,9 +181,9 @@ select throws_ok(
     insert into public.courier_documents (courier_id, kind, storage_path, status, is_current)
     values (pg_temp.test_courier(), 'avatar', 'courier/fake_avatar.jpg', 'submitted', false);
   $$,
-  '23514',
+  '42501',
   NULL,
-  'INSERT with is_current=false must be rejected by expansion guard'
+  'INSERT with is_current=false must be rejected by Phase C RLS'
 );
 
 select throws_ok(
@@ -179,9 +191,9 @@ select throws_ok(
     insert into public.courier_documents (courier_id, kind, storage_path, status, rejection_code)
     values (pg_temp.test_courier(), 'avatar', 'courier/fake_avatar.jpg', 'submitted', 'other_safe');
   $$,
-  '23514',
+  '42501',
   NULL,
-  'INSERT with forged rejection_code must be rejected by expansion guard'
+  'INSERT with forged rejection_code must be rejected by Phase C RLS'
 );
 
 select throws_ok(
@@ -189,9 +201,9 @@ select throws_ok(
     insert into public.courier_documents (courier_id, kind, storage_path, status, idempotency_key)
     values (pg_temp.test_courier(), 'avatar', 'courier/fake_avatar.jpg', 'submitted', '00000000-0000-4000-8000-000000000099');
   $$,
-  '23514',
+  '42501',
   NULL,
-  'INSERT with forged idempotency_key must be rejected by expansion guard'
+  'INSERT with forged idempotency_key must be rejected by Phase C RLS'
 );
 
 select pg_temp.reset_actor();

@@ -394,4 +394,49 @@ describe('CC-025 — FakeRpcClient replace_courier_document', () => {
       expect(res.code).toBe('VALIDATION_ERROR');
     }
   });
+
+  it('rechaza con UNAUTHORIZED_ACTOR cuando el courier tiene consentStatus distinto de active o status rejected/suspended', async () => {
+    const client = setupClient();
+    client.setActor({
+      userId: COURIER_ID,
+      role: 'courier',
+      consentStatus: 'pending',
+    });
+
+    const pendingConsentRes = await client.replace_courier_document({
+      kind: 'license',
+      storagePath: `courier/${COURIER_ID}/license_new.jpg`,
+    });
+    expect(pendingConsentRes.ok).toBe(false);
+    if (!pendingConsentRes.ok) {
+      expect(pendingConsentRes.code).toBe('UNAUTHORIZED_ACTOR');
+    }
+
+    client.setActor({
+      userId: COURIER_ID,
+      role: 'courier',
+      consentStatus: 'active',
+    });
+    const courier = client.getCourier(COURIER_ID);
+    if (courier) courier.status = 'rejected';
+
+    const rejectedCourierRes = await client.replace_courier_document({
+      kind: 'license',
+      storagePath: `courier/${COURIER_ID}/license_new.jpg`,
+    });
+    expect(rejectedCourierRes.ok).toBe(false);
+    if (!rejectedCourierRes.ok) {
+      expect(rejectedCourierRes.code).toBe('UNAUTHORIZED_ACTOR');
+    }
+
+    if (courier) courier.status = 'suspended';
+    const suspendedCourierRes = await client.replace_courier_document({
+      kind: 'license',
+      storagePath: `courier/${COURIER_ID}/license_new.jpg`,
+    });
+    expect(suspendedCourierRes.ok).toBe(false);
+    if (!suspendedCourierRes.ok) {
+      expect(suspendedCourierRes.code).toBe('UNAUTHORIZED_ACTOR');
+    }
+  });
 });

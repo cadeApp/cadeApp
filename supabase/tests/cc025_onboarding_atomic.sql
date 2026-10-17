@@ -359,12 +359,14 @@ select throws_matching(
   'Attempting onboarding submit when an active document is rejected must throw VALIDATION_ERROR'
 );
 
--- 17. Existing dirty duplicate active rows throws INTERNAL_ERROR
+-- 17. Existing dirty duplicate active rows throws INTERNAL_ERROR (defensive guard in RPC)
 select pg_temp.reset_actor();
 -- Temporarily restore status to submitted
 update public.courier_documents set status = 'submitted' where courier_id = pg_temp.test_courier();
 
--- Insert an extra active row for avatar to simulate duplicate
+-- Temporarily drop Phase C unique index inside transaction to seed hypothetical duplicate active row
+drop index if exists public.courier_documents_unique_current;
+
 insert into public.courier_documents (courier_id, kind, storage_path, status, is_current)
 values (pg_temp.test_courier(), 'avatar', 'courier/' || pg_temp.test_courier()::text || '/avatar_duplicate.jpg', 'submitted', true);
 
@@ -377,10 +379,14 @@ select throws_matching(
 
 -- 18. Optional kinds: license and insurance can be submitted additively
 select pg_temp.reset_actor();
--- Clean up duplicate avatar row
+-- Clean up duplicate avatar row and restore Phase C unique index
 delete from public.courier_documents
 where courier_id = pg_temp.test_courier()
   and storage_path = 'courier/' || pg_temp.test_courier()::text || '/avatar_duplicate.jpg';
+
+create unique index courier_documents_unique_current
+  on public.courier_documents (courier_id, kind)
+  where (is_current = true);
 
 select pg_temp.act_as(pg_temp.test_courier());
 
@@ -493,10 +499,8 @@ select results_eq(
   'Approved courier submission must insert 4 rows'
 );
 
--- 22. Coexistence reality: direct REST insert with distinct path bypasses Phase A RLS and is detected by RPC (H01)
--- Under Phase A, only UNIQUE(storage_path) exists. A direct REST insert with an alternative storage_path
--- passes courier_documents_insert_self policy and creates a second active row for the same kind.
-select lives_ok(
+-- 22. Phase C global closure of H01: direct REST insert with distinct path is now blocked by RLS (42501) and courier_documents_unique_current
+select throws_ok(
   $$
     insert into public.courier_documents (courier_id, kind, storage_path, status, is_current)
     values (
@@ -507,7 +511,9 @@ select lives_ok(
       true
     );
   $$,
-  'Direct REST insert with alternative path succeeds under Phase A RLS (bypassing RPC lock)'
+  '42501',
+  NULL,
+  'Direct REST insert with alternative path is blocked by Phase C RLS courier_documents_insert_self (42501)'
 );
 
 select results_eq(
@@ -516,12 +522,12 @@ select results_eq(
     from public.courier_documents
     where courier_id = pg_temp.approved_courier() and kind = 'dni_front';
   $$,
-  $$ values (2) $$,
-  'Phase A RLS allows 2 rows for same kind when storage_path is distinct'
+  $$ values (1) $$,
+  'Phase C keeps exactly 1 current row for dni_front even after direct REST insert attempt with alternative path'
 );
 
--- Subsequent call to the RPC detects the ambiguity and raises INTERNAL_ERROR
-select throws_matching(
+-- Subsequent idempotent call to submit_courier_onboarding_documents continues to succeed cleanly after Phase C
+select lives_ok(
   $$
     select public.submit_courier_onboarding_documents(
       jsonb_build_array(
@@ -532,8 +538,7 @@ select throws_matching(
       )
     );
   $$,
-  'INTERNAL_ERROR',
-  'Subsequent RPC invocation detects pre-existing duplicate kind and fails safely with INTERNAL_ERROR'
+  'Subsequent B0 RPC invocation continues to succeed idempotently after Phase C blocked the direct REST insert'
 );
 
 select * from finish();

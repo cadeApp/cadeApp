@@ -127,8 +127,8 @@ async function runCompatibilityTests() {
   );
   console.log('[CC-025-A] Pre-migración RED confirmado: SELECT is_current falla con 42703 en base pre-CC-025.');
 
-  // 3. Aplicar migración expansiva
-  runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicar migraciones');
+  // 3. Aplicar hasta la migración expansiva de Fase A (20261015153311)
+  runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261015153311', '--no-seed'], 'Aplicar hasta migración expansiva 20261015153311');
 
   // 4. Verificar que SELECT is_current, rejection_code, idempotency_key ahora es GREEN
   const postCheck = runSql('select count(*) from public.courier_documents where is_current is distinct from true;');
@@ -262,8 +262,7 @@ async function runMutationCheck() {
     fs.writeFileSync(migrationPath, mutatedContent, 'utf8');
     console.log('[CC-025-A] Migración mutada temporalmente (omitiendo is_current).');
 
-    runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261014180000', '--no-seed'], 'Reset pre-migración mutada');
-    runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicar migración mutada');
+    runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261015153311', '--no-seed'], 'Aplicar hasta migración expansiva 20261015153311 mutada');
 
     const testMutated = runSqlExpectingError('select is_current from public.courier_documents limit 1;');
     assert.notEqual(testMutated.status, 0, 'La migración mutada DEBE fallar al consultar is_current');

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(57);
+select plan(65);
 
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025a1'::uuid $$;
 create function pg_temp.courier_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025c1'::uuid $$;
@@ -737,4 +737,138 @@ select ok(
   'PR364-H06: Backfill preserva retencion asignando now() + 30 dias para historicos antiguos sin purge_after'
 );
 
+-- 20. Convivencia B0 + Fase C: submit_courier_onboarding_documents funciona post-contraccion y permite reemplazo selectivo posterior
+select pg_temp.act_as(pg_temp.courier_b());
+select lives_ok(
+  $$
+    select public.submit_courier_onboarding_documents(
+      jsonb_build_array(
+        jsonb_build_object('kind', 'dni_front', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c2/dni_front_v1.jpg'),
+        jsonb_build_object('kind', 'dni_back', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v1.jpg'),
+        jsonb_build_object('kind', 'selfie', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c2/selfie_v1.jpg'),
+        jsonb_build_object('kind', 'avatar', 'storage_path', 'courier/00000000-0000-4000-8000-0000000025c2/avatar_v1.jpg')
+      )
+    );
+  $$,
+  'Onboarding B0 submit_courier_onboarding_documents funciona integramente despues de aplicar Fase C'
+);
+
+-- Admin aprueba dni_front, selfie y avatar, y rechaza dni_back
+select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
+select lives_ok(
+  $$
+    select public.admin_verify_document(
+      (select id from public.courier_documents where courier_id = pg_temp.courier_b() and kind = 'dni_front' and is_current = true),
+      'verified'
+    );
+    select public.admin_verify_document(
+      (select id from public.courier_documents where courier_id = pg_temp.courier_b() and kind = 'selfie' and is_current = true),
+      'verified'
+    );
+    select public.admin_verify_document(
+      (select id from public.courier_documents where courier_id = pg_temp.courier_b() and kind = 'avatar' and is_current = true),
+      'verified'
+    );
+    select public.admin_verify_document(
+      (select id from public.courier_documents where courier_id = pg_temp.courier_b() and kind = 'dni_back' and is_current = true),
+      'rejected',
+      'Nota interna: dorso desenfocado',
+      'illegible'
+    );
+  $$,
+  'Admin verifica 3 documentos y rechaza dni_back con codigo seguro'
+);
+
+-- 21. No se puede reemplazar un documento ya verificado (dni_front)
+select pg_temp.reset_actor();
+insert into storage.objects (id, bucket_id, name, owner)
+values
+  ('00000000-0000-4000-8000-0000000025e3', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c2/dni_front_v2.jpg', pg_temp.courier_b()),
+  ('00000000-0000-4000-8000-0000000025e4', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v2.jpg', pg_temp.courier_b())
+on conflict do nothing;
+
+select pg_temp.act_as(pg_temp.courier_b());
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'dni_front',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_front_v2.jpg'
+    ));
+  $$,
+  'INVALID_STATE_TRANSITION',
+  'replace_courier_document rechaza reemplazar documento ya verificado (status = verified)'
+);
+
+-- 22. Reemplazo selectivo de dni_back rechazado sin alterar los otros 3 documentos verificados
+select lives_ok(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'dni_back',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v2.jpg'
+    ));
+  $$,
+  'Courier reemplaza selectivamente dni_back rechazado'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.courier_documents
+    where courier_id = pg_temp.courier_b()
+      and is_current = true
+      and kind in ('dni_front', 'selfie', 'avatar')
+      and status = 'verified'
+  ),
+  3,
+  'Reemplazar dni_back conserva intactos los otros 3 documentos verificados y vigentes'
+);
+
+select is(
+  (
+    select status::text
+    from public.courier_documents
+    where courier_id = pg_temp.courier_b()
+      and is_current = true
+      and kind = 'dni_back'
+  ),
+  'submitted',
+  'dni_back reemplazado pasa a status = submitted y is_current = true'
+);
+
+-- 23. Elegibilidad bajo lock en replace_courier_document: courier rejected o suspended lanza UNAUTHORIZED_ACTOR
+select pg_temp.reset_actor();
+update public.courier_documents
+set status = 'rejected', rejection_code = 'expired'
+where courier_id = pg_temp.courier_b() and kind = 'dni_back' and is_current = true;
+
+update public.couriers set status = 'rejected' where profile_id = pg_temp.courier_b();
+
+select pg_temp.act_as(pg_temp.courier_b());
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'dni_back',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v2.jpg'
+    ));
+  $$,
+  'UNAUTHORIZED_ACTOR',
+  'replace_courier_document rechaza courier con status = rejected (UNAUTHORIZED_ACTOR)'
+);
+
+select pg_temp.reset_actor();
+update public.couriers set status = 'suspended' where profile_id = pg_temp.courier_b();
+
+select pg_temp.act_as(pg_temp.courier_b());
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'dni_back',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c2/dni_back_v2.jpg'
+    ));
+  $$,
+  'UNAUTHORIZED_ACTOR',
+  'replace_courier_document rechaza courier con status = suspended (UNAUTHORIZED_ACTOR)'
+);
+
+select * from finish();
 rollback;

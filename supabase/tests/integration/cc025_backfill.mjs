@@ -33,7 +33,7 @@ if (!dbContainer) {
 const pnpmCmd = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const migrationPath = path.resolve(
   process.cwd(),
-  'supabase/migrations/20261015020000_cc025_courier_document_replacement.sql'
+  'supabase/migrations/20261016210000_cc025_courier_document_replacement.sql'
 );
 
 function runSql(sql) {
@@ -169,15 +169,15 @@ async function runBackfillTest() {
     docC2RecentId: crypto.randomUUID(),
   };
 
-  // 1. Resetear base de datos a la versión previa a CC-025 (20261014180000)
-  runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261014180000', '--no-seed'], 'Reseteando DB a 20261014180000 (--no-seed)');
+  // 1. Resetear base de datos a la versión previa a la Fase C de CC-025 (20261016033941, con A y B0 aplicadas)
+  runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261016033941', '--no-seed'], 'Reseteando DB a 20261016033941 (--no-seed)');
 
-  // 2. Sembrar duplicados previos a la migración
+  // 2. Sembrar duplicados previos a la migración de contracción
   console.log('[CC-025][H06] Sembrando fixture pre-migración con documentos duplicados (uploaded_at hace 90 días)...');
   setupPreMigrationFixture(ids);
 
-  // 3. Aplicar la migración CC-025
-  runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicando migración CC-025 con pnpm supabase migration up');
+  // 3. Aplicar la migración CC-025 Fase C
+  runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicando migración CC-025 Fase C con pnpm supabase migration up');
 
   // 4. Verificar aserciones
   console.log('[CC-025][H06] Verificando aserciones del backfill...');
@@ -215,8 +215,8 @@ async function runBackfillMutationCheck() {
     console.log('[CC-025][H06] Aplicando mutación a migración original: now() + 30 days -> cd.uploaded_at + 30 days...');
     fs.writeFileSync(migrationPath, mutatedMigrationContent, 'utf8');
 
-    // 1. Resetear base de datos a 20261014180000
-    runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261014180000', '--no-seed'], 'Reseteando DB para control mutante');
+    // 1. Resetear base de datos a 20261016033941
+    runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261016033941', '--no-seed'], 'Reseteando DB para control mutante');
 
     // 2. Sembrar fixture con doc hace 90 días
     setupPreMigrationFixture(ids);
