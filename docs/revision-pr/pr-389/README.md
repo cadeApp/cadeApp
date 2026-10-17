@@ -63,3 +63,11 @@ El nuevo commit de revisión no equivale a aprobación. No se ejecutó CI ni E2E
 | 059270f612fcfd00fdefab24e5aea3ebf57f81ef | Sin bloqueantes nuevos de código; gates E2E cancelado, rama desactualizada y aprobación pendiente | [ronda-3.md](revisiones/ronda-3.md) |
 
 CI del SHA funcional: 140/140 archivos, 2593/2593 tests, DB Files=27 Tests=2420 PASS. E2E Preview run #39053732705 CANCELLED, no hay oráculo E2E. La rama lleva más de 160 commits de retraso respecto a develop en el último chequeo. La documentación de esta ronda no exige repetir el CI verde por sí sola.
+
+## Ronda 4 — 2026-10-17
+
+| SHA funcional | Resultado | Informe |
+|---|---|---|
+| dfe467ada888fe5893e9216842ecb06ca8c12a7d | Sin hallazgos nuevos de código, atrás de develop: 0; gate E2E cancelado, aprobación humana pendiente | [ronda-4.md](revisiones/ronda-4.md) |
+
+CI sobre código integrado: 142 archivos y 2.685 tests unit PASS; DB 29 archivos y 2.735 tests PASS. E2E Preview #39061870840 CANCELLED antes de ejecutar Playwright (se confirmó target SHA). La reejecución autorizada del mismo run no requiere cambio de código ni de workflow. Una actualización exclusivamente documental de la revisión/bitácora NO exige otro CI GREEN.

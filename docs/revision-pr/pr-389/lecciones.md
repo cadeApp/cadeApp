@@ -26,3 +26,10 @@ No asignar AG nuevo ni alterar AGENTS.md sin validar máximo de todas las ramas 
 - El CI verde sobre un commit funcional puede conservarse aunque un commit posterior modifique únicamente documentación: NO exigir un CI nuevo por la bitácora de revisión.
 - Separar rama atrasada (hecho confirmado) de conflicto de merge (no confirmado sin merge-tree).
 - Con mutantes reportados por autor pero no reproducidos independientemente, usar arreglado-sin-verificar, no arreglado-verificado. No sospechar falsificación sin evidencia.
+
+## Ronda 4
+
+- Tras mergear develop comparar blobs antes y después de T-362, no confundir cambios ajenos incorporados automáticamente con desvíos de alcance.
+- Dos runs sucesivos CANCELLED con resolve-preview success y Playwright sin log sustentan un gate operativo pendiente, no un fallo de aserción. El grupo de concurrencia compartida podría influir, pero sin evidencia de cola no atribuirle causalidad.
+- Cuando unit/DB CI del SHA integrado están verdes, el paso mínimo para cerrar es una ejecución E2E real del mismo SHA, no modificar producción ni provocar un commit vacío.
+- Approval-policy es control de aprobación de P2 por P1, no un defecto a reparar debilitando checks.

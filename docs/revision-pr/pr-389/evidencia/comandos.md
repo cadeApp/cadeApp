@@ -229,3 +229,27 @@ Verificación siguiente:
 - pnpm typecheck && pnpm lint && pnpm test
 - Push normal y registrar CI + E2E Preview sobre SHA integrado. No saltear, fingir GREEN ni ejecutar comandos contra Supabase remoto.
 - No exigir CI nuevo por este commit exclusivo de revisión documental. La fusión de develop sí cambia código y requiere revalidación.
+
+---
+
+## Ronda 4 — evidencia remota de SHA dfe467a
+
+CI real: https://github.com/cadeApp/cadeApp/actions/runs/39061791920
+- unit 117481086796: Test Files 142 passed (142), Tests 2685 passed (2685), workflows 79/79 y ADR 6/6.
+- db-tests 117481086777: Files=29, Tests=2735, Result: PASS; mutaciones SQL RED temporales restauradas, job final success.
+- typecheck/lint/build/audit/bundle-budget: success; Vercel deployed.
+- approval-policy: https://github.com/cadeApp/cadeApp/actions/runs/39061789281; log: El PR requiere aprobación vigente de Lautaro073.
+
+E2E run real: https://github.com/cadeApp/cadeApp/actions/runs/39061870840
+- Evento repository_dispatch, resolve-preview success, e2e-preview cancelled, report-preview-status success.
+- Commit status del SHA dfe467a: error, descripción E2E no corrió (cancelled): re-ejecutar el run.
+- Log del job cancelado devuelve BlobNotFound, sin oráculos de Playwright. No hay falso GREEN ni resultado RED de asserts.
+- Workflow .github/workflows/e2e-preview.yml: job e2e tiene concurrency group cadeapp-develop-e2e y cancel-in-progress false. Posible competencia con otras PR; no se probó como causa de la cancelación.
+
+Comprobación de hashes de blobs entre 059270f y dfe467a:
+- trip-cancel-dialog.tsx, trip-courier-container.tsx, trip-courier-view.tsx y trip-cancel-dialog.test.tsx: idénticos.
+- trip-merchant-container.tsx: únicamente el éxito de reporte no-show router.refresh cambia a router.push hacia merchant/requests/id.
+- trip-merchant-view.tsx: añade presentación de medio de pago, no toca isMatched de cancelar.
+- request-states.spec.ts: una aserción ajena a T-362, anterior a su sección.
+
+No corrí tests locales ni mutaciones; no certificar como verificado-runtime. No pedir un nuevo CI GREEN solo porque se añadió ronda 4, ni por registrar luego una corrida E2E en la bitácora.
