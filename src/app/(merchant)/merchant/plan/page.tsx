@@ -6,8 +6,11 @@ import { Button, buttonVariants } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
 import { cn } from '@/ui/cn';
 import { Store, MapPin, Phone, MessageCircle, Info, LogOut } from 'lucide-react';
-import { PublicationBalanceSection } from '@/features/merchants';
-import { getMerchantAccountProfile, getMyPublicationBalance } from '@/features/merchants/server';
+import {
+  PublicationBalanceSection,
+  getMerchantAccountProfile,
+  getMyPublicationBalance,
+} from '@/features/merchants/server';
 import { logoutAction } from '@/features/auth/server';
 import { buildWhatsAppUrl } from '@/lib/whatsapp';
 import { z } from 'zod';

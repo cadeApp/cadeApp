@@ -9,6 +9,8 @@ import {
   getAuditLog,
   getPlatformSettings,
   getRecentSettingChanges,
+  getPublicationPlans,
+  getAdminMerchantPublicationCredits,
 } from './queries';
 
 vi.mock('@/server/supabase/server', () => ({
@@ -763,6 +765,12 @@ describe('T-123: getPlatformSettings (A04)', () => {
     { key: 'pilot_terms_version', value: '1.1' },
     { key: 'subscription_grace_days', value: 3 },
     { key: 'max_drops_per_request', value: 5 },
+    // CC-029 (T-369): la migración inserta estas cinco; el precio de referencia queda sin fila hasta que se cargue.
+    { key: 'publication_drops_per_credit', value: 2 },
+    { key: 'carryover_base_pct', value: 5 },
+    { key: 'carryover_step_pct', value: 5 },
+    { key: 'carryover_cap_pct', value: 35 },
+    { key: 'launch_discount_pct', value: 0 },
   ];
 
   it('devuelve los valores vigentes de platform_settings, no constantes', async () => {
@@ -774,8 +782,29 @@ describe('T-123: getPlatformSettings (A04)', () => {
       pilotTermsVersion: '1.1',
       subscriptionGraceDays: 3,
       maxDropsPerRequest: 5,
+      publicationDropsPerCredit: 2,
+      carryoverBasePct: 5,
+      carryoverStepPct: 5,
+      carryoverCapPct: 35,
+      launchDiscountPct: 0,
+      looseCreditReferencePriceArs: null,
     });
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('T-369: lee el precio de referencia cuando está cargado y falla si falta un parámetro de créditos', async () => {
+    mockClient({
+      platform_settings: {
+        data: [...rows, { key: 'loose_credit_reference_price_ars', value: 900 }],
+        error: null,
+      },
+    });
+    await expect(getPlatformSettings()).resolves.toMatchObject({ looseCreditReferencePriceArs: 900 });
+
+    mockClient({
+      platform_settings: { data: rows.filter((row) => row.key !== 'carryover_cap_pct'), error: null },
+    });
+    await expect(getPlatformSettings()).rejects.toThrow(/carryover_cap_pct/);
   });
 
   it('si falta el piso no inventa 1000: falla', async () => {
@@ -1049,3 +1078,94 @@ describe('T-321: Desambiguación de embeds PostgREST con foreign keys canónicas
   });
 });
 
+describe('T-369 / CC-029: catálogo de planes y créditos del comercio', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const PLAN_ROWS = [
+    { id: 'f0000000-0000-4000-8000-000000000001', code: 'plan-40', name: 'Plan 40', kind: 'quota', monthly_credits: 40, reference_price_ars: 20000, active: true, sort: 1 },
+    { id: 'f0000000-0000-4000-8000-000000000002', code: 'ilimitado', name: 'Ilimitado', kind: 'unlimited', monthly_credits: null, reference_price_ars: null, active: false, sort: 2 },
+  ];
+
+  function mockAdminSession(role: string | null, aal: 'aal1' | 'aal2') {
+    const rpc = vi.fn();
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: role ? { id: 'admin-1' } : null }, error: null }),
+        mfa: {
+          getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({ data: { currentLevel: aal }, error: null }),
+        },
+      },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({ data: role ? { role } : null, error: null }),
+          }),
+        }),
+      }),
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    return rpc;
+  }
+
+  function mockServiceRole(rows: unknown[] | null, error: { message: string } | null = null) {
+    const limit = vi.fn().mockResolvedValue({ data: rows, error });
+    const secondOrder = vi.fn().mockReturnValue({ limit });
+    const firstOrder = vi.fn().mockReturnValue({ order: secondOrder });
+    const from = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ order: firstOrder }) });
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({ from } as unknown as ReturnType<
+      typeof adminSupabase.createAdminClient
+    >);
+    return { from, firstOrder };
+  }
+
+  it('sin admin con AAL2 no usa service role', async () => {
+    mockServiceRole(PLAN_ROWS);
+    for (const [role, aal, code] of [
+      [null, 'aal2', 'UNAUTHENTICATED'],
+      ['merchant', 'aal2', 'UNAUTHORIZED_ACTOR'],
+      ['admin', 'aal1', 'AAL2_REQUIRED'],
+    ] as const) {
+      mockAdminSession(role, aal);
+      await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code });
+    }
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('admin con AAL2: lee el catálogo ordenado y lo mapea a camelCase', async () => {
+    mockAdminSession('admin', 'aal2');
+    const { from, firstOrder } = mockServiceRole(PLAN_ROWS);
+    await expect(getPublicationPlans()).resolves.toEqual({
+      ok: true,
+      data: [
+        { id: PLAN_ROWS[0]?.id, code: 'plan-40', name: 'Plan 40', kind: 'quota', monthlyCredits: 40, referencePriceArs: 20000, active: true, sort: 1 },
+        { id: PLAN_ROWS[1]?.id, code: 'ilimitado', name: 'Ilimitado', kind: 'unlimited', monthlyCredits: null, referencePriceArs: null, active: false, sort: 2 },
+      ],
+    });
+    expect(from).toHaveBeenCalledWith('publication_plans');
+    expect(firstOrder).toHaveBeenCalledWith('sort', { ascending: true });
+  });
+
+  it('un error o un tipo desconocido no se muestran como catálogo', async () => {
+    mockAdminSession('admin', 'aal2');
+    mockServiceRole(null, { message: 'boom' });
+    await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    mockServiceRole([{ ...PLAN_ROWS[0], kind: 'gold' }]);
+    await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+
+  it('el saldo del comercio se pide por RPC con la sesión, de a 50 y con el cursor recibido', async () => {
+    const rpc = mockAdminSession('admin', 'aal2');
+    rpc.mockResolvedValue({ data: null, error: { message: 'AAL2_REQUIRED', code: 'P0001' } });
+    await expect(
+      getAdminMerchantPublicationCredits({ merchantId: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33', beforeId: 12 })
+    ).resolves.toEqual({ ok: false, code: 'AAL2_REQUIRED' });
+    expect(rpc).toHaveBeenCalledWith('admin_get_merchant_publication_credits', {
+      p_merchant_id: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
+      p_limit: 50,
+      p_before_id: 12,
+    });
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+});

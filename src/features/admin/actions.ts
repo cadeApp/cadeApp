@@ -6,6 +6,9 @@ import { createAdminClient } from '@/server/supabase/admin';
 import { err, ok, type ActionResult, type DomainErrorCode } from '@/domain/errors';
 import {
   adminDecideCourierRpc,
+  adminGrantPublicationCreditsRpc,
+  adminRegisterPlanPeriodRpc,
+  adminUpsertPublicationPlanRpc,
   adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
   adminUpdateSettingRpc,
@@ -28,6 +31,9 @@ import {
   updatePlatformSettingSchema,
   type SetMerchantSubscriptionInput,
   type UpdatePlatformSettingInput,
+  grantPublicationCreditsSchema,
+  registerPlanPeriodSchema,
+  upsertPublicationPlanSchema,
 } from './schemas';
 import { platformSettingKeySchema, type RpcOutput } from '@/domain';
 
@@ -376,6 +382,81 @@ export async function updatePlatformSettingAction(
   }
 
   revalidatePath('/admin/settings');
+  revalidatePath('/admin/audit');
+  return ok(rpcResult.data);
+}
+
+/**
+ * CC-029: acredita créditos sueltos de una compra confirmada fuera de la app o de un ajuste. La app no procesa pagos.
+ * El cliente manda una `operationKey` estable por operación: reintentar la misma no duplica la acreditación.
+ */
+export async function grantPublicationCreditsAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'admin_grant_publication_credits'>, DomainErrorCode>> {
+  const parsed = grantPublicationCreditsSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const rpcResult = await adminGrantPublicationCreditsRpc(authResult.data.supabase, parsed.data);
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath(`/admin/merchants/${parsed.data.merchantId}/credits`);
+  revalidatePath('/admin/audit');
+  return ok(rpcResult.data);
+}
+
+/** CC-029: registra el primer período o la renovación de un plan; idempotente por `operationKey`. */
+export async function registerPlanPeriodAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'admin_register_plan_period'>, DomainErrorCode>> {
+  const parsed = registerPlanPeriodSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const rpcResult = await adminRegisterPlanPeriodRpc(authResult.data.supabase, parsed.data);
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath(`/admin/merchants/${parsed.data.merchantId}/credits`);
+  revalidatePath('/admin/audit');
+  return ok(rpcResult.data);
+}
+
+/** CC-029: crea o edita un plan del catálogo (`PLAN_IN_USE` si se cambia el cupo de uno con períodos). */
+export async function upsertPublicationPlanAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'admin_upsert_publication_plan'>, DomainErrorCode>> {
+  const parsed = upsertPublicationPlanSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const rpcResult = await adminUpsertPublicationPlanRpc(authResult.data.supabase, parsed.data);
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath('/admin/merchants/plans');
   revalidatePath('/admin/audit');
   return ok(rpcResult.data);
 }

@@ -100,6 +100,30 @@ export interface PlatformSettingsSnapshot {
   readonly pilotTermsVersion: string;
   readonly subscriptionGraceDays: number;
   readonly maxDropsPerRequest: number;
+  // CC-029 (T-369): créditos, arrastre y descuento. El precio de referencia puede no estar cargado todavía.
+  readonly publicationDropsPerCredit: number;
+  readonly carryoverBasePct: number;
+  readonly carryoverStepPct: number;
+  readonly carryoverCapPct: number;
+  readonly launchDiscountPct: number;
+  readonly looseCreditReferencePriceArs: number | null;
+}
+
+/** CC-029: fila del catálogo de planes (solo lectura en la UI admin). */
+export interface PublicationPlanItem {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly kind: 'quota' | 'unlimited';
+  readonly monthlyCredits: number | null;
+  readonly referencePriceArs: number | null;
+  readonly active: boolean;
+  readonly sort: number;
+}
+
+export interface AdminMerchantHeader {
+  readonly id: string;
+  readonly businessName: string;
 }
 
 export type AuditChangeValue = string | number | boolean | null;

@@ -9,7 +9,13 @@ const mocks = vi.hoisted(() => ({
   getMyPublicationBalance: vi.fn(),
 }));
 
-vi.mock('@/features/merchants/server', () => ({
+// Solo se simulan las lecturas del servidor: la sección de saldo se renderiza con el componente real.
+vi.mock('@/features/merchants/server', async () => ({
+  PublicationBalanceSection: (
+    await vi.importActual<typeof import('@/features/merchants/components/publication-balance-section')>(
+      '@/features/merchants/components/publication-balance-section'
+    )
+  ).PublicationBalanceSection,
   getMerchantAccountProfile: mocks.getMerchantAccountProfile,
   getSubscriptionDisplay: mocks.getSubscriptionDisplay,
   getMyPublicationBalance: mocks.getMyPublicationBalance,
