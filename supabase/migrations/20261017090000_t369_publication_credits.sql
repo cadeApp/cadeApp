@@ -935,8 +935,10 @@ begin
     if not v_pilot_on and p_action in ('publish_request','republish_request') then
       perform app_private.reconcile_expired_requests(v_request.merchant_id, 200, v_now);
     end if;
-    -- CC-029: for update (antes for share) para serializar las reservas del mismo comercio.
-    select * into v_merchant from public.merchants where profile_id = v_request.merchant_id for update;
+    -- CC-029: for no key update (antes for share) serializa las reservas del mismo comercio. No for update: el writer
+    -- multi-drop ya tiene FOR KEY SHARE sobre el comercio por la FK de su solicitud, y for update chocaría con el de otro
+    -- writer concurrente (deadlock, revisión PR #397 H01). for no key update es compatible con key share.
+    select * into v_merchant from public.merchants where profile_id = v_request.merchant_id for no key update;
     v_grace := app_private.request_setting_int('subscription_grace_days');
     if v_pilot_on then
       -- Piloto encendido: control de elegibilidad exactamente igual que antes de T-369 y sin cargos.
@@ -1613,7 +1615,7 @@ begin
   select subscription_status, paid_until into v_current_status, v_current_paid_until
   from public.merchants
   where profile_id = p_merchant_id
-  for update;
+  for no key update;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
@@ -1780,7 +1782,7 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  perform 1 from public.merchants where profile_id = p_merchant_id for update;
+  perform 1 from public.merchants where profile_id = p_merchant_id for no key update;
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
@@ -1873,7 +1875,7 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  perform 1 from public.merchants where profile_id = p_merchant_id for update;
+  perform 1 from public.merchants where profile_id = p_merchant_id for no key update;
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;

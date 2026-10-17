@@ -326,7 +326,8 @@ function assertLedger(merchantId, label) {
 
 function assertNoDeadlock(sessions, label) {
   for (const s of sessions) {
-    assert.ok(!/deadlock detected|40P01/.test(s.output), `${label}: ${s.label} no debe terminar en deadlock`);
+    assert.ok(!/deadlock detected|40P01/.test(s.output), `${label}: ${s.label} no debe terminar en deadlock. Salida:
+${s.output}`);
   }
 }
 
@@ -734,7 +735,7 @@ async function runMutationChecks() {
     // H01: sin el lock del comercio ni el de los lotes, las 5 publicaciones leen el mismo saldo y sobregiran.
     {
       const restoreCycle = mutate('app_private.request_cycle(text,uuid,text,boolean,text,text)', [
-        ['where profile_id = v_request.merchant_id for update;', 'where profile_id = v_request.merchant_id;'],
+        ['where profile_id = v_request.merchant_id for no key update;', 'where profile_id = v_request.merchant_id;'],
       ]);
       const restoreReserve = mutate('app_private.reserve_publication(uuid,uuid,integer,timestamp with time zone)', [
         ['perform 1 from public.publication_credit_lots where merchant_id = p_merchant_id for no key update;', ''],
