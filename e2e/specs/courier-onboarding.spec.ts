@@ -1131,7 +1131,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       // 1. Comercio abre /trips/{requestId} y comprueba bloque «Repartidor asignado» con Moto y patente inicial
       await merchantBrowserPage.goto(`/trips/${requestId}`);
       await waitForNoSkeletons(merchantBrowserPage);
-      await expect(merchantBrowserPage.getByText('Repartidor asignado')).toBeVisible();
+      await expect(merchantBrowserPage.getByRole('heading', { name: 'Repartidor asignado' })).toBeVisible();
       await expect(merchantBrowserPage.getByText('Moto')).toBeVisible();
       await expect(merchantBrowserPage.getByText(/Patente:.*AB 123 CD/i)).toBeVisible();
 
