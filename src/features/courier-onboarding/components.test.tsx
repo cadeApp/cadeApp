@@ -22,9 +22,18 @@ import * as uploadManager from './upload-manager';
 import { compressImage } from '@/lib/image-compression';
 import { COURIER_ONBOARDING_COPY } from './copy';
 
-const { mockUploadCourierDocument, mockGetUser } = vi.hoisted(() => ({
+const {
+  mockUploadCourierDocument,
+  mockGetUser,
+  mockRouterRefresh,
+  mockRouterPush,
+  mockRouterReplace,
+} = vi.hoisted(() => ({
   mockUploadCourierDocument: vi.fn(),
   mockGetUser: vi.fn(),
+  mockRouterRefresh: vi.fn(),
+  mockRouterPush: vi.fn(),
+  mockRouterReplace: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase/browser', () => ({
@@ -49,9 +58,9 @@ vi.mock('./upload-manager', async (importOriginal) => {
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    refresh: vi.fn(),
+    push: mockRouterPush,
+    replace: mockRouterReplace,
+    refresh: mockRouterRefresh,
   }),
 }));
 
@@ -1412,12 +1421,14 @@ describe('T-356 · CC-025: Recarga de documentos del repartidor rechazados por a
       // Verifica compresión
       expect(compressImage).toHaveBeenCalledWith(testFile);
 
-      // Verifica subida a Storage
-      expect(mockUploadCourierDocument).toHaveBeenCalledWith({
-        courierId: 'courier-123',
-        kind: 'license',
-        file: testFile,
-      });
+      // Verifica subida a Storage con timestamp del intento estable
+      expect(mockUploadCourierDocument).toHaveBeenCalledWith(
+        expect.objectContaining({
+          courierId: 'courier-123',
+          kind: 'license',
+          file: testFile,
+        })
+      );
 
       // Verifica invocación de la acción de servidor
       expect(mockReplaceAction).toHaveBeenCalledWith(
@@ -1546,6 +1557,338 @@ describe('T-356 · CC-025: Recarga de documentos del repartidor rechazados por a
       expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
     });
     expect(mockReplaceAction).toHaveBeenCalledTimes(2);
+  });
+
+  it('(h) PR358-R01: Reintento con el mismo archivo tras fallo de RPC reutiliza idempotencyKey y storagePath y NO vuelve a subir a Storage', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_stable_1700000000000.jpg',
+    });
+
+    const mockReplaceAction = vi
+      .spyOn(actionsModule, 'replaceCourierDocumentAction')
+      .mockResolvedValueOnce({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          kind: 'license',
+          idempotent: false,
+          documentId: 'd0000000-0000-0000-0000-000000000010',
+          replacedDocumentId: 'd0000000-0000-0000-0000-000000000009',
+          status: 'submitted',
+          isCurrent: true,
+        },
+      });
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="license"
+        title="Licencia de conducir"
+        initialStatus="rejected"
+        rejectionCode="illegible"
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['same-content'], 'licencia_identica.jpg', {
+      type: 'image/jpeg',
+      lastModified: 1700000000000,
+    });
+
+    // Intento 1: sube y luego RPC falla
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    });
+    expect(mockUploadCourierDocument).toHaveBeenCalledTimes(1);
+    expect(mockReplaceAction).toHaveBeenCalledTimes(1);
+
+    const firstCall = mockReplaceAction.mock.calls[0];
+    if (!firstCall) throw new Error('Expected at least 1 call to mockReplaceAction');
+    const firstAttemptPayload = firstCall[0] as {
+      kind: string;
+      storagePath: string;
+      idempotencyKey?: string;
+    };
+    expect(firstAttemptPayload.idempotencyKey).toBeDefined();
+
+    // Intento 2: reintento con el MISMO archivo (mismo fingerprint)
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined();
+    });
+
+    // Invariante PR358-R01: NO se vuelve a llamar a uploadCourierDocument (conserva un solo upload)
+    expect(mockUploadCourierDocument).toHaveBeenCalledTimes(1);
+    expect(mockReplaceAction).toHaveBeenCalledTimes(2);
+
+    const secondCall = mockReplaceAction.mock.calls[1];
+    if (!secondCall) throw new Error('Expected at least 2 calls to mockReplaceAction');
+    const secondAttemptPayload = secondCall[0] as {
+      kind: string;
+      storagePath: string;
+      idempotencyKey?: string;
+    };
+    // Invariante PR358-R01: se preservan exactamente la misma clave de idempotencia y storagePath
+    expect(secondAttemptPayload.idempotencyKey).toBe(firstAttemptPayload.idempotencyKey);
+    expect(secondAttemptPayload.storagePath).toBe(firstAttemptPayload.storagePath);
+  });
+
+  it('(i) PR358-R01: Selección de un archivo diferente genera nuevo intento lógico, nueva idempotencyKey y sube a Storage', async () => {
+    mockUploadCourierDocument
+      .mockResolvedValueOnce({
+        storagePath: 'courier/courier-123/license_file1_1700000000000.jpg',
+      })
+      .mockResolvedValueOnce({
+        storagePath: 'courier/courier-123/license_file2_1700000000001.jpg',
+      });
+
+    const mockReplaceAction = vi
+      .spyOn(actionsModule, 'replaceCourierDocumentAction')
+      .mockResolvedValueOnce({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          kind: 'license',
+          idempotent: false,
+          documentId: 'd0000000-0000-0000-0000-000000000012',
+          replacedDocumentId: 'd0000000-0000-0000-0000-000000000011',
+          status: 'submitted',
+          isCurrent: true,
+        },
+      });
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="license"
+        title="Licencia de conducir"
+        initialStatus="rejected"
+        rejectionCode="illegible"
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const fileA = new File(['content-A'], 'licencia_A.jpg', {
+      type: 'image/jpeg',
+      lastModified: 1700000000000,
+    });
+    const fileB = new File(['content-B-distinto'], 'licencia_B.jpg', {
+      type: 'image/jpeg',
+      lastModified: 1700000001000,
+    });
+
+    // Intento 1 con fileA: falla
+    fireEvent.change(fileInput, { target: { files: [fileA] } });
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    });
+
+    const firstCall = mockReplaceAction.mock.calls[0];
+    if (!firstCall) throw new Error('Expected at least 1 call to mockReplaceAction');
+    const firstPayload = firstCall[0] as {
+      storagePath: string;
+      idempotencyKey?: string;
+    };
+
+    // Intento 2 con fileB (archivo distinto): debe realizar nueva subida y nueva clave
+    fireEvent.change(fileInput, { target: { files: [fileB] } });
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined();
+    });
+
+    expect(mockUploadCourierDocument).toHaveBeenCalledTimes(2);
+    expect(mockReplaceAction).toHaveBeenCalledTimes(2);
+
+    const secondCall = mockReplaceAction.mock.calls[1];
+    if (!secondCall) throw new Error('Expected at least 2 calls to mockReplaceAction');
+    const secondPayload = secondCall[0] as {
+      storagePath: string;
+      idempotencyKey?: string;
+    };
+    expect(secondPayload.idempotencyKey).not.toBe(firstPayload.idempotencyKey);
+    expect(secondPayload.storagePath).not.toBe(firstPayload.storagePath);
+  });
+
+  it('(j) PR358-R01: Estado autoritativo: si RPC retorna status verified, se renderiza «Validado por admin» con badge verified y callback verified', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_verified_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000020',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000019',
+        status: 'verified',
+        isCurrent: true,
+      },
+    });
+
+    const onReplaced = vi.fn();
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="license"
+        title="Licencia de conducir"
+        initialStatus="rejected"
+        rejectionCode="illegible"
+        onReplaced={onReplaced}
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Validado por admin')).toBeDefined();
+      expect(screen.getByText('Documento validado exitosamente.')).toBeDefined();
+    });
+
+    expect(onReplaced).toHaveBeenCalledWith({ kind: 'license', status: 'verified' });
+  });
+
+  it('(k) PR358-R02: StatusView actualiza el checklist del padre tras reemplazo exitoso sin mutar otros kinds y llama router.refresh()', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000030',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000029',
+        status: 'submitted',
+        isCurrent: true,
+      },
+    });
+
+    render(
+      <StatusView
+        courierId="courier-123"
+        documents={[
+          {
+            kind: 'dni_front',
+            status: 'rejected',
+            rejectionCode: 'wrong_type',
+          },
+          {
+            kind: 'dni_back',
+            status: 'verified',
+          },
+          {
+            kind: 'selfie',
+            status: 'verified',
+          },
+          {
+            kind: 'avatar',
+            status: 'verified',
+          },
+          {
+            kind: 'license',
+            status: 'rejected',
+            rejectionCode: 'illegible',
+          },
+        ]}
+      />
+    );
+
+    // Inicialmente: DNI frente y dorso está Rechazado, y Licencia de conducir está Rechazado
+    const initialRejectedBadges = screen.getAllByText(COURIER_ONBOARDING_COPY.rejectedBadge);
+    expect(initialRejectedBadges.length).toBeGreaterThanOrEqual(2);
+
+    // Reemplazamos la licencia
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'nueva_licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      // La tarjeta de reemplazo muestra éxito
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
+    });
+
+    // Invariante PR358-R02: router.refresh() fue llamado
+    expect(mockRouterRefresh).toHaveBeenCalled();
+
+    // Invariante PR358-R02: En el checklist del padre, Licencia pasó a "Listo"
+    const listoBadges = screen.getAllByText('Listo');
+    expect(listoBadges.length).toBeGreaterThanOrEqual(1);
+
+    // Invariante PR358-R02: DNI frente y dorso NO mutó y sigue observado/rechazado
+    expect(screen.getByText('DNI frente y dorso')).toBeDefined();
+  });
+
+  it('(l) PR358-R02: CourierProfileView actualiza badges exteriores a «En revisión» tras reemplazo exitoso sin mutar otros kinds y llama router.refresh()', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000040',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000039',
+        status: 'submitted',
+        isCurrent: true,
+      },
+    });
+
+    render(
+      <CourierProfileView
+        profile={{
+          courierId: 'courier-123',
+          displayName: 'Juan Repartidor',
+          email: 'juan@test.com',
+          vehicleType: 'moto',
+          plate: 'AB 123 CD',
+          dniStatus: 'verified',
+          selfieStatus: 'submitted',
+          licenseStatus: 'rejected',
+          licenseRejectionMessage: 'La imagen de la licencia no es legible.',
+          insuranceStatus: 'none',
+          courierStatus: 'approved',
+          onboardingComplete: true,
+        }}
+      />
+    );
+
+    // Inicialmente: DNI está verificado, Selfie en revisión, Licencia observada
+    expect(screen.getByText('Validado por admin')).toBeDefined();
+    expect(screen.getByText('En revisión')).toBeDefined();
+    expect(screen.getAllByText(COURIER_ONBOARDING_COPY.rejectedBadge).length).toBeGreaterThanOrEqual(1);
+
+    // Reemplazamos la licencia
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'nueva_licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
+    });
+
+    // Invariante PR358-R02: router.refresh() fue llamado
+    expect(mockRouterRefresh).toHaveBeenCalled();
+
+    // Invariante PR358-R02: El badge exterior de Licencia ahora figura como "En revisión" (hay 2 badges de "En revisión": selfie y licencia)
+    const enRevisionBadges = screen.getAllByText('En revisión');
+    expect(enRevisionBadges.length).toBeGreaterThanOrEqual(2);
+
+    // Invariante PR358-R02: DNI continúa inalterado como "Validado por admin"
+    expect(screen.getByText('Validado por admin')).toBeDefined();
   });
 });
 

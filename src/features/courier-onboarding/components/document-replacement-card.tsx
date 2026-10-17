@@ -26,6 +26,15 @@ export interface DocumentReplacementCardProps {
  * Muestra el estado «Rechazado / requiere corrección», el motivo seguro del catálogo público,
  * y un control de carga aislado para reintentar y promover mediante replaceCourierDocumentAction.
  */
+interface PendingAttempt {
+  kind: CourierDocumentKind;
+  fingerprint: string;
+  idempotencyKey: string;
+  timestamp: number;
+  storagePath: string;
+  uploadConfirmed: boolean;
+}
+
 export function DocumentReplacementCard({
   courierId,
   kind,
@@ -42,6 +51,9 @@ export function DocumentReplacementCard({
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
+  // PR358-R01: Conservar intento lógico para reintentos idempotentes sin resubida ni cambio de clave
+  const pendingAttemptRef = React.useRef<PendingAttempt | null>(null);
+
   const safeReason = rejectionMessage || getSafeRejectionMessage(rejectionCode);
 
   const handleFileSelected = async (file: File) => {
@@ -49,14 +61,32 @@ export function DocumentReplacementCard({
     setSuccessMessage(null);
     setSelectedFileName(file.name);
     setUploadStatus('uploading');
-    setIsCompressing(true);
+
+    // Identificador único del archivo seleccionado (nombre, tamaño, tipo y última modificación)
+    const fingerprint = `${file.name}-${file.size}-${file.type}-${file.lastModified}`;
+    const previousAttempt = pendingAttemptRef.current;
+    const isSameAttempt =
+      previousAttempt !== null &&
+      previousAttempt.kind === kind &&
+      previousAttempt.fingerprint === fingerprint;
+
+    const attempt: PendingAttempt = isSameAttempt
+      ? previousAttempt
+      : {
+          kind,
+          fingerprint,
+          idempotencyKey:
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          timestamp: Date.now(),
+          storagePath: '',
+          uploadConfirmed: false,
+        };
+    pendingAttemptRef.current = attempt;
 
     try {
-      // 1. Optimización / compresión de la imagen
-      const compressed = await compressImage(file);
-      setIsCompressing(false);
-
-      // 2. Resolver courierId (prop o cliente de sesión)
+      // 1. Resolver courierId (prop o cliente de sesión)
       let resolvedCourierId = courierId;
       if (!resolvedCourierId) {
         const { createClient } = await import('@/lib/supabase/browser');
@@ -73,20 +103,28 @@ export function DocumentReplacementCard({
         throw new Error('No se pudo identificar la sesión del repartidor');
       }
 
-      // 3. Subida a Supabase Storage bucket 'courier-docs' con prefijo canónico courier/<uid>/<kind>_
-      const { storagePath } = await uploadCourierDocument({
-        courierId: resolvedCourierId,
-        kind,
-        file: compressed,
-      });
+      // 2. Subida a Supabase Storage SOLO si no fue confirmada previamente para este intento (PR358-R01)
+      if (!attempt.uploadConfirmed) {
+        setIsCompressing(true);
+        const compressed = await compressImage(file);
+        setIsCompressing(false);
 
-      // 4. Invocación transaccional de la RPC replace_courier_document
-      const idempotencyKey =
-        typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined;
+        const { storagePath } = await uploadCourierDocument({
+          courierId: resolvedCourierId,
+          kind,
+          file: compressed,
+          timestamp: attempt.timestamp,
+        });
+
+        attempt.storagePath = storagePath;
+        attempt.uploadConfirmed = true;
+      }
+
+      // 3. Invocación transaccional de la RPC replace_courier_document con la clave e intento estables
       const result = await replaceCourierDocumentAction({
         kind,
-        storagePath,
-        idempotencyKey,
+        storagePath: attempt.storagePath,
+        idempotencyKey: attempt.idempotencyKey,
       });
 
       if (!result.ok) {
@@ -99,17 +137,49 @@ export function DocumentReplacementCard({
         return;
       }
 
-      // 5. Transición de estado a 'submitted' («En revisión») SOLO tras confirmación persistida en DB
-      setCurrentStatus('submitted');
+      // 4. Consumir el estado autoritativo retornado por la RPC ('verified' o 'submitted') (PR358-R01)
+      const authoritativeStatus: DocumentReviewStatus =
+        result.data?.status === 'verified' ? 'verified' : 'submitted';
+
+      setCurrentStatus(authoritativeStatus);
       setUploadStatus('success');
-      setSuccessMessage(COURIER_ONBOARDING_COPY.documentReplacedSuccess);
-      onReplaced?.({ kind, status: 'submitted' });
+      setSuccessMessage(
+        authoritativeStatus === 'verified'
+          ? 'Documento validado exitosamente.'
+          : COURIER_ONBOARDING_COPY.documentReplacedSuccess
+      );
+      onReplaced?.({ kind, status: authoritativeStatus });
     } catch (err) {
       setIsCompressing(false);
       setUploadStatus('error');
       setErrorMessage(err instanceof Error ? err.message : 'Error inesperado al subir el archivo');
     }
   };
+
+  // Si ya fue validado por admin
+  if (currentStatus === 'verified') {
+    return (
+      <div
+        data-slot="document-replacement-card"
+        data-kind={kind}
+        data-status="verified"
+        className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />
+            <span className="text-sm font-medium text-foreground">{title}</span>
+          </div>
+          <Badge variant="verified" className="text-sm">
+            Validado por admin
+          </Badge>
+        </div>
+        <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
+          {successMessage ?? 'Documento validado exitosamente.'}
+        </p>
+      </div>
+    );
+  }
 
   // Si ya fue reemplazado exitosamente o se encuentra en revisión
   if (currentStatus === 'submitted') {
