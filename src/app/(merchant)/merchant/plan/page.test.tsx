@@ -1,22 +1,38 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 
 const mocks = vi.hoisted(() => ({
   getMerchantAccountProfile: vi.fn(),
   getSubscriptionDisplay: vi.fn(),
+  getMyPublicationBalance: vi.fn(),
 }));
 
 vi.mock('@/features/merchants/server', () => ({
   getMerchantAccountProfile: mocks.getMerchantAccountProfile,
   getSubscriptionDisplay: mocks.getSubscriptionDisplay,
+  getMyPublicationBalance: mocks.getMyPublicationBalance,
 }));
 vi.mock('@/features/auth/server', () => ({
   logoutAction: vi.fn(),
 }));
 
 import MerchantPlanPage from './page';
+
+const PILOT_BALANCE = {
+  merchantId: '20000000-0000-4000-8000-000000000369',
+  mode: 'pilot',
+  canPublish: true,
+  subscriptionStatus: 'pilot',
+  legacyPaidUntil: null,
+  available: 0,
+  reserved: 0,
+  scheduled: 0,
+  currentPeriod: null,
+  nextPeriod: null,
+  lots: [],
+};
 
 describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp configurable', () => {
   const originalNumber = process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER;
@@ -40,6 +56,7 @@ describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp conf
       description: 'Piloto gratuito',
       untilLabel: 'Sin vencimiento registrado',
     });
+    mocks.getMyPublicationBalance.mockResolvedValue({ ok: true, data: PILOT_BALANCE });
   });
 
   afterEach(() => {
@@ -85,4 +102,38 @@ describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp conf
       expect(screen.getByRole('status').textContent).toContain('no está disponible');
     }
   );
+});
+
+describe('T-369 / CC-029 — Mi plan usa get_my_publication_balance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getMerchantAccountProfile.mockResolvedValue({
+      businessName: 'Comercio de prueba',
+      defaultPickupAddress: 'San Martín 100',
+      zoneName: 'Centro',
+      phone: '3865123456',
+      notes: null,
+      subscriptionStatus: 'active',
+      paidUntil: '2026-11-30',
+    });
+  });
+  afterEach(cleanup);
+
+  it('el estado del plan sale del saldo real, no del estado de suscripción', async () => {
+    mocks.getMyPublicationBalance.mockResolvedValue({ ok: true, data: PILOT_BALANCE });
+    render(await MerchantPlanPage());
+    const section = screen.getByRole('region', { name: 'Mi plan' });
+    expect(within(section).getByRole('heading', { name: 'Estás en el piloto gratis' })).toBeTruthy();
+    expect(screen.queryByText('Envíos permitidos')).toBeNull();
+    expect(mocks.getSubscriptionDisplay).not.toHaveBeenCalled();
+  });
+
+  it('si el saldo falla, el perfil sigue visible y el error se avisa en la sección', async () => {
+    mocks.getMyPublicationBalance.mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+    render(await MerchantPlanPage());
+    expect(screen.getByRole('heading', { name: 'Comercio de prueba' })).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: 'Mi plan' })).getByRole('alert').textContent).toContain(
+      'No pudimos cargar tu saldo de créditos'
+    );
+  });
 });
