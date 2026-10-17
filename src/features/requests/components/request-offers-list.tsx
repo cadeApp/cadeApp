@@ -2,11 +2,13 @@
 
 import * as React from 'react';
 import { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Clock, ShieldCheck, AlertCircle, AlertTriangle, ArrowRight } from 'lucide-react';
 import { sortOffersForMerchant, type OfferSortOrder } from '@/domain/priority';
 import { formatArs } from '@/lib/format';
 import { Badge } from '@/ui/badge';
-import { Button } from '@/ui/button';
+import { Button, buttonVariants } from '@/ui/button';
 import { Card } from '@/ui/card';
 import {
   Dialog,
@@ -35,6 +37,7 @@ export interface RequestOffersListProps {
     cashChangeAmount: number | null;
     status: string;
     expiresAt: string | null;
+    acceptedOfferId?: string | null;
     dropsCount?: number;
     drops?: readonly MerchantDropSummary[];
   };
@@ -77,6 +80,7 @@ export function RequestOffersList({
   initialNextCursor,
   onAcceptSuccess,
 }: RequestOffersListProps) {
+  const router = useRouter();
   const {
     offers,
     hasNextPage,
@@ -90,6 +94,18 @@ export function RequestOffersList({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [isExpired, setIsExpired] = useState<boolean>(() => {
+    if (!request.expiresAt) return false;
+    return new Date(request.expiresAt).getTime() <= Date.now();
+  });
+  const [isReconciling, setIsReconciling] = useState<boolean>(false);
+
+  const isAcceptableStatus =
+    request.status === 'published' && !isExpired && !isReconciling;
+  const isMatchedOrLater =
+    request.status === 'matched' ||
+    request.status === 'in_transit' ||
+    request.status === 'delivered';
 
   // Cronómetro de vencimiento sin non-null assertions
   useEffect(() => {
@@ -103,9 +119,11 @@ export function RequestOffersList({
 
       if (diffMs <= 0) {
         setTimeRemaining('Expirada');
+        setIsExpired(true);
         return;
       }
 
+      setIsExpired(false);
       const diffMins = Math.floor(diffMs / 60000);
       const diffSecs = Math.floor((diffMs % 60000) / 1000);
       setTimeRemaining(`${diffMins}m ${diffSecs.toString().padStart(2, '0')}s`);
@@ -121,6 +139,17 @@ export function RequestOffersList({
   }, [offers, sortOrder]);
 
   const handleOpenAcceptModal = (offer: MerchantOfferItem) => {
+    const currentExpired = Boolean(
+      request.expiresAt && new Date(request.expiresAt).getTime() <= Date.now()
+    );
+    if (
+      !isAcceptableStatus ||
+      currentExpired ||
+      isReconciling ||
+      (offer.status && offer.status !== 'pending')
+    ) {
+      return;
+    }
     setAcceptError(null);
     setSelectedOffer(offer);
   };
@@ -132,7 +161,18 @@ export function RequestOffersList({
   };
 
   const handleConfirmAccept = async () => {
-    if (!selectedOffer) return;
+    if (!selectedOffer || isReconciling) return;
+
+    const currentExpired = Boolean(
+      request.expiresAt && new Date(request.expiresAt).getTime() <= Date.now()
+    );
+    if (request.status !== 'published' || isExpired || currentExpired) {
+      setIsReconciling(true);
+      notify.error('La solicitud ha expirado.');
+      setSelectedOffer(null);
+      router.refresh();
+      return;
+    }
 
     setIsSubmitting(true);
     setAcceptError(null);
@@ -143,13 +183,22 @@ export function RequestOffersList({
         notify.success('¡Oferta aceptada! El repartidor ya va en camino.');
         setSelectedOffer(null);
         onAcceptSuccess?.(selectedOffer.id);
+        router.replace(`/trips/${request.id}`);
       } else {
         if (res.code === 'ALREADY_MATCHED') {
+          setIsReconciling(true);
           setAcceptError(
             'Esta solicitud ya fue asignada a otro repartidor o la oferta no está disponible.'
           );
+          notify.error('Esta solicitud ya fue asignada a otro repartidor.');
+          setSelectedOffer(null);
+          router.refresh();
         } else if (res.code === 'REQUEST_EXPIRED') {
+          setIsReconciling(true);
           setAcceptError('La solicitud ha expirado.');
+          notify.error('La solicitud ha expirado.');
+          setSelectedOffer(null);
+          router.refresh();
         } else {
           setAcceptError('No se pudo aceptar la oferta. Por favor, intentá nuevamente.');
         }
@@ -167,6 +216,50 @@ export function RequestOffersList({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col space-y-6">
+      {/* Aviso de error de aceptación */}
+      {acceptError && (
+        <div
+          role="alert"
+          className="flex flex-col gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <p>{acceptError}</p>
+          </div>
+          {isReconciling && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => router.refresh()}
+              className="shrink-0 self-start sm:self-auto"
+            >
+              Reintentar consulta
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Aviso de asignación C06 */}
+      {isMatchedOrLater && (
+        <Card className="flex flex-col gap-3 border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-0.5">
+            <p className="font-semibold text-foreground">
+              Esta solicitud ya tiene un repartidor asignado
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Podés consultar los datos del repartidor, contactos y estado del envío en el detalle del viaje.
+            </p>
+          </div>
+          <Link
+            href={`/trips/${request.id}`}
+            className={buttonVariants({ variant: 'default', size: 'sm' }) + ' shrink-0 self-start sm:self-auto'}
+          >
+            Ver viaje asignado
+          </Link>
+        </Card>
+      )}
+
       {/* Resumen de la solicitud */}
       <Card className="border border-border bg-card p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -372,13 +465,21 @@ export function RequestOffersList({
                   </div>
                 </div>
 
-                <Button
-                  type="button"
-                  variant="default"
-                  onClick={() => handleOpenAcceptModal(offer)}
-                >
-                  Aceptar
-                </Button>
+                {isAcceptableStatus && (!offer.status || offer.status === 'pending') ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    onClick={() => handleOpenAcceptModal(offer)}
+                  >
+                    Aceptar
+                  </Button>
+                ) : offer.status === 'accepted' || offer.id === request.acceptedOfferId ? (
+                  <Badge variant="matched">Oferta aceptada</Badge>
+                ) : offer.status === 'rejected' ? (
+                  <Badge variant="outline">Rechazada</Badge>
+                ) : offer.status === 'withdrawn' ? (
+                  <Badge variant="outline">Retirada</Badge>
+                ) : null}
               </div>
             </Card>
           ))}
