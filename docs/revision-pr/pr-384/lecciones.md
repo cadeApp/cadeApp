@@ -21,3 +21,11 @@ No ampliar esta PR con modificaciones de CC-025 (PR #364 todavía abierta) ni ha
 ## Criterio de no-falsificación
 
 Nunca relajar expectativa, fixture, mock, snapshot, timeout, coverage ni check para obtener verde. Los tests de persistencia necesitan respuesta real de actualización; los tests de privilegios deben identificar fila/actor real. Conservar la evidencia rojo y verde íntegra.
+
+## Ronda 3 — progreso probado y residual P08
+
+El job Playwright no es una prueba decorativa: se verificó en sus logs que realmente ejecutó 2 casos T-357 y que los 85 E2E pasaron. La cobertura nueva valida 3 cambios reales, tres reloads, DB persistida y conservación de estado; el agy corrigió adecuadamente la colisión de radio-locators de strict mode.
+
+Sin embargo, el último kilómetro del DoD exige datos actualizados en `TripMerchantView`. Los tests de `queries.test.ts` y `components.test.tsx` ejercitan mapeo y presentación de forma separada; no prueban el recorrido *edición real → nueva consulta de viaje de comercio*. La prueba pendiente es una interfaz integrada, no una queja genérica sobre falta de tests. También debe provocarse una invocación maliciosa real de la Server Action con un courier no terminado; un test solo de `?mode=edit` no alcanza.
+
+**Regla reforzada (P08/AG-37):** al afirmar un DoD de lectura posterior a una mutación, crear un caso en el que la escritura afecte un registro vivo y otra sesión/actor consulte exactamente esa proyección. Los tests aislados de serializer/render de un modelo prefabricado no sustituyen esa aserción. Sin mutación runtime propia, no certificar `verificado_en_sha`.

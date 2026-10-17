@@ -8,7 +8,7 @@
 | Base de referencia | `af0cf1d72e9e33524cde5db138d940fee33ce6f6`; merge-base `81e5ca607bc766f8a3a5f0e2b7b3f891e517448a` |
 | SHA del código revisado | `d7347c9f1e37d6c6c350389228f88a9aa6c25722` |
 | Alcance | 12 archivos (código, pruebas, bitácora y autorrevisión), dentro de la ficha |
-| Estado | **NO MERGEAR**: 4 hallazgos con código corregido sin verificación independiente runtime; 1 bloqueante E2E abierto. |
+| Estado | **NO MERGEAR**: CI y E2E Preview verdes, pero H04 sigue con proyección en viaje y negativa directa sin probar; 4 hallazgos arreglados pendientes de mutaciones runtime independientes. |
 
 ## Rondas independientes
 
@@ -16,6 +16,7 @@
 |---|---|---|---|
 | 1 | `d7347c9` | 5 bloqueantes, 0 decisiones pendientes | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
 | 2 | `fddaca33` | 4 arreglados sin verificar; H04 sigue abierto; merge con develop resuelto | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
+| 3 | `e8735396` | CI completa + E2E 85/85 PASS; H04 residual abierto por vista de viaje y actor ajeno | [revisiones/ronda-3.md](revisiones/ronda-3.md) |
 
 ## Hallazgos
 
@@ -41,9 +42,9 @@
 
 ## Entregables y proceso
 
-- [Ronda 1](revisiones/ronda-1.md) y [ronda 2](revisiones/ronda-2.md).
+- [Ronda 1](revisiones/ronda-1.md), [ronda 2](revisiones/ronda-2.md) y [ronda 3](revisiones/ronda-3.md).
 - [Hallazgos estructurados](hallazgos.jsonl).
-- [Evidencia, comandos y harness independiente de ronda 1](evidencia/comandos.md) y [evidencia ronda 2](evidencia/ronda-2.md).
+- [Evidencia, comandos y harness independiente de ronda 1](evidencia/comandos.md) y [evidencia ronda 2](evidencia/ronda-2.md) y [evidencia ronda 3](evidencia/ronda-3.md).
 - [Lecciones](lecciones.md).
 - [Autorrevisión del autor conservada](autorrevision-agy-r1.md): el autor escribió el archivo `revisiones/ronda-1.md` previamente, contraviniendo AG-36; su texto se guardó intacto debajo de la nota de procedencia y **no** cuenta como revisión independiente.
 
