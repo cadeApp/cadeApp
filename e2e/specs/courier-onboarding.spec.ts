@@ -232,6 +232,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const hmacSecret = requireDniHmacSecret();
     const dniHmac = createHmac('sha256', hmacSecret).update(testDni).digest('hex');
 
+    // Limpiar dni_hmac huérfano si quedó de una corrida previa en Develop
+    await dbAdmin
+      .from('couriers')
+      .update({ dni_hmac: null })
+      .eq('dni_hmac', dniHmac)
+      .neq('profile_id', courier1.id);
+
     const { error: seedDniErr } = await dbAdmin
       .from('couriers')
       .update({ dni_hmac: dniHmac, status: 'approved' })
@@ -888,7 +895,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       // 2. PR358-R03: Rechazar la licencia mediante la RPC real admin_verify_document con AAL2 y nota centinela privada
       const admin = await seedAdminUser(stagingContext);
       const adminClient = await createAuthenticatedClient(admin);
-      await elevateAdminToAal2(adminClient, admin);
+      const { secret: totpSecret } = await enrollAdminTotpFactor(admin);
 
       const sentinelPrivateNote = `PRIVATE_SENTINEL_NOTE_${stagingContext.testRunId}`;
       const { data: rejectData, error: rejectError } = await adminClient.rpc(
@@ -946,8 +953,6 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await expect(successMsg).toBeVisible();
 
       // 6. PR358-R03: Inspección administrativa en el navegador de la nueva versión submitted y versión histórica
-      const { secret: totpSecret } = await enrollAdminTotpFactor(admin);
-
       await page.goto(`/login?redirectTo=%2Fadmin%2Fapplicants%2F${courier.id}`);
       await waitForNoSkeletons(page);
 
