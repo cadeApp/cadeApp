@@ -805,4 +805,152 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     );
     expect(savedDni).toBe('38123456');
   });
+
+  // ---------------------------------------------------------------------------
+  // T-356 / CC-025: Recarga de documento rechazado con motivo seguro de catálogo público
+  // ---------------------------------------------------------------------------
+  test('T-356 / CC-025: Recarga de documento rechazado con motivo seguro y actualización a En revisión sin mutar aprobados', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+
+    try {
+      // 1. Precondición en DB: repartidor con onboarding completo y moto
+      await resetCourierToPendingOnboarding(courier.id);
+      const uniqueDni = `39${Math.floor(100000 + Math.random() * 900000)}`;
+      const secret = process.env.DNI_HMAC_SECRET ?? 'development_dni_hmac_secret_cadeapp';
+      const dniHmac = createHmac('sha256', secret).update(uniqueDni).digest('hex');
+
+      await dbAdmin
+        .from('couriers')
+        .update({
+          status: 'pending',
+          vehicle_type: 'moto',
+          vehicle_plate: 'AB 123 CD',
+          dni_hmac: dniHmac,
+          license_status: 'rejected',
+          insurance_status: 'none',
+        })
+        .eq('profile_id', courier.id);
+
+      // Subir documentos base: dni_front (verified), dni_back (verified), selfie (verified), license (rejected)
+      await dbAdmin.from('courier_documents').insert([
+        {
+          courier_id: courier.id,
+          kind: 'dni_front',
+          storage_path: `courier/${courier.id}/dni_front_base.png`,
+          status: 'verified',
+          is_current: true,
+        },
+        {
+          courier_id: courier.id,
+          kind: 'dni_back',
+          storage_path: `courier/${courier.id}/dni_back_base.png`,
+          status: 'verified',
+          is_current: true,
+        },
+        {
+          courier_id: courier.id,
+          kind: 'selfie',
+          storage_path: `courier/${courier.id}/selfie_base.png`,
+          status: 'verified',
+          is_current: true,
+        },
+        {
+          courier_id: courier.id,
+          kind: 'license',
+          storage_path: `courier/${courier.id}/license_base.png`,
+          status: 'rejected',
+          is_current: true,
+          rejection_code: 'illegible',
+        },
+      ]);
+
+      // 2. Iniciar sesión como repartidor y navegar a /courier/profile
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+
+      // 3. Verificar estado UI:
+      // DNI y Selfie figuran como validados
+      await expect(page.getByText('Validado por admin').first()).toBeVisible();
+
+      // Licencia figura como «Rechazado / requiere corrección» y muestra el motivo seguro del catálogo
+      await expect(page.getByText('Rechazado / requiere corrección').first()).toBeVisible();
+      await expect(page.getByText('Documento borroso, ilegible o cortado.')).toBeVisible();
+
+      // Solo la licencia ofrece el botón/acción «Reemplazar»
+      const replaceLicenseInput = page.locator('#file-input-license');
+      await expect(replaceLicenseInput).toBeAttached();
+
+      // 4. Subir nuevo archivo para la licencia
+      await replaceLicenseInput.setInputFiles({
+        name: 'licencia_corregida.png',
+        mimeType: 'image/png',
+        buffer: DUMMY_2X2_PNG,
+      });
+
+      // 5. La tarjeta transiciona a «En revisión manual» con mensaje de éxito confirmado
+      const successBadge = page
+        .locator('[data-slot="document-replacement-card"][data-kind="license"]')
+        .getByText(COURIER_ONBOARDING_COPY.underReviewBadge);
+      await expect(successBadge).toBeVisible({ timeout: 20000 });
+
+      const successMsg = page.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess);
+      await expect(successMsg).toBeVisible();
+
+      // 6. Verificación estricta en base de datos:
+      const { data: licenseRows } = await dbAdmin
+        .from('courier_documents')
+        .select('id, kind, status, is_current, storage_path, rejection_code')
+        .eq('courier_id', courier.id)
+        .eq('kind', 'license')
+        .order('uploaded_at', { ascending: false });
+
+      expect(licenseRows).toHaveLength(2);
+      // El documento nuevo es el vigente en estado submitted
+      expect(licenseRows?.[0]?.is_current).toBe(true);
+      expect(licenseRows?.[0]?.status).toBe('submitted');
+      expect(licenseRows?.[0]?.rejection_code).toBeNull();
+      expect(licenseRows?.[0]?.storage_path).toMatch(
+        new RegExp(`^courier/${courier.id}/license_\\d+\\.png$`)
+      );
+
+      // El documento anterior pasó a histórico (is_current = false) conservando estado rejected
+      expect(licenseRows?.[1]?.is_current).toBe(false);
+      expect(licenseRows?.[1]?.status).toBe('rejected');
+      expect(licenseRows?.[1]?.rejection_code).toBe('illegible');
+
+      // Los otros documentos continúan vigentes e inalterados
+      const { data: otherRows } = await dbAdmin
+        .from('courier_documents')
+        .select('kind, status, is_current')
+        .eq('courier_id', courier.id)
+        .in('kind', ['dni_front', 'dni_back', 'selfie']);
+
+      expect(otherRows).toHaveLength(3);
+      for (const row of otherRows ?? []) {
+        expect(row.status).toBe('verified');
+        expect(row.is_current).toBe(true);
+      }
+    } finally {
+      // Limpieza de datos en DB y Storage
+      await resetCourierToPendingOnboarding(courier.id);
+      const { data: files } = await dbAdmin.storage
+        .from(COURIER_DOCS_BUCKET)
+        .list(`courier/${courier.id}`);
+      if (files && files.length > 0) {
+        await dbAdmin.storage
+          .from(COURIER_DOCS_BUCKET)
+          .remove(files.map((f) => `courier/${courier.id}/${f.name}`));
+      }
+    }
+  });
 });

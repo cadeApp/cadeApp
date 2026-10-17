@@ -383,9 +383,16 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                   >
                     <span className="truncate">
                       {ADMIN_COPY.documentKind[doc.documentType]}
+                      {doc.isCurrent === false && ' (Histórico)'}
                     </span>
                     <span className="text-sm shrink-0 ml-2">
-                      {doc.status === 'verified' ? '✓' : doc.status === 'rejected' ? '✕' : '•'}
+                      {doc.isCurrent === false
+                        ? '↺'
+                        : doc.status === 'verified'
+                        ? '✓'
+                        : doc.status === 'rejected'
+                        ? '✕'
+                        : '•'}
                     </span>
                   </TabsTrigger>
                 ))}
@@ -535,10 +542,12 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                       </CardContent>
 
                       {/* Barra inferior de verificación del documento actual */}
-                      {signedUrl ? (
+                      {isSelected && signedUrl ? (
                         <div className="border-t border-border p-4 bg-card flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">
-                            {ADMIN_COPY.detail.viewer.validityQuestion}
+                            {doc.isCurrent === false
+                              ? 'Documento histórico (no admite revisión).'
+                              : ADMIN_COPY.detail.viewer.validityQuestion}
                           </span>
                           <div className="flex gap-2">
                             <Button
@@ -549,7 +558,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                                 rejectDocForm.reset();
                                 setRejectDocDialogOpen(true);
                               }}
-                              disabled={doc.status === 'rejected'}
+                              disabled={doc.status === 'rejected' || doc.isCurrent === false}
                             >
                               {ADMIN_COPY.detail.rejectDocument}
                             </Button>
@@ -557,7 +566,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                               size="sm"
                               variant="default"
                               onClick={handleApproveDocument}
-                              disabled={verifyingDoc || doc.status === 'verified'}
+                              disabled={verifyingDoc || doc.status === 'verified' || doc.isCurrent === false}
                             >
                               {verifyingDoc ? ADMIN_COPY.detail.verifyingDocument : ADMIN_COPY.detail.verifyDocument}
                             </Button>

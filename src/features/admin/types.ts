@@ -48,6 +48,8 @@ export interface ApplicantDocumentDetail {
   readonly storagePath: string;
   readonly status: 'none' | 'submitted' | 'verified' | 'rejected';
   readonly uploadedAt: string;
+  readonly isCurrent?: boolean;
+  readonly rejectionCode?: string | null;
 }
 
 export interface ApplicantDetail {

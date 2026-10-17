@@ -8,9 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/ui/
 import { Badge } from '@/ui/badge';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import type { CourierDocumentMetadata } from '../queries';
+import { DocumentReplacementCard } from './document-replacement-card';
 
 export interface StatusViewProps {
   readonly documents: readonly CourierDocumentMetadata[];
+  readonly courierId?: string;
   readonly onGoToFeed?: () => void;
   /** PR242-H02: el feed ya es el panel, así que ahí no se muestra el botón hacia sí mismo. */
   readonly showFeedButton?: boolean;
@@ -28,7 +30,12 @@ function getItemPresentation(status: ItemStatus) {
       };
     case 'rejected':
       return {
-        label: 'Observado',
+        label: (
+          <span>
+            {COURIER_ONBOARDING_COPY.rejectedBadge}
+            <span className="sr-only"> (Observado)</span>
+          </span>
+        ),
         icon: <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />,
         textClass: 'text-destructive font-medium',
       };
@@ -47,7 +54,31 @@ function getItemPresentation(status: ItemStatus) {
   }
 }
 
-export function StatusView({ documents, onGoToFeed, showFeedButton = true }: StatusViewProps) {
+function getDocTitle(kind: CourierDocumentMetadata['kind']): string {
+  switch (kind) {
+    case 'dni_front':
+      return 'Frente del DNI';
+    case 'dni_back':
+      return 'Dorso del DNI';
+    case 'selfie':
+      return 'Selfie de verificación';
+    case 'avatar':
+      return COURIER_ONBOARDING_COPY.avatarTitle;
+    case 'license':
+      return 'Registro de conductor';
+    case 'insurance':
+      return 'Póliza de cobertura';
+    default:
+      return 'Documento';
+  }
+}
+
+export function StatusView({
+  documents,
+  courierId,
+  onGoToFeed,
+  showFeedButton = true,
+}: StatusViewProps) {
   const router = useRouter();
 
   const handleNavigate = () => {
@@ -177,6 +208,28 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
             })}
           </CardContent>
         </Card>
+
+        {/* Documentos rechazados que requieren corrección (T-356) */}
+        {documents.filter((d) => d.status === 'rejected').length > 0 && (
+          <div className="w-full space-y-3 pt-4" data-slot="rejected-documents-section">
+            <h2 className="text-sm font-bold text-destructive">
+              Documentos que requieren corrección
+            </h2>
+            {documents
+              .filter((d) => d.status === 'rejected')
+              .map((doc) => (
+                <DocumentReplacementCard
+                  key={doc.kind}
+                  courierId={courierId}
+                  kind={doc.kind}
+                  title={`Reemplazar: ${getDocTitle(doc.kind)}`}
+                  initialStatus={doc.status}
+                  rejectionCode={doc.rejectionCode}
+                  rejectionMessage={doc.rejectionMessage}
+                />
+              ))}
+          </div>
+        )}
       </div>
 
       {/* Botón hacia el feed */}

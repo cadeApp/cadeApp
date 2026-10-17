@@ -28,6 +28,8 @@ import {
   type CourierReviewStatus,
   combineDniDocumentStatus,
 } from '../schemas';
+import type { CourierDocumentKind } from '../upload-manager';
+import { DocumentReplacementCard } from './document-replacement-card';
 
 export {
   type DocumentReviewStatus,
@@ -35,18 +37,34 @@ export {
   combineDniDocumentStatus,
 };
 
+export interface DocumentItemData {
+  readonly kind: CourierDocumentKind;
+  readonly status: DocumentReviewStatus;
+  readonly rejectionCode?: string | null;
+  readonly rejectionMessage?: string | null;
+}
+
 export interface CourierProfileData {
+  readonly courierId?: string;
   readonly displayName: string;
   readonly email: string;
   readonly vehicleType: string | null;
   readonly plate: string | null;
   readonly dniStatus: DocumentReviewStatus;
+  readonly dniFrontStatus?: DocumentReviewStatus;
+  readonly dniFrontRejectionMessage?: string | null;
+  readonly dniBackStatus?: DocumentReviewStatus;
+  readonly dniBackRejectionMessage?: string | null;
   readonly selfieStatus: DocumentReviewStatus;
+  readonly selfieRejectionMessage?: string | null;
   readonly licenseStatus: DocumentReviewStatus;
+  readonly licenseRejectionMessage?: string | null;
   readonly insuranceStatus: DocumentReviewStatus;
+  readonly insuranceRejectionMessage?: string | null;
   readonly courierStatus: CourierReviewStatus;
   /** T-334: `false` si el repartidor nunca envió el onboarding (`couriers.vehicle_type` nulo). */
   readonly onboardingComplete: boolean;
+  readonly documents?: readonly DocumentItemData[];
 }
 
 export function getDocumentStatusPresentation(status: DocumentReviewStatus) {
@@ -121,6 +139,14 @@ function getCourierStatusBadge(status: CourierReviewStatus) {
 }
 
 function getDocStatusBadge(status: DocumentReviewStatus) {
+  if (status === 'rejected') {
+    return (
+      <Badge variant="destructive" className="text-sm">
+        <span>{COURIER_ONBOARDING_COPY.rejectedBadge}</span>
+        <span className="sr-only"> (Observado)</span>
+      </Badge>
+    );
+  }
   const presentation = getDocumentStatusPresentation(status);
   return (
     <Badge
@@ -302,17 +328,91 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
         </div>
 
         <div className="divide-y divide-border/60 text-sm">
-          <div className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-2">
-              {profile.dniStatus === 'verified' ? (
-                <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
+          {/* DNI: Si frente o dorso tiene estado individual o está rechazado, se separan */}
+          {profile.dniFrontStatus !== undefined || profile.dniBackStatus !== undefined ? (
+            <>
+              {(profile.dniFrontStatus ?? profile.dniStatus) === 'rejected' ? (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    courierId={profile.courierId}
+                    kind="dni_front"
+                    title={COURIER_ONBOARDING_COPY.dniFrontTitle}
+                    initialStatus="rejected"
+                    rejectionMessage={profile.dniFrontRejectionMessage}
+                  />
+                </div>
               ) : (
-                <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <div className="flex items-center justify-between py-3">
+                  <div className="flex items-center gap-2">
+                    {(profile.dniFrontStatus ?? profile.dniStatus) === 'verified' ? (
+                      <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                    )}
+                    <span className="font-medium text-foreground">
+                      {COURIER_ONBOARDING_COPY.dniFrontTitle}
+                    </span>
+                  </div>
+                  {getDocStatusBadge(profile.dniFrontStatus ?? profile.dniStatus)}
+                </div>
               )}
-              <span className="font-medium text-foreground">DNI (frente y dorso)</span>
+
+              {(profile.dniBackStatus ?? profile.dniStatus) === 'rejected' ? (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    courierId={profile.courierId}
+                    kind="dni_back"
+                    title={COURIER_ONBOARDING_COPY.dniBackTitle}
+                    initialStatus="rejected"
+                    rejectionMessage={profile.dniBackRejectionMessage}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-between py-3">
+                  <div className="flex items-center gap-2">
+                    {(profile.dniBackStatus ?? profile.dniStatus) === 'verified' ? (
+                      <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                    )}
+                    <span className="font-medium text-foreground">
+                      {COURIER_ONBOARDING_COPY.dniBackTitle}
+                    </span>
+                  </div>
+                  {getDocStatusBadge(profile.dniBackStatus ?? profile.dniStatus)}
+                </div>
+              )}
+            </>
+          ) : profile.dniStatus === 'rejected' ? (
+            <div className="py-3 space-y-3">
+              <DocumentReplacementCard
+                courierId={profile.courierId}
+                kind="dni_front"
+                title={COURIER_ONBOARDING_COPY.dniFrontTitle}
+                initialStatus="rejected"
+                rejectionMessage={profile.dniFrontRejectionMessage}
+              />
+              <DocumentReplacementCard
+                courierId={profile.courierId}
+                kind="dni_back"
+                title={COURIER_ONBOARDING_COPY.dniBackTitle}
+                initialStatus="rejected"
+                rejectionMessage={profile.dniBackRejectionMessage}
+              />
             </div>
-            {getDocStatusBadge(profile.dniStatus)}
-          </div>
+          ) : (
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-2">
+                {profile.dniStatus === 'verified' ? (
+                  <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                )}
+                <span className="font-medium text-foreground">DNI (frente y dorso)</span>
+              </div>
+              {getDocStatusBadge(profile.dniStatus)}
+            </div>
+          )}
 
           <div className="flex items-center justify-between py-3">
             <div className="flex items-center gap-2">
@@ -327,6 +427,17 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
             </div>
             {getDocStatusBadge(profile.selfieStatus)}
           </div>
+          {profile.selfieStatus === 'rejected' && (
+            <div className="py-3">
+              <DocumentReplacementCard
+                courierId={profile.courierId}
+                kind="selfie"
+                title={COURIER_ONBOARDING_COPY.selfieTitle}
+                initialStatus="rejected"
+                rejectionMessage={profile.selfieRejectionMessage}
+              />
+            </div>
+          )}
 
           {isMotorVehicle && (
             <>
@@ -337,6 +448,17 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                 </div>
                 {getDocStatusBadge(profile.licenseStatus)}
               </div>
+              {profile.licenseStatus === 'rejected' && (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    courierId={profile.courierId}
+                    kind="license"
+                    title="Licencia de conducir"
+                    initialStatus="rejected"
+                    rejectionMessage={profile.licenseRejectionMessage}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-2">
@@ -345,6 +467,17 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                 </div>
                 {getDocStatusBadge(profile.insuranceStatus)}
               </div>
+              {profile.insuranceStatus === 'rejected' && (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    courierId={profile.courierId}
+                    kind="insurance"
+                    title="Seguro de accidentes"
+                    initialStatus="rejected"
+                    rejectionMessage={profile.insuranceRejectionMessage}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>

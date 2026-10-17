@@ -12,6 +12,14 @@ export {
   getDocumentStatusPresentation,
   type CourierProfileData,
 } from './components/courier-profile-view';
+export {
+  DocumentReplacementCard,
+  type DocumentReplacementCardProps,
+} from './components/document-replacement-card';
+export {
+  DocumentUploadCard,
+  type DocumentUploadCardProps,
+} from './components/document-upload-card';
 
 export const IdentityForm = dynamic<IdentityFormProps>(
   () => import('./components/identity-form').then((mod) => mod.IdentityForm)

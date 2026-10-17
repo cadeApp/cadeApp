@@ -369,5 +369,63 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
     expect(screen.getByText(/Selfie con el DNI/)).toBeDefined();
     expect(screen.getByText(/Selfie con el DNI\s*✓/)).toBeDefined();
   });
+
+  it('11. CC-025 / T-356: distingue documento vigente (revisable) de histórico (deshabilitado)', async () => {
+    vi.mocked(viewCourierDocumentAction).mockResolvedValue({
+      ok: true,
+      data: {
+        signedUrl: 'https://example.com/signed/license.webp',
+        expiresInSeconds: 60,
+      },
+    });
+
+    const applicantWithHistory: ApplicantDetail = {
+      ...mockApplicant,
+      documents: [
+        {
+          id: 'd0000000-0000-0000-0000-000000000004',
+          documentType: 'license',
+          storagePath: 'courier-docs/license_v1.webp',
+          status: 'rejected',
+          uploadedAt: '2026-10-16T10:00:00.000Z',
+          isCurrent: false,
+        },
+        {
+          id: 'd0000000-0000-0000-0000-000000000003',
+          documentType: 'license',
+          storagePath: 'courier-docs/license_v2.webp',
+          status: 'submitted',
+          uploadedAt: '2026-10-17T10:00:00.000Z',
+          isCurrent: true,
+        },
+      ],
+    };
+
+    render(<ApplicantDetailView applicant={applicantWithHistory} />);
+
+    // Verifica que la pestaña del histórico indique «(Histórico)»
+    const tabs = screen.getAllByRole('tab');
+    const historicTab = tabs.find((t) => t.textContent?.includes('Histórico'));
+    expect(historicTab).toBeDefined();
+    expect(historicTab?.textContent).toContain('Licencia de Conducir (Histórico)');
+
+    // Selecciona el documento histórico
+    if (historicTab) {
+      fireEvent.click(historicTab);
+    }
+
+    // Carga el documento histórico
+    const loadButtons = screen.getAllByRole('button', { name: /cargar documento seguro/i });
+    fireEvent.click(loadButtons[loadButtons.length - 1] ?? loadButtons[0]!);
+
+    await screen.findByRole('img');
+
+    // Comprueba que los botones de verificar y rechazar están deshabilitados
+    const rejectBtn = screen.getByRole('button', { name: /rechazar documento/i });
+    const verifyBtn = screen.getByRole('button', { name: /verificar documento/i });
+    expect((rejectBtn as HTMLButtonElement).disabled).toBe(true);
+    expect((verifyBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/documento histórico/i)).toBeDefined();
+  });
 });
 
