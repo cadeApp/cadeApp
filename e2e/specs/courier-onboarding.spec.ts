@@ -1055,7 +1055,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       expect(licenseRows?.[0]?.status).toBe('submitted');
       expect(licenseRows?.[0]?.rejection_code).toBeNull();
       expect(licenseRows?.[0]?.storage_path).toMatch(
-        new RegExp(`^courier/${courier.id}/license_\\d+\\.png$`)
+        new RegExp(`^courier/${courier.id}/license_\\d+\\.jpg$`)
       );
 
       // El documento anterior pasó a histórico (is_current = false) conservando estado rejected
