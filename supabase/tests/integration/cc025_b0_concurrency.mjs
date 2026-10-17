@@ -293,11 +293,11 @@ async function testCoexistenceDirectInsert() {
     commit;
   `);
 
-  // 2. Intento de reintento directo con misma ruta es rechazado por RLS (42501) o UNIQUE (23505)
+  // 2. Intento de reintento directo con misma ruta es rechazado por RLS/privilegios (42501) o UNIQUE (23505)
   const directConflict = spawnSync(
     'docker',
     [
-      'exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-c',
+      'exec', '-i', dbContainer, 'psql', '-X', '-v', 'VERBOSITY=verbose', '-U', 'postgres', '-d', 'postgres', '-c',
       `
         begin;
         set local role authenticated;
@@ -312,6 +312,7 @@ async function testCoexistenceDirectInsert() {
 
   assert(
     directConflict.stderr.includes('42501') ||
+      directConflict.stderr.includes('permission denied') ||
       directConflict.stderr.includes('violates row-level security') ||
       directConflict.stderr.includes('23505') ||
       directConflict.stderr.toLowerCase().includes('unique'),
@@ -322,7 +323,7 @@ async function testCoexistenceDirectInsert() {
   const altInsert = spawnSync(
     'docker',
     [
-      'exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-c',
+      'exec', '-i', dbContainer, 'psql', '-X', '-v', 'VERBOSITY=verbose', '-U', 'postgres', '-d', 'postgres', '-c',
       `
         begin;
         set local role authenticated;
@@ -337,6 +338,7 @@ async function testCoexistenceDirectInsert() {
 
   assert(
     altInsert.stderr.includes('42501') ||
+      altInsert.stderr.includes('permission denied') ||
       altInsert.stderr.includes('violates row-level security') ||
       altInsert.stderr.includes('23505'),
     `Inserción directa con ruta alternativa debe ser bloqueada en Fase C (42501/23505): ${altInsert.stderr}`
