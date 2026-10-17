@@ -26,6 +26,15 @@ describe('T-204: live-contracts client-safe schemas', () => {
     myOfferAmountArs: 1500,
   };
 
+  it('T-363: approxDistanceKm admite null (distancia no calculada) y rechaza un número', () => {
+    expect(
+      liveAvailableRequestItemSchema.safeParse({ ...validRequest, approxDistanceKm: null }).success
+    ).toBe(true);
+    expect(
+      liveAvailableRequestItemSchema.safeParse({ ...validRequest, approxDistanceKm: 1.5 }).success
+    ).toBe(false);
+  });
+
   const validOffer = {
     id: 'b0000000-0000-0000-0000-000000000002',
     courierId: 'c0000000-0000-0000-0000-000000000003',
