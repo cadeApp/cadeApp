@@ -563,3 +563,75 @@ describe('T-369 / CC-029 — fake: correcciones de la revisión de la PR #397', 
     expect(retry.ok && retry.data).toMatchObject({ idempotent: true, launchDiscountPct: 0 });
   });
 });
+
+describe('CC-029 addendum D01-B — admin_list_publication_plans en el fake', () => {
+  async function seedPlans(count: number) {
+    const ctx = setup();
+    ctx.asAdmin();
+    for (let n = 1; n <= count; n += 1) {
+      const created = await ctx.fake.admin_upsert_publication_plan({
+        planId: null,
+        code: `plan-${n}`,
+        name: `Plan ${n}`,
+        kind: 'quota',
+        monthlyCredits: 10,
+        referencePriceArs: null,
+        active: n % 4 !== 0,
+        sort: n % 7,
+      });
+      if (!created.ok) throw new Error(created.code);
+    }
+    return ctx;
+  }
+
+  it('151 planes con sort repetido: páginas 50/50/50/1 en orden (sort, id), sin perder ni repetir', async () => {
+    const { fake } = await seedPlans(151);
+    expect(ALL_RPC_NAMES).toContain('admin_list_publication_plans');
+    const sizes: number[] = [];
+    const seen: { sort: number; id: string }[] = [];
+    let cursor: { sort: number; id: string } | null = null;
+    do {
+      const page = await fake.admin_list_publication_plans({ afterSort: cursor?.sort ?? null, afterId: cursor?.id ?? null });
+      if (!page.ok) throw new Error(page.code);
+      sizes.push(page.data.items.length);
+      seen.push(...page.data.items.map((plan) => ({ sort: plan.sort, id: plan.id })));
+      const last = page.data.items[page.data.items.length - 1];
+      if (page.data.nextCursor) expect(page.data.nextCursor).toEqual({ sort: last?.sort, id: last?.id });
+      cursor = page.data.nextCursor;
+    } while (cursor);
+    expect(sizes).toEqual([50, 50, 50, 1]);
+    expect(new Set(seen.map((plan) => plan.id)).size).toBe(151);
+    const sorted = [...seen].sort((a, b) => a.sort - b.sort || (a.id < b.id ? -1 : 1));
+    expect(seen).toEqual(sorted);
+  });
+
+  it('activeOnly devuelve solo activos, también por páginas', async () => {
+    const { fake } = await seedPlans(151);
+    const first = await fake.admin_list_publication_plans({ activeOnly: true });
+    if (!first.ok) throw new Error(first.code);
+    const next = first.data.nextCursor;
+    expect(next).not.toBeNull();
+    const second = await fake.admin_list_publication_plans({ activeOnly: true, afterSort: next?.sort ?? null, afterId: next?.id ?? null });
+    if (!second.ok) throw new Error(second.code);
+    const all = [...first.data.items, ...second.data.items];
+    const third = second.data.nextCursor
+      ? await fake.admin_list_publication_plans({ activeOnly: true, afterSort: second.data.nextCursor.sort, afterId: second.data.nextCursor.id })
+      : null;
+    if (third && third.ok) all.push(...third.data.items);
+    expect(all.every((plan) => plan.active)).toBe(true);
+    expect(all).toHaveLength(151 - Math.floor(151 / 4));
+  });
+
+  it('cursor incompleto o límite fuera de rango: VALIDATION_ERROR; solo el admin con AAL2 lista', async () => {
+    const ctx = await seedPlans(3);
+    for (const input of [{ afterSort: 1 }, { afterId: key(1) }, { limit: 0 }, { limit: 51 }]) {
+      await expect(ctx.fake.admin_list_publication_plans(input)).resolves.toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    ctx.asAdmin('aal1');
+    await expect(ctx.fake.admin_list_publication_plans({})).resolves.toEqual({ ok: false, code: 'AAL2_REQUIRED' });
+    ctx.asMerchant();
+    await expect(ctx.fake.admin_list_publication_plans({})).resolves.toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    ctx.asCourier();
+    await expect(ctx.fake.admin_list_publication_plans({})).resolves.toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+  });
+});

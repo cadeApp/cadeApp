@@ -449,6 +449,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_grant_publication_credits: ['admin'],
   admin_register_plan_period: ['admin'],
   admin_get_merchant_publication_credits: ['admin'],
+  admin_list_publication_plans: ['admin'],
   get_my_publication_balance: ['merchant'],
 };
 
@@ -3301,6 +3302,31 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             createdAt: isoFromMs(m.createdAtMs),
           })),
           nextCursor: page.length === limit ? (page[page.length - 1]?.id ?? null) : null,
+        });
+      }),
+
+    // CC-029 addendum D01-B: mismo orden (sort, id) y cursor de la última fila devuelta que la RPC SQL.
+    admin_list_publication_plans: (rawInput) =>
+      executeRpc('admin_list_publication_plans', rawInput, true, (input) => {
+        const limit = input.limit ?? 50;
+        const afterSort = input.afterSort ?? null;
+        const afterId = input.afterId ?? null;
+        const rows = [...plans.values()]
+          .filter((plan) => !(input.activeOnly ?? false) || plan.active)
+          .filter(
+            (plan) =>
+              afterSort === null ||
+              afterId === null ||
+              plan.sort > afterSort ||
+              (plan.sort === afterSort && plan.id > afterId)
+          )
+          .sort((a, b) => a.sort - b.sort || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+          .slice(0, limit + 1);
+        const items = rows.slice(0, limit);
+        const last = items[items.length - 1];
+        return ok({
+          items: items.map((plan) => ({ ...plan })),
+          nextCursor: rows.length > limit && last ? { sort: last.sort, id: last.id } : null,
         });
       }),
 

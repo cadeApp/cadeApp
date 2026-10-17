@@ -45,7 +45,8 @@ type PublicationCreditsRpcName =
   | 'admin_upsert_publication_plan'
   | 'admin_grant_publication_credits'
   | 'admin_register_plan_period'
-  | 'admin_get_merchant_publication_credits';
+  | 'admin_get_merchant_publication_credits'
+  | 'admin_list_publication_plans';
 
 function isAllowedAdminRpcError<K extends AdminRpcName>(
   rpcName: K,
@@ -504,5 +505,24 @@ export async function adminGetMerchantPublicationCreditsRpc(
     p_merchant_id: input.merchantId,
     p_limit: input.limit ?? 50,
     p_before_id: input.beforeId ?? null,
+  });
+}
+
+/**
+ * CC-029 addendum D01-B: `public.admin_list_publication_plans(...)`. Catálogo para el admin AAL2 (lo verifica la RPC),
+ * de a 50 como máximo, ordenado por (sort, id) y con cursor de la última fila. Siempre con el cliente de sesión.
+ */
+export async function adminListPublicationPlansRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<AdminRpcResult<'admin_list_publication_plans'>> {
+  const parsed = RPC_CONTRACTS.admin_list_publication_plans.inputSchema.safeParse(rawInput);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+  const input = parsed.data;
+  return callPublicationCreditsRpc(client, 'admin_list_publication_plans', {
+    p_limit: input.limit ?? 50,
+    p_after_sort: input.afterSort ?? null,
+    p_after_id: input.afterId ?? null,
+    p_active_only: input.activeOnly ?? false,
   });
 }
