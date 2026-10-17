@@ -1,17 +1,32 @@
 // @vitest-environment node
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { runSweep } from './sweep';
+import { reconcileOrphanCourierDocuments } from './orphan-courier-documents';
 import { createAdminClient } from '@/server/supabase/admin';
 
 vi.mock('@/server/env', () => ({
   serverEnv: {
     CRON_SECRET: 'test-cron-secret-12345',
     SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+    COURIER_DOCS_ORPHAN_PURGE_MODE: 'enforce',
   },
 }));
 
 vi.mock('@/server/supabase/admin', () => ({
   createAdminClient: vi.fn(),
+}));
+
+// CC-030: el paso de huérfanos tiene su propia suite (orphan-courier-documents.test.ts).
+vi.mock('./orphan-courier-documents', () => ({
+  reconcileOrphanCourierDocuments: vi.fn().mockResolvedValue({
+    mode: 'enforce',
+    candidateCount: 0,
+    claimedCount: 0,
+    removedCount: 0,
+    completedCount: 0,
+    pendingCount: 0,
+    skippedLockedCount: 0,
+  }),
 }));
 
 type DeepPartial<T> = {
@@ -108,6 +123,28 @@ describe('runSweep logic', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('CC-030 ejecuta la reconciliación de huérfanos con el modo del entorno y la informa', async () => {
+    setSweepBatches([reconciliationBatch(1, 0, false)]);
+
+    const result = await runSweep();
+
+    expect(reconcileOrphanCourierDocuments).toHaveBeenCalledExactlyOnceWith(
+      vi.mocked(createAdminClient).mock.results[0]?.value,
+      'enforce'
+    );
+    expect(result.orphanCourierDocuments).toMatchObject({ mode: 'enforce', claimedCount: 0 });
+  });
+
+  it('CC-030 una falla de huérfanos hace fallar el sweep después de los pasos previos', async () => {
+    const { merchantsSelect } = setSweepBatches([reconciliationBatch(1, 0, false)]);
+    vi.mocked(reconcileOrphanCourierDocuments).mockRejectedValueOnce(
+      new Error('Failed to remove orphan courier documents: boom')
+    );
+
+    await expect(runSweep()).rejects.toThrow('Failed to remove orphan courier documents');
+    expect(merchantsSelect).toHaveBeenCalledTimes(1);
   });
 
   it('CC-026 no abandona la segunda página cuando la RPC devuelve 200 cambios y luego 1', async () => {
