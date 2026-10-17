@@ -35,6 +35,22 @@ describe('Server Environment Validation', () => {
     const invalidEnv = { ...validServerEnv, CRON_SECRET: undefined };
     expect(() => createServerEnv(invalidEnv)).toThrowError(/CRON_SECRET es obligatoria/);
   });
+
+  it('CC-030: la purga de huérfanos arranca en dry-run si no se configura', () => {
+    expect(createServerEnv(validServerEnv).COURIER_DOCS_ORPHAN_PURGE_MODE).toBe('dry-run');
+  });
+
+  it('CC-030: acepta enforce y off, y rechaza modos desconocidos', () => {
+    expect(
+      createServerEnv({ ...validServerEnv, COURIER_DOCS_ORPHAN_PURGE_MODE: 'enforce' }).COURIER_DOCS_ORPHAN_PURGE_MODE
+    ).toBe('enforce');
+    expect(
+      createServerEnv({ ...validServerEnv, COURIER_DOCS_ORPHAN_PURGE_MODE: 'off' }).COURIER_DOCS_ORPHAN_PURGE_MODE
+    ).toBe('off');
+    expect(() =>
+      createServerEnv({ ...validServerEnv, COURIER_DOCS_ORPHAN_PURGE_MODE: 'purge-all' })
+    ).toThrowError(/COURIER_DOCS_ORPHAN_PURGE_MODE/);
+  });
 });
 
 describe('Public Environment Validation', () => {

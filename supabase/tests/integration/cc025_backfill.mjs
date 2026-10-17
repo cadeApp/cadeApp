@@ -206,7 +206,7 @@ async function runBackfillTest() {
     setupPreMigrationFixture(ids);
 
     // 3. Aplicar la migración CC-025 Fase C real con Supabase CLI
-    runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicando migración CC-025 Fase C con pnpm supabase migration up');
+    runCommand(pnpmCmd, ['supabase', 'migration', 'up', '--include-all'], 'Aplicando migración CC-025 Fase C con pnpm supabase migration up');
 
     // 4. Verificar aserciones
     console.log('[CC-025][H06] Verificando aserciones del backfill...');
@@ -251,7 +251,7 @@ async function runBackfillMutationCheck() {
     setupPreMigrationFixture(ids);
 
     // 3. Aplicar migración mutada con Supabase CLI
-    runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicando migración mutada');
+    runCommand(pnpmCmd, ['supabase', 'migration', 'up', '--include-all'], 'Aplicando migración mutada');
 
     // 4. Verificar que la aserción de purge_after > now() + 29 days FALLA (RED)
     console.log('[CC-025][H06] Ejecutando aserción de retención sobre migración mutada (debe fallar)...');
