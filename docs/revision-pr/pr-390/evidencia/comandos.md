@@ -141,3 +141,47 @@ Este harness está concebido para fallar (RED) en el SHA actual por el modal, no
 5. Offline/reconnect debe probar deshabilitación temporal y actualización final, sin alterar la política T-333; capturar salida Vitest original y mutante.
 
 **Nada de mutar archivos versionados directamente con checkout de reversión; usar harness que parchea en memoria o trabajo en /tmp no commiteado.** Sin ejecutar Docker/Supabase local. El E2E real se prueba sobre Preview+Supabase Develop, nunca producción.
+
+
+## Ronda 3 — evidencias reproducibles, SHA `d156e12f6db9d7f10412c4c3003d8c9d9c1de78c`
+
+### Reproducción ejecutada por inspector (inspección remota + evaluación JS)
+1. Leí `src/features/requests/hooks/use-request-offers.ts` y `request-offers-list.tsx` de ese SHA vía GitHub conector. `isOnline` solo refleja `onlineManager`; `canAccept` combina `published && isOnline`, sin barrera de frescura al reanudar.
+2. Evaluación de esta condición con request published, isOnline true, una oferta cached pending y flag de frescura after-reconnect false: `source_allows_cta=true`, `should_allow_before_fresh_response=false`. La prueba existente `online -> offline -> reconnect con respuesta tardía` no pregunta por CTA mientras deferred fetch queda pendiente, solo por offline y post-resolución.
+3. Mock `queries.test.ts`: `order: vi.fn(function() {return this;})`; mock `t204.test.ts`: `order: vi.fn().mockReturnThis()`. Para los timestamps ascendentes de fixture `pendingOffers` (0-51) el SQL DESC entrega índice **2** como fila 50; test espera índice **49**. Resultado `mock_order_is_noop_both=true`.
+4. GitHub REST `pull/390` -> dirty, `compare_commits` -> behind 150. GH GET commit checks de d156e12 -> no job CI integral; branch workflows lista CI sólo en SHA previo.
+5. `container.exec git ls-remote` devolvió: `fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/': Could not resolve host: github.com`.
+**Nota:** solo resultados de evaluación de expresiones/inspección GitHub; NO son logs Vitest ni pruebas E2E.
+
+### Checker independiente — archivo completo portable a /tmp (requiere checkout del SHA de análisis)
+```bash
+cat > /tmp/pr390-r3-check.cjs <<'NODE'
+const fs=require('node:fs'), assert=require('node:assert/strict');
+const ui=fs.readFileSync('src/features/requests/components/request-offers-list.tsx','utf8');
+const hook=fs.readFileSync('src/features/requests/hooks/use-request-offers.ts','utf8');
+const ssr=fs.readFileSync('src/features/requests/queries.test.ts','utf8');
+const live=fs.readFileSync('src/server/live/t204.test.ts','utf8');
+assert(ui.includes("const canAccept = request.status === 'published' && isOnline;"));
+assert(hook.includes('setIsOnline(online)'));
+const published=true, online=true, syncedAfterReconnect=false, cachedPending=true;
+const sourceCanAccept=published&&online&&cachedPending;
+const correctCanAccept=sourceCanAccept&&syncedAfterReconnect;
+assert.equal(sourceCanAccept,true); assert.equal(correctCanAccept,false);
+console.log('H13 static RED: recovered network enables cached pending before fresh response');
+const start=ssr.indexOf("it('T-365: getMerchantRequestWithOffers filtra funcionalmente");
+const end=ssr.indexOf('function mockMerchantDetailClient',start);
+assert(start>=0&&end>start);
+const ssrBlock=ssr.slice(start,end);
+assert(ssrBlock.includes('order: vi.fn(function (this: MockFilteringOffersBuilder)'));
+assert(ssrBlock.includes('const expected50thPending = pendingOffers[49]!;'));
+const from=live.indexOf("it('T-365: filtra funcionalmente");
+const liveBlock=live.slice(from,live.indexOf("describe('3.2 getRequestOffersLiveServer — proyección",from));
+assert(from>=0&&liveBlock.includes('order: vi.fn().mockReturnThis()'));
+const pending=Array.from({length:52},(_,i)=>({i,dt:'2026-09-26T12:00:'+String(i).padStart(2,'0')}));
+const ordered=pending.slice().sort((a,b)=>b.dt.localeCompare(a.dt));
+assert.equal(ordered[49].i,2); assert.notEqual(ordered[49].i,49);
+console.log('H14 static RED: real descending page 1 cursor index=2, test assumes index=49');
+NODE
+node /tmp/pr390-r3-check.cjs
+```
+No hay ejecución acreditada de este script portable sobre un clon en la sesión; la evaluación equivalente de predicados se ejecutó con contenidos leídos de GitHub. No modificar `docs/revision-pr/**` desde el agente.

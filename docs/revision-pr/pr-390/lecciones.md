@@ -10,3 +10,9 @@
 - PR390-H10: un test de «refetch» que solo afirma un mensaje es un proxy falso. Exigir spy de fetch y pérdida de ítem; mutación quitando refetch debe RED.
 - PR390-H11: mocks que siempre retornan `pending` aunque se quite filtro no demuestran filtrado, y los `any` nuevos incumplen reglas. Ejercer clase completa y 51+ elementos.
 - PR390-H12: separar CI verde general de DoD concretas. No contar E2E-preview genérica como evidencia del caso.
+
+## Ronda 3 — 2026-10-17
+- **PR390-H13:** Conectividad no demuestra frescura; reconectar no puede convertir datos cached pending en elegibles antes de terminar una lectura iniciada tras el reconnect. Un test de `deferred Promise` debe comprobar el intervalo intermedio, no solo antes y después.
+- **PR390-H14:** Un builder mock que respeta `eq` pero ignora `order` entrega cursor de la entrada y aparenta probar keyset. La prueba debe simular exactamente `order(desc created_at,desc id) -> limit(51)` y un empate.
+- **PR390-H09:** GitHub `mergeable_state: dirty` impide afirmar merge-ready aun con approval-policy success; mergear develop sin rebase/force y revisar conflictos.
+- **CI y bitácora:** Enforce regla del usuario: no exigir re-correr CI SOLO por informe o bitácora. Con código nuevo faltante de CI (d156e12), la evidencia de pipeline del SHA del cambio funcional sí importa; no confundir casos.
