@@ -212,3 +212,58 @@ No se ejecutó `git merge-tree` ni `pnpm` desde clon local; la PR figuraba `merg
 **CI:** check-runs de SHA `c4eb0c4b`: unit/db-tests/build/typecheck/lint/audit/bundle-budget SUCCESS; approval-policy SUCCESS con aprobación del usuario. La CI principal no valida directamente la presencia del dato en el DOM. E2E sí la reclamó. No inventar mutaciones, ejecución de pnpm local ni resultados de test posteriores al arreglo.
 
 **Base:** develop observado `cf65ce256f8fb45a9d9bc890f4531b1ae03cbea6` avanzó tras la última integración de develop `af0cf1d7`. GitHub indica PR `mergeable:true`; no afirmar que la integración de los nuevos cambios quedó comprobada. **Limitaciones:** sin checkout/pnpm/mutaciones independientes del revisor. A y C requieren autorización de cambio visual de P1, B ajusta test pero deja DoD visual parcialmente insatisfecho. `src/features/trips/components.test.tsx` queda fuera de archivos permitidos en ficha T-359; si se autoriza C, primero extender ficha de forma explícita para permitir esa prueba de componente, sin ampliar a otras áreas.
+
+## Ronda 10 — 2026-10-17 · HEAD `8d5f6a840a2f56b468672698a3ed225e8c937592`
+
+### Origen y alcance
+
+- PR #391 mergeada a develop como `50c99b00`, ficha canónica `docs/tasks/T-359.md` permite `src/features/trips/components.test.tsx` para T-359 opción C. Merge normal en rama de autor: `7daacd6866cab8c19398c4b3570d72d2c762d87b`. Commit funcional `8c90e4b787baa8f8d843f29a3c49e3b01a1d4378` cambia EXCLUSIVAMENTE `trip-merchant-view.tsx`, `components.test.tsx`, `main-flow.spec.ts` y bitácora. HEAD `8d5f6a840a2f56b468672698a3ed225e8c937592` solo añade bitácora. Se revisaron todos los archivos modificados funcionalmente.
+- Inspección: el componente usa `singleDrop = dropsList.length === 1 ? dropsList[0] : null`; single muestra `formatRecipientPaymentMethod(singleDrop.recipientPaymentMethod)` en Card de repartidor; multi lo muestra en cada Card de destinatario con `drop.recipientPaymentMethod`. No se modificó `src/lib/whatsapp.ts`. Unit tests `within(card)` y `within(cardAna/cardBeto/cardCarla)` separan métodos cash/transfer/to_agree y validan privacidad. E2E reusa locator `paymentLabel` anclado en `courierCard` antes y después de reload, sin eliminar oráculos ni test T-360.
+
+### Evidencia remota real
+
+- Autor declara RED unit: 3 failed/42 passed previo a UI; GREEN unit: 45/45 y 3 mutantes locales detectados. **El revisor NO reprodujo el RED de Vitest ni corrió los mutantes en Vitest; no se atribuye.**
+- [CI del SHA funcional 8c90e4b7, run 39011124764](https://github.com/cadeApp/cadeApp/actions/runs/39011124764) JOBS unit/typecheck/lint/build/db-tests/audit/bundle-budget = SUCCESS. No confundirlo con ejecución local.
+- [E2E real del SHA funcional 8c90e4b7, run 39011178930](https://github.com/cadeApp/cadeApp/actions/runs/39011178930), job `117333894466`, `81 passed (19.1m), 1 failed` en Chromium. T-359 dos sesiones `main-flow.spec.ts:89` PASS (31.2s), T-360 feed PASS (40.8s). El único FAIL reproducido en el intento y dos retries fue T-366 `request-states.spec.ts:1013`: `getByRole('button', {name:/aceptar/i})` no encuentra elemento, aunque `getByText('Expirada')` sí es visible. `global-settings` no se certifica GREEN en este run fallido. El HEAD `8d5f6a84` es posterior, con solo bitácora; su nuevo E2E estaba pendiente al consultar.
+- Inspección T-366: en la fixture `status:'published'` con `expiresAt` 10 minutos atrás, E2E exige botón Aceptar visible en #1013 y luego prueba rechazo RPC `REQUEST_EXPIRED`. Ficha T-366 desde develop exige que **ofertas vencidas no puedan aceptarse**. Fuente `request-offers-list.tsx`: `isAcceptableStatus = request.status === 'published' && !isExpired && !isReconciling`; test T-359 H03 espera `toHaveLength(0)` en vencidas. El E2E de T-366 requiere lo contrario; la expectativa no prueba el DoD.
+- GitHub PR HEAD `8d5f6a840a2f56b468672698a3ed225e8c937592` `mergeable:true`; base develop `256ae179dcba9f9e0f5d54f236c93b42ec41281c`. No se confirmaron conflictos. La aprobación `approval-policy` pasó en HEAD inspeccionado, no es el E2E.
+
+### Controles y mutaciones ESTÁTICAS independientes (no Vitest)
+
+Se ejecutaron dentro del proceso de revisión con los cinco archivos de fuente recibidos por GitHub (sin checkout ni modificar repo). **7/7 controles textuales base PASS; 4/4 mutaciones sobre copias en memoria detectadas**: (M1) cambiar drop propio a pago global single, (M2) pago global en multi, (M3) borrar asserts postreload, (M4) hacer selector Playwright global. Los controles verifican PATRONES de fuente: no ejecutan componentes React, Vitest ni Playwright y no sustituyen una batería de mutaciones runtime en worktree. No marcar `verificado_en_sha` por esta sola prueba.
+
+Reproducible orientativo, sin ejecutar el archivo guardado desde checkout (revisor no tiene clon):
+
+```js
+// Inspector estático de PR #360 ronda 10; ejecutar desde raíz de worktree limpio (no modifica archivos).
+// Este script comprueba SOLO patrones de fuente, NO corre Vitest ni Playwright.
+import { readFileSync } from 'node:fs';
+const sources = {
+  ui:readFileSync('src/features/trips/components/trip-merchant-view.tsx','utf8'),
+  tests:readFileSync('src/features/trips/components.test.tsx','utf8'),
+  e2e:readFileSync('e2e/specs/main-flow.spec.ts','utf8'),
+  req:readFileSync('e2e/specs/request-states.spec.ts','utf8'),
+  offers:readFileSync('src/features/requests/components/request-offers-list.tsx','utf8'),
+};
+const controls=[
+  ['single real drop',s=>s.ui.includes('formatRecipientPaymentMethod(singleDrop.recipientPaymentMethod)')&&s.ui.includes('const singleDrop = dropsList.length === 1 ? dropsList[0] : null;')],
+  ['multi real drop',s=>s.ui.includes('formatRecipientPaymentMethod(drop.recipientPaymentMethod)')&&s.ui.includes('{dropsList.length > 1 && (')],
+  ['single coverage all',s=>["method: 'cash'","method: 'transfer'","method: 'to_agree'","within(card)"].every(t=>s.tests.includes(t))],
+  ['heterogeneous scoped',s=>['within(cardAna)','within(cardBeto)','within(cardCarla)'].every(t=>s.tests.includes(t))&&s.tests.includes("recipientPaymentMethod: 'transfer'")&&s.tests.includes("recipientPaymentMethod: 'to_agree'")],
+  ['e2e scoped + reload',s=>s.e2e.includes('const paymentLabel = courierCard.getByText(/Medio de pago:\\s*Efectivo/i)')&&(s.e2e.match(/expect\(paymentLabel\)\.toHaveCount\(1\)/g)||[]).length===2&&(s.e2e.match(/expect\(paymentLabel\)\.toBeVisible\(\)/g)||[]).length===2],
+  ['expired action hidden',s=>s.offers.includes("request.status === 'published' && !isExpired && !isReconciling")&&s.offers.includes("{isAcceptableStatus && (!offer.status || offer.status === 'pending') ? (")],
+  ['T366 expectation incompatible',s=>s.req.includes("await expect(page.getByRole('button', { name: /aceptar/i })).toBeVisible({ timeout: 10000 });")]
+];
+const changes=[
+  ['M1 use global for single','single real drop',s=>({...s,ui:s.ui.replace('formatRecipientPaymentMethod(singleDrop.recipientPaymentMethod)','formatRecipientPaymentMethod(trip.recipientPaymentMethod)')})],
+  ['M2 use global for multi','multi real drop',s=>({...s,ui:s.ui.replace('formatRecipientPaymentMethod(drop.recipientPaymentMethod)','formatRecipientPaymentMethod(trip.recipientPaymentMethod)')})],
+  ['M3 remove postreload checks','e2e scoped + reload',s=>({...s,e2e:s.e2e.replace('await expect(paymentLabel).toHaveCount(1);\n      await expect(paymentLabel).toBeVisible();\n      await expect(winnerPage.getByRole(\'button\'','await expect(winnerPage.getByRole(\'button\'')})],
+  ['M4 unscoped E2E payment','e2e scoped + reload',s=>({...s,e2e:s.e2e.replace('const paymentLabel = courierCard.getByText(/Medio de pago:\\s*Efectivo/i)','const paymentLabel = winnerPage.getByText(/Medio de pago:\\s*Efectivo/i)')})]
+];
+for(const [name,fn] of controls){const ok=fn(sources);console.log('BASE',ok?'PASS':'FAIL',name);if(!ok)process.exitCode=1;}
+for(const [name,target,mutate] of changes){const fn=controls.find(c=>c[0]===target)?.[1];if(!fn)throw Error(target);const detected=fn(sources)&&!fn(mutate(sources));console.log('STATIC MUTATION',detected?'DETECTED':'MISSED',name);if(!detected)process.exitCode=1;}
+```
+
+### Pendiente
+
+P1 debe decidir si: A) botón Aceptar visible pero deshabilitado con test corregido para estado disabled; B) visible habilitado y RPC rechaza (no recomendado por UX); C) conservar ocultación y corregir el E2E T-366 en PR separada. Recomendación C: `await expect(page.getByRole('button',{name:/^aceptar$/i})).toHaveCount(0)`, manteniendo `expectRpcFailure(..., 'REQUEST_EXPIRED')`. Como `request-states.spec.ts` NO está entre los archivos permitidos de T-359, no autorizar que agy lo edite en #360 sin resolución formal. Sí está permitido en ficha T-366; se puede usar una PR específica T-366 desde develop tras elección P1. No se editó producto ni CI. No aprobar ni mergear.

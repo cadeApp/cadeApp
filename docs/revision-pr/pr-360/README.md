@@ -17,6 +17,7 @@
 | 7 | `6d2c433711ed7a8aa562dfd75099029edf82c888` | **R03 corregido; E2E en verde; pendiente revalidación con develop avanzado** | [ronda-7](revisiones/ronda-7.md) |
 | 8 | `fc5b0a0152b48c7d6716b3b0a0c975746e504ebc` | **Sin defectos nuevos de implementación por inspección; E2E nuevo cancelado tres veces** | [ronda-8](revisiones/ronda-8.md) |
 | 9 | `c4eb0c4b864c966e5306ff9daa2a0d454cbaea44` | **CON BLOQUEANTE R04: E2E REAL falla porque la UI no muestra medio de pago** | [ronda-9](revisiones/ronda-9.md) |
+| 10 | `8d5f6a840a2f56b468672698a3ed225e8c937592` | **C implementada y E2E T-359 PASS; RED global por contradicción T-366 (R05 decisión P1)** | [ronda-10](revisiones/ronda-10.md) |
 
 ## Hallazgos actuales
 
@@ -32,9 +33,10 @@
 | PR360-R01 | medio | arreglado-sin-verificar |
 | PR360-R02 | alto | arreglado-sin-verificar |
 | PR360-R03 | alto | arreglado-sin-verificar |
-| PR360-R04 | alto | abierto |
+| PR360-R04 | alto | arreglado-sin-verificar |
+| PR360-R05 | decision | decision-pendiente |
 
-**Ronda 9:** la ejecución auténtica [38965095162](https://github.com/cadeApp/cadeApp/actions/runs/38965095162) (job `117270529209`) sobre `c4eb0c4b` dio **77 PASS, 1 FAIL reproducido, 1 flaky (T-360)**. El caso T-359 se detiene en `main-flow.spec.ts:257` porque **TripMerchantView no muestra el medio de pago** en pantalla. Antes el selector coincidía incidentalmente con el mensaje al destinatario, modificado legítimamente por T-361. Bloqueante **PR360-R04 (alto, abierto)**. R03 sigue corregido por inspección, H05 parcial y validación E2E completa del HEAD pendiente. **Decisión nueva necesaria** sobre UI: A global solo en single, B adaptar únicamente test (no recomendado), C visualización single-drop y por destinatario multi-drop (recomendado). No aprobar/mergear. Develop avanzó también; volver a verificar base después del arreglo.
+**Ronda 10:** opción C autorizada por P1 en ficha canónica (PR #391 MERGED), implementada por agy en commit funcional `8c90e4b7`, bitácora actualizada en HEAD `8d5f6a84`. Pruebas unitarias por autor 45/45 (RED previo declarado 3 fail/42 pass; no reproducido independientemente); CI [39011124764](https://github.com/cadeApp/cadeApp/actions/runs/39011124764) completamente verde. E2E [39011178930](https://github.com/cadeApp/cadeApp/actions/runs/39011178930) **81 passed / 1 failed**, caso T-359 de dos sesiones PASS, el RED restante viene de **T-366 request-states.spec.ts:1013** al pedir un botón Aceptar visible para solicitud vencida. DoD T-366 prohíbe aceptación vencida y H03 T-359 la oculta. R04 `arreglado-sin-verificar` (sin mutaciones Vitest propias en checkout); R05 `decision-pendiente` para P1. Preferencia técnica: conservar ocultación, corregir E2E de T-366 en PR separada, verificando ausencia de Aceptar y rechazo RPC; no mover una prueba ajena a T-359 sin autorización. El E2E del nuevo HEAD documental está en cola y no sustituye la ejecución anterior. **No apta para merge.**
 
 **Decisión humana B ya cerrada:** cancelled/expired como terminales seguros en el mismo detalle. **La revisión no aprueba ni mergea.** `approval-policy` pasó con aprobación explícita de Lautaro073 en SHA fc5b0a01; nuevos commits de revisión podrían requerir renovación.
 

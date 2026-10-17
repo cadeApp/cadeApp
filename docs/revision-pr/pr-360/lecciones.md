@@ -50,3 +50,10 @@ No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
 - Advertencia multidrop: el método de pago se modela por entrega. Una etiqueta global basada en `TripDetails.recipientPaymentMethod` podría describir sólo uno de varios destinatarios; probar escenarios heterogéneos cash/transfer/to_agree.
 - La T-360 mostró flaky por login que no salió de pending en un intento y pasó en retry. Sin causa demostrada no cambiar timeouts, credenciales ni suprimir el caso en T-359; registrar sólo el hecho.
 - Reconocer omisión de revisión anterior: el test ya dependía de un texto de WhatsApp incidental. RED recién se comprobó con integración real de develop.
+
+## Ronda 10 — PR360-R05 / contrato temporal de expiración
+
+- La nueva UI C es consistente con el dato estructurado por drop y el E2E T-359 pasó, pero el gate total falla por un test de otra tarea integrado de develop. **Separar T-359 runtime PASS de E2E global RED** para no certificar merge con suite incompleta.
+- T-366 asume que una solicitud `published` con `expires_at` vencido debe seguir mostrando el botón `Aceptar`, mientras el DoD T-366 dice ofertas vencidas no aceptables. La contradicción está en la expectativa, no prueba que el producto esté roto. Corregir no equivale a saltarse el test si se mantiene oráculo RPC `REQUEST_EXPIRED` y se exige explícitamente `toHaveCount(0)` en UI.
+- Las pruebas de medio de pago de la opción C están ancladas por Card y distinguen cash, transfer, to_agree. Los 4 mutantes del revisor fueron textuales, no de ejecución Vitest; distinguir ambos niveles de evidencia es obligatorio.
+- Las nuevas decisiones de UX que cruzan T-359/T-366 deben quedar registradas en la ficha canónica de la tarea propietaria; no modificar test fuera de alcance de la PR para conseguir verde.
