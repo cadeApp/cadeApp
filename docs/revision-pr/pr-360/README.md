@@ -16,6 +16,7 @@
 | 6 | `ceb1161b07f1419992e764bbe17db9a28ea2fc2e` | **CON BLOQUEANTE R03: E2E real falla** | [ronda-6](revisiones/ronda-6.md) |
 | 7 | `6d2c433711ed7a8aa562dfd75099029edf82c888` | **R03 corregido; E2E en verde; pendiente revalidación con develop avanzado** | [ronda-7](revisiones/ronda-7.md) |
 | 8 | `fc5b0a0152b48c7d6716b3b0a0c975746e504ebc` | **Sin defectos nuevos de implementación por inspección; E2E nuevo cancelado tres veces** | [ronda-8](revisiones/ronda-8.md) |
+| 9 | `c4eb0c4b864c966e5306ff9daa2a0d454cbaea44` | **CON BLOQUEANTE R04: E2E REAL falla porque la UI no muestra medio de pago** | [ronda-9](revisiones/ronda-9.md) |
 
 ## Hallazgos actuales
 
@@ -31,8 +32,9 @@
 | PR360-R01 | medio | arreglado-sin-verificar |
 | PR360-R02 | alto | arreglado-sin-verificar |
 | PR360-R03 | alto | arreglado-sin-verificar |
+| PR360-R04 | alto | abierto |
 
-**Ronda 8: la rama ya incorporó develop con merge normal** (`1c8182ed`) y su HEAD de autor es `fc5b0a01`. Los checks unit/DB/build/lint/typecheck/audit/bundle y `approval-policy` pasaron. **Pero el nuevo E2E no se ejecutó:** run [38951040659](https://github.com/cadeApp/cadeApp/actions/runs/38951040659), intentos 1–3 cancelados antes de cualquier paso Playwright; el commit status `e2e-preview=error` NO es PASS de producto. El E2E anterior [38945199224](https://github.com/cadeApp/cadeApp/actions/runs/38945199224) conserva valor histórico (76+3 PASS, SHA `6d2c4337`) pero no prueba la composición post-merge. H05 vuelve a `parcial` por validación actual pendiente; R03 sigue corregido por inspección, sin mutaciones independientes. GitHub `mergeable:true`; develop avanzó solo una confirmación posterior (`01054b14`) sin conflicto comprobado. No hacer merge hasta Playwright GREEN en HEAD actual/final.
+**Ronda 9:** la ejecución auténtica [38965095162](https://github.com/cadeApp/cadeApp/actions/runs/38965095162) (job `117270529209`) sobre `c4eb0c4b` dio **77 PASS, 1 FAIL reproducido, 1 flaky (T-360)**. El caso T-359 se detiene en `main-flow.spec.ts:257` porque **TripMerchantView no muestra el medio de pago** en pantalla. Antes el selector coincidía incidentalmente con el mensaje al destinatario, modificado legítimamente por T-361. Bloqueante **PR360-R04 (alto, abierto)**. R03 sigue corregido por inspección, H05 parcial y validación E2E completa del HEAD pendiente. **Decisión nueva necesaria** sobre UI: A global solo en single, B adaptar únicamente test (no recomendado), C visualización single-drop y por destinatario multi-drop (recomendado). No aprobar/mergear. Develop avanzó también; volver a verificar base después del arreglo.
 
 **Decisión humana B ya cerrada:** cancelled/expired como terminales seguros en el mismo detalle. **La revisión no aprueba ni mergea.** `approval-policy` pasó con aprobación explícita de Lautaro073 en SHA fc5b0a01; nuevos commits de revisión podrían requerir renovación.
 

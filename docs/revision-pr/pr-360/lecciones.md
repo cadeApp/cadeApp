@@ -43,3 +43,10 @@ No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
 - Un gate `resolve-preview SUCCESS` (identidad validada) junto con `e2e-preview CANCELLED` (cero pasos) es validación **no realizada**, no una falla de dominio ni un PASS; el status error conserva el bloqueo de merge.
 - T-327/#205 ya registra la decisión 5-A de P1 de aceptar que 1 running + 1 pending puede cancelar otros pendientes; no se abre cambio infra ni se interpreta automáticamente como bug de producto. Un re-run de un dispatch legítimo existente es distinto de inventar un workflow manual.
 - Composición de develop tras E2E verde anterior exige nuevo E2E. En esta ronda el código de T-359 permanece estable y CI unit/DB pasa, pero eso no sustituye el resultado real del navegador.
+
+## Ronda 9 — PR360-R04 / P08: test verde por efecto lateral de otro componente
+
+- El E2E afirmaba visualizar `Medio de pago: Efectivo` pero el elemento estaba en el texto de WhatsApp al cliente, **no** en el resumen del viaje. El refactor legítimo T-361 del mensaje reveló la ausencia del dato visual. La aserción necesita un locator en la sección responsable del contrato, no un `page.getByText` global.
+- Advertencia multidrop: el método de pago se modela por entrega. Una etiqueta global basada en `TripDetails.recipientPaymentMethod` podría describir sólo uno de varios destinatarios; probar escenarios heterogéneos cash/transfer/to_agree.
+- La T-360 mostró flaky por login que no salió de pending en un intento y pasó en retry. Sin causa demostrada no cambiar timeouts, credenciales ni suprimir el caso en T-359; registrar sólo el hecho.
+- Reconocer omisión de revisión anterior: el test ya dependía de un texto de WhatsApp incidental. RED recién se comprobó con integración real de develop.
