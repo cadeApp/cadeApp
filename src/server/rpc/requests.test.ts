@@ -292,7 +292,14 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     )
       ? readFileSync('supabase/migrations/20261009200000_t340_multi_drop.sql', 'utf8')
       : '';
-    const combinedSql = migrationSql + '\n' + t339MigrationSql + '\n' + t340MigrationSql;
+    // T-369 / CC-029: request_cycle se redefine con la reserva de créditos (PUBLICATION_CREDITS_EXHAUSTED).
+    const t369MigrationSql = existsSync(
+      'supabase/migrations/20261017090000_t369_publication_credits.sql'
+    )
+      ? readFileSync('supabase/migrations/20261017090000_t369_publication_credits.sql', 'utf8')
+      : '';
+    const combinedSql =
+      migrationSql + '\n' + t339MigrationSql + '\n' + t340MigrationSql + '\n' + t369MigrationSql;
     const raisedInMigration = new Set(
       Array.from(combinedSql.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map((m) => m[1])
     );
