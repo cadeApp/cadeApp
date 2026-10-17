@@ -79,3 +79,30 @@ describe('T-342 D3: el feed del repartidor no muestra datos privados antes del m
     expect(screen.getByText('Necesita cambio')).toBeTruthy();
   });
 });
+
+describe('T-363: el feed nunca inventa una distancia', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const withoutDistance: AvailableRequestItem = { ...baseRequest, approxDistanceKm: null };
+
+  it('RequestCard sin distancia calculada dice «Distancia no calculada» y no muestra km', () => {
+    const { container } = render(<RequestCard request={withoutDistance} onOfferClick={vi.fn()} />);
+
+    expect(screen.getByText('Distancia no calculada')).toBeTruthy();
+    expect(container.textContent ?? '').not.toMatch(/\bkm\b/);
+  });
+
+  it('OfferSheet sin distancia calculada dice «Distancia no calculada» y no muestra km', () => {
+    render(<OfferSheet isOpen onClose={vi.fn()} request={withoutDistance} minOfferArs={1000} />);
+
+    expect(screen.getByText('Distancia no calculada')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toMatch(/\bkm\b/);
+  });
+
+  it('RequestCard con distancia calculada la muestra aproximada', () => {
+    render(<RequestCard request={baseRequest} onOfferClick={vi.fn()} />);
+    expect(screen.getByText('≈ 2,5 km')).toBeTruthy();
+  });
+});

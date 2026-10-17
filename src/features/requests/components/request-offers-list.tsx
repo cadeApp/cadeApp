@@ -179,7 +179,12 @@ export function RequestOffersList({
                   ? request.drops.map((d) => d.dropoffZoneName).join(' · ')
                   : request.dropoffZoneName}
               </span>
-              <span>· {request.approxDistanceKm} km</span>
+              <span>·</span>
+              <span>
+                {request.approxDistanceKm
+                  ? `≈ ${request.approxDistanceKm} km`
+                  : 'Distancia no calculada'}
+              </span>
               {(request.dropsCount ?? request.drops?.length ?? 1) > 1 && (
                 <Badge variant="outline">
                   {request.dropsCount ?? request.drops?.length} entregas
