@@ -42,3 +42,9 @@ Sin asignar AG nueva sin examinar ramas remotas, donde existe numeración duplic
 - R06/P07: LIKE trata '_' en nombre del kind como wildcard. Comparar prefijos literalmente y probar objeto real malnombrado.
 - R07/P08: UNIQUE vigente no impide primer INSERT directo sin objeto. Con writer RPC B0 + replace, revocar INSERT authenticated es mejor; decisión humana A explícita.
 - R04: gate staging exige desplegar y verificar B antes que C; migraciones corren antes que deploy y un E2E bloqueado no es verde.
+
+
+## Ronda 6 — 2026-10-17
+- R06 / P07: comparación literal de prefijo de Storage evita comodín de LIKE; la prueba de mutación sobre la RPC debe demostrar aceptación indebida real (licenseX...) y restored GREEN, no solo detectar el texto del SQL.
+- R07 / P08: al mover INSERT documental exclusivamente a RPCs, las suites RLS antiguas positivas deben volverse negativas 42501 **con conteo cero**, conservando pruebas positivas RPC autenticadas y control de roles.
+- R04: no convertir CI efímero/Preview con migración bloqueada en permiso para aplicar C sobre un staging legacy; reservar referencia B-only y comprobar deploy real antes de contracción.

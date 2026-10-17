@@ -68,3 +68,12 @@ CI verificado run 38711308994: 23 archivos / 2262 pgTAP PASS y 133 archivos unit
 | 5 | `d0924270b8da6aaefd087c336b7e330339053be0` | CON BLOQUEANTES altos R06 (LIKE) y R07 (INSERT directo); R04 rollout parcial; opción A de revocar INSERT aprobada por Lautaro073 |
 
 [Informe R5](revisiones/ronda-5.md) · [Evidencia](evidencia/ronda-5.md) · [Prompt agy](prompt-agy-ronda-5.md). CI 137/2484 unit y 27/2406 pgTAP verdes, pero e2e-preview **error BLOCKED**, NO verde. No merge ni aprobación.
+
+
+## Ronda 6 — 2026-10-17
+
+| Ronda | SHA de implementación | Dictamen |
+|---|---|---|
+| 6 | `f6168c03fedaa34d843c4192f46c6af1aae7b680` | SIN BLOQUEANTES FUNCIONALES NUEVOS; R06/R07 arreglados por inspección+CI (sin DB propia), R04 rollout PARCIAL; **no merge** hasta gate staging y E2E autorizado |
+
+[Informe R6](revisiones/ronda-6.md) · [Evidencia](evidencia/ronda-6.md) · [Prompt de continuidad](prompt-agy-ronda-6.md). CI 38993728305: 137/2515 unit y 27/2420 pgTAP PASS; e2e-preview ERROR BLOCKED / REQUIRES DEVELOP MIGRATION. Sin aprobación, merge ni migración remota.

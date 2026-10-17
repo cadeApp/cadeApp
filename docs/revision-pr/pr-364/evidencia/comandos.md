@@ -62,3 +62,10 @@ node /tmp/pr364-audit.cjs
 
 ## Ronda 5 — 2026-10-16
 GitHub inspect: migración C SQL 84-104, 158-162; PgTAP C 201-215, 425-460; Storage RLS v1 491-499; workflow CI 38986094196, unit 137/2484, pgTAP 27/2406, mutaciones autor B0 y C. E2E error BLOCKED. Mutaciones R06/R07 propuestas en evidencia/ronda-5.md, no ejecutadas por revisor. Tampoco analizar.mjs (sin clon local), no inventar salida.
+
+
+## Ronda 6 — 2026-10-17 (revisor solo GitHub)
+- `get_pr_info #364` HEAD `f6168c03fedaa34d843c4192f46c6af1aae7b680`; compare desde commit independiente R5 `fede5696` (9 commits; merges de develop) y against develop ahead35 behind0.
+- `fetch_file` migración C líneas 62–70, 142–155; pgTAP C casos R07 y R06; rls_matrix líneas 540–555; runner cc025_concurrency.mjs R06/R07.
+- `fetch_commit_workflow_runs` / logs Actions CI 38993728305: unit 137/2515, DB 27/2420 PASS, R06 LIKE RED/restaurado GREEN, R07 GRANT+policy RED/restaurado 42501/0 filas GREEN. Es ejecución del autor, NO revisor. E2E 38993803372 BLOCKED.
+- No se ejecutó Docker/Supabase/psql, E2E ni `node docs/revision-pr/analizar.mjs verificacion` en esta sesión (sin clon local). No hay mutación independiente, `verificado_en_sha=null`.
