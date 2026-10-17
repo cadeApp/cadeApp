@@ -11,7 +11,6 @@ import { Input } from '@/ui/input';
 import { notify } from '@/ui/notify';
 import { cn } from '@/ui/cn';
 import { getDomainErrorMessage } from '@/lib/error-messages';
-import type { PlatformSettingKey } from '@/domain';
 import { updatePlatformSettingAction } from '../actions';
 import { ADMIN_COPY } from '../copy';
 import {
@@ -25,6 +24,9 @@ import {
 import type { PlatformSettingsSnapshot } from '../types';
 
 const COPY = ADMIN_COPY.settings;
+
+// Claves que este formulario edita hoy. Las de créditos de CC-029 (T-369) se suman con su UI en el paso 2.
+type SettingsFormKey = keyof typeof COPY.fields;
 
 interface ValueFormInput {
   value: string;
@@ -110,7 +112,7 @@ export function PlatformSettingsForm({ settings }: PlatformSettingsFormProps) {
 }
 
 interface SettingRowShellProps {
-  readonly settingKey: PlatformSettingKey;
+  readonly settingKey: SettingsFormKey;
   readonly controlId: string;
   readonly labelAsText?: boolean;
   readonly error: string | null;
@@ -166,7 +168,7 @@ function SettingRowShell({
 }
 
 interface ValueSettingRowProps {
-  readonly settingKey: Exclude<PlatformSettingKey, 'pilot_active'>;
+  readonly settingKey: Exclude<SettingsFormKey, 'pilot_active'>;
   readonly schema: ValueFormSchema;
   readonly initialValue: string;
   readonly toInput: (value: string) => UpdatePlatformSettingInput;

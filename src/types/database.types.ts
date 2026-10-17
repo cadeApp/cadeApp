@@ -514,6 +514,151 @@ export type Database = {
           },
         ]
       }
+      merchant_launch_discounts: {
+        Row: {
+          applied_at: string
+          lot_id: string | null
+          merchant_id: string
+          pct: number
+          period_id: string | null
+        }
+        Insert: {
+          applied_at?: string
+          lot_id?: string | null
+          merchant_id: string
+          pct: number
+          period_id?: string | null
+        }
+        Update: {
+          applied_at?: string
+          lot_id?: string | null
+          merchant_id?: string
+          pct?: number
+          period_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_launch_discounts_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "publication_credit_lots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "merchant_launch_discounts_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: true
+            referencedRelation: "merchant_public"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "merchant_launch_discounts_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: true
+            referencedRelation: "merchants"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "merchant_launch_discounts_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_plan_periods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      merchant_plan_periods: {
+        Row: {
+          actor_id: string | null
+          carryover_materialized_at: string | null
+          carryover_pct: number
+          created_at: string
+          ends_at: string
+          id: string
+          is_purchase: boolean
+          launch_discount_pct: number | null
+          merchant_id: string
+          monthly_credits: number | null
+          note: string | null
+          operation_key: string
+          plan_id: string
+          plan_kind: string
+          previous_period_id: string | null
+          reference_price_ars: number | null
+          starts_at: string
+          streak: number
+        }
+        Insert: {
+          actor_id?: string | null
+          carryover_materialized_at?: string | null
+          carryover_pct?: number
+          created_at?: string
+          ends_at: string
+          id?: string
+          is_purchase: boolean
+          launch_discount_pct?: number | null
+          merchant_id: string
+          monthly_credits?: number | null
+          note?: string | null
+          operation_key: string
+          plan_id: string
+          plan_kind: string
+          previous_period_id?: string | null
+          reference_price_ars?: number | null
+          starts_at: string
+          streak: number
+        }
+        Update: {
+          actor_id?: string | null
+          carryover_materialized_at?: string | null
+          carryover_pct?: number
+          created_at?: string
+          ends_at?: string
+          id?: string
+          is_purchase?: boolean
+          launch_discount_pct?: number | null
+          merchant_id?: string
+          monthly_credits?: number | null
+          note?: string | null
+          operation_key?: string
+          plan_id?: string
+          plan_kind?: string
+          previous_period_id?: string | null
+          reference_price_ars?: number | null
+          starts_at?: string
+          streak?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_plan_periods_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_public"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "merchant_plan_periods_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchants"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "merchant_plan_periods_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "publication_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "merchant_plan_periods_previous_period_id_fkey"
+            columns: ["previous_period_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_plan_periods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       merchants: {
         Row: {
           business_name: string
@@ -658,6 +803,305 @@ export type Database = {
           id?: string
           phone?: string | null
           role?: Database["public"]["Enums"]["profile_role"]
+        }
+        Relationships: []
+      }
+      publication_charge_lots: {
+        Row: {
+          amount: number
+          charge_id: string
+          lot_id: string
+        }
+        Insert: {
+          amount: number
+          charge_id: string
+          lot_id: string
+        }
+        Update: {
+          amount?: number
+          charge_id?: string
+          lot_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publication_charge_lots_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "publication_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_charge_lots_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "publication_credit_lots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      publication_charges: {
+        Row: {
+          cost: number
+          created_at: string
+          id: string
+          is_current: boolean
+          merchant_id: string
+          mode: string
+          period_id: string | null
+          request_id: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          cost: number
+          created_at?: string
+          id?: string
+          is_current?: boolean
+          merchant_id: string
+          mode: string
+          period_id?: string | null
+          request_id: string
+          state: string
+          updated_at?: string
+        }
+        Update: {
+          cost?: number
+          created_at?: string
+          id?: string
+          is_current?: boolean
+          merchant_id?: string
+          mode?: string
+          period_id?: string | null
+          request_id?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publication_charges_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_public"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "publication_charges_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchants"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "publication_charges_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_plan_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_charges_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      publication_credit_lots: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          expires_at: string | null
+          granted: number
+          id: string
+          kind: string
+          merchant_id: string
+          note: string | null
+          operation_key: string | null
+          period_id: string | null
+          refund_charge_id: string | null
+          refund_source_lot_id: string | null
+          source: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          expires_at?: string | null
+          granted: number
+          id?: string
+          kind: string
+          merchant_id: string
+          note?: string | null
+          operation_key?: string | null
+          period_id?: string | null
+          refund_charge_id?: string | null
+          refund_source_lot_id?: string | null
+          source: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          expires_at?: string | null
+          granted?: number
+          id?: string
+          kind?: string
+          merchant_id?: string
+          note?: string | null
+          operation_key?: string | null
+          period_id?: string | null
+          refund_charge_id?: string | null
+          refund_source_lot_id?: string | null
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publication_credit_lots_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_public"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "publication_credit_lots_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchants"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "publication_credit_lots_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_plan_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_credit_lots_refund_charge_id_fkey"
+            columns: ["refund_charge_id"]
+            isOneToOne: false
+            referencedRelation: "publication_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_credit_lots_refund_source_lot_id_fkey"
+            columns: ["refund_source_lot_id"]
+            isOneToOne: false
+            referencedRelation: "publication_credit_lots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      publication_credit_movements: {
+        Row: {
+          actor_id: string | null
+          amount: number
+          charge_id: string | null
+          created_at: string
+          id: number
+          kind: string
+          lot_id: string | null
+          merchant_id: string
+          reason: string | null
+          request_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          amount: number
+          charge_id?: string | null
+          created_at?: string
+          id?: never
+          kind: string
+          lot_id?: string | null
+          merchant_id: string
+          reason?: string | null
+          request_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          amount?: number
+          charge_id?: string | null
+          created_at?: string
+          id?: never
+          kind?: string
+          lot_id?: string | null
+          merchant_id?: string
+          reason?: string | null
+          request_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publication_credit_movements_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "publication_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_credit_movements_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "publication_credit_lots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_credit_movements_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_public"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "publication_credit_movements_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchants"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "publication_credit_movements_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      publication_plans: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          id: string
+          kind: string
+          monthly_credits: number | null
+          name: string
+          reference_price_ars: number | null
+          sort: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          id?: string
+          kind: string
+          monthly_credits?: number | null
+          name: string
+          reference_price_ars?: number | null
+          sort?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          monthly_credits?: number | null
+          name?: string
+          reference_price_ars?: number | null
+          sort?: number
+          updated_at?: string
         }
         Relationships: []
       }
@@ -852,6 +1296,20 @@ export type Database = {
         Args: { p_courier_id: string; p_decision: string; p_reason?: string }
         Returns: Json
       }
+      admin_get_merchant_publication_credits: {
+        Args: { p_before_id?: number; p_limit?: number; p_merchant_id: string }
+        Returns: Json
+      }
+      admin_grant_publication_credits: {
+        Args: {
+          p_credits: number
+          p_merchant_id: string
+          p_note?: string
+          p_operation_key: string
+          p_source: string
+        }
+        Returns: Json
+      }
       admin_list_incidents: {
         Args: {
           p_cursor_created_at?: string
@@ -863,6 +1321,16 @@ export type Database = {
       }
       admin_merchant_delivered_counts: {
         Args: { p_merchant_ids: string[] }
+        Returns: Json
+      }
+      admin_register_plan_period: {
+        Args: {
+          p_is_purchase: boolean
+          p_merchant_id: string
+          p_note?: string
+          p_operation_key: string
+          p_plan_id: string
+        }
         Returns: Json
       }
       admin_resolve_incident: {
@@ -884,6 +1352,19 @@ export type Database = {
       }
       admin_update_setting: {
         Args: { p_key: string; p_value: Json }
+        Returns: Json
+      }
+      admin_upsert_publication_plan: {
+        Args: {
+          p_active: boolean
+          p_code: string
+          p_kind: string
+          p_monthly_credits: number
+          p_name: string
+          p_plan_id: string
+          p_reference_price_ars: number
+          p_sort: number
+        }
         Returns: Json
       }
       admin_verify_document: {
@@ -924,6 +1405,7 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: Json
       }
+      get_my_publication_balance: { Args: never; Returns: Json }
       get_request_offer_couriers: {
         Args: { p_request_id: string }
         Returns: Json

@@ -39,6 +39,13 @@ export const DOMAIN_ERROR_MESSAGES = {
   INVALID_SETTING_KEY: 'El parámetro de configuración indicado no existe.',
   INVALID_SETTING_VALUE: 'El valor ingresado no es válido para este parámetro.',
 
+  // Créditos de publicación y planes post-piloto (CC-029)
+  PUBLICATION_CREDITS_EXHAUSTED:
+    'No tenés créditos suficientes para publicar. Comprá créditos o un plan para seguir.',
+  PLAN_INACTIVE: 'Ese plan no está disponible.',
+  PLAN_IN_USE: 'Ese plan ya tiene comercios; creá uno nuevo para cambiar el cupo.',
+  IDEMPOTENCY_CONFLICT: 'Esa operación ya se registró con otros datos.',
+
   // Errores transversales / infraestructura
   VALIDATION_ERROR: 'Revisá los datos ingresados: hay campos con formato inválido.',
   NOT_FOUND: 'No encontramos el registro solicitado.',

@@ -108,13 +108,13 @@ select ok(coalesce((select p.prosecdef and p.proconfig @> array['search_path=pub
 
 create temporary table contract_errors (rpc text primary key, codes text[]);
 insert into contract_errors values
- ('publish_request', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','SUBSCRIPTION_INACTIVE','MISSING_REQUIRED_FIELDS','OUT_OF_BOUNDS_AGUILARES','INVALID_ZONE','INVALID_STATE_TRANSITION','OFFER_BELOW_MINIMUM','RATE_LIMITED','DROP_LIMIT_EXCEEDED','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('publish_request', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','SUBSCRIPTION_INACTIVE','PUBLICATION_CREDITS_EXHAUSTED','MISSING_REQUIRED_FIELDS','OUT_OF_BOUNDS_AGUILARES','INVALID_ZONE','INVALID_STATE_TRANSITION','OFFER_BELOW_MINIMUM','RATE_LIMITED','DROP_LIMIT_EXCEEDED','VALIDATION_ERROR','INTERNAL_ERROR']),
  ('cancel_request', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','AAL2_REQUIRED','NOT_FOUND','REQUEST_EXPIRED','REASON_REQUIRED','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
  ('mark_picked_up', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','COURIER_NOT_APPROVED','COURIER_SUSPENDED','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
  ('mark_delivered', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','COURIER_NOT_APPROVED','COURIER_SUSPENDED','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
  ('report_no_show', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','SUBSCRIPTION_INACTIVE','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
  ('courier_cancel_match', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','COURIER_NOT_APPROVED','COURIER_SUSPENDED','REASON_REQUIRED','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
- ('republish_request', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','SUBSCRIPTION_INACTIVE','REASON_REQUIRED','INVALID_STATE_TRANSITION','RATE_LIMITED','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('republish_request', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','SUBSCRIPTION_INACTIVE','PUBLICATION_CREDITS_EXHAUSTED','REASON_REQUIRED','INVALID_STATE_TRANSITION','RATE_LIMITED','VALIDATION_ERROR','INTERNAL_ERROR']),
  ('report_incident', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','COURIER_NOT_APPROVED','COURIER_SUSPENDED','INCIDENT_WINDOW_EXPIRED','INVALID_STATE_TRANSITION','RATE_LIMITED','VALIDATION_ERROR','INTERNAL_ERROR']);
 
 -- Matriz independiente del SQL de producción: actores propios/ajenos/admin/sin sesión x estados.
@@ -196,8 +196,10 @@ select pg_temp.fixture('draft');
 update public.platform_settings set value = 'false'::jsonb where key = 'pilot_active';
 update public.merchants set subscription_status = 'expired', paid_until = current_date - 5
 where profile_id = pg_temp.actor(1);
+-- T-369 / CC-029: con el piloto apagado, expired ya no bloquea por suscripción; sin créditos ni plan, el bloqueo es
+-- PUBLICATION_CREDITS_EXHAUSTED (cancelled sigue dando SUBSCRIPTION_INACTIVE, ver t369_publication_credits.sql).
 select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-  'SUBSCRIPTION_INACTIVE', 'suscripción vencida bloquea publicar');
+  'PUBLICATION_CREDITS_EXHAUSTED', 'suscripción vencida sin créditos bloquea publicar');
 
 select pg_temp.fixture('draft');
 delete from public.delivery_request_contacts where request_id = pg_temp.actor(20);
@@ -304,8 +306,9 @@ update public.platform_settings set value = 'false'::jsonb where key = 'pilot_ac
 update public.merchants set subscription_status = 'active',
   paid_until = (now() at time zone 'America/Argentina/Buenos_Aires')::date - 3
 where profile_id = pg_temp.actor(1);
+-- T-369 / CC-029: pasada la gracia ya no hay derecho legacy; sin créditos ni plan, PUBLICATION_CREDITS_EXHAUSTED.
 select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-  'SUBSCRIPTION_INACTIVE', 'pasada la gracia se bloquea publicación');
+  'PUBLICATION_CREDITS_EXHAUSTED', 'pasada la gracia se bloquea publicación');
 
 -- Regresión de contrato: pilot con fecha pagada sigue habilitado fuera del piloto.
 select pg_temp.fixture('draft');

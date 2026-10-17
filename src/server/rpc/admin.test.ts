@@ -313,8 +313,9 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
       admin_update_setting: ['VALIDATION_ERROR'],
     };
     const raisedBy = (text: string, fn: string): Set<string> => {
-      const blocks = text.split(/create or replace function /i);
-      const body = blocks.find((b) => b.startsWith(fn + '('));
+      const blocks = text.split(/create (?:or replace )?function /i);
+      // La definición vigente es la última en el orden de las migraciones (T-369 redefine dos de estas RPC).
+      const body = blocks.findLast((b) => b.startsWith(fn + '('));
       if (!body) throw new Error(`sin objetivo: no encontré ${fn} en la migración`);
       const codes = new Set([...body.matchAll(/message = '([A-Z0-9_]+)'/g)].map((m) => m[1] ?? ''));
       if (/perform app_private\.assert_admin_aal2\(\)/.test(body)) {
@@ -334,7 +335,13 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
         };
       });
 
-    for (const r of check(sql)) {
+    // T-369 / CC-029 redefine admin_set_subscription y admin_update_setting: se verifica su versión vigente; el resto
+    // de las RPC admin se sigue verificando contra rpc_admin_v1.
+    const t369Sql = fs.readFileSync(
+      path.resolve(process.cwd(), 'supabase/migrations/20261017090000_t369_publication_credits.sql'),
+      'utf8',
+    );
+    for (const r of check(sql + '\n' + t369Sql)) {
       expect({ name: r.name, missing: r.missing, undeclared: r.undeclared }).toEqual({
         name: r.name,
         missing: [],

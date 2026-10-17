@@ -200,6 +200,9 @@ jobs:
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc024_atomic_concurrency.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc026_reconcile_expired_requests.mjs
 
+            # Concurrencia multisesión de créditos de publicación (T-369 / CC-029, decisión 1-A de la revisión de la PR #397)
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t369_publication_credits_concurrency.mjs
+
             # Compatibilidad y control de mutación de migración expansiva CC-025 (PR A)
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_expand_compatibility.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_expand_compatibility.mjs --mutation-check
@@ -216,11 +219,13 @@ jobs:
             # Control negativo RED->GREEN de mutaciones funcionales en DB efímera (H15 / T-340, H06 / CC-025)
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs --mutation-check
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_backfill.mjs --mutation-check
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t369_publication_credits_concurrency.mjs --mutation-check
 
             # Verificación final GREEN de toda la suite tras restauración
             pnpm supabase test db
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_concurrency.mjs
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t369_publication_credits_concurrency.mjs
 
             pnpm db:types --local
           else
