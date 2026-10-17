@@ -8,9 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/ui/
 import { Badge } from '@/ui/badge';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import type { CourierDocumentMetadata } from '../queries';
+import type { DocumentReviewStatus } from '../schemas';
+import { DocumentReplacementCard } from './document-replacement-card';
 
 export interface StatusViewProps {
   readonly documents: readonly CourierDocumentMetadata[];
+  readonly courierId?: string;
   readonly onGoToFeed?: () => void;
   /** PR242-H02: el feed ya es el panel, así que ahí no se muestra el botón hacia sí mismo. */
   readonly showFeedButton?: boolean;
@@ -28,7 +31,12 @@ function getItemPresentation(status: ItemStatus) {
       };
     case 'rejected':
       return {
-        label: 'Observado',
+        label: (
+          <span>
+            {COURIER_ONBOARDING_COPY.rejectedBadge}
+            <span className="sr-only"> (Observado)</span>
+          </span>
+        ),
         icon: <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />,
         textClass: 'text-destructive font-medium',
       };
@@ -47,8 +55,53 @@ function getItemPresentation(status: ItemStatus) {
   }
 }
 
-export function StatusView({ documents, onGoToFeed, showFeedButton = true }: StatusViewProps) {
+function getDocTitle(kind: CourierDocumentMetadata['kind']): string {
+  switch (kind) {
+    case 'dni_front':
+      return 'Frente del DNI';
+    case 'dni_back':
+      return 'Dorso del DNI';
+    case 'selfie':
+      return 'Selfie de verificación';
+    case 'avatar':
+      return COURIER_ONBOARDING_COPY.avatarTitle;
+    case 'license':
+      return 'Licencia de conducir';
+    case 'insurance':
+      return 'Póliza de cobertura';
+    default:
+      return 'Documento';
+  }
+}
+
+export function StatusView({
+  documents,
+  courierId,
+  onGoToFeed,
+  showFeedButton = true,
+}: StatusViewProps) {
   const router = useRouter();
+  const [localDocuments, setLocalDocuments] = React.useState<readonly CourierDocumentMetadata[]>(documents);
+
+  React.useEffect(() => {
+    setLocalDocuments(documents);
+  }, [documents]);
+
+  const initialRejectedKindsRef = React.useRef(
+    new Set(documents.filter((d) => d.status === 'rejected').map((d) => d.kind))
+  );
+
+  const handleDocumentReplaced = React.useCallback(
+    ({ kind, status }: { kind: CourierDocumentMetadata['kind']; status: DocumentReviewStatus }) => {
+      setLocalDocuments((prev) =>
+        prev.map((doc) =>
+          doc.kind === kind ? { ...doc, status, rejectionCode: null, rejectionMessage: null } : doc
+        )
+      );
+      router.refresh();
+    },
+    [router]
+  );
 
   const handleNavigate = () => {
     if (onGoToFeed) {
@@ -58,8 +111,8 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
     }
   };
 
-  const dniFront = documents.find((d) => d.kind === 'dni_front');
-  const dniBack = documents.find((d) => d.kind === 'dni_back');
+  const dniFront = localDocuments.find((d) => d.kind === 'dni_front');
+  const dniBack = localDocuments.find((d) => d.kind === 'dni_back');
 
   let dniStatus: ItemStatus = 'pending';
   if (dniFront?.status === 'rejected' || dniBack?.status === 'rejected') {
@@ -73,7 +126,7 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
     dniStatus = 'uploaded';
   }
 
-  const selfie = documents.find((d) => d.kind === 'selfie');
+  const selfie = localDocuments.find((d) => d.kind === 'selfie');
   let selfieStatus: ItemStatus = 'pending';
   if (selfie) {
     if (selfie.status === 'rejected') {
@@ -83,7 +136,7 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
     }
   }
 
-  const avatar = documents.find((d) => d.kind === 'avatar');
+  const avatar = localDocuments.find((d) => d.kind === 'avatar');
   let avatarStatus: ItemStatus = 'pending';
   if (avatar) {
     if (avatar.status === 'rejected') {
@@ -93,7 +146,7 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
     }
   }
 
-  const license = documents.find((d) => d.kind === 'license');
+  const license = localDocuments.find((d) => d.kind === 'license');
   let licenseStatus: ItemStatus = 'optional_missing';
   if (license) {
     if (license.status === 'rejected') {
@@ -103,7 +156,7 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
     }
   }
 
-  const insurance = documents.find((d) => d.kind === 'insurance');
+  const insurance = localDocuments.find((d) => d.kind === 'insurance');
   let insuranceStatus: ItemStatus = 'optional_missing';
   if (insurance) {
     if (insurance.status === 'rejected') {
@@ -112,6 +165,11 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
       insuranceStatus = 'uploaded';
     }
   }
+
+  const shownDocuments = localDocuments.filter(
+    (d) => initialRejectedKindsRef.current.has(d.kind) || d.status === 'rejected'
+  );
+  const hasRejected = shownDocuments.some((d) => d.status === 'rejected');
 
   const checklistItems: Array<{ title: string; status: ItemStatus }> = [
     { title: 'DNI frente y dorso', status: dniStatus },
@@ -177,6 +235,33 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
             })}
           </CardContent>
         </Card>
+
+        {/* Documentos rechazados que requieren corrección o seguimiento de corrección (T-356) */}
+        {shownDocuments.length > 0 && (
+          <div className="w-full space-y-3 pt-4" data-slot="rejected-documents-section">
+            <h2
+              className={`text-sm font-bold ${
+                hasRejected ? 'text-destructive' : 'text-foreground'
+              }`}
+            >
+              {hasRejected
+                ? 'Documentos que requieren corrección'
+                : 'Seguimiento de documentos corregidos'}
+            </h2>
+            {shownDocuments.map((doc) => (
+              <DocumentReplacementCard
+                key={doc.kind}
+                courierId={courierId}
+                kind={doc.kind}
+                title={getDocTitle(doc.kind)}
+                initialStatus={doc.status}
+                rejectionCode={doc.rejectionCode}
+                rejectionMessage={doc.rejectionMessage}
+                onReplaced={handleDocumentReplaced}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Botón hacia el feed */}
