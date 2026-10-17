@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(24);
+select plan(25);
 
 -- Test actors
 create function pg_temp.test_courier() returns uuid language sql as $$

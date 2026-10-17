@@ -286,8 +286,11 @@ select is(
   'RPC atómica crea exactamente 5 documentos vigentes para el courier_a'
 );
 
+create table pg_temp.initial_license as
+select id from public.courier_documents where courier_id = pg_temp.courier_a() and kind = 'license' and is_current = true limit 1;
+
 create function pg_temp.courier_a_license_id() returns uuid language sql as $$
-  select id from public.courier_documents where courier_id = pg_temp.courier_a() and kind = 'license' and is_current = true limit 1
+  select id from pg_temp.initial_license limit 1
 $$;
 
 -- 4. Matriz de permisos directos en courier_documents: UPDATE, DELETE e INSERT directos REVOCADOS
