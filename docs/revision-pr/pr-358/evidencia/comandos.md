@@ -69,3 +69,18 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 Nunca ejecutar comandos SQL contra Supabase remoto ni crear archivos .env con claves.
+## Ronda 3 — comandos y evidencia (2026-10-17)
+
+**HEAD probado mediante consultas GitHub y lectura de código:** `af4838a6cda959288651f54c2b93e3c75aa33441`; función última `a158c29c80cd81a225c7525be87d3fed67a5a7b9`; develop `711a2f7054d77fd664d3ec09b3bbdd24efb88476`.
+**Herramientas realmente usadas:** `mcp__GitHub__get_pr_info`, `mcp__GitHub__fetch` sobre REST `/pulls/358`, `/pulls/358/commits`, `/pulls/358/files`, `/commits/{HEAD}/status`, `/commits/{HEAD}/check-runs`, `/branches/develop`, `/actions/runs?head_sha=...`; `mcp__GitHub__compare_commits(develop,HEAD)` y `compare_commits(641984db,HEAD)`; `mcp__GitHub__fetch_file` en fuentes; `fetch_workflow_run_jobs(39040606398)`; `fetch_workflow_job_logs(117419231897)`.
+**Salidas verificadas:** `e2e-preview` run `39040606398` job `117419231897`: checkout explícito `af4838a6`, `Verify Supabase Develop target` SUCCESS, `Health check` SUCCESS, `Running 83 tests using 1 worker`, `83 passed (23.9m)`, `Running 3 tests using 1 worker`, `3 passed (1.0m)`; commit status `e2e-preview: success`; approval-policy success. `pulls/358` mergeable false, `mergeable_state: dirty`, base SHA `293c3a2`; compare develop→HEAD: 58 behind,18 ahead. `compare(641984db,HEAD)` 10 commits de fixes/test/docs y solo seis archivos de código/bitácora.
+**Fuente y controles:** `document-replacement-card.tsx` mantiene intento mediante `PendingAttempt` pero rama `idemp-` no UUID. `status-view.tsx` conserva `initialRejectedKindsRef` y título fijo. `e2e/specs/courier-onboarding.spec.ts:915-930` invoca `admin_verify_document` con AAL2, `:969-1041` inspecciona vista admin; `:1043-1076` comprueba SQL. E2E sobre Develop no equivale a ejecución de mutación independiente de revisión.
+**Nueva dependencia:** [issue #399](https://github.com/cadeApp/cadeApp/issues/399) creado tras autorización A y registrada en #363; evita inventar un T-xxx sin ficha/board.
+
+### Instrucciones reproducibles para agy (NO ejecutadas por el revisor)
+1. `git fetch origin && git switch feat/T-356-recarga-documentos-rechazados && git pull --ff-only origin feat/T-356-recarga-documentos-rechazados && git merge origin/develop` (ficha desde develop, mantener revisiones previas).
+2. `pnpm vitest run src/features/courier-onboarding/components.test.tsx src/features/courier-onboarding/actions.test.ts` y suites implicadas; añadir tests para key no disponible y título mixto/terminado; hacer control GREEN; mutación exacta en código de producción para RED; restaurar GREEN sin editar test.
+3. `pnpm typecheck && pnpm lint && pnpm test && pnpm build`; `node --test tools/verify-fichas.test.ts` según script del repo; `git merge-tree --write-tree origin/develop HEAD`; `git diff --name-only origin/develop...HEAD`; validar `node docs/revision-pr/analizar.mjs verificacion`.
+4. GitHub Actions CI posterior al nuevo SHA y **E2E Preview Vercel contra Supabase Develop** para nuevo SHA; capturar logs exactos. No usar resultado `approval-policy` o job skipped como sustituto de pruebas.
+
+**No ejecutado por revisor:** no clon Git local, no Vitest/SQL/Playwright propios y no mutaciones RED→GREEN propias. Los comandos enumerados arriba son pasos recomendados para la siguiente iteración, NO resultados observados.

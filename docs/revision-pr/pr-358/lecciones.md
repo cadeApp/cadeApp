@@ -18,3 +18,11 @@ Una Server Action puede bloquear una operación en la UI, pero **no** protege un
 - Un estado local de tarjeta no actualiza badges de padre; verificar interfaz agregada.
 - E2E con sembrado service-role de rejected no prueba rechazo administrativo ni re-revisión real.
 Sin numerar AG hasta contrastar máximo en ramas; pruebas independientes no ejecutadas.
+
+## Ronda 3 — observaciones (sin AG global no verificado)
+
+- **Contratos tipados en todos los caminos:** un fallback manual de idempotencyKey puede violar un UUID aunque el camino moderno sea correcto. Validar antes de subir a Storage.
+- **Separar reintento de reconciliación:** conservar misma key/path resuelve pérdida de respuesta RPC; no elimina el problema general de objeto sin referencia ni carrera entre Storage y DB. Issue #399 lleva el gate pre-staging/main por decisión del usuario.
+- **Estado agregado y cabeceras:** conservar componentes de éxito tras la transición requiere un título compatible con ausencia de pendientes, no usar el nombre fijo de rechazados.
+- **E2E verde sobre rama divergida:** verificar HEAD exacto, pero una PR dirty necesita merge con develop y revalidación del árbol combinado.
+- No atribuirse los RED→GREEN del autor; sin pruebas propias, los fixes son arreglado-sin-verificar.
