@@ -81,6 +81,7 @@ export interface MapPickerProps {
   showLocationButton?: boolean;
   onLocationFound?: (coords: MapCoordinates) => void;
   onLocationError?: (error: string) => void;
+  showMarkerWhenEmpty?: boolean;
 }
 
 function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
@@ -200,6 +201,7 @@ export function MapPicker({
   showLocationButton = false,
   onLocationFound,
   onLocationError,
+  showMarkerWhenEmpty = true,
 }: MapPickerProps) {
   const apiKey = publicEnv.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
   const mapId = publicEnv.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || undefined;
@@ -291,10 +293,14 @@ export function MapPicker({
 
   const isMapAvailable = Boolean(apiKey) && isOnline && !apiLoadFailed;
 
+  // CC-027: Ocultar pin ficticio si showMarkerWhenEmpty es false y value es null.
+  const hasMarker = showMarkerWhenEmpty ? true : value != null;
+
   const isOutside =
-    value != null
+    hasMarker &&
+    (value != null
       ? !isWithinAguilaresBounds(value.lat, value.lng)
-      : !isWithinAguilaresBounds(activeCoords.lat, activeCoords.lng);
+      : !isWithinAguilaresBounds(activeCoords.lat, activeCoords.lng));
 
   const handleCameraChange = React.useCallback(
     (_ev: MapCameraChangedEvent) => {
@@ -532,30 +538,31 @@ export function MapPicker({
                 targetCoords={cameraTarget}
                 syncVersion={cameraSyncVersion}
               />
-              {mapId ? (
-                <AdvancedMarker
-                  position={activeCoords}
-                  draggable={!disabled}
-                  onDragEnd={handleMarkerDragEnd}
-                  title="Ubicación seleccionada"
-                >
-                  <div
-                    data-testid="map-marker-pin"
-                    aria-label="Pin de ubicación seleccionada"
-                    className="relative flex items-center justify-center"
+              {hasMarker &&
+                (mapId ? (
+                  <AdvancedMarker
+                    position={activeCoords}
+                    draggable={!disabled}
+                    onDragEnd={handleMarkerDragEnd}
+                    title="Ubicación seleccionada"
                   >
-                    <MapPin className="-translate-y-4 h-9 w-9 text-primary-dark drop-shadow-md" />
-                    <div className="absolute h-2 w-2 rounded-full bg-primary-dark ring-2 ring-background" />
-                  </div>
-                </AdvancedMarker>
-              ) : (
-                <Marker
-                  position={activeCoords}
-                  draggable={!disabled}
-                  onDragEnd={handleMarkerDragEnd}
-                  title="Ubicación seleccionada"
-                />
-              )}
+                    <div
+                      data-testid="map-marker-pin"
+                      aria-label="Pin de ubicación seleccionada"
+                      className="relative flex items-center justify-center"
+                    >
+                      <MapPin className="-translate-y-4 h-9 w-9 text-primary-dark drop-shadow-md" />
+                      <div className="absolute h-2 w-2 rounded-full bg-primary-dark ring-2 ring-background" />
+                    </div>
+                  </AdvancedMarker>
+                ) : (
+                  <Marker
+                    position={activeCoords}
+                    draggable={!disabled}
+                    onDragEnd={handleMarkerDragEnd}
+                    title="Ubicación seleccionada"
+                  />
+                ))}
             </GoogleMap>
           </APIProvider>
         ) : (

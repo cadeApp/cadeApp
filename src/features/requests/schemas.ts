@@ -5,27 +5,55 @@ import {
   packageTypeSchema,
   recipientPaymentMethodSchema,
 } from '@/domain/schemas';
+import { extractValidArgentineTenDigits, isValidArgentinePhone } from '@/lib/whatsapp';
+
+const CONTROL_CHARS_REGEX = /[\x00-\x1F\x7F]/;
+const NOTES_CONTROL_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
+const HAS_ALPHANUMERIC_REGEX = /[a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ]/;
+const HAS_LETTERS_REGEX = /[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]/;
 
 export const dropSchema = z
   .object({
     dropoffZoneId: z.string().uuid('Seleccioná un barrio de entrega válido'),
     dropoffAddress: z
-      .string()
+      .string({ required_error: 'La dirección de entrega es obligatoria' })
       .trim()
       .min(1, 'La dirección de entrega es obligatoria')
-      .max(200, 'La dirección de entrega es demasiado larga'),
+      .max(200, 'La dirección de entrega es demasiado larga')
+      .refine((val) => !CONTROL_CHARS_REGEX.test(val), {
+        message: 'La dirección de entrega contiene caracteres de control no permitidos',
+      })
+      .refine((val) => !/[<>]/.test(val), {
+        message: 'La dirección de entrega no puede contener etiquetas HTML o scripts',
+      })
+      .refine((val) => HAS_ALPHANUMERIC_REGEX.test(val), {
+        message: 'La dirección de entrega debe contener al menos el nombre de la calle o número',
+      }),
     dropoffLat: aguilaresLatSchema.nullable().optional(),
     dropoffLng: aguilaresLngSchema.nullable().optional(),
     recipientName: z
-      .string()
+      .string({ required_error: 'El nombre del destinatario es obligatorio' })
       .trim()
-      .min(1, 'El nombre del destinatario es obligatorio')
-      .max(100, 'El nombre es demasiado largo'),
+      .min(2, 'El nombre debe tener al menos 2 caracteres')
+      .max(100, 'El nombre es demasiado largo')
+      .refine((val) => !CONTROL_CHARS_REGEX.test(val), {
+        message: 'El nombre contiene caracteres de control no permitidos',
+      })
+      .refine((val) => !/[<>]/.test(val), {
+        message: 'El nombre no puede contener etiquetas HTML o scripts',
+      })
+      .refine((val) => HAS_LETTERS_REGEX.test(val), {
+        message: 'El nombre debe contener letras y no puede ser solo números o símbolos',
+      }),
     recipientPhone: z
-      .string()
+      .string({ required_error: 'El teléfono del destinatario es obligatorio' })
       .trim()
-      .min(8, 'El teléfono del destinatario es obligatorio')
-      .max(30, 'El teléfono es demasiado largo'),
+      .min(1, 'El teléfono del destinatario es obligatorio')
+      .max(30, 'El teléfono es demasiado largo')
+      .refine((val) => isValidArgentinePhone(val), {
+        message: 'El teléfono debe ser un número argentino válido (10 dígitos nacionales)',
+      })
+      .transform((val) => extractValidArgentineTenDigits(val)),
     recipientConsentDeclared: z.literal(true, {
       errorMap: () => ({
         message: 'Debés declarar que contás con la autorización del destinatario.',
@@ -37,13 +65,18 @@ export const dropSchema = z
     cashChangeAmount: z
       .number()
       .int('El monto de cambio debe ser un número entero')
+      .finite('El monto de cambio debe ser un número finito')
       .positive('El monto para el cambio debe ser mayor a 0')
+      .max(2_147_483_647, 'El monto para el cambio no puede superar los $2.147.483.647')
       .nullable()
       .optional(),
     notes: z
       .string()
       .trim()
       .max(500, 'Las indicaciones no pueden superar los 500 caracteres')
+      .refine((val) => !NOTES_CONTROL_REGEX.test(val), {
+        message: 'Las indicaciones no pueden contener caracteres de control',
+      })
       .nullable()
       .optional(),
   })
@@ -92,16 +125,27 @@ export const baseCreateDeliveryRequestSchema = z
     requestId: z.string().uuid('Identificador de solicitud inválido').optional(),
     pickupZoneId: z.string().uuid('Seleccioná un barrio de retiro válido'),
     pickupAddress: z
-      .string()
+      .string({ required_error: 'La dirección de retiro es obligatoria' })
       .trim()
       .min(1, 'La dirección de retiro es obligatoria')
-      .max(200, 'La dirección de retiro es demasiado larga'),
+      .max(200, 'La dirección de retiro es demasiado larga')
+      .refine((val) => !CONTROL_CHARS_REGEX.test(val), {
+        message: 'La dirección de retiro contiene caracteres de control no permitidos',
+      })
+      .refine((val) => !/[<>]/.test(val), {
+        message: 'La dirección de retiro no puede contener etiquetas HTML o scripts',
+      })
+      .refine((val) => HAS_ALPHANUMERIC_REGEX.test(val), {
+        message: 'La dirección de retiro debe contener al menos el nombre de la calle o número',
+      }),
     pickupLat: aguilaresLatSchema.nullable().optional(),
     pickupLng: aguilaresLngSchema.nullable().optional(),
     fixedPriceArs: z
       .number()
       .int('El precio del envío debe ser un número entero')
+      .finite('El precio del envío debe ser un número finito')
       .positive('El precio del envío debe ser mayor a 0')
+      .max(2_147_483_647, 'El precio del envío no puede superar los $2.147.483.647')
       .nullable()
       .optional(),
     autoAssign: z.boolean().optional().default(false),
@@ -184,3 +228,14 @@ export const createDeliveryRequestSchema: z.ZodType<
   z.ZodTypeDef,
   CreateDeliveryRequestInput
 >;
+
+export const cancelMerchantRequestSchema = z.object({
+  requestId: z.string().uuid('Identificador de solicitud inválido'),
+  reason: z
+    .string()
+    .trim()
+    .min(1, 'El motivo es obligatorio')
+    .max(500, 'El motivo es demasiado largo'),
+});
+
+export type CancelMerchantRequestInput = z.infer<typeof cancelMerchantRequestSchema>;

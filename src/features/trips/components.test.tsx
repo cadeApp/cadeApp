@@ -194,7 +194,7 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(callBtn.getAttribute('href')).toBe('tel:3865111111');
     });
 
-    it('muestra tarjeta destacada "Avisale a tu cliente" con botón de 48px y texto preparado', () => {
+    it('muestra tarjeta destacada "Avisale a tu cliente" con botón de 48px y texto preparado en 3ª persona', () => {
       render(<TripMerchantView trip={baseTrip} />);
 
       expect(screen.getByText(/Avisale a tu cliente/i)).toBeDefined();
@@ -203,7 +203,65 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       const notifyCustomerBtn = screen.getByRole('link', { name: /Avisar a mi cliente/i });
       expect(notifyCustomerBtn).toBeDefined();
       expect(notifyCustomerBtn.getAttribute('href')).toContain('wa.me');
+      expect(notifyCustomerBtn.getAttribute('href')).toContain('5493865123456');
       expect(notifyCustomerBtn.className).toContain('min-h-[48px]');
+
+      const decodedText = decodeURIComponent(notifyCustomerBtn.getAttribute('href') ?? '');
+      expect(decodedText).toContain('Carlos Benítez es el repartidor asignado');
+      expect(decodedText).not.toMatch(/soy\s+carlos/i);
+      expect(decodedText.toLowerCase()).not.toContain('en camino');
+    });
+
+    it('T-361: en multi-drop el comercio avisa a cada cliente según el estado de su entrega en 3ª persona', () => {
+      render(<TripMerchantView trip={multiDropTrip} />);
+
+      // La tarjeta muestra una sola etiqueta visible para cada cliente; el CTA no duplica esos nombres en texto visible
+      expect(screen.getAllByText(/^Ana$/i)).toHaveLength(1);
+      expect(screen.getAllByText(/^Beto$/i)).toHaveLength(1);
+      expect(screen.getAllByText(/^Carla$/i)).toHaveLength(1);
+      expect(screen.queryAllByText(/Avisar a Ana/i)).toHaveLength(0);
+      expect(screen.queryAllByText(/Avisar a Beto/i)).toHaveLength(0);
+      expect(screen.queryAllByText(/Avisar a Carla/i)).toHaveLength(0);
+
+      const waAna = screen.getByRole('link', { name: /Avisar a Ana por WhatsApp/i });
+      expect(waAna.textContent?.trim()).toBe('Avisar por WhatsApp');
+      expect(waAna.getAttribute('aria-label')).toBe('Avisar a Ana por WhatsApp');
+      expect(waAna.getAttribute('href')).toContain('5493865111111');
+      const textAna = decodeURIComponent(waAna.getAttribute('href') ?? '');
+      expect(textAna).toContain('ya fue entregado por Carlos Benítez');
+      expect(textAna).not.toMatch(/soy\s+carlos/i);
+      expect(textAna.toLowerCase()).not.toContain('en camino');
+
+      const waBeto = screen.getByRole('link', { name: /Avisar a Beto por WhatsApp/i });
+      expect(waBeto.textContent?.trim()).toBe('Avisar por WhatsApp');
+      expect(waBeto.getAttribute('aria-label')).toBe('Avisar a Beto por WhatsApp');
+      expect(waBeto.getAttribute('href')).toContain('5493865222222');
+      const textBeto = decodeURIComponent(waBeto.getAttribute('href') ?? '');
+      expect(textBeto).toContain('está en recorrido');
+      expect(textBeto).not.toMatch(/soy\s+carlos/i);
+      expect(textBeto).not.toContain('ya fue entregado');
+
+      const waCarla = screen.getByRole('link', { name: /Avisar a Carla por WhatsApp/i });
+      expect(waCarla.textContent?.trim()).toBe('Avisar por WhatsApp');
+      expect(waCarla.getAttribute('aria-label')).toBe('Avisar a Carla por WhatsApp');
+      expect(waCarla.getAttribute('href')).toContain('5493865333333');
+      const textCarla = decodeURIComponent(waCarla.getAttribute('href') ?? '');
+      expect(textCarla).toContain('no pudo completar la entrega');
+      expect(textCarla).not.toMatch(/soy\s+carlos/i);
+      expect(textCarla.toLowerCase()).not.toContain('en camino');
+      expect(textCarla).not.toContain('ya fue entregado');
+    });
+
+    it('T-361: si el cliente tiene teléfono inválido o ausente, muestra botón deshabilitado sin crash (comercio)', () => {
+      const tripInvalidPhone: TripDetails = {
+        ...baseTrip,
+        recipientPhone: 'telefono-invalido',
+      };
+      render(<TripMerchantView trip={tripInvalidPhone} />);
+
+      const disabledBtn = screen.getByRole('button', { name: /WhatsApp no disponible/i });
+      expect(disabledBtn).toBeDefined();
+      expect((disabledBtn as HTMLButtonElement).disabled).toBe(true);
     });
 
     it('muestra contingencias: "El repartidor no llegó" y "Cancelar envío"', () => {
@@ -270,6 +328,97 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('REQ-1234');
       const callBtn = screen.getByRole('link', { name: /Llamar/i });
       expect(callBtn.getAttribute('href')).toBe('tel:3865222222');
+    });
+
+    it('T-361: repartidor asignado tiene acceso a WhatsApp "Avisar a mi cliente" con texto pre-retiro en matched', () => {
+      render(<TripCourierView trip={baseTrip} />);
+
+      const waCustomerLink = screen.getByRole('link', { name: /Avisar a mi cliente/i });
+      expect(waCustomerLink).toBeDefined();
+      expect(waCustomerLink.getAttribute('href')).toContain('5493865123456');
+      const decodedText = decodeURIComponent(waCustomerLink.getAttribute('href') ?? '');
+      expect(decodedText).toContain('Soy Carlos Benítez');
+      expect(decodedText).toContain('Ya tengo asignado tu pedido');
+      expect(decodedText.toLowerCase()).not.toContain('en camino');
+      expect(decodedText).not.toContain('REQ-1234');
+    });
+
+    it('T-361: en in_transit el repartidor tiene WhatsApp al cliente describiendo recorrido', () => {
+      const inTransitTrip: TripDetails = { ...baseTrip, status: 'in_transit' };
+      render(<TripCourierView trip={inTransitTrip} />);
+
+      const waCustomerLink = screen.getByRole('link', { name: /Avisar a mi cliente/i });
+      expect(waCustomerLink).toBeDefined();
+      const decodedText = decodeURIComponent(waCustomerLink.getAttribute('href') ?? '');
+      expect(decodedText).toContain('Soy Carlos Benítez');
+      expect(decodedText).toMatch(/recorrido|reparto/i);
+      expect(decodedText).not.toContain('ya fue entregado');
+      expect(decodedText).not.toContain('REQ-1234');
+    });
+
+    it('T-361: en delivered el repartidor tiene WhatsApp al cliente confirmando entrega', () => {
+      const deliveredTrip: TripDetails = { ...baseTrip, status: 'delivered' };
+      render(<TripCourierView trip={deliveredTrip} />);
+
+      const waCustomerLink = screen.getByRole('link', { name: /Avisar a mi cliente/i });
+      expect(waCustomerLink).toBeDefined();
+      const decodedText = decodeURIComponent(waCustomerLink.getAttribute('href') ?? '');
+      expect(decodedText).toContain('Soy Carlos Benítez');
+      expect(decodedText).toContain('ya fue entregado');
+      expect(decodedText.toLowerCase()).not.toContain('en camino');
+    });
+
+    it('T-361: en multi-drop cada entrega tiene su propio enlace con el estado individual de cada drop', () => {
+      render(<TripCourierView trip={multiDropTrip} />);
+
+      // La tarjeta muestra una sola etiqueta visible Cliente: [nombre]; el CTA no duplica esos nombres en texto visible
+      expect(screen.getAllByText(/^Cliente:\s*Ana$/i)).toHaveLength(1);
+      expect(screen.getAllByText(/^Cliente:\s*Beto$/i)).toHaveLength(1);
+      expect(screen.getAllByText(/^Cliente:\s*Carla$/i)).toHaveLength(1);
+      expect(screen.queryAllByText(/^Avisar a Ana$/i)).toHaveLength(0);
+      expect(screen.queryAllByText(/^Avisar a Beto$/i)).toHaveLength(0);
+      expect(screen.queryAllByText(/^Avisar a Carla$/i)).toHaveLength(0);
+
+      // Drop 1: Ana (delivered)
+      const waDrop1 = screen.getByRole('link', { name: /Avisar a Ana por WhatsApp/i });
+      expect(waDrop1.textContent?.trim()).toBe('Avisar por WhatsApp');
+      expect(waDrop1.getAttribute('aria-label')).toBe('Avisar a Ana por WhatsApp');
+      expect(waDrop1.getAttribute('href')).toContain('5493865111111');
+      const textAna = decodeURIComponent(waDrop1.getAttribute('href') ?? '');
+      expect(textAna).toContain('Soy Carlos Benítez');
+      expect(textAna).toContain('ya fue entregado');
+      expect(textAna.toLowerCase()).not.toContain('en camino');
+
+      // Drop 2: Beto (pending)
+      const waDrop2 = screen.getByRole('link', { name: /Avisar a Beto por WhatsApp/i });
+      expect(waDrop2.textContent?.trim()).toBe('Avisar por WhatsApp');
+      expect(waDrop2.getAttribute('aria-label')).toBe('Avisar a Beto por WhatsApp');
+      expect(waDrop2.getAttribute('href')).toContain('5493865222222');
+      const textBeto = decodeURIComponent(waDrop2.getAttribute('href') ?? '');
+      expect(textBeto).toContain('Soy Carlos Benítez');
+      expect(textBeto).toMatch(/recorrido|reparto/i);
+      expect(textBeto).not.toContain('ya fue entregado');
+
+      // Drop 3: Carla (failed)
+      const waDrop3 = screen.getByRole('link', { name: /Avisar a Carla por WhatsApp/i });
+      expect(waDrop3.textContent?.trim()).toBe('Avisar por WhatsApp');
+      expect(waDrop3.getAttribute('aria-label')).toBe('Avisar a Carla por WhatsApp');
+      expect(waDrop3.getAttribute('href')).toContain('5493865333333');
+      const textCarla = decodeURIComponent(waDrop3.getAttribute('href') ?? '');
+      expect(textCarla).toContain('Soy Carlos Benítez');
+      expect(textCarla).toContain('no se pudo completar');
+      expect(textCarla.toLowerCase()).not.toContain('en camino');
+      expect(textCarla).not.toContain('ya fue entregado');
+    });
+
+    it('T-361: si el destinatario no tiene teléfono válido, no renderiza enlace de WhatsApp sin crash (repartidor)', () => {
+      const tripWithoutPhone: TripDetails = {
+        ...baseTrip,
+        recipientPhone: '',
+      };
+      render(<TripCourierView trip={tripWithoutPhone} />);
+
+      expect(screen.queryByRole('link', { name: /Avisar a mi cliente/i })).toBeNull();
     });
 
     it('muestra tarjeta de cobro en mano destacada: $ 1.800 en Efectivo con cambio de $ 5.000', () => {

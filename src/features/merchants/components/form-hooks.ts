@@ -37,6 +37,10 @@ export interface UseFormReturn<T extends Record<string, unknown>> {
     val: T[K],
     options?: { shouldValidate?: boolean }
   ) => void;
+  readonly setFields: (
+    patch: Partial<T>,
+    options?: { shouldValidate?: boolean }
+  ) => void;
   readonly watch: <K extends keyof T>(name: K) => T[K];
   readonly formState: FormState<T>;
 }
@@ -101,23 +105,35 @@ export function useForm<T extends Record<string, unknown>>({
     [values]
   );
 
-  const setValue = useCallback(
-    <K extends keyof T>(name: K, val: T[K], options?: { shouldValidate?: boolean }) => {
-      setValues((prev) => ({ ...prev, [name]: val }));
+  const setFields = useCallback(
+    (patch: Partial<T>, options?: { shouldValidate?: boolean }) => {
+      setValues((prev) => ({ ...prev, ...patch }));
       if (options?.shouldValidate) {
+        const nextCombined = { ...values, ...patch };
+        const res = resolver(nextCombined);
         setErrors((prevErrors) => {
-          const res = resolver({ ...values, [name]: val });
           const nextErrors = { ...prevErrors };
-          if (res.errors[name]) {
-            nextErrors[name] = res.errors[name];
-          } else {
-            delete nextErrors[name];
+          for (const key of Object.keys(patch) as (keyof T)[]) {
+            if (res.errors[key]) {
+              nextErrors[key] = res.errors[key];
+            } else {
+              delete nextErrors[key];
+            }
           }
           return nextErrors;
         });
       }
     },
     [resolver, values]
+  );
+
+  const setValue = useCallback(
+    <K extends keyof T>(name: K, val: T[K], options?: { shouldValidate?: boolean }) => {
+      const patch: Partial<T> = {};
+      patch[name] = val;
+      setFields(patch, options);
+    },
+    [setFields]
   );
 
   const watch = useCallback(<K extends keyof T>(name: K): T[K] => values[name], [values]);
@@ -144,6 +160,7 @@ export function useForm<T extends Record<string, unknown>>({
     register,
     handleSubmit,
     setValue,
+    setFields,
     watch,
     formState: {
       errors,

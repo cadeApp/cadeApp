@@ -13,7 +13,14 @@ import { createAdminClient } from '@/server/supabase/admin';
 import { evaluateRouteGuard } from '@/features/auth/guards';
 import { ADMIN_COPY } from '@/features/admin/copy';
 import { COURIER_ONBOARDING_COPY } from '@/features/courier-onboarding/copy';
+import { COURIER_DOCS_BUCKET } from '@/features/courier-onboarding/upload-manager';
 import { createHmac } from 'node:crypto';
+
+// Buffer PNG real 2x2 válido para pruebas de subida (H11)
+const DUMMY_2X2_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==',
+  'base64'
+);
 
 /**
  * T-302: E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado
@@ -243,18 +250,18 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await page.goto('/courier/onboarding/vehicle');
     await waitForNoSkeletons(page);
 
-    await page.evaluate((dni) => {
+    await page.evaluate(({ dni, courierId }) => {
       sessionStorage.setItem('cadeapp_onboarding_dni', dni);
       sessionStorage.setItem(
         'cadeapp_onboarding_docs',
         JSON.stringify({
-          dni_front: 'e2e/fixtures/dni_front.jpg',
-          dni_back: 'e2e/fixtures/dni_back.jpg',
-          selfie: 'e2e/fixtures/selfie.jpg',
-          avatar: 'e2e/fixtures/avatar.jpg',
+          dni_front: `courier/${courierId}/dni_front_fixture.jpg`,
+          dni_back: `courier/${courierId}/dni_back_fixture.jpg`,
+          selfie: `courier/${courierId}/selfie_fixture.jpg`,
+          avatar: `courier/${courierId}/avatar_fixture.jpg`,
         })
       );
-    }, testDni);
+    }, { dni: testDni, courierId: courier2.id });
 
     await page.reload();
     await waitForNoSkeletons(page);
@@ -337,121 +344,183 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       throw new Error('[E2E Error] Se requiere un courier en stagingContext');
     }
 
-    // Precondición limpia: postulante sin onboarding completado (H03)
-    await resetCourierToPendingOnboarding(courier.id);
+    const dbAdmin = createAdminClient();
+    let uploadedDocs: Record<string, string> = {};
 
-    // 1. Iniciar sesión como repartidor en el navegador
-    await loginAsCourier(0, page);
+    try {
+      // Precondición limpia: postulante sin onboarding completado (H03)
+      await resetCourierToPendingOnboarding(courier.id);
 
-    // 2. Navegar al paso 1 del onboarding (/courier/onboarding/identity)
-    await page.goto('/courier/onboarding/identity');
-    await waitForNoSkeletons(page);
+      // 1. Iniciar sesión como repartidor en el navegador
+      await loginAsCourier(0, page);
 
-    // Validar elementos iniciales del formulario de identidad
-    await expect(
-      page.getByRole('heading', { name: COURIER_ONBOARDING_COPY.securityBannerTitle })
-    ).toBeVisible();
+      // 2. Navegar al paso 1 del onboarding (/courier/onboarding/identity)
+      await page.goto('/courier/onboarding/identity');
+      await waitForNoSkeletons(page);
 
-    const dniInput = page.getByPlaceholder(COURIER_ONBOARDING_COPY.dniPlaceholder);
-    await expect(dniInput).toBeVisible();
+      // Validar elementos iniciales del formulario de identidad
+      await expect(
+        page.getByRole('heading', { name: COURIER_ONBOARDING_COPY.securityBannerTitle })
+      ).toBeVisible();
 
-    // El botón Continuar debe permanecer deshabilitado inicialmente
-    const continueButton = page.getByRole('button', {
-      name: new RegExp(COURIER_ONBOARDING_COPY.btnContinue, 'i'),
-    });
-    await expect(continueButton).toBeVisible();
-    await expect(continueButton).toBeDisabled();
+      const dniInput = page.getByPlaceholder(COURIER_ONBOARDING_COPY.dniPlaceholder);
+      await expect(dniInput).toBeVisible();
 
-    // 3. Completar DNI numérico válido y precargar documentos en sessionStorage
-    const uniqueDni = `39${Math.floor(100000 + Math.random() * 900000)}`;
+      // El botón Continuar debe permanecer deshabilitado inicialmente
+      const continueButton = page.getByRole('button', {
+        name: new RegExp(COURIER_ONBOARDING_COPY.btnContinue, 'i'),
+      });
+      await expect(continueButton).toBeVisible();
+      await expect(continueButton).toBeDisabled();
 
-    await page.evaluate(() => {
-      sessionStorage.setItem(
-        'cadeapp_onboarding_docs',
-        JSON.stringify({
-          dni_front: 'e2e/fixtures/dni_front.jpg',
-          dni_back: 'e2e/fixtures/dni_back.jpg',
-          selfie: 'e2e/fixtures/selfie.jpg',
-          avatar: 'e2e/fixtures/avatar.jpg',
+      // 3. Completar DNI numérico válido y subir los 4 documentos requeridos vía inputs de UI reales
+      const uniqueDni = `39${Math.floor(100000 + Math.random() * 900000)}`;
+      await dniInput.fill(uniqueDni);
+
+      const requiredDocsToUpload: Array<{ id: string; name: string }> = [
+        { id: '#file-input-dni_front', name: 'dni_front.png' },
+        { id: '#file-input-dni_back', name: 'dni_back.png' },
+        { id: '#file-input-selfie', name: 'selfie.png' },
+        { id: '#file-input-avatar', name: 'avatar.png' },
+      ];
+
+      for (const doc of requiredDocsToUpload) {
+        const input = page.locator(doc.id);
+        await expect(input).toBeAttached();
+        await input.setInputFiles({
+          name: doc.name,
+          mimeType: 'image/png',
+          buffer: DUMMY_2X2_PNG,
+        });
+
+        const card = page.locator('[data-slot="document-upload-card"]').filter({
+          has: page.locator(doc.id),
+        });
+        await expect(card).toHaveAttribute('data-status', 'success', { timeout: 20000 });
+      }
+
+      // El botón Continuar se habilita una vez completados DNI y los 4 documentos
+      await expect(continueButton).toBeEnabled({ timeout: 10000 });
+
+      // Verificar que sessionStorage contenga exactamente las 4 rutas canónicas generadas por upload-manager
+      const rawDocs = await page.evaluate(() => sessionStorage.getItem('cadeapp_onboarding_docs'));
+      expect(rawDocs).not.toBeNull();
+      uploadedDocs = JSON.parse(rawDocs as string) as Record<string, string>;
+      expect(Object.keys(uploadedDocs)).toHaveLength(4);
+      for (const kind of ['dni_front', 'dni_back', 'selfie', 'avatar']) {
+        expect(uploadedDocs[kind]).toMatch(
+          new RegExp(`^courier/${courier.id}/${kind}_\\d+\\.(png|jpe?g|webp)$`, 'i')
+        );
+      }
+
+      // 4. Continuar al paso 2 pulsando el botón Continuar habilitado (H02)
+      await continueButton.click();
+
+      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      await expect(
+        page.getByRole('heading', { name: COURIER_ONBOARDING_COPY.vehicleHeadline })
+      ).toBeVisible();
+
+      // 5. Seleccionar tipo de vehículo, patente y aceptar consentimientos legales sin omitir controles (H02)
+      const motoRadio = page.getByRole('radio', {
+        name: new RegExp(COURIER_ONBOARDING_COPY.transportMoto, 'i'),
+      });
+      await motoRadio.check();
+      await expect(motoRadio).toBeChecked();
+
+      const plateInput = page.getByPlaceholder(COURIER_ONBOARDING_COPY.platePlaceholder);
+      await expect(plateInput).toBeVisible();
+      await plateInput.fill('AB 123 CD');
+
+      // Aceptar los tres consentimientos obligatorios
+      const consentTosCheckbox = page.getByRole('checkbox', {
+        name: new RegExp(COURIER_ONBOARDING_COPY.consentTosLink, 'i'),
+      });
+      await expect(consentTosCheckbox).toBeVisible();
+      await consentTosCheckbox.check();
+      await expect(consentTosCheckbox).toBeChecked();
+
+      const consentPrivacyCheckbox = page.getByRole('checkbox', {
+        name: new RegExp(COURIER_ONBOARDING_COPY.consentPrivacyLink, 'i'),
+      });
+      await expect(consentPrivacyCheckbox).toBeVisible();
+      await consentPrivacyCheckbox.check();
+      await expect(consentPrivacyCheckbox).toBeChecked();
+
+      const consentContractCheckbox = page.getByRole('checkbox', {
+        name: new RegExp(COURIER_ONBOARDING_COPY.consentContractText, 'i'),
+      });
+      await expect(consentContractCheckbox).toBeVisible();
+      await consentContractCheckbox.check();
+      await expect(consentContractCheckbox).toBeChecked();
+
+      // 6. Enviar formulario mediante clic real y verificar avance a /courier/onboarding/status
+      const submitBtn = page.getByRole('button', {
+        name: new RegExp(COURIER_ONBOARDING_COPY.btnSubmitForReview, 'i'),
+      });
+      await expect(submitBtn).toBeVisible();
+      await expect(submitBtn).toBeEnabled();
+      await submitBtn.click();
+
+      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/status'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+      await expect(
+        page.getByRole('heading', {
+          name: new RegExp(COURIER_ONBOARDING_COPY.underReviewTitle, 'i'),
         })
-      );
-    });
+      ).toBeVisible();
 
-    // Recargar para que el componente cargue los documentos simulados de sessionStorage
-    await page.reload();
-    await waitForNoSkeletons(page);
+      // 7. Verificación de datos persistidos en base de datos mediante cliente admin
+      const { data: docsRows, error: docsErr } = await dbAdmin
+        .from('courier_documents')
+        .select('id, kind, storage_path, status, is_current')
+        .eq('courier_id', courier.id);
 
-    const reloadedDniInput = page.getByPlaceholder(COURIER_ONBOARDING_COPY.dniPlaceholder);
-    await expect(reloadedDniInput).toBeVisible();
-    await reloadedDniInput.fill(uniqueDni);
+      expect(docsErr).toBeNull();
+      expect(docsRows).toHaveLength(4);
 
-    // 4. Continuar al paso 2 pulsando el botón Continuar habilitado (H02)
-    const reloadedContinueBtn = page.getByRole('button', {
-      name: new RegExp(COURIER_ONBOARDING_COPY.btnContinue, 'i'),
-    });
-    await expect(reloadedContinueBtn).toBeVisible();
-    await expect(reloadedContinueBtn).toBeEnabled();
-    await reloadedContinueBtn.click();
+      for (const row of docsRows ?? []) {
+        expect(row.status).toBe('submitted');
+        expect(row.is_current).toBe(true);
+        expect(row.storage_path).toBe(uploadedDocs[row.kind]);
+      }
 
-    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
-      timeout: 15000,
-    });
-    await waitForNoSkeletons(page);
+      const { data: courierRow, error: courierErr } = await dbAdmin
+        .from('couriers')
+        .select('status, vehicle_type, vehicle_plate, dni_hmac')
+        .eq('profile_id', courier.id)
+        .single();
 
-    await expect(
-      page.getByRole('heading', { name: COURIER_ONBOARDING_COPY.vehicleHeadline })
-    ).toBeVisible();
+      expect(courierErr).toBeNull();
+      expect(courierRow?.vehicle_type).toBe('moto');
+      expect(courierRow?.vehicle_plate).toBe('AB 123 CD');
+      expect(courierRow?.dni_hmac).toBeTruthy();
+    } finally {
+      // 8. Cleanup aislado: eliminar filas de courier_documents y archivos físicos en Storage
+      await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id);
 
-    // 5. Seleccionar tipo de vehículo, patente y aceptar consentimientos legales sin omitir controles (H02)
-    const motoRadio = page.getByRole('radio', {
-      name: new RegExp(COURIER_ONBOARDING_COPY.transportMoto, 'i'),
-    });
-    await motoRadio.check();
-    await expect(motoRadio).toBeChecked();
+      const pathsToRemove = Object.values(uploadedDocs);
+      if (pathsToRemove.length > 0) {
+        await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove(pathsToRemove);
+      }
 
-    const plateInput = page.getByPlaceholder(COURIER_ONBOARDING_COPY.platePlaceholder);
-    await expect(plateInput).toBeVisible();
-    await plateInput.fill('AB 123 CD');
+      // Limpieza adicional de cualquier archivo remanente en la carpeta del courier
+      const { data: fileList } = await dbAdmin.storage
+        .from(COURIER_DOCS_BUCKET)
+        .list(`courier/${courier.id}`);
+      if (fileList && fileList.length > 0) {
+        const filesToDelete = fileList.map((f) => `courier/${courier.id}/${f.name}`);
+        await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove(filesToDelete);
+      }
 
-    // Aceptar los tres consentimientos obligatorios
-    const consentTosCheckbox = page.getByRole('checkbox', {
-      name: new RegExp(COURIER_ONBOARDING_COPY.consentTosLink, 'i'),
-    });
-    await expect(consentTosCheckbox).toBeVisible();
-    await consentTosCheckbox.check();
-    await expect(consentTosCheckbox).toBeChecked();
-
-    const consentPrivacyCheckbox = page.getByRole('checkbox', {
-      name: new RegExp(COURIER_ONBOARDING_COPY.consentPrivacyLink, 'i'),
-    });
-    await expect(consentPrivacyCheckbox).toBeVisible();
-    await consentPrivacyCheckbox.check();
-    await expect(consentPrivacyCheckbox).toBeChecked();
-
-    const consentContractCheckbox = page.getByRole('checkbox', {
-      name: new RegExp(COURIER_ONBOARDING_COPY.consentContractText, 'i'),
-    });
-    await expect(consentContractCheckbox).toBeVisible();
-    await consentContractCheckbox.check();
-    await expect(consentContractCheckbox).toBeChecked();
-
-    // 6. Enviar formulario mediante clic real y verificar avance a /courier/onboarding/status
-    const submitBtn = page.getByRole('button', {
-      name: new RegExp(COURIER_ONBOARDING_COPY.btnSubmitForReview, 'i'),
-    });
-    await expect(submitBtn).toBeVisible();
-    await expect(submitBtn).toBeEnabled();
-    await submitBtn.click();
-
-    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/status'), {
-      timeout: 15000,
-    });
-    await waitForNoSkeletons(page);
-    await expect(
-      page.getByRole('heading', {
-        name: new RegExp(COURIER_ONBOARDING_COPY.underReviewTitle, 'i'),
-      })
-    ).toBeVisible();
+      await resetCourierToPendingOnboarding(courier.id);
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -492,18 +561,18 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await page.goto('/courier/onboarding/vehicle');
     await waitForNoSkeletons(page);
 
-    await page.evaluate((dni) => {
+    await page.evaluate(({ dni, courierId }) => {
       sessionStorage.setItem('cadeapp_onboarding_dni', dni);
       sessionStorage.setItem(
         'cadeapp_onboarding_docs',
         JSON.stringify({
-          dni_front: 'e2e/fixtures/dni_front.jpg',
-          dni_back: 'e2e/fixtures/dni_back.jpg',
-          selfie: 'e2e/fixtures/selfie.jpg',
-          avatar: 'e2e/fixtures/avatar.jpg',
+          dni_front: `courier/${courierId}/dni_front_fixture.jpg`,
+          dni_back: `courier/${courierId}/dni_back_fixture.jpg`,
+          selfie: `courier/${courierId}/selfie_fixture.jpg`,
+          avatar: `courier/${courierId}/avatar_fixture.jpg`,
         })
       );
-    }, existingDni);
+    }, { dni: existingDni, courierId: courier2.id });
 
     await page.reload();
     await waitForNoSkeletons(page);
@@ -664,5 +733,76 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     expect(auditLogEntry).not.toBeNull();
     expect(auditLogEntry?.actor_id).toBe(admin.id);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-353: Validación semántica en UI de onboarding (PR362-H06)
+  // ---------------------------------------------------------------------------
+  test('T-353: Validación semántica en UI de onboarding: DNI con letras muestra error accesible, corrección habilita avance', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
+    }
+    await resetCourierToPendingOnboarding(courier.id);
+    await loginAsCourier(0, page);
+
+    await page.goto('/courier/onboarding/identity');
+    await waitForNoSkeletons(page);
+
+    // Precargar documentos requeridos usando el mecanismo de fixtures existente en esta spec (líneas 368-382)
+    await page.evaluate((courierId) => {
+      sessionStorage.setItem(
+        'cadeapp_onboarding_docs',
+        JSON.stringify({
+          dni_front: `courier/${courierId}/dni_front_fixture.jpg`,
+          dni_back: `courier/${courierId}/dni_back_fixture.jpg`,
+          selfie: `courier/${courierId}/selfie_fixture.jpg`,
+          avatar: `courier/${courierId}/avatar_fixture.jpg`,
+        })
+      );
+    }, courier.id);
+    await page.reload();
+    await waitForNoSkeletons(page);
+
+    const dniInput = page.getByPlaceholder(COURIER_ONBOARDING_COPY.dniPlaceholder);
+    const continueBtn = page.getByRole('button', {
+      name: new RegExp(COURIER_ONBOARDING_COPY.btnContinue, 'i'),
+    });
+
+    // 1. Ingresar DNI inválido con letras
+    await dniInput.fill('1234567A');
+    await dniInput.blur();
+
+    // 2. Muestra mensaje de error accesible y botón deshabilitado
+    const errorAlert = page.locator('#dni-error');
+    await expect(errorAlert).toBeVisible();
+    await expect(errorAlert).toHaveText(/El DNI debe tener 7 u 8 dígitos numéricos/i);
+    await expect(continueBtn).toBeDisabled();
+
+    // 3. Corregir con DNI numérico válido
+    await dniInput.fill('38123456');
+    await dniInput.blur();
+
+    await expect(errorAlert).not.toBeVisible();
+    await expect(continueBtn).toBeEnabled();
+
+    // 4. Continuar al paso de vehículo y verificar avance y persistencia en sessionStorage
+    await continueBtn.click();
+    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+    await expect(
+      page.getByRole('heading', { name: COURIER_ONBOARDING_COPY.vehicleHeadline })
+    ).toBeVisible();
+
+    const savedDni = await page.evaluate(() =>
+      sessionStorage.getItem('cadeapp_onboarding_dni')
+    );
+    expect(savedDni).toBe('38123456');
   });
 });

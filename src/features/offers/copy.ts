@@ -13,6 +13,19 @@ export const OFFERS_COPY = {
   loadMore: 'Cargar más',
   loadingMore: 'Cargando…',
 
+  // Mis viajes activos (T-360)
+  activeTripsTitle: 'Mis viajes activos',
+  viewTripButton: 'Ver viaje',
+  activeTripsBadge: (count: number) => `${count}`,
+  activeTripStatus: {
+    matched: 'Aceptado · Por retirar',
+    in_transit: 'En camino',
+  },
+  multiDropSummary: (count: number) => `${count} entregas`,
+  perDropSuffix: 'por entrega',
+  activeTripsErrorTitle: 'No se pudieron cargar los viajes activos',
+  activeTripsErrorDescription: 'Ocurrió un problema al sincronizar tus viajes en curso.',
+
   // Disponibilidad en feed
   unavailableAlertTitle: 'No estás disponible',
   unavailableAlertDescription: 'Activá Disponible para ver las solicitudes y recibir avisos.',
@@ -35,8 +48,8 @@ export const OFFERS_COPY = {
     transfer: 'Paga con transferencia',
     to_agree: 'A coordinar',
   } satisfies Record<RecipientPaymentMethod, string>,
-  approxDistancePrefix: '≈',
-  kmUnit: 'km',
+  // Sin distancia calculada se dice explícitamente; nunca se muestra un valor inventado (T-363).
+  approxDistance: (km: string | null) => (km ? `≈ ${km} km` : 'Distancia no calculada'),
 
   // Paquetes: una etiqueta por valor canónico (PACKAGE_TYPES)
   packageLabels: {

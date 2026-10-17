@@ -7,9 +7,14 @@ import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/error
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import { getLegalDocument } from '@/features/legal';
-import { merchantOnboardingSchema } from './schemas';
+import { updateMyMerchantProfileRpc } from '@/server/rpc/merchants';
+import { merchantOnboardingSchema, merchantUpdateSchema } from './schemas';
 
 export interface MerchantOnboardingResult {
+  readonly redirectTo: string;
+}
+
+export interface MerchantUpdateResult {
   readonly redirectTo: string;
 }
 
@@ -147,5 +152,56 @@ export async function merchantOnboardingAction(
 
   return ok({
     redirectTo: '/merchant/dashboard',
+  });
+}
+
+export async function updateMerchantProfileAction(
+  input: unknown
+): Promise<ActionResult<MerchantUpdateResult, DomainErrorCode>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  // 1. Verificación de rol del actor
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'merchant') {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  // 2. Validación semántica del payload parcial
+  const parsed = merchantUpdateSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  // 3. Ejecutar RPC atómica y transaccional (CC-028)
+  const rpcResult = await updateMyMerchantProfileRpc(supabase as never, parsed.data);
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath('/merchant/dashboard');
+  revalidatePath('/merchant/onboarding');
+  revalidatePath('/merchant/plan');
+
+  return ok({
+    redirectTo: '/merchant/plan',
   });
 }

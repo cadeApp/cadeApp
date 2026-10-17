@@ -214,6 +214,11 @@ export interface FakeSeedMerchant {
   readonly paidUntil?: string | null;
   readonly businessName?: string;
   readonly phone?: string | null;
+  readonly defaultPickupAddress?: string | null;
+  readonly defaultPickupZoneId?: string | null;
+  readonly defaultPickupLat?: number | null;
+  readonly defaultPickupLng?: number | null;
+  readonly notes?: string | null;
 }
 
 export interface FakeMerchantRecord {
@@ -222,6 +227,11 @@ export interface FakeMerchantRecord {
   paidUntil: string | null;
   businessName: string;
   phone: string | null;
+  defaultPickupAddress: string | null;
+  defaultPickupZoneId: string | null;
+  defaultPickupLat: number | null;
+  defaultPickupLng: number | null;
+  notes: string | null;
 }
 
 export interface FakeSeedDocument {
@@ -267,6 +277,8 @@ export interface FakeIncidentRecord {
 export interface FakeRpcOptions {
   readonly settings: FakePlatformSettings;
   readonly now?: () => Date;
+  /** Solo para probar que el adaptador rechaza una salida RPC que viola su contrato. */
+  readonly invalidOutputFor?: RpcName;
   readonly initialActor?: Partial<FakeActorContext>;
   readonly initialRequests?: readonly FakeSeedRequest[];
   readonly initialOffers?: readonly FakeSeedOffer[];
@@ -285,6 +297,7 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly seedCourier: (courier: FakeSeedCourier) => void;
   readonly deleteCourier: (courierId: string) => void;
   readonly seedMerchant: (merchant: FakeSeedMerchant) => void;
+  readonly deleteMerchant: (merchantId: string) => void;
   readonly seedDocument: (doc: FakeSeedDocument) => void;
   readonly seedIncident: (incident: FakeSeedIncident) => void;
   readonly getIncident: (incidentId: string) => FakeIncidentRecord | undefined;
@@ -309,6 +322,8 @@ const DEFAULT_ACTOR: FakeActorContext = {
 };
 
 const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } = {
+  update_my_merchant_profile: ['merchant'],
+  reconcile_expired_requests: ['merchant'],
   create_and_publish_multi_drop: ['merchant'],
   publish_request: ['merchant'],
   cancel_request: ['merchant', 'admin'],
@@ -569,12 +584,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   }
 
   function putMerchant(m: FakeSeedMerchant) {
+    const prev = merchants.get(m.merchantId);
     merchants.set(m.merchantId, {
       merchantId: m.merchantId,
       subscriptionStatus: m.subscriptionStatus,
       paidUntil: m.paidUntil ?? null,
-      businessName: m.businessName ?? 'Comercio',
-      phone: m.phone ?? '3865222222',
+      businessName: m.businessName ?? prev?.businessName ?? 'Comercio',
+      phone: m.phone ?? prev?.phone ?? '3865222222',
+      defaultPickupAddress: m.defaultPickupAddress ?? prev?.defaultPickupAddress ?? null,
+      defaultPickupZoneId: m.defaultPickupZoneId ?? prev?.defaultPickupZoneId ?? null,
+      defaultPickupLat: m.defaultPickupLat ?? prev?.defaultPickupLat ?? null,
+      defaultPickupLng: m.defaultPickupLng ?? prev?.defaultPickupLng ?? null,
+      notes: m.notes ?? prev?.notes ?? null,
     });
   }
 
@@ -659,6 +680,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       (rpcName === 'get_trip_details' ||
         rpcName === 'get_request_offer_couriers' ||
         rpcName === 'get_merchant_request_private_fields' ||
+        rpcName === 'reconcile_expired_requests' ||
         rpcName === 'report_incident' ||
         rpcName === 'submit_offer' ||
         rpcName === 'take_request') &&
@@ -704,7 +726,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     }
     const result = handler(parsed.data as RpcInput<K>);
     if (result.ok) {
-      const outParsed = RPC_CONTRACTS[rpcName].outputSchema.safeParse(result.data);
+      const output = options.invalidOutputFor === rpcName ? {} : result.data;
+      const outParsed = RPC_CONTRACTS[rpcName].outputSchema.safeParse(output);
       if (!outParsed.success) {
         return err('VALIDATION_ERROR' as RpcErrorCode<K>);
       }
@@ -746,6 +769,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       couriers.delete(courierId);
     },
     seedMerchant: putMerchant,
+    deleteMerchant: (merchantId) => {
+      merchants.delete(merchantId);
+    },
     seedDocument: (d) => documents.set(d.documentId, { ...d }),
     seedIncident: putIncident,
     getIncident: (incidentId) => incidents.get(incidentId),
@@ -754,6 +780,82 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     getCourier: (courierId) => couriers.get(courierId),
     getSettings: () => ({ ...settings }),
     triggerErrorCode: async (code) => err(code),
+
+    update_my_merchant_profile: (rawInput) =>
+      executeRpc('update_my_merchant_profile', rawInput, false, (input) => {
+        const merchant = merchants.get(actor.userId);
+        if (!merchant) {
+          return err('NOT_FOUND');
+        }
+
+        if (input.businessName !== undefined) {
+          merchant.businessName = input.businessName;
+        }
+        if (input.phone !== undefined) {
+          merchant.phone = input.phone;
+        }
+        if (input.defaultPickupAddress !== undefined) {
+          merchant.defaultPickupAddress = input.defaultPickupAddress;
+        }
+        if (input.defaultPickupZoneId !== undefined) {
+          merchant.defaultPickupZoneId = input.defaultPickupZoneId;
+        }
+        if (input.defaultPickupLat !== undefined) {
+          merchant.defaultPickupLat = input.defaultPickupLat;
+        }
+        if (input.defaultPickupLng !== undefined) {
+          merchant.defaultPickupLng = input.defaultPickupLng;
+        }
+        if (input.notes !== undefined) {
+          merchant.notes = input.notes;
+        }
+
+        return ok({
+          profileId: merchant.merchantId,
+          businessName: merchant.businessName,
+          phone: merchant.phone ?? null,
+          defaultPickupAddress: merchant.defaultPickupAddress ?? null,
+          defaultPickupZoneId: merchant.defaultPickupZoneId ?? null,
+          defaultPickupLat: merchant.defaultPickupLat ?? null,
+          defaultPickupLng: merchant.defaultPickupLng ?? null,
+          notes: merchant.notes ?? null,
+        });
+      }),
+
+    reconcile_expired_requests: (rawInput) =>
+      executeRpc('reconcile_expired_requests', rawInput, false, () => {
+        const currentNow = nowFn();
+        const eligible = [...requests.values()]
+          .filter(
+            (request) =>
+              request.merchantId === actor.userId &&
+              request.status === 'published' &&
+              request.acceptedOfferId === null &&
+              isRequestExpired(request.status, request.expiresAt, currentNow)
+          )
+          .sort((left, right) => {
+            const leftExpiry = left.expiresAt ?? '';
+            const rightExpiry = right.expiresAt ?? '';
+            return leftExpiry.localeCompare(rightExpiry) || left.requestId.localeCompare(right.requestId);
+          });
+        const reconciled = eligible.slice(0, 50);
+        const reconciledIds = new Set(reconciled.map((request) => request.requestId));
+
+        for (const request of reconciled) {
+          request.status = 'expired';
+        }
+        for (const offer of offers.values()) {
+          if (reconciledIds.has(offer.requestId) && offer.status === 'pending') {
+            offer.status = 'expired';
+          }
+        }
+
+        return ok({
+          expiredRequestIds: reconciled.map((request) => request.requestId),
+          expiredCount: reconciled.length,
+          hasMore: eligible.length > reconciled.length,
+        });
+      }),
 
     create_and_publish_multi_drop: (rawInput) =>
       executeRpc('create_and_publish_multi_drop', rawInput, false, (input) => {

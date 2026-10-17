@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as tripsRpc from '@/server/rpc/trips';
 import * as serverSupabase from '@/server/supabase/server';
-import { getTripDetails } from './queries';
+import { getTripDetails, getActiveTripsForCourier } from './queries';
 
 vi.mock('@/server/rpc/trips', () => ({
   getTripDetailsServer: vi.fn(),
@@ -189,5 +189,530 @@ describe('T-115 / T-117 — query adapter sobre CC-008 y proyección de coordena
     expect(trip?.dropoffLat).toBeNull();
     expect(trip?.dropoffLng).toBeNull();
     expect(trip?.routeDistanceM).toBeNull();
+  });
+});
+
+describe('T-360 — getActiveTripsForCourier', () => {
+  const courierId = '00000000-0000-4000-8000-0000000008c1';
+  let mockAuthGetUser: ReturnType<typeof vi.fn>;
+  let mockRequestsSelect: ReturnType<typeof vi.fn>;
+  let mockRequestsIn: ReturnType<typeof vi.fn>;
+  let mockOffersSelect: ReturnType<typeof vi.fn>;
+  let mockOffersIn: ReturnType<typeof vi.fn>;
+  let mockOffersEqCourier: ReturnType<typeof vi.fn>;
+  let mockOffersEqStatus: ReturnType<typeof vi.fn>;
+  let mockDropsSelect: ReturnType<typeof vi.fn>;
+  let mockDropsIn: ReturnType<typeof vi.fn>;
+  let mockDropsEqPosition: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockAuthGetUser = vi.fn().mockResolvedValue({
+      data: { user: { id: courierId } },
+      error: null,
+    });
+
+    mockRequestsIn = vi.fn().mockResolvedValue({
+      data: [],
+      error: null,
+    });
+    mockRequestsSelect = vi.fn().mockReturnValue({
+      in: mockRequestsIn,
+    });
+
+    mockOffersEqStatus = vi.fn().mockResolvedValue({
+      data: [],
+      error: null,
+    });
+    mockOffersEqCourier = vi.fn().mockReturnValue({
+      eq: mockOffersEqStatus,
+    });
+    mockOffersIn = vi.fn().mockReturnValue({
+      eq: mockOffersEqCourier,
+    });
+    mockOffersSelect = vi.fn().mockReturnValue({
+      in: mockOffersIn,
+    });
+
+    mockDropsEqPosition = vi.fn().mockResolvedValue({
+      data: [],
+      error: null,
+    });
+    mockDropsIn = vi.fn().mockReturnValue({
+      eq: mockDropsEqPosition,
+    });
+    mockDropsSelect = vi.fn().mockReturnValue({
+      in: mockDropsIn,
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: mockAuthGetUser,
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return { select: mockRequestsSelect };
+        }
+        if (table === 'offers') {
+          return { select: mockOffersSelect };
+        }
+        if (table === 'delivery_request_drops') {
+          return { select: mockDropsSelect };
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+  });
+
+  it('devuelve 0 viajes cuando no hay solicitudes activas', async () => {
+    mockRequestsIn.mockResolvedValue({ data: [], error: null });
+
+    const result = await getActiveTripsForCourier();
+
+    expect(result).toEqual({ courierId, trips: [] });
+    expect(mockRequestsIn).toHaveBeenCalledWith('status', ['matched', 'in_transit']);
+    expect(mockOffersSelect).not.toHaveBeenCalled();
+  });
+
+  it('devuelve 1 viaje cuando coinciden bidireccionalmente la solicitud y la oferta', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-1',
+          status: 'matched',
+          accepted_offer_id: 'off-1',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [
+        {
+          id: 'off-1',
+          request_id: 'req-1',
+          amount_ars: 2000,
+        },
+      ],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+
+    expect(result.courierId).toBe(courierId);
+    expect(result.trips).toEqual([
+      {
+        id: 'req-1',
+        status: 'matched',
+        pickupZoneName: 'Centro',
+        dropoffZoneName: 'Barrio Sur',
+        dropsCount: 1,
+        amountArs: 2000,
+        matchedAt: '2026-10-15T00:00:00.000Z',
+      },
+    ]);
+
+    expect(mockOffersIn).toHaveBeenCalledWith('id', ['off-1']);
+    expect(mockOffersEqCourier).toHaveBeenCalledWith('courier_id', courierId);
+    expect(mockOffersEqStatus).toHaveBeenCalledWith('status', 'accepted');
+  });
+
+  it('devuelve N viajes manteniendo correspondencia de ofertas y orden', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-1',
+          status: 'matched',
+          accepted_offer_id: 'off-1',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+        {
+          id: 'req-2',
+          status: 'in_transit',
+          accepted_offer_id: 'off-2',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:10:00.000Z',
+          pickup_zone: { name: 'Barrio Norte' },
+          dropoff_zone: { name: 'Centro' },
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [
+        { id: 'off-1', request_id: 'req-1', amount_ars: 1500 },
+        { id: 'off-2', request_id: 'req-2', amount_ars: 2500 },
+      ],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+
+    expect(result.trips).toHaveLength(2);
+    const [firstTrip, secondTrip] = result.trips;
+    expect(firstTrip).toBeDefined();
+    expect(secondTrip).toBeDefined();
+    if (!firstTrip || !secondTrip) throw new Error('Expected two trips');
+    expect(firstTrip.id).toBe('req-2');
+    expect(firstTrip.status).toBe('in_transit');
+    expect(firstTrip.amountArs).toBe(2500);
+    expect(secondTrip.id).toBe('req-1');
+    expect(secondTrip.status).toBe('matched');
+    expect(secondTrip.amountArs).toBe(1500);
+  });
+
+  it('excluye solicitudes con estados no activos (delivered, cancelled, published)', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-delivered',
+          status: 'delivered',
+          accepted_offer_id: 'off-1',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-1', request_id: 'req-delivered', amount_ars: 2000 }],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+
+    expect(result.trips).toEqual([]);
+    expect(mockRequestsIn).toHaveBeenCalledWith('status', ['matched', 'in_transit']);
+  });
+
+  it('excluye solicitud si accepted_offer_id no coincide con la oferta retornada', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-1',
+          status: 'matched',
+          accepted_offer_id: 'off-different',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-1', request_id: 'req-1', amount_ars: 2000 }],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+    expect(result.trips).toEqual([]);
+  });
+
+  it('excluye solicitud si la oferta pertenece a otro request_id', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-1',
+          status: 'matched',
+          accepted_offer_id: 'off-1',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-1', request_id: 'req-another', amount_ars: 2000 }],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+    expect(result.trips).toEqual([]);
+  });
+
+  it('excluye ofertas si pertenecen a otro courier (accepted ajeno)', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-1',
+          status: 'matched',
+          accepted_offer_id: 'off-1',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+    expect(result.trips).toEqual([]);
+    expect(mockOffersEqCourier).toHaveBeenCalledWith('courier_id', courierId);
+  });
+
+  it('formatea multi-drop con drops_count=3 con dropoffZoneName en null', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-multidrop',
+          status: 'matched',
+          accepted_offer_id: 'off-m',
+          drops_count: 3,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: null,
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-m', request_id: 'req-multidrop', amount_ars: 4500 }],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+
+    expect(result.trips).toHaveLength(1);
+    const [firstTrip] = result.trips;
+    expect(firstTrip).toBeDefined();
+    if (!firstTrip) throw new Error('Expected one trip');
+    expect(firstTrip.dropsCount).toBe(3);
+    expect(firstTrip.dropoffZoneName).toBeNull();
+    expect(mockDropsSelect).not.toHaveBeenCalled();
+  });
+
+  it('busca dropoffZoneName en delivery_request_drops para single-drop cuando dropoff_zone es null', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-single',
+          status: 'matched',
+          accepted_offer_id: 'off-s',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: null,
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-s', request_id: 'req-single', amount_ars: 2000 }],
+      error: null,
+    });
+
+    mockDropsEqPosition.mockResolvedValue({
+      data: [
+        {
+          request_id: 'req-single',
+          position: 1,
+          dropoff_zone: { name: 'Barrio Oeste' },
+        },
+      ],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+
+    expect(result.trips).toHaveLength(1);
+    const [singleTrip] = result.trips;
+    expect(singleTrip).toBeDefined();
+    if (!singleTrip) throw new Error('Expected one trip');
+    expect(singleTrip.dropoffZoneName).toBe('Barrio Oeste');
+    expect(mockDropsIn).toHaveBeenCalledWith('request_id', ['req-single']);
+    expect(mockDropsEqPosition).toHaveBeenCalledWith('position', 1);
+  });
+
+  it('lanza error sanitizado si la consulta de delivery_request_drops falla', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-single',
+          status: 'matched',
+          accepted_offer_id: 'off-s',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: null,
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-s', request_id: 'req-single', amount_ars: 2000 }],
+      error: null,
+    });
+
+    mockDropsEqPosition.mockResolvedValue({
+      data: null,
+      error: new Error('permission denied on delivery_request_drops'),
+    });
+
+    await expect(getActiveTripsForCourier()).rejects.toThrow(
+      'Error al consultar zonas de entregas activas'
+    );
+  });
+
+  it('conserva dropoffZoneName en null si delivery_request_drops devuelve array vacío sin error', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-single',
+          status: 'matched',
+          accepted_offer_id: 'off-s',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: null,
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-s', request_id: 'req-single', amount_ars: 2000 }],
+      error: null,
+    });
+
+    mockDropsEqPosition.mockResolvedValue({
+      data: [],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+
+    expect(result.trips).toHaveLength(1);
+    const [singleTrip] = result.trips;
+    expect(singleTrip).toBeDefined();
+    if (!singleTrip) throw new Error('Expected one trip');
+    expect(singleTrip.dropoffZoneName).toBeNull();
+  });
+
+  it('lanza error si la sesión está ausente o auth.getUser falla', async () => {
+    mockAuthGetUser.mockResolvedValue({
+      data: { user: null },
+      error: new Error('Token expirado'),
+    });
+
+    await expect(getActiveTripsForCourier()).rejects.toThrow(
+      'No autenticado al consultar viajes activos'
+    );
+  });
+
+  it('lanza error sanitizado si falla la consulta de delivery_requests o de offers', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: null,
+      error: new Error('PG connection lost'),
+    });
+
+    await expect(getActiveTripsForCourier()).rejects.toThrow(
+      'Error al consultar solicitudes activas'
+    );
+
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-1',
+          status: 'matched',
+          accepted_offer_id: 'off-1',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: null,
+      error: new Error('PG connection lost'),
+    });
+
+    await expect(getActiveTripsForCourier()).rejects.toThrow(
+      'Error al consultar ofertas activas'
+    );
+  });
+
+  it('no expone datos sensibles ni PII (contacto, teléfono, dirección exacta, notas)', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-1',
+          status: 'matched',
+          accepted_offer_id: 'off-1',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-1', request_id: 'req-1', amount_ars: 2000 }],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+    const [firstTrip] = result.trips;
+    expect(firstTrip).toBeDefined();
+    if (!firstTrip) throw new Error('Expected one trip');
+    const trip = firstTrip as unknown as Record<string, unknown>;
+    const forbiddenKeys = [
+      'phone',
+      'recipientPhone',
+      'merchantPhone',
+      'recipientName',
+      'merchantName',
+      'address',
+      'pickupAddress',
+      'dropoffAddress',
+      'deliveryNotes',
+      'pin',
+      'pickupLat',
+      'pickupLng',
+      'dropoffLat',
+      'dropoffLng',
+    ];
+
+    for (const key of forbiddenKeys) {
+      expect(trip[key]).toBeUndefined();
+    }
+
+    expect(Object.keys(trip).sort()).toEqual(
+      ['amountArs', 'dropoffZoneName', 'dropsCount', 'id', 'matchedAt', 'pickupZoneName', 'status'].sort()
+    );
   });
 });

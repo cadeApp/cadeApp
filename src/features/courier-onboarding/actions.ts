@@ -7,6 +7,7 @@ import { serverEnv } from '@/server/env';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
+import type { SupabaseRpcCaller } from '@/server/rpc/offers';
 import { courierOnboardingSchema } from './schemas';
 import { logoutAction } from '@/features/auth/server';
 import { areCurrentLegalVersions } from '@/features/legal';
@@ -22,6 +23,52 @@ export interface CourierOnboardingResult {
 function computeDniHmac(dni: string, secret: string): string {
   const normalizedDni = dni.replace(/\D/g, '');
   return createHmac('sha256', secret).update(normalizedDni).digest('hex');
+}
+
+export type DocumentValidationResult =
+  | { status: 'MATCH' }
+  | { status: 'DUPLICATE'; kind: string }
+  | { status: 'MISSING'; kind: string }
+  | { status: 'DIFFERENT_PATH'; kind: string; expected: string; actual: string }
+  | { status: 'INVALID_STATUS'; kind: string; docStatus: string };
+
+/**
+ * Valida de forma pura el conjunto de documentos vigentes de un repartidor contra las entradas esperadas.
+ * Recorre todas las filas is_current reales por courier:
+ * - Si hay más de una de un kind -> DUPLICATE
+ * - Si alguno de los kinds esperados tiene status distinto de 'submitted' / 'verified' -> INVALID_STATUS
+ * - Si storage_path es distinto al esperado -> DIFFERENT_PATH
+ * - Si faltan kinds requeridos -> MISSING
+ * - Si todos coinciden exactamente -> MATCH
+ */
+export async function validateCurrentDocumentSet(
+  expectedEntries: Array<{ kind: string; storage_path: string }>,
+  docs: Array<{ id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>
+): Promise<DocumentValidationResult> {
+  const activeDocs = (docs ?? []).filter((d) => d.is_current !== false);
+  const byKind = new Map<string, { id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>();
+
+  for (const doc of activeDocs) {
+    if (byKind.has(doc.kind)) {
+      return { status: 'DUPLICATE', kind: doc.kind };
+    }
+    byKind.set(doc.kind, doc);
+  }
+
+  for (const expected of expectedEntries) {
+    const existing = byKind.get(expected.kind);
+    if (!existing) {
+      return { status: 'MISSING', kind: expected.kind };
+    }
+    if (existing.status !== 'submitted' && existing.status !== 'verified') {
+      return { status: 'INVALID_STATUS', kind: expected.kind, docStatus: existing.status };
+    }
+    if (existing.storage_path !== expected.storage_path) {
+      return { status: 'DIFFERENT_PATH', kind: expected.kind, expected: expected.storage_path, actual: existing.storage_path };
+    }
+  }
+
+  return { status: 'MATCH' };
 }
 
 export async function courierOnboardingAction(
@@ -131,57 +178,99 @@ export async function courierOnboardingAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 8. Inserción de documentos en courier_documents
-  const documentEntries: TablesInsert<'courier_documents'>[] = [
+  // 8. Registro atómico de documentos en courier_documents mediante la RPC submit_courier_onboarding_documents
+  // (Fase B de CC-025, PR #376).
+  // La RPC se ejecuta bajo el cliente autenticado de sesión (auth.uid()), adquiere el lock transaccional
+  // couriers(profile_id) FOR UPDATE, revalida consentimiento legal activo y rol courier, valida
+  // exhaustivamente kinds, rutas y estados, y serializa de forma atómica reintentos limpios (idempotencia)
+  // o rechaza colisiones con rutas distintas o documentos rechazados previos (H01/H02/H03).
+  const documentEntries: Array<{ kind: string; storage_path: string }> = [
     {
-      courier_id: user.id,
       kind: 'dni_front',
       storage_path: parsed.data.documents.dni_front,
-      status: 'submitted',
     },
     {
-      courier_id: user.id,
       kind: 'dni_back',
       storage_path: parsed.data.documents.dni_back,
-      status: 'submitted',
     },
     {
-      courier_id: user.id,
       kind: 'selfie',
       storage_path: parsed.data.documents.selfie,
-      status: 'submitted',
     },
     {
-      courier_id: user.id,
       kind: 'avatar',
       storage_path: parsed.data.documents.avatar,
-      status: 'submitted',
     },
   ];
 
   if (parsed.data.documents.license) {
     documentEntries.push({
-      courier_id: user.id,
       kind: 'license',
       storage_path: parsed.data.documents.license,
-      status: 'submitted',
     });
   }
 
   if (parsed.data.documents.insurance) {
     documentEntries.push({
-      courier_id: user.id,
       kind: 'insurance',
       storage_path: parsed.data.documents.insurance,
-      status: 'submitted',
     });
   }
 
-  const { error: documentsError } = await supabase
-    .from('courier_documents')
-    .upsert(documentEntries as never);
+  // Validación defensiva en aplicación de rutas canónicas y tamaño (coincidente con los guards de la RPC)
+  const expectedPrefix = `courier/${user.id}/`;
+  for (const doc of documentEntries) {
+    if (
+      !doc.storage_path.startsWith(expectedPrefix) ||
+      doc.storage_path.includes('..') ||
+      doc.storage_path.length > 300
+    ) {
+      return err('VALIDATION_ERROR');
+    }
+  }
 
-  if (documentsError) {
+  const rpcClient: SupabaseRpcCaller = supabase;
+  const { data: rpcData, error: rpcError } = await rpcClient.rpc(
+    'submit_courier_onboarding_documents',
+    { p_documents: documentEntries }
+  );
+
+  if (rpcError) {
+    const errorMsg = String(rpcError.message ?? '');
+    const errorDetails = String((rpcError as { details?: string }).details ?? '');
+    const fullError = `${errorMsg} ${errorDetails}`;
+
+    if (fullError.includes('UNAUTHENTICATED')) {
+      return err('UNAUTHENTICATED');
+    }
+    if (
+      fullError.includes('UNAUTHORIZED_ACTOR') ||
+      fullError.includes('CONSENT_REQUIRED') ||
+      fullError.includes('NOT_FOUND')
+    ) {
+      return err('UNAUTHORIZED_ACTOR');
+    }
+    if (fullError.includes('VALIDATION_ERROR')) {
+      return err('VALIDATION_ERROR');
+    }
+    if (fullError.includes('INTERNAL_ERROR')) {
+      return err('INTERNAL_ERROR');
+    }
+    return err('INTERNAL_ERROR');
+  }
+
+  const parsedRpcData =
+    typeof rpcData === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(rpcData);
+          } catch {
+            return null;
+          }
+        })()
+      : rpcData;
+
+  if (!parsedRpcData || typeof parsedRpcData !== 'object' || !(parsedRpcData as { ok?: boolean }).ok) {
     return err('INTERNAL_ERROR');
   }
 
@@ -194,13 +283,19 @@ export async function courierOnboardingAction(
     vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
   };
 
-  const { error: courierUpdateError } = await adminClient
+  const { data: updatedCouriers, error: courierUpdateError } = await adminClient
     .from('couriers')
     .update(courierUpdatePayload as never)
-    .eq('profile_id', user.id);
+    .eq('profile_id', user.id)
+    .in('status', ['pending', 'approved'])
+    .select('profile_id');
 
   if (courierUpdateError) {
     return err('INTERNAL_ERROR');
+  }
+
+  if (!updatedCouriers || (updatedCouriers as Array<{ profile_id: string }>).length !== 1) {
+    return err('UNAUTHORIZED_ACTOR');
   }
 
   // 9. Retorno ok con redirección a estado del onboarding
