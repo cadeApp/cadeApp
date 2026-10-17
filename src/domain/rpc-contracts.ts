@@ -617,6 +617,31 @@ export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
     key: z.literal('max_drops_per_request'),
     value: z.number().int().min(1),
   }),
+  // CC-029 (T-369)
+  z.object({
+    key: z.literal('publication_drops_per_credit'),
+    value: z.number().int().min(1).max(1000),
+  }),
+  z.object({
+    key: z.literal('carryover_base_pct'),
+    value: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    key: z.literal('carryover_step_pct'),
+    value: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    key: z.literal('carryover_cap_pct'),
+    value: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    key: z.literal('launch_discount_pct'),
+    value: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    key: z.literal('loose_credit_reference_price_ars'),
+    value: z.number().int().min(0).max(100_000_000),
+  }),
 ]);
 export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
@@ -707,6 +732,137 @@ export const updateMyMerchantProfileOutputSchema = z.object({
 
 export type UpdateMyMerchantProfileOutput = z.infer<typeof updateMyMerchantProfileOutputSchema>;
 
+// CC-029 (T-369): créditos de publicación y planes post-piloto
+export const publicationPlanKindSchema = z.enum(['quota', 'unlimited']);
+export const publicationLotKindSchema = z.enum(['loose', 'plan', 'carryover']);
+export const publicationLotSourceSchema = z.enum(['purchase', 'adjustment', 'plan', 'carryover', 'refund_conversion']);
+export const publicationModeSchema = z.enum(['pilot', 'legacy_paid', 'unlimited', 'credits']);
+export const publicationMovementKindSchema = z.enum(['grant', 'reserve', 'consume', 'unconsume', 'release', 'convert']);
+const publicationNoteSchema = z.string().trim().max(500).nullable().optional();
+const launchDiscountPctSchema = z.number().int().min(1).max(100).nullable();
+
+export const publicationPeriodSummarySchema = z.object({
+  periodId: uuidSchema,
+  planId: uuidSchema,
+  planName: z.string().min(1),
+  planKind: publicationPlanKindSchema,
+  monthlyCredits: z.number().int().positive().nullable(),
+  startsAt: isoTimestampSchema,
+  endsAt: isoTimestampSchema,
+  streak: z.number().int().min(1),
+  carryoverPct: z.number().int().min(0).max(100),
+});
+export const publicationLotSummarySchema = z.object({
+  lotId: uuidSchema,
+  kind: publicationLotKindSchema,
+  source: publicationLotSourceSchema,
+  granted: z.number().int().positive(),
+  available: z.number().int().nonnegative(),
+  startsAt: isoTimestampSchema.nullable(),
+  expiresAt: isoTimestampSchema.nullable(),
+  usable: z.boolean(),
+});
+export const publicationBalanceSchema = z.object({
+  merchantId: uuidSchema,
+  mode: publicationModeSchema,
+  canPublish: z.boolean(),
+  subscriptionStatus: merchantSubscriptionStatusSchema,
+  legacyPaidUntil: civilDateSchema.nullable(),
+  available: z.number().int().nonnegative(),
+  reserved: z.number().int().nonnegative(),
+  scheduled: z.number().int().nonnegative(),
+  currentPeriod: publicationPeriodSummarySchema.nullable(),
+  nextPeriod: publicationPeriodSummarySchema.nullable(),
+  lots: z.array(publicationLotSummarySchema),
+});
+export type PublicationBalance = z.infer<typeof publicationBalanceSchema>;
+
+export const adminUpsertPublicationPlanInputSchema = z
+  .object({
+    planId: uuidSchema.nullable(),
+    code: z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,39}$/),
+    name: z.string().trim().min(2).max(80),
+    kind: publicationPlanKindSchema,
+    monthlyCredits: z.number().int().min(1).max(100_000).nullable(),
+    referencePriceArs: z.number().int().min(0).max(100_000_000).nullable(),
+    active: z.boolean(),
+    sort: z.number().int().min(0).max(1000),
+  })
+  .refine((data) => (data.kind === 'quota') === (data.monthlyCredits !== null), {
+    message: 'Un plan con cupo lleva créditos mensuales; uno ilimitado, no.',
+    path: ['monthlyCredits'],
+  });
+export const adminUpsertPublicationPlanOutputSchema = z.object({
+  planId: uuidSchema,
+  code: z.string().min(1),
+  name: z.string().min(1),
+  kind: publicationPlanKindSchema,
+  monthlyCredits: z.number().int().positive().nullable(),
+  referencePriceArs: z.number().int().nonnegative().nullable(),
+  active: z.boolean(),
+  sort: z.number().int().nonnegative(),
+});
+
+export const adminGrantPublicationCreditsInputSchema = z.object({
+  merchantId: uuidSchema,
+  credits: z.number().int().min(1).max(10_000),
+  source: z.enum(['purchase', 'adjustment']),
+  operationKey: uuidSchema,
+  note: publicationNoteSchema,
+});
+export const adminGrantPublicationCreditsOutputSchema = z.object({
+  lotId: uuidSchema,
+  merchantId: uuidSchema,
+  credits: z.number().int().positive(),
+  source: z.enum(['purchase', 'adjustment']),
+  launchDiscountPct: launchDiscountPctSchema,
+  idempotent: z.boolean(),
+});
+
+export const adminRegisterPlanPeriodInputSchema = z.object({
+  merchantId: uuidSchema,
+  planId: uuidSchema,
+  isPurchase: z.boolean(),
+  operationKey: uuidSchema,
+  note: publicationNoteSchema,
+});
+export const adminRegisterPlanPeriodOutputSchema = z.object({
+  periodId: uuidSchema,
+  merchantId: uuidSchema,
+  planId: uuidSchema,
+  startsAt: isoTimestampSchema,
+  endsAt: isoTimestampSchema,
+  streak: z.number().int().min(1),
+  carryoverPct: z.number().int().min(0).max(100),
+  launchDiscountPct: launchDiscountPctSchema,
+  idempotent: z.boolean(),
+});
+
+export const adminGetMerchantPublicationCreditsInputSchema = z.object({
+  merchantId: uuidSchema,
+  limit: z.number().int().min(1).max(50).optional(),
+  beforeId: z.number().int().positive().nullable().optional(),
+});
+export const publicationMovementSchema = z.object({
+  id: z.number().int().positive(),
+  kind: publicationMovementKindSchema,
+  amount: z.number().int().nonnegative(),
+  lotId: uuidSchema.nullable(),
+  chargeId: uuidSchema.nullable(),
+  requestId: uuidSchema.nullable(),
+  actorId: uuidSchema.nullable(),
+  reason: z.string().nullable(),
+  createdAt: isoTimestampSchema,
+});
+export const adminGetMerchantPublicationCreditsOutputSchema = z.object({
+  balance: publicationBalanceSchema,
+  movements: z.array(publicationMovementSchema),
+  nextCursor: z.number().int().positive().nullable(),
+});
+
+export const getMyPublicationBalanceInputSchema = z.object({}).strict();
+export const getMyPublicationBalanceOutputSchema = publicationBalanceSchema;
+
 export const RPC_CONTRACTS = {
   update_my_merchant_profile: {
     inputSchema: updateMyMerchantProfileInputSchema,
@@ -738,6 +894,7 @@ export const RPC_CONTRACTS = {
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
       'SUBSCRIPTION_INACTIVE',
+      'PUBLICATION_CREDITS_EXHAUSTED',
       'MISSING_REQUIRED_FIELDS',
       'OUT_OF_BOUNDS_AGUILARES',
       'INVALID_ZONE',
@@ -771,7 +928,10 @@ export const RPC_CONTRACTS = {
    *      - `cancel_request` administrativo sobre `in_transit` sin incidente registrado (CC-015): `INVALID_STATE_TRANSITION`
    *      - `report_no_show` sin oferta `accepted` válida: `INVALID_STATE_TRANSITION`
    *      - `report_incident` en `delivered` con `delivered_at is null` o `now() > delivered_at + 24h`: `INCIDENT_WINDOW_EXPIRED`
-   *   6. Suscripción y gracia del comercio en `publish_request`, `republish_request` y `report_no_show(republish=true)` (`SUBSCRIPTION_INACTIVE`)
+   *   6. Suscripción y gracia del comercio en `publish_request`, `republish_request` y `report_no_show(republish=true)` (`SUBSCRIPTION_INACTIVE`).
+   *      CC-029: con `pilot_active = false` solo `cancelled` da `SUBSCRIPTION_INACTIVE`; `publish_request` y `republish_request`
+   *      reservan el costo híbrido (legacy_paid → ilimitado → créditos) y sin derecho fallan con `PUBLICATION_CREDITS_EXHAUSTED`
+   *      (después de validar contacto y zonas, antes del tope por ventana).
    *   7. Contacto, zonas activas y bordes de Aguilares en `publish_request` (`MISSING_REQUIRED_FIELDS` → `INVALID_ZONE` → `OUT_OF_BOUNDS_AGUILARES`)
    *   8. Tope por ventana de 1 min en `publish_request`/`republish_request` y `report_incident` (`RATE_LIMITED`)
    */
@@ -783,6 +943,7 @@ export const RPC_CONTRACTS = {
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
       'SUBSCRIPTION_INACTIVE',
+      'PUBLICATION_CREDITS_EXHAUSTED',
       'MISSING_REQUIRED_FIELDS',
       'OUT_OF_BOUNDS_AGUILARES',
       'INVALID_ZONE',
@@ -1023,6 +1184,7 @@ export const RPC_CONTRACTS = {
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
       'SUBSCRIPTION_INACTIVE',
+      'PUBLICATION_CREDITS_EXHAUSTED',
       'REASON_REQUIRED',
       'INVALID_STATE_TRANSITION',
       'RATE_LIMITED',
@@ -1178,6 +1340,7 @@ export const RPC_CONTRACTS = {
       'AAL2_REQUIRED',
       'NOT_FOUND',
       'VALIDATION_ERROR',
+      'INVALID_STATE_TRANSITION',
     ] as const satisfies readonly DomainErrorCode[],
   },
   admin_update_setting: {
@@ -1220,6 +1383,68 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  // CC-029 (T-369). Precedencia de las RPC admin: UNAUTHENTICATED → UNAUTHORIZED_ACTOR → AAL2_REQUIRED →
+  // VALIDATION_ERROR → NOT_FOUND → IDEMPOTENCY_CONFLICT / PLAN_INACTIVE / PLAN_IN_USE.
+  admin_upsert_publication_plan: {
+    inputSchema: adminUpsertPublicationPlanInputSchema,
+    outputSchema: adminUpsertPublicationPlanOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'PLAN_IN_USE',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_grant_publication_credits: {
+    inputSchema: adminGrantPublicationCreditsInputSchema,
+    outputSchema: adminGrantPublicationCreditsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'IDEMPOTENCY_CONFLICT',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_register_plan_period: {
+    inputSchema: adminRegisterPlanPeriodInputSchema,
+    outputSchema: adminRegisterPlanPeriodOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'IDEMPOTENCY_CONFLICT',
+      'PLAN_INACTIVE',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_get_merchant_publication_credits: {
+    inputSchema: adminGetMerchantPublicationCreditsInputSchema,
+    outputSchema: adminGetMerchantPublicationCreditsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  get_my_publication_balance: {
+    inputSchema: getMyPublicationBalanceInputSchema,
+    outputSchema: getMyPublicationBalanceOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
 } as const;
 
 export const ALL_RPC_NAMES = [
@@ -1253,6 +1478,11 @@ export const ALL_RPC_NAMES = [
   'admin_update_setting',
   'admin_resolve_incident',
   'admin_list_incidents',
+  'admin_upsert_publication_plan',
+  'admin_grant_publication_credits',
+  'admin_register_plan_period',
+  'admin_get_merchant_publication_credits',
+  'get_my_publication_balance',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 
 export type RpcName = (typeof ALL_RPC_NAMES)[number];

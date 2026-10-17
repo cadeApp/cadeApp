@@ -6,6 +6,7 @@ import {
   type RpcInput,
   type RpcName,
   type RpcOutput,
+  type PublicationBalance,
   RPC_CONTRACTS,
   validateOfferAmountAgainstFloor,
 } from '../rpc-contracts';
@@ -49,6 +50,13 @@ export interface FakePlatformSettings {
   readonly pilotTermsVersion: string;
   readonly subscriptionGraceDays: number;
   readonly maxDropsPerRequest?: number;
+  // CC-029 (T-369)
+  readonly publicationDropsPerCredit?: number;
+  readonly carryoverBasePct?: number;
+  readonly carryoverStepPct?: number;
+  readonly carryoverCapPct?: number;
+  readonly launchDiscountPct?: number;
+  readonly looseCreditReferencePriceArs?: number | null;
 }
 
 export interface FakeSeedDrop {
@@ -285,6 +293,74 @@ export interface FakeIncidentRecord {
   readonly createdAt: string;
 }
 
+// CC-029 (T-369): registros en memoria de créditos de publicación.
+export interface FakePublicationPlanRecord {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly kind: 'quota' | 'unlimited';
+  readonly monthlyCredits: number | null;
+  readonly referencePriceArs: number | null;
+  readonly active: boolean;
+  readonly sort: number;
+}
+
+export interface FakePlanPeriodRecord {
+  readonly id: string;
+  readonly merchantId: string;
+  readonly planId: string;
+  readonly planKind: 'quota' | 'unlimited';
+  readonly monthlyCredits: number | null;
+  readonly startsAtMs: number;
+  readonly endsAtMs: number;
+  readonly streak: number;
+  readonly carryoverPct: number;
+  readonly previousPeriodId: string | null;
+  carryoverMaterialized: boolean;
+  readonly operationKey: string;
+  readonly isPurchase: boolean;
+  launchDiscountPct: number | null;
+}
+
+export interface FakeCreditLotRecord {
+  readonly id: string;
+  readonly merchantId: string;
+  readonly kind: 'loose' | 'plan' | 'carryover';
+  readonly periodId: string | null;
+  readonly granted: number;
+  readonly expiresAtMs: number | null;
+  readonly source: 'purchase' | 'adjustment' | 'plan' | 'carryover' | 'refund_conversion';
+  readonly operationKey: string | null;
+  readonly refundChargeId: string | null;
+  readonly refundSourceLotId: string | null;
+  readonly createdSeq: number;
+}
+
+export interface FakePublicationChargeRecord {
+  readonly id: string;
+  readonly requestId: string;
+  readonly merchantId: string;
+  readonly mode: 'credits' | 'unlimited' | 'legacy_paid';
+  readonly cost: number;
+  state: 'reserved' | 'consumed' | 'released';
+  isCurrent: boolean;
+  readonly periodId: string | null;
+  readonly parts: Array<{ readonly lotId: string; readonly amount: number }>;
+}
+
+export interface FakeCreditMovementRecord {
+  readonly id: number;
+  readonly merchantId: string;
+  readonly lotId: string | null;
+  readonly chargeId: string | null;
+  readonly requestId: string | null;
+  readonly kind: 'grant' | 'reserve' | 'consume' | 'unconsume' | 'release' | 'convert';
+  readonly amount: number;
+  readonly actorId: string | null;
+  readonly reason: string | null;
+  readonly createdAtMs: number;
+}
+
 export interface FakeRpcOptions {
   readonly settings: FakePlatformSettings;
   readonly now?: () => Date;
@@ -314,6 +390,8 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly seedIncident: (incident: FakeSeedIncident) => void;
   readonly getIncident: (incidentId: string) => FakeIncidentRecord | undefined;
   readonly getRequest: (requestId: string) => FakeRequestRecord | undefined;
+  /** CC-029: cargos de publicación de una solicitud (históricos incluidos), en orden de creación. */
+  readonly getPublicationCharges: (requestId: string) => readonly FakePublicationChargeRecord[];
   readonly getOffer: (offerId: string) => FakeOfferRecord | undefined;
   readonly getCourier: (courierId: string) => FakeCourierRecord | undefined;
   readonly getSettings: () => FakePlatformSettings;
@@ -365,6 +443,11 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_update_setting: ['admin'],
   admin_resolve_incident: ['admin'],
   admin_list_incidents: ['admin'],
+  admin_upsert_publication_plan: ['admin'],
+  admin_grant_publication_credits: ['admin'],
+  admin_register_plan_period: ['admin'],
+  admin_get_merchant_publication_credits: ['admin'],
+  get_my_publication_balance: ['merchant'],
 };
 
 // CC-012 / D05-A: el comercio dueño reporta en matched, in_transit y delivered (≤ 24 h);
@@ -443,7 +526,16 @@ function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatfo
   ) {
     throw new Error('createFakeRpcClient received invalid options.settings values');
   }
-  return { ...settings, maxDropsPerRequest: settings.maxDropsPerRequest ?? 5 };
+  return {
+    ...settings,
+    maxDropsPerRequest: settings.maxDropsPerRequest ?? 5,
+    publicationDropsPerCredit: settings.publicationDropsPerCredit ?? 2,
+    carryoverBasePct: settings.carryoverBasePct ?? 5,
+    carryoverStepPct: settings.carryoverStepPct ?? 5,
+    carryoverCapPct: settings.carryoverCapPct ?? 35,
+    launchDiscountPct: settings.launchDiscountPct ?? 0,
+    looseCreditReferencePriceArs: settings.looseCreditReferencePriceArs ?? null,
+  };
 }
 
 export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
@@ -475,6 +567,428 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       readonly routeDistanceM: number | null;
     }
   >();
+  const discountByOperation = new Map<string, number | null>();
+
+  // ---------------------------------------------------------------------------
+  // CC-029 (T-369): créditos de publicación y planes post-piloto. Réplica en memoria de la máquina de estados de
+  // supabase/migrations/20261017090000_t369_publication_credits.sql. Con el piloto encendido no se crea ningún cargo.
+  // ---------------------------------------------------------------------------
+  const AR_OFFSET_MS = 3 * 3_600_000;
+  const plans = new Map<string, FakePublicationPlanRecord>();
+  const periods: FakePlanPeriodRecord[] = [];
+  const lots: FakeCreditLotRecord[] = [];
+  const charges: FakePublicationChargeRecord[] = [];
+  const movements: FakeCreditMovementRecord[] = [];
+  const launchDiscounts = new Map<string, number>();
+  let creditSeq = 0;
+  let movementSeq = 0;
+
+  function nextCreditId(): string {
+    creditSeq += 1;
+    return `50000000-0000-4000-8000-${String(creditSeq).padStart(12, '0')}`;
+  }
+
+  function isoFromMs(ms: number): string {
+    return new Date(ms).toISOString();
+  }
+
+  function argentinaDateString(ms: number): string {
+    return new Date(ms - AR_OFFSET_MS).toISOString().slice(0, 10);
+  }
+
+  /** `(starts_at at time zone AR + interval '1 month') at time zone AR`, con el recorte de fin de mes de Postgres. */
+  function addOneMonthArgentina(ms: number): number {
+    const local = new Date(ms - AR_OFFSET_MS);
+    const year = local.getUTCFullYear();
+    const month = local.getUTCMonth() + 1;
+    const targetYear = year + Math.floor(month / 12);
+    const targetMonth = month % 12;
+    const daysInTarget = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+    const day = Math.min(local.getUTCDate(), daysInTarget);
+    return (
+      Date.UTC(
+        targetYear,
+        targetMonth,
+        day,
+        local.getUTCHours(),
+        local.getUTCMinutes(),
+        local.getUTCSeconds(),
+        local.getUTCMilliseconds()
+      ) + AR_OFFSET_MS
+    );
+  }
+
+  function legacyPaidActive(merchant: FakeMerchantRecord, ms: number): boolean {
+    if (merchant.subscriptionStatus !== 'pilot' && merchant.subscriptionStatus !== 'active') return false;
+    if (!merchant.paidUntil) return false;
+    const [y, m, d] = merchant.paidUntil.slice(0, 10).split('-').map(Number);
+    const lastDay = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + settings.subscriptionGraceDays));
+    return lastDay.toISOString().slice(0, 10) >= argentinaDateString(ms);
+  }
+
+  /** Primer instante posterior a paid_until + gracia (23:59:59.999 de Argentina), o null sin derecho legacy. */
+  function legacyEndMs(merchant: FakeMerchantRecord, paidUntil: string | null): number | null {
+    if (merchant.subscriptionStatus !== 'pilot' && merchant.subscriptionStatus !== 'active') return null;
+    if (!paidUntil) return null;
+    const [y, m, d] = paidUntil.slice(0, 10).split('-').map(Number);
+    return Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + settings.subscriptionGraceDays + 1) + AR_OFFSET_MS;
+  }
+
+  function lotUsed(lotId: string): number {
+    let used = 0;
+    for (const charge of charges) {
+      if (charge.state === 'released') continue;
+      for (const part of charge.parts) if (part.lotId === lotId) used += part.amount;
+    }
+    return used;
+  }
+
+  function lotUsable(lot: FakeCreditLotRecord, ms: number): boolean {
+    if (lot.expiresAtMs !== null && lot.expiresAtMs <= ms) return false;
+    if (lot.kind === 'loose') return true;
+    const period = periods.find((p) => p.id === lot.periodId);
+    return period !== undefined && period.startsAtMs <= ms;
+  }
+
+  function usableLots(merchantId: string, ms: number): Array<{ lot: FakeCreditLotRecord; available: number }> {
+    return lots
+      .filter((lot) => lot.merchantId === merchantId && lotUsable(lot, ms))
+      .map((lot) => ({ lot, available: lot.granted - lotUsed(lot.id) }))
+      .filter((entry) => entry.available > 0)
+      .sort((a, b) => {
+        const aLoose = a.lot.kind === 'loose' ? 1 : 0;
+        const bLoose = b.lot.kind === 'loose' ? 1 : 0;
+        if (aLoose !== bLoose) return aLoose - bLoose;
+        const aExp = a.lot.expiresAtMs ?? Number.POSITIVE_INFINITY;
+        const bExp = b.lot.expiresAtMs ?? Number.POSITIVE_INFINITY;
+        if (aExp !== bExp) return aExp - bExp;
+        return a.lot.createdSeq - b.lot.createdSeq;
+      });
+  }
+
+  function lotUnusedAsOf(lot: FakeCreditLotRecord, cutoffMs: number): number {
+    let net = 0;
+    for (const movement of movements) {
+      if (movement.lotId !== lot.id || movement.createdAtMs >= cutoffMs) continue;
+      if (movement.kind === 'reserve') net += movement.amount;
+      if (movement.kind === 'release') net -= movement.amount;
+    }
+    return Math.max(0, lot.granted - net);
+  }
+
+  function addMovement(movement: Omit<FakeCreditMovementRecord, 'id' | 'createdAtMs'>): void {
+    movementSeq += 1;
+    movements.push({ ...movement, id: movementSeq, createdAtMs: nowFn().getTime() });
+  }
+
+  function materializeCarryover(merchantId: string, ms: number): void {
+    const pending = periods
+      .filter((p) => p.merchantId === merchantId && p.startsAtMs <= ms && !p.carryoverMaterialized)
+      .sort((a, b) => a.startsAtMs - b.startsAtMs);
+    for (const period of pending) {
+      let carry = 0;
+      if (period.previousPeriodId !== null && period.carryoverPct > 0) {
+        const previous = periods.find((p) => p.id === period.previousPeriodId);
+        if (previous && previous.planKind === 'quota' && previous.monthlyCredits !== null) {
+          const previousLot = lots.find((l) => l.periodId === previous.id && l.kind === 'plan');
+          if (previousLot) {
+            carry = Math.min(
+              lotUnusedAsOf(previousLot, previous.endsAtMs),
+              Math.floor((period.carryoverPct * previous.monthlyCredits) / 100)
+            );
+          }
+        }
+      }
+      if (carry > 0 && !lots.some((l) => l.periodId === period.id && l.kind === 'carryover')) {
+        creditSeq += 1;
+        const lot: FakeCreditLotRecord = {
+          id: nextCreditId(),
+          merchantId,
+          kind: 'carryover',
+          periodId: period.id,
+          granted: carry,
+          expiresAtMs: period.endsAtMs,
+          source: 'carryover',
+          operationKey: null,
+          refundChargeId: null,
+          refundSourceLotId: null,
+          createdSeq: creditSeq,
+        };
+        lots.push(lot);
+        addMovement({ merchantId, lotId: lot.id, chargeId: null, requestId: null, kind: 'grant', amount: carry, actorId: null, reason: 'carryover' });
+      }
+      period.carryoverMaterialized = true;
+    }
+  }
+
+  function currentCharge(requestId: string): FakePublicationChargeRecord | undefined {
+    return charges.find((c) => c.requestId === requestId && c.isCurrent);
+  }
+
+  function snapshotCredits(): () => void {
+    const savedLots = lots.map((l) => ({ ...l }));
+    const savedCharges = charges.map((c) => ({ ...c, parts: c.parts.map((p) => ({ ...p })) }));
+    const savedMovements = movements.slice();
+    const savedPeriods = periods.map((p) => ({ ...p }));
+    const savedSeq = { creditSeq, movementSeq };
+    return () => {
+      lots.splice(0, lots.length, ...savedLots);
+      charges.splice(0, charges.length, ...savedCharges);
+      movements.splice(0, movements.length, ...savedMovements);
+      periods.splice(0, periods.length, ...savedPeriods);
+      creditSeq = savedSeq.creditSeq;
+      movementSeq = savedSeq.movementSeq;
+    };
+  }
+
+  function releasePublication(requestId: string, actorId: string | null, reason: string): void {
+    const charge = currentCharge(requestId);
+    if (!charge) return;
+    const ms = nowFn().getTime();
+    for (const part of charge.parts) {
+      addMovement({ merchantId: charge.merchantId, lotId: part.lotId, chargeId: charge.id, requestId, kind: 'release', amount: part.amount, actorId, reason });
+      const lot = lots.find((l) => l.id === part.lotId);
+      if (
+        lot &&
+        lot.expiresAtMs !== null &&
+        lot.expiresAtMs <= ms &&
+        !lots.some((l) => l.refundChargeId === charge.id && l.refundSourceLotId === lot.id)
+      ) {
+        creditSeq += 1;
+        const refund: FakeCreditLotRecord = {
+          id: nextCreditId(),
+          merchantId: charge.merchantId,
+          kind: 'loose',
+          periodId: null,
+          granted: part.amount,
+          expiresAtMs: null,
+          source: 'refund_conversion',
+          operationKey: null,
+          refundChargeId: charge.id,
+          refundSourceLotId: lot.id,
+          createdSeq: creditSeq,
+        };
+        lots.push(refund);
+        addMovement({ merchantId: charge.merchantId, lotId: refund.id, chargeId: charge.id, requestId, kind: 'convert', amount: part.amount, actorId, reason });
+      }
+    }
+    if (charge.mode !== 'credits') {
+      addMovement({ merchantId: charge.merchantId, lotId: null, chargeId: charge.id, requestId, kind: 'release', amount: 0, actorId, reason });
+    }
+    charge.state = 'released';
+    charge.isCurrent = false;
+  }
+
+  function consumePublication(requestId: string): void {
+    const charge = currentCharge(requestId);
+    if (!charge || charge.state !== 'reserved') return;
+    charge.state = 'consumed';
+    addMovement({ merchantId: charge.merchantId, lotId: null, chargeId: charge.id, requestId, kind: 'consume', amount: 0, actorId: actor.userId, reason: 'match' });
+  }
+
+  function unconsumePublication(requestId: string, reason: string): void {
+    const charge = currentCharge(requestId);
+    if (!charge || charge.state !== 'consumed') return;
+    charge.state = 'reserved';
+    addMovement({ merchantId: charge.merchantId, lotId: null, chargeId: charge.id, requestId, kind: 'unconsume', amount: 0, actorId: actor.userId, reason });
+  }
+
+  function retirePublicationCharge(requestId: string): void {
+    const charge = currentCharge(requestId);
+    if (!charge) return;
+    if (charge.state === 'consumed') {
+      charge.isCurrent = false;
+    } else {
+      releasePublication(requestId, actor.userId, 'republish');
+    }
+  }
+
+  /** Reconciliación perezosa de las vencidas del comercio antes de reservar (CC-026 + CC-029). */
+  function reconcileMerchantExpired(merchantId: string, now: Date): string[] {
+    const expired: string[] = [];
+    for (const request of requests.values()) {
+      if (
+        request.merchantId === merchantId &&
+        request.status === 'published' &&
+        request.acceptedOfferId === null &&
+        isRequestExpired(request.status, request.expiresAt, now)
+      ) {
+        request.status = 'expired';
+        expired.push(request.requestId);
+      }
+    }
+    const expiredSet = new Set(expired);
+    for (const offer of offers.values()) {
+      if (expiredSet.has(offer.requestId) && offer.status === 'pending') offer.status = 'expired';
+    }
+    for (const requestId of expired) releasePublication(requestId, actor.userId, 'expired');
+    return expired;
+  }
+
+  /** Elegibilidad por suscripción: con el piloto encendido, la regla de siempre; apagado, solo cancelled bloquea. */
+  function publicationGate(
+    merchant: FakeMerchantRecord,
+    currentNow: Date
+  ): ActionResult<true, DomainErrorCode> {
+    if (settings.pilotActive) {
+      return canMerchantPublishRequest({
+        subscriptionStatus: merchant.subscriptionStatus,
+        pilotActive: settings.pilotActive,
+        paidUntil: merchant.paidUntil,
+        graceDays: settings.subscriptionGraceDays,
+        now: currentNow,
+      });
+    }
+    return merchant.subscriptionStatus === 'cancelled' ? err('SUBSCRIPTION_INACTIVE') : ok(true);
+  }
+
+  function publicationCost(drops: number): number {
+    return 1 + Math.max(0, drops - (settings.publicationDropsPerCredit ?? 2));
+  }
+
+  /** Reserva al publicar (D3/D5): legacy_paid → ilimitado vigente → créditos. Sin efecto con el piloto encendido. */
+  function reservePublication(
+    requestId: string,
+    merchant: FakeMerchantRecord,
+    drops: number,
+    currentNow: Date
+  ): ActionResult<true, 'PUBLICATION_CREDITS_EXHAUSTED'> {
+    if (settings.pilotActive) return ok(true);
+    const ms = currentNow.getTime();
+    const current = currentCharge(requestId);
+    if (current && current.state === 'reserved') return ok(true);
+    const merchantId = merchant.merchantId;
+    if (legacyPaidActive(merchant, ms)) {
+      const charge: FakePublicationChargeRecord = { id: nextCreditId(), requestId, merchantId, mode: 'legacy_paid', cost: 0, state: 'reserved', isCurrent: true, periodId: null, parts: [] };
+      charges.push(charge);
+      addMovement({ merchantId, lotId: null, chargeId: charge.id, requestId, kind: 'reserve', amount: 0, actorId: actor.userId, reason: 'legacy_paid' });
+      return ok(true);
+    }
+    const unlimited = periods
+      .filter((p) => p.merchantId === merchantId && p.planKind === 'unlimited' && p.startsAtMs <= ms && ms < p.endsAtMs)
+      .sort((a, b) => b.startsAtMs - a.startsAtMs)[0];
+    if (unlimited) {
+      const charge: FakePublicationChargeRecord = { id: nextCreditId(), requestId, merchantId, mode: 'unlimited', cost: 0, state: 'reserved', isCurrent: true, periodId: unlimited.id, parts: [] };
+      charges.push(charge);
+      addMovement({ merchantId, lotId: null, chargeId: charge.id, requestId, kind: 'reserve', amount: 0, actorId: actor.userId, reason: 'unlimited' });
+      return ok(true);
+    }
+    materializeCarryover(merchantId, ms);
+    const cost = publicationCost(drops);
+    const usable = usableLots(merchantId, ms);
+    const total = usable.reduce((sum, entry) => sum + entry.available, 0);
+    if (total < cost) return err('PUBLICATION_CREDITS_EXHAUSTED');
+    const charge: FakePublicationChargeRecord = { id: nextCreditId(), requestId, merchantId, mode: 'credits', cost, state: 'reserved', isCurrent: true, periodId: null, parts: [] };
+    let remaining = cost;
+    for (const entry of usable) {
+      if (remaining === 0) break;
+      const take = Math.min(remaining, entry.available);
+      charge.parts.push({ lotId: entry.lot.id, amount: take });
+      remaining -= take;
+    }
+    charges.push(charge);
+    for (const part of charge.parts) {
+      addMovement({ merchantId, lotId: part.lotId, chargeId: charge.id, requestId, kind: 'reserve', amount: part.amount, actorId: actor.userId, reason: 'publish' });
+    }
+    return ok(true);
+  }
+
+  function periodSummary(period: FakePlanPeriodRecord | undefined) {
+    if (!period) return null;
+    const plan = plans.get(period.planId);
+    return {
+      periodId: period.id,
+      planId: period.planId,
+      planName: plan?.name ?? period.planId,
+      planKind: period.planKind,
+      monthlyCredits: period.monthlyCredits,
+      startsAt: isoFromMs(period.startsAtMs),
+      endsAt: isoFromMs(period.endsAtMs),
+      streak: period.streak,
+      carryoverPct: period.carryoverPct,
+    };
+  }
+
+  function publicationBalance(merchant: FakeMerchantRecord, currentNow: Date): PublicationBalance {
+    const ms = currentNow.getTime();
+    const merchantId = merchant.merchantId;
+    materializeCarryover(merchantId, ms);
+    const legacy = legacyPaidActive(merchant, ms);
+    const unlimited = periods.some(
+      (p) => p.merchantId === merchantId && p.planKind === 'unlimited' && p.startsAtMs <= ms && ms < p.endsAtMs
+    );
+    const available = usableLots(merchantId, ms).reduce((sum, entry) => sum + entry.available, 0);
+    const reserved = charges
+      .filter((c) => c.merchantId === merchantId && c.state === 'reserved')
+      .reduce((sum, c) => sum + c.parts.reduce((s, p) => s + p.amount, 0), 0);
+    const scheduled = lots
+      .filter((l) => l.merchantId === merchantId && l.periodId !== null)
+      .filter((l) => (periods.find((p) => p.id === l.periodId)?.startsAtMs ?? 0) > ms)
+      .reduce((sum, l) => sum + l.granted, 0);
+    let mode: PublicationBalance['mode'];
+    let canPublish: boolean;
+    if (settings.pilotActive) {
+      mode = merchant.subscriptionStatus === 'pilot' ? 'pilot' : legacy ? 'legacy_paid' : 'credits';
+      canPublish =
+        merchant.subscriptionStatus !== 'expired' &&
+        merchant.subscriptionStatus !== 'cancelled' &&
+        (merchant.subscriptionStatus === 'pilot' || legacy);
+    } else {
+      mode = legacy ? 'legacy_paid' : unlimited ? 'unlimited' : 'credits';
+      canPublish = merchant.subscriptionStatus !== 'cancelled' && (legacy || unlimited || available >= 1);
+    }
+    const merchantPeriods = periods.filter((p) => p.merchantId === merchantId);
+    const current = merchantPeriods
+      .filter((p) => p.startsAtMs <= ms && ms < p.endsAtMs)
+      .sort((a, b) => b.startsAtMs - a.startsAtMs)[0];
+    const next = merchantPeriods.filter((p) => p.startsAtMs > ms).sort((a, b) => a.startsAtMs - b.startsAtMs)[0];
+    const lotSummaries = lots
+      .filter((l) => l.merchantId === merchantId && (l.expiresAtMs === null || l.expiresAtMs > ms))
+      .map((l) => ({ lot: l, available: l.granted - lotUsed(l.id) }))
+      .filter((entry) => entry.available > 0)
+      .sort((a, b) => {
+        const aLoose = a.lot.kind === 'loose' ? 1 : 0;
+        const bLoose = b.lot.kind === 'loose' ? 1 : 0;
+        if (aLoose !== bLoose) return aLoose - bLoose;
+        const aExp = a.lot.expiresAtMs ?? Number.POSITIVE_INFINITY;
+        const bExp = b.lot.expiresAtMs ?? Number.POSITIVE_INFINITY;
+        if (aExp !== bExp) return aExp - bExp;
+        return a.lot.createdSeq - b.lot.createdSeq;
+      })
+      .map(({ lot, available: lotAvailable }) => {
+        const period = periods.find((p) => p.id === lot.periodId);
+        return {
+          lotId: lot.id,
+          kind: lot.kind,
+          source: lot.source,
+          granted: lot.granted,
+          available: lotAvailable,
+          startsAt: period ? isoFromMs(period.startsAtMs) : null,
+          expiresAt: lot.expiresAtMs === null ? null : isoFromMs(lot.expiresAtMs),
+          usable: lotUsable(lot, ms),
+        };
+      });
+    return {
+      merchantId,
+      mode,
+      canPublish,
+      subscriptionStatus: merchant.subscriptionStatus,
+      legacyPaidUntil: merchant.paidUntil ? merchant.paidUntil.slice(0, 10) : null,
+      available,
+      reserved,
+      scheduled,
+      currentPeriod: periodSummary(current),
+      nextPeriod: periodSummary(next),
+      lots: lotSummaries,
+    };
+  }
+
+  function applyLaunchDiscount(merchantId: string): number | null {
+    const pct = settings.launchDiscountPct ?? 0;
+    if (pct <= 0 || launchDiscounts.has(merchantId)) return null;
+    launchDiscounts.set(merchantId, pct);
+    return pct;
+  }
 
   function getWindowBucketKey(subject: string, action: string, currentNow: Date): string {
     const minuteIso = new Date(Math.floor(currentNow.getTime() / 60_000) * 60_000).toISOString();
@@ -813,6 +1327,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     seedIncident: putIncident,
     getIncident: (incidentId) => incidents.get(incidentId),
     getRequest: (requestId) => requests.get(requestId),
+    getPublicationCharges: (requestId) =>
+      charges.filter((c) => c.requestId === requestId).map((c) => ({ ...c, parts: c.parts.map((p) => ({ ...p })) })),
     getOffer: (offerId) => offers.get(offerId),
     getCourier: (courierId) => couriers.get(courierId),
     getSettings: () => ({ ...settings }),
@@ -887,6 +1403,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           }
         }
 
+        for (const request of reconciled) {
+          releasePublication(request.requestId, actor.userId, 'expired');
+        }
+
         return ok({
           expiredRequestIds: reconciled.map((request) => request.requestId),
           expiredCount: reconciled.length,
@@ -921,13 +1441,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const currentNow = nowFn();
         const merchant = merchants.get(actor.userId);
         if (!merchant) return err('SUBSCRIPTION_INACTIVE');
-        const subCheck = canMerchantPublishRequest({
-          subscriptionStatus: merchant.subscriptionStatus,
-          pilotActive: settings.pilotActive,
-          paidUntil: merchant.paidUntil,
-          graceDays: settings.subscriptionGraceDays,
-          now: currentNow,
-        });
+        const subCheck = publicationGate(merchant, currentNow);
         if (!subCheck.ok) {
           return err(subCheck.code as RpcErrorCode<'create_and_publish_multi_drop'>);
         }
@@ -955,12 +1469,20 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           }
         }
 
+        // CC-029: reconciliar vencidas (piloto apagado) y reservar antes del tope por ventana, como request_cycle.
+        if (!settings.pilotActive) reconcileMerchantExpired(actor.userId, currentNow);
+        const restoreCredits = snapshotCredits();
+        const reservation = reservePublication(input.requestId, merchant, input.drops.length, currentNow);
+        if (!reservation.ok) return reservation;
         const rate = consumeRequestRate(
           'publish_request',
           settings.maxRequestPublicationsPerMin,
           currentNow
         );
-        if (!rate.ok) return rate;
+        if (!rate.ok) {
+          restoreCredits();
+          return rate;
+        }
 
         let currentLat = input.pickupLat;
         let currentLng = input.pickupLng;
@@ -1079,13 +1601,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
         const merchant = merchants.get(actor.userId);
         if (!merchant) return err('SUBSCRIPTION_INACTIVE');
-        const subCheck = canMerchantPublishRequest({
-          subscriptionStatus: merchant.subscriptionStatus,
-          pilotActive: settings.pilotActive,
-          paidUntil: merchant.paidUntil,
-          graceDays: settings.subscriptionGraceDays,
-          now: currentNow,
-        });
+        const subCheck = publicationGate(merchant, currentNow);
         if (!subCheck.ok) {
           return err(subCheck.code as RpcErrorCode<'publish_request'>);
         }
@@ -1238,12 +1754,20 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('OFFER_BELOW_MINIMUM');
         }
 
+        // CC-029: reserva antes del tope por ventana, como request_cycle.
+        if (!settings.pilotActive) reconcileMerchantExpired(actor.userId, currentNow);
+        const restoreCredits = snapshotCredits();
+        const reservation = reservePublication(req.requestId, merchant, Math.max(1, req.dropsCount), currentNow);
+        if (!reservation.ok) return reservation;
         const rate = consumeRequestRate(
           'publish_request',
           settings.maxRequestPublicationsPerMin,
           currentNow
         );
-        if (!rate.ok) return rate;
+        if (!rate.ok) {
+          restoreCredits();
+          return rate;
+        }
         const publishedAt = currentNow.toISOString();
         const expiresAt = new Date(
           currentNow.getTime() + settings.requestTtlMinutes * 60_000
@@ -1313,6 +1837,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           if (accepted) accepted.status = 'cancelled';
         }
 
+        if (req.status === 'published') releasePublication(req.requestId, actor.userId, 'cancel_request');
         req.status = 'cancelled';
         return ok({
           requestId: input.requestId,
@@ -1523,6 +2048,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           const matchedAt = currentNow.toISOString();
           req.status = 'matched';
           req.acceptedOfferId = offerId;
+          consumePublication(req.requestId);
           req.assignedCourierId = actor.userId;
           req.matchedAt = matchedAt;
 
@@ -1641,6 +2167,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
         req.status = 'matched';
         req.acceptedOfferId = input.offerId;
+        consumePublication(req.requestId);
         req.assignedCourierId = offer.courierId;
         req.matchedAt = matchedIso;
 
@@ -1879,13 +2406,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (nextStatus === 'published') {
           const merchant = merchants.get(actor.userId);
           if (!merchant) return err('SUBSCRIPTION_INACTIVE');
-          const subCheck = canMerchantPublishRequest({
-            subscriptionStatus: merchant.subscriptionStatus,
-            pilotActive: settings.pilotActive,
-            paidUntil: merchant.paidUntil,
-            graceDays: settings.subscriptionGraceDays,
-            now: currentNow,
-          });
+          const subCheck = publicationGate(merchant, currentNow);
           if (!subCheck.ok) {
             return err(subCheck.code as RpcErrorCode<'report_no_show'>);
           }
@@ -1897,6 +2418,11 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             ? new Date(currentNow.getTime() + settings.requestTtlMinutes * 60_000).toISOString()
             : null;
 
+        if (nextStatus === 'cancelled') {
+          releasePublication(req.requestId, actor.userId, 'report_no_show');
+        } else {
+          unconsumePublication(req.requestId, 'report_no_show');
+        }
         req.status = nextStatus;
         req.acceptedOfferId = null;
         req.assignedCourierId = null;
@@ -1936,6 +2462,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const expiresAt = new Date(
           currentNow.getTime() + settings.requestTtlMinutes * 60_000
         ).toISOString();
+        unconsumePublication(req.requestId, 'courier_cancel_match');
         req.status = 'published';
         req.acceptedOfferId = null;
         req.assignedCourierId = null;
@@ -1972,23 +2499,29 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
         const merchant = merchants.get(actor.userId);
         if (!merchant) return err('SUBSCRIPTION_INACTIVE');
-        const subCheck = canMerchantPublishRequest({
-          subscriptionStatus: merchant.subscriptionStatus,
-          pilotActive: settings.pilotActive,
-          paidUntil: merchant.paidUntil,
-          graceDays: settings.subscriptionGraceDays,
-          now: currentNow,
-        });
+        const subCheck = publicationGate(merchant, currentNow);
         if (!subCheck.ok) {
           return err(subCheck.code as RpcErrorCode<'republish_request'>);
         }
 
+        // CC-029: retirar el cargo corriente (consumido → histórico; reservado → liberado) y reservar uno nuevo.
+        if (!settings.pilotActive) reconcileMerchantExpired(actor.userId, currentNow);
+        const restoreCredits = snapshotCredits();
+        retirePublicationCharge(req.requestId);
+        const reservation = reservePublication(req.requestId, merchant, Math.max(1, req.dropsCount), currentNow);
+        if (!reservation.ok) {
+          restoreCredits();
+          return reservation;
+        }
         const rate = consumeRequestRate(
           'publish_request',
           settings.maxRequestPublicationsPerMin,
           currentNow
         );
-        if (!rate.ok) return rate;
+        if (!rate.ok) {
+          restoreCredits();
+          return rate;
+        }
         if (effectiveStatus === 'matched' && req.acceptedOfferId) {
           const acceptedOffer = offers.get(req.acceptedOfferId);
           if (acceptedOffer) acceptedOffer.status = 'cancelled';
@@ -2446,6 +2979,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const merchant = merchants.get(input.merchantId);
         if (!merchant) return err('NOT_FOUND');
 
+        const nextLegacyEnd = legacyEndMs(
+          { ...merchant, subscriptionStatus: input.subscriptionStatus },
+          input.paidUntil ?? null
+        );
+        const nowMs = nowFn().getTime();
+        if (
+          nextLegacyEnd !== null &&
+          periods.some((p) => p.merchantId === input.merchantId && p.endsAtMs > nowMs && p.startsAtMs < nextLegacyEnd)
+        ) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
         merchant.subscriptionStatus = input.subscriptionStatus;
         merchant.paidUntil = input.paidUntil ?? null;
 
@@ -2458,6 +3003,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_update_setting: (rawInput) =>
       executeRpc('admin_update_setting', rawInput, true, (input) => {
+        if (
+          (input.key === 'carryover_base_pct' && input.value > (settings.carryoverCapPct ?? 35)) ||
+          (input.key === 'carryover_cap_pct' && input.value < (settings.carryoverBasePct ?? 5))
+        ) {
+          return err('INVALID_SETTING_VALUE');
+        }
         switch (input.key) {
           case 'min_offer_ars':
             settings = { ...settings, minOfferArs: input.value };
@@ -2477,8 +3028,244 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           case 'max_drops_per_request':
             settings = { ...settings, maxDropsPerRequest: input.value };
             break;
+          case 'publication_drops_per_credit':
+            settings = { ...settings, publicationDropsPerCredit: input.value };
+            break;
+          case 'carryover_base_pct':
+            settings = { ...settings, carryoverBasePct: input.value };
+            break;
+          case 'carryover_step_pct':
+            settings = { ...settings, carryoverStepPct: input.value };
+            break;
+          case 'carryover_cap_pct':
+            settings = { ...settings, carryoverCapPct: input.value };
+            break;
+          case 'launch_discount_pct':
+            settings = { ...settings, launchDiscountPct: input.value };
+            break;
+          case 'loose_credit_reference_price_ars':
+            settings = { ...settings, looseCreditReferencePriceArs: input.value };
+            break;
         }
         return ok(input);
+      }),
+
+    // CC-029 (T-369): catálogo, acreditación, períodos y lecturas de créditos de publicación.
+    admin_upsert_publication_plan: (rawInput) =>
+      executeRpc('admin_upsert_publication_plan', rawInput, true, (input) => {
+        const duplicate = [...plans.values()].find((p) => p.code === input.code && p.id !== input.planId);
+        if (duplicate) return err('VALIDATION_ERROR');
+        let plan: FakePublicationPlanRecord;
+        if (input.planId === null) {
+          plan = { id: nextCreditId(), code: input.code, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
+          plans.set(plan.id, plan);
+        } else {
+          const existing = plans.get(input.planId);
+          if (!existing) return err('NOT_FOUND');
+          if (
+            (existing.kind !== input.kind || existing.monthlyCredits !== input.monthlyCredits) &&
+            periods.some((p) => p.planId === existing.id)
+          ) {
+            return err('PLAN_IN_USE');
+          }
+          plan = { ...existing, code: input.code, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
+          plans.set(plan.id, plan);
+        }
+        return ok({
+          planId: plan.id,
+          code: plan.code,
+          name: plan.name,
+          kind: plan.kind,
+          monthlyCredits: plan.monthlyCredits,
+          referencePriceArs: plan.referencePriceArs,
+          active: plan.active,
+          sort: plan.sort,
+        });
+      }),
+
+    admin_grant_publication_credits: (rawInput) =>
+      executeRpc('admin_grant_publication_credits', rawInput, true, (input) => {
+        if (!merchants.has(input.merchantId)) return err('NOT_FOUND');
+        const existing = lots.find((l) => l.operationKey === input.operationKey);
+        if (existing) {
+          if (existing.merchantId !== input.merchantId || existing.granted !== input.credits || existing.source !== input.source) {
+            return err('IDEMPOTENCY_CONFLICT');
+          }
+          return ok({
+            lotId: existing.id,
+            merchantId: existing.merchantId,
+            credits: existing.granted,
+            source: input.source,
+            launchDiscountPct: discountByOperation.get(input.operationKey) ?? null,
+            idempotent: true,
+          });
+        }
+        creditSeq += 1;
+        const lot: FakeCreditLotRecord = {
+          id: nextCreditId(),
+          merchantId: input.merchantId,
+          kind: 'loose',
+          periodId: null,
+          granted: input.credits,
+          expiresAtMs: null,
+          source: input.source,
+          operationKey: input.operationKey,
+          refundChargeId: null,
+          refundSourceLotId: null,
+          createdSeq: creditSeq,
+        };
+        lots.push(lot);
+        addMovement({ merchantId: input.merchantId, lotId: lot.id, chargeId: null, requestId: null, kind: 'grant', amount: input.credits, actorId: actor.userId, reason: input.source });
+        const discount = input.source === 'purchase' ? applyLaunchDiscount(input.merchantId) : null;
+        discountByOperation.set(input.operationKey, discount);
+        return ok({
+          lotId: lot.id,
+          merchantId: input.merchantId,
+          credits: input.credits,
+          source: input.source,
+          launchDiscountPct: discount,
+          idempotent: false,
+        });
+      }),
+
+    admin_register_plan_period: (rawInput) =>
+      executeRpc('admin_register_plan_period', rawInput, true, (input) => {
+        const merchant = merchants.get(input.merchantId);
+        if (!merchant) return err('NOT_FOUND');
+        const existing = periods.find((p) => p.operationKey === input.operationKey);
+        if (existing) {
+          if (existing.merchantId !== input.merchantId || existing.planId !== input.planId || existing.isPurchase !== input.isPurchase) {
+            return err('IDEMPOTENCY_CONFLICT');
+          }
+          return ok({
+            periodId: existing.id,
+            merchantId: existing.merchantId,
+            planId: existing.planId,
+            startsAt: isoFromMs(existing.startsAtMs),
+            endsAt: isoFromMs(existing.endsAtMs),
+            streak: existing.streak,
+            carryoverPct: existing.carryoverPct,
+            launchDiscountPct: existing.launchDiscountPct,
+            idempotent: true,
+          });
+        }
+        const plan = plans.get(input.planId);
+        if (!plan) return err('NOT_FOUND');
+        if (!plan.active) return err('PLAN_INACTIVE');
+
+        const ms = nowFn().getTime();
+        const graceMs = settings.subscriptionGraceDays * 86_400_000;
+        const last = periods
+          .filter((p) => p.merchantId === input.merchantId)
+          .sort((a, b) => b.endsAtMs - a.endsAtMs)[0];
+        let startsAtMs: number;
+        let streak: number;
+        let previousPeriodId: string | null;
+        if (last && last.endsAtMs > ms) {
+          startsAtMs = last.endsAtMs;
+          streak = last.streak + 1;
+          previousPeriodId = last.id;
+        } else if (last && ms <= last.endsAtMs + graceMs) {
+          startsAtMs = ms;
+          streak = last.streak + 1;
+          previousPeriodId = last.id;
+        } else {
+          const legacyEnd = legacyPaidActive(merchant, ms) ? legacyEndMs(merchant, merchant.paidUntil) : null;
+          startsAtMs = Math.max(ms, legacyEnd ?? ms);
+          streak = 1;
+          previousPeriodId = null;
+        }
+        const carryoverPct =
+          streak >= 2
+            ? Math.min(
+                (settings.carryoverBasePct ?? 5) + (settings.carryoverStepPct ?? 5) * (streak - 2),
+                settings.carryoverCapPct ?? 35
+              )
+            : 0;
+        const period: FakePlanPeriodRecord = {
+          id: nextCreditId(),
+          merchantId: input.merchantId,
+          planId: plan.id,
+          planKind: plan.kind,
+          monthlyCredits: plan.monthlyCredits,
+          startsAtMs,
+          endsAtMs: addOneMonthArgentina(startsAtMs),
+          streak,
+          carryoverPct,
+          previousPeriodId,
+          carryoverMaterialized: false,
+          operationKey: input.operationKey,
+          isPurchase: input.isPurchase,
+          launchDiscountPct: null,
+        };
+        periods.push(period);
+        if (plan.kind === 'quota' && plan.monthlyCredits !== null) {
+          creditSeq += 1;
+          const lot: FakeCreditLotRecord = {
+            id: nextCreditId(),
+            merchantId: input.merchantId,
+            kind: 'plan',
+            periodId: period.id,
+            granted: plan.monthlyCredits,
+            expiresAtMs: period.endsAtMs,
+            source: 'plan',
+            operationKey: null,
+            refundChargeId: null,
+            refundSourceLotId: null,
+            createdSeq: creditSeq,
+          };
+          lots.push(lot);
+          addMovement({ merchantId: input.merchantId, lotId: lot.id, chargeId: null, requestId: null, kind: 'grant', amount: plan.monthlyCredits, actorId: actor.userId, reason: 'plan' });
+        }
+        period.launchDiscountPct = input.isPurchase ? applyLaunchDiscount(input.merchantId) : null;
+        return ok({
+          periodId: period.id,
+          merchantId: input.merchantId,
+          planId: plan.id,
+          startsAt: isoFromMs(period.startsAtMs),
+          endsAt: isoFromMs(period.endsAtMs),
+          streak,
+          carryoverPct,
+          launchDiscountPct: period.launchDiscountPct,
+          idempotent: false,
+        });
+      }),
+
+    admin_get_merchant_publication_credits: (rawInput) =>
+      executeRpc('admin_get_merchant_publication_credits', rawInput, true, (input) => {
+        const merchant = merchants.get(input.merchantId);
+        if (!merchant) return err('NOT_FOUND');
+        const currentNow = nowFn();
+        reconcileMerchantExpired(input.merchantId, currentNow);
+        const limit = input.limit ?? 50;
+        const page = movements
+          .filter((m) => m.merchantId === input.merchantId && (input.beforeId == null || m.id < input.beforeId))
+          .sort((a, b) => b.id - a.id)
+          .slice(0, limit);
+        return ok({
+          balance: publicationBalance(merchant, currentNow),
+          movements: page.map((m) => ({
+            id: m.id,
+            kind: m.kind,
+            amount: m.amount,
+            lotId: m.lotId,
+            chargeId: m.chargeId,
+            requestId: m.requestId,
+            actorId: m.actorId,
+            reason: m.reason,
+            createdAt: isoFromMs(m.createdAtMs),
+          })),
+          nextCursor: page.length === limit ? (page[page.length - 1]?.id ?? null) : null,
+        });
+      }),
+
+    get_my_publication_balance: (rawInput) =>
+      executeRpc('get_my_publication_balance', rawInput, false, () => {
+        const merchant = merchants.get(actor.userId);
+        if (!merchant) return err('UNAUTHORIZED_ACTOR');
+        const currentNow = nowFn();
+        reconcileMerchantExpired(actor.userId, currentNow);
+        return ok(publicationBalance(merchant, currentNow));
       }),
 
     // CC-012 / D06-A: la suspensión preventiva deriva el repartidor desde la oferta accepted de la
