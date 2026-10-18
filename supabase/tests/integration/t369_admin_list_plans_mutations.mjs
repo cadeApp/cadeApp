@@ -189,7 +189,7 @@ for (const mutation of MUTATIONS) {
       `${TAG} ${mutation.id}: RED inválido (pruebas ${red.total}/${baseline.total}; faltan ${JSON.stringify(missing)}; ajenas ${JSON.stringify(foreign)}; fallas ${JSON.stringify(red.failed)})`
     );
   } else {
-    console.log(`${TAG} ${mutation.id} RED: ${red.failed.length}/${red.total} fallas, todas de D01-B:\n  - ${red.failed.join('\n  - ')}`);
+    console.log(`${TAG} ${mutation.id} RED: ${red.failed.length}/${red.total} fallas, todas esperadas (D01-B${allowed.length ? ' o permitidas' : ''}):\n  - ${red.failed.join('\n  - ')}`);
   }
   const green = runSuite(`${mutation.id} (restaurado)`);
   if (green.failed.length > 0 || green.total !== baseline.total) {
