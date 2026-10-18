@@ -323,14 +323,22 @@ async function scenarioC(courierId, adminId) {
     s2Output = await s2.wait(pendingS2);
   });
 
-  assert.doesNotMatch(s2Output, /ERROR:/, 'S2 termina sin error fatal');
+  console.log(`${TAG} Escenario C S2 salida:\n${s2Output.trim()}`);
+  // Comprobar resultado: o bien RLS rechaza la escritura bajo EPQ (42501 / policy violation) o bien actualiza 0 filas.
+  // En cualquier caso, no debe escribir si el consentimiento ya no está vigente (sin escribir si no está vigente).
+  assert.ok(
+    /42501|violates row-level security policy|UPDATE 0/.test(s2Output),
+    `S2 debe ser rechazado por RLS o no afectar filas tras revocación de consentimiento. Salida: ${s2Output}`
+  );
 
   const profile = runSql(`select consent_status || '||' || phone from public.profiles where id = '${courierId}';`);
   const [consentStatus, phone] = profile.split('||');
 
   assert.equal(consentStatus, 'reconsent_required', 'consent_status debe persistir reconsent_required');
   assert.equal(phone, '3865000091', 'phone no debe haberse modificado tras revocación de consentimiento');
-  console.log(`${TAG} Escenario C GREEN: consentimiento revocado bloquea la escritura concurrente de teléfono (0 filas afectadas).`);
+  console.log(
+    `${TAG} Escenario C GREEN: consentimiento revocado por admin bloquea la escritura concurrente de teléfono (${s2Output.includes('42501') ? 'rechazo RLS 42501' : '0 filas actualizadas'}), estado persistido.`
+  );
 }
 
 /** Ejecuta el harness pgTAP de mutación RED->GREEN (H01) sobre la suite unitaria original. */
@@ -341,7 +349,7 @@ function runPgTapHarness() {
   function execPgTap() {
     const res = spawnSync(pnpmCmd, ['supabase', 'test', 'db', PGTAP_SUITE], {
       encoding: 'utf8',
-      shell: process.platform === 'win32',
+      shell: true,
       maxBuffer: 10 * 1024 * 1024,
     });
     const output = `${res.stdout || ''}\n${res.stderr || ''}`;
