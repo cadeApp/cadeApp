@@ -10,6 +10,7 @@ import {
   type DocumentReviewStatus,
   type CourierReviewStatus,
 } from '@/features/courier-onboarding';
+import { getCourierApprovedAvatarUrl } from '@/features/courier-onboarding/server';
 
 
 export default async function CourierProfilePage() {
@@ -88,12 +89,23 @@ export default async function CourierProfilePage() {
   const selfieDoc = docsMap.get('selfie');
   const licenseDoc = docsMap.get('license');
   const insuranceDoc = docsMap.get('insurance');
+  const avatarDoc = docsMap.get('avatar');
 
   const dniFrontStatus: DocumentReviewStatus = dniFrontDoc?.status ?? 'none';
   const dniBackStatus: DocumentReviewStatus = dniBackDoc?.status ?? 'none';
   const selfieStatus: DocumentReviewStatus = selfieDoc?.status ?? 'none';
   const licenseStatus: DocumentReviewStatus = licenseDoc?.status ?? 'none';
   const insuranceStatus: DocumentReviewStatus = insuranceDoc?.status ?? 'none';
+  const avatarStatus: DocumentReviewStatus = avatarDoc?.status ?? 'none';
+
+  let avatarUrl: string | null = null;
+  if (courier.status === 'approved' && avatarStatus === 'verified') {
+    try {
+      avatarUrl = await getCourierApprovedAvatarUrl(user.id, { client: supabase });
+    } catch {
+      avatarUrl = null;
+    }
+  }
 
   const dniStatus = combineDniDocumentStatus(dniFrontStatus, dniBackStatus);
 
@@ -103,6 +115,8 @@ export default async function CourierProfilePage() {
     email: user.email ?? '',
     vehicleType: courier.vehicle_type,
     plate: courier.vehicle_plate,
+    avatarUrl,
+    avatarStatus,
     dniStatus,
     dniFrontStatus,
     dniFrontRejectionMessage:
