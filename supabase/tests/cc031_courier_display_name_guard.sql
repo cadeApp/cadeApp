@@ -159,10 +159,12 @@ select is((select display_name from public.profiles where id = pg_temp.cc031_id(
 -- Dos sesiones contra la misma base efímera de CI, por socket local, sin claves.
 -- La fixture remota debe confirmarse para ser visible entre las sesiones; se elimina abajo.
 create extension if not exists dblink with schema extensions;
-select dblink_connect('cc031_a', format('dbname=%L host=%L application_name=cc031_a',
-  current_database(), split_part(current_setting('unix_socket_directories'), ',', 1)));
-select dblink_connect('cc031_b', format('dbname=%L host=%L application_name=cc031_b',
-  current_database(), split_part(current_setting('unix_socket_directories'), ',', 1)));
+select dblink_connect('cc031_a', format('dbname=%L host=%L port=%L user=%L connect_timeout=5 application_name=cc031_a',
+  current_database(), split_part(current_setting('unix_socket_directories'), ',', 1),
+  current_setting('port'), current_user));
+select dblink_connect('cc031_b', format('dbname=%L host=%L port=%L user=%L connect_timeout=5 application_name=cc031_b',
+  current_database(), split_part(current_setting('unix_socket_directories'), ',', 1),
+  current_setting('port'), current_user));
 select dblink_exec('cc031_a', $remote$
   insert into auth.users(id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
   values ('31000000-0000-4000-8000-000000000090', '00000000-0000-0000-0000-000000000000',
@@ -233,6 +235,30 @@ select is((select display_name || ':' || phone from dblink('cc031_a',
   'select display_name, phone from public.profiles where id = ''31000000-0000-4000-8000-000000000090''')
   as result(display_name text, phone text)), 'Race corrected:3865000091',
   'serialized phone write preserves corrected identity');
+
+-- Cambio de consentimiento concurrente: RLS debe reevaluar la fila vigente.
+select dblink_exec('cc031_a', $remote$
+  begin;
+  update public.profiles set consent_status = 'reconsent_required'
+  where id = '31000000-0000-4000-8000-000000000090';
+$remote$);
+select is(dblink_send_query('cc031_b', $remote$
+  update public.profiles set phone = '3865000092'
+  where id = '31000000-0000-4000-8000-000000000090' returning phone;
+$remote$), 1, 'phone dispatched while consent changes');
+select ok(pg_temp.cc031_wait_for_lock(), 'phone writer waits for consent change');
+select dblink_exec('cc031_a', 'commit');
+select is((select count(*) from dblink_get_result('cc031_b', false) as result(value text)),
+  0::bigint, 'no phone write after concurrent consent change');
+select * from dblink_get_result('cc031_b', false) as result(value text);
+select is((select count(*) from dblink('cc031_b', $remote$
+  update public.profiles set phone = '3865000092'
+  where id = '31000000-0000-4000-8000-000000000090' returning phone;
+$remote$) as result(value text)), 0::bigint, 'new phone request remains blocked by consent');
+select is((select consent_status || ':' || phone from dblink('cc031_a',
+  'select consent_status::text, phone from public.profiles where id = ''31000000-0000-4000-8000-000000000090''')
+  as result(consent_status text, phone text)), 'reconsent_required:3865000091',
+  'race preserves consent and last authorized phone');
 select dblink_exec('cc031_a',
   'delete from auth.users where id = ''31000000-0000-4000-8000-000000000090''');
 select dblink_disconnect('cc031_a');
