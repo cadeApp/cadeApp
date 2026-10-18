@@ -522,12 +522,13 @@ export async function updateCourierPhoneAction(
     .from('profiles')
     .update({ phone: parsed.data.phone } as never)
     .eq('id', user.id)
+    .eq('role', 'courier')
     .select('id, phone')
     .maybeSingle<{ id: string; phone: string | null }>();
 
   if (updateError) {
-    // Invariante de privacidad: omitir el número telefónico completo del log de error
-    console.error('Error al actualizar teléfono de perfil:', updateError.message);
+    // Invariante de privacidad: mensaje fijo sin error.message, details, hint ni payload
+    console.error('Error al actualizar teléfono de perfil en base de datos');
     return err('INTERNAL_ERROR');
   }
 

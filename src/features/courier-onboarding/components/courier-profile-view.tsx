@@ -64,7 +64,7 @@ export interface CourierProfileData {
   readonly displayName: string;
   readonly email: string;
   readonly phone?: string | null;
-  readonly dniHash?: string | null;
+  readonly hasDniOnFile?: boolean;
   readonly vehicleType: string | null;
   readonly plate: string | null;
   readonly dniStatus: DocumentReviewStatus;
@@ -455,7 +455,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
             <div className="space-y-0.5">
               <span className="text-sm font-medium text-muted-foreground">Documento de identidad (DNI)</span>
               <p className="font-medium text-foreground">
-                {activeProfile.dniHash
+                {activeProfile.hasDniOnFile
                   ? 'Registrado en legajo'
                   : activeProfile.dniStatus === 'verified'
                     ? 'Documento verificado'

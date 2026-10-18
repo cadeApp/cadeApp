@@ -226,7 +226,8 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
   });
 
   describe('T-355: /courier/profile proyecta teléfono persistido y DNI para solo lectura', () => {
-    it('proyecta el teléfono del perfil cuando está cargado en profiles', async () => {
+    it('proyecta phone y hasDniOnFile de forma segura sin exponer prefijo ni hash completo', async () => {
+      const syntheticHmac = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
       mocks.from.mockImplementation((table: string) => {
         const query = {
           select: vi.fn().mockReturnThis(),
@@ -241,7 +242,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
                     license_status: 'none',
                     insurance_status: 'none',
                     status: mocks.courierStatus,
-                    dni_hmac: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+                    dni_hmac: syntheticHmac,
                   },
             error: null,
           }),
@@ -255,11 +256,17 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
       const profile = await renderPage();
       expect(profile).toMatchObject({
         phone: '3865123456',
-        dniHash: 'abcdef12...',
+        hasDniOnFile: true,
       });
+
+      // Exigir que JSON.stringify(profileData) no contenga ni el prefijo ni el HMAC completo (H07)
+      const serialized = JSON.stringify(profile);
+      expect(serialized).not.toContain('abcdef12');
+      expect(serialized).not.toContain(syntheticHmac);
+      expect((profile as any).dniHash).toBeUndefined();
     });
 
-    it('proyecta phone null cuando no hay teléfono registrado en profiles', async () => {
+    it('proyecta phone null y hasDniOnFile false cuando no hay teléfono ni dni_hmac', async () => {
       mocks.from.mockImplementation((table: string) => {
         const query = {
           select: vi.fn().mockReturnThis(),
@@ -288,7 +295,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
       const profile = await renderPage();
       expect(profile).toMatchObject({
         phone: null,
-        dniHash: null,
+        hasDniOnFile: false,
       });
     });
   });

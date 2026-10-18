@@ -891,7 +891,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         displayName: 'Lautaro Repartidor',
         email: 'lautaro@cadeapp.test',
         phone: '3865123456',
-        dniHash: 'a1b2c3d4...',
+        hasDniOnFile: true,
         vehicleType: 'moto',
         plate: 'A 123 BCD',
         dniStatus: 'verified' as DocumentReviewStatus,

@@ -115,7 +115,7 @@ export default async function CourierProfilePage() {
     displayName: profileResult.data?.display_name ?? 'Sin nombre registrado',
     email: user.email ?? '',
     phone: profileResult.data?.phone ?? null,
-    dniHash: courier.dni_hmac ? `${courier.dni_hmac.slice(0, 8)}...` : null,
+    hasDniOnFile: Boolean(courier.dni_hmac),
     vehicleType: courier.vehicle_type,
     plate: courier.vehicle_plate,
     avatarUrl,

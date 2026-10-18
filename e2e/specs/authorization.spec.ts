@@ -1,3 +1,4 @@
+import type { BrowserContext } from '@playwright/test';
 import {
   test,
   expect,
@@ -305,6 +306,8 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
     page,
     stagingContext,
     loginAsCourier,
+    browser,
+    baseURL,
   }) => {
     const courier = stagingContext.courierUsers?.[0];
     if (!courier) {
@@ -312,13 +315,17 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
     }
 
     const admin = createAdminClient();
-    const { data: initialProfile } = await admin
+    const { data: initialProfile, error: initialProfileError } = await admin
       .from('profiles')
       .select('phone, role, display_name')
       .eq('id', courier.id)
       .single();
 
-    const previousPhone = initialProfile?.phone ?? null;
+    expect(initialProfileError).toBeNull();
+    expect(initialProfile).not.toBeNull();
+    const previousPhone = initialProfile!.phone;
+
+    let secondContext: BrowserContext | null = null;
 
     try {
       // 1. Iniciar sesión y navegar a Mi perfil
@@ -341,11 +348,12 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
       await expect(editPhoneBtn).toBeVisible();
       await editPhoneBtn.click();
 
-      // 4. Modal visible con input precargado
+      // 4. Modal visible con input precargado (H04)
       const dialog = page.getByRole('dialog');
       await expect(dialog).toBeVisible();
       const phoneInput = dialog.getByLabel(/teléfono de contacto/i);
       await expect(phoneInput).toBeVisible();
+      await expect(phoneInput).toHaveValue(previousPhone ?? '');
 
       // 5. Ingresar nuevo teléfono nacional
       const newPhone = '3865991122';
@@ -361,22 +369,35 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
       await waitForNoSkeletons(page);
       await expect(page.getByText('3865 99-1122')).toBeVisible();
 
+      // Verificar persistencia en una segunda sesión independiente (H04)
+      secondContext = await browser.newContext({ baseURL });
+      const secondPage = await secondContext.newPage();
+      await loginAsCourier(0, secondPage);
+      await secondPage.goto('/courier/profile');
+      await waitForNoSkeletons(secondPage);
+      await expect(secondPage.getByText('3865 99-1122')).toBeVisible();
+
       // 8. Verificación en base de datos: solo mutó phone, identidad intacta
-      const { data: updatedProfile } = await admin
+      const { data: updatedProfile, error: updatedProfileError } = await admin
         .from('profiles')
         .select('phone, role, display_name')
         .eq('id', courier.id)
         .single();
 
+      expect(updatedProfileError).toBeNull();
       expect(updatedProfile?.phone).toBe(newPhone);
       expect(updatedProfile?.role).toBe('courier');
-      expect(updatedProfile?.display_name).toBe(initialProfile?.display_name);
+      expect(updatedProfile?.display_name).toBe(initialProfile!.display_name);
     } finally {
-      // Restauración del estado original
-      await admin
+      if (secondContext) {
+        await secondContext.close();
+      }
+      // Restauración del estado original con comprobación de error (H08)
+      const { error: restoreError } = await admin
         .from('profiles')
         .update({ phone: previousPhone })
         .eq('id', courier.id);
+      expect(restoreError).toBeNull();
     }
   });
 });
