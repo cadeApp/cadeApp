@@ -216,6 +216,22 @@ jobs:
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_concurrency.mjs --mutation-check
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_backfill.mjs
 
+            # Huérfanos de courier-docs CC-030 (T-370): carreras writer/reclamo y controles RED->GREEN
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc030_orphan_concurrency.mjs
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc030_orphan_concurrency.mjs --mutation-check
+            CC030_MIGRATION="$(ls supabase/migrations/*_cc030_courier_docs_orphan_reconciliation.sql)"
+            CC030_MUTANT="$RUNNER_TEMP/cc030_without_grace.sql"
+            sed "s/interval '7 days'/interval '0 days'/" "$CC030_MIGRATION" > "$CC030_MUTANT"
+            docker exec -i "$DB_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres < "$CC030_MUTANT"
+            if pnpm supabase test db supabase/tests/cc030_courier_docs_orphans.sql; then
+              echo 'CC030_GRACE_MUTATION inesperadamente verde sin ventana de gracia'
+              exit 1
+            fi
+            echo 'CC030_GRACE_MUTATION RED: la suite detectó la falta de ventana de gracia.'
+            docker exec -i "$DB_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres < "$CC030_MIGRATION"
+            pnpm supabase test db supabase/tests/cc030_courier_docs_orphans.sql
+            echo 'CC030_GRACE_MUTATION GREEN: la suite original pasa tras reaplicar la migración.'
+
             # Control negativo RED->GREEN de mutaciones funcionales en DB efímera (H15 / T-340, H06 / CC-025)
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs --mutation-check
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_backfill.mjs --mutation-check
