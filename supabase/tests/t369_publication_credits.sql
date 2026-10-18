@@ -1340,6 +1340,245 @@ select is(
   'reusar la clave de un período para otro comercio da IDEMPOTENCY_CONFLICT'
 );
 
+-- ---------------------------------------------------------------------------
+-- CC-029 addendum D01-B (PR #402): admin_list_publication_plans
+-- Autorización en SQL (admin + AAL2), sin SELECT directo de la tabla, keyset (sort, id) y activeOnly.
+-- ---------------------------------------------------------------------------
+
+-- Ejecuta p_sql como anon (sin JWT de usuario). Devuelve {data} o {error, sqlstate}.
+create function pg_temp.rpc_anon(p_sql text)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_result jsonb;
+begin
+  perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+  set local role anon;
+  execute p_sql into v_result;
+  set local role postgres;
+  perform set_config('request.jwt.claims', '', true);
+  return jsonb_build_object('data', v_result);
+exception when others then
+  set local role postgres;
+  perform set_config('request.jwt.claims', '', true);
+  return jsonb_build_object('error', sqlerrm, 'sqlstate', sqlstate);
+end;
+$$;
+
+create function pg_temp.list_plans(
+  p_actor uuid, p_aal text, p_limit integer, p_after_sort integer, p_after_id uuid, p_active_only boolean
+) returns jsonb language sql as $$
+  select pg_temp.rpc(p_actor, p_aal, format(
+    'select public.admin_list_publication_plans(%s, %s, %s, %s)',
+    coalesce(p_limit::text, 'null'),
+    coalesce(p_after_sort::text, 'null'),
+    coalesce(quote_literal(p_after_id::text) || '::uuid', 'null'),
+    coalesce(p_active_only::text, 'null')
+  ));
+$$;
+
+-- Recorre todas las páginas siguiendo nextCursor. Devuelve {sizes, ids, cursorsFromLastRow, error}.
+create function pg_temp.walk_plans(p_active_only boolean) returns jsonb language plpgsql as $$
+declare
+  v_page jsonb;
+  v_sort integer := null;
+  v_id uuid := null;
+  v_sizes jsonb := '[]'::jsonb;
+  v_ids jsonb := '[]'::jsonb;
+  v_cursor_ok boolean := true;
+  v_items jsonb;
+  v_guard integer := 0;
+begin
+  loop
+    v_guard := v_guard + 1;
+    exit when v_guard > 20;
+    v_page := pg_temp.list_plans(pg_temp.admin(), 'aal2', 50, v_sort, v_id, p_active_only);
+    if v_page ? 'error' then
+      return jsonb_build_object('error', v_page->>'error');
+    end if;
+    v_items := v_page->'data'->'items';
+    v_sizes := v_sizes || to_jsonb(jsonb_array_length(v_items));
+    v_ids := v_ids || coalesce((select jsonb_agg(e->'id' order by o) from jsonb_array_elements(v_items) with ordinality as x(e, o)), '[]'::jsonb);
+    exit when jsonb_typeof(v_page->'data'->'nextCursor') = 'null';
+    v_cursor_ok := v_cursor_ok
+      and (v_page->'data'->'nextCursor'->>'id') = (v_items->(jsonb_array_length(v_items) - 1)->>'id')
+      and (v_page->'data'->'nextCursor'->>'sort') = (v_items->(jsonb_array_length(v_items) - 1)->>'sort');
+    v_sort := (v_page->'data'->'nextCursor'->>'sort')::integer;
+    v_id := (v_page->'data'->'nextCursor'->>'id')::uuid;
+  end loop;
+  return jsonb_build_object('sizes', v_sizes, 'ids', v_ids, 'cursorsFromLastRow', v_cursor_ok);
+end;
+$$;
+
+-- Catálogo de exactamente 151 planes: los que ya creó la suite más fixtures con sort repetido (n % 7) y uno de cada
+-- cuatro inactivo. Fixture directo como postgres; la RPC solo lee.
+insert into public.publication_plans (code, name, kind, monthly_credits, reference_price_ars, active, sort)
+select 'd01b-' || lpad(n::text, 3, '0'), 'Plan D01B ' || n, 'quota', 10, null, n % 4 <> 0, n % 7
+from generate_series(1, 151 - (select count(*)::integer from public.publication_plans)) as n;
+
+select is((select count(*)::integer from public.publication_plans), 151, 'D01-B: el catálogo de prueba tiene 151 planes');
+select ok(
+  (select count(*) from (select sort from public.publication_plans group by sort having count(*) > 1) as dup) > 0,
+  'D01-B: hay sort repetidos, así que el desempate por id es necesario'
+);
+
+-- Autorización: solo admin con AAL2. La guarda corre antes de validar parámetros.
+select is(
+  pg_temp.rpc_anon('select public.admin_list_publication_plans()')->>'sqlstate',
+  '42501',
+  'D01-B: anon no tiene execute sobre admin_list_publication_plans'
+);
+select is(
+  pg_temp.err(pg_temp.list_plans(null, 'aal2', 50, null, null, false)),
+  'UNAUTHENTICATED',
+  'D01-B: sin usuario autenticado da UNAUTHENTICATED'
+);
+select is(
+  pg_temp.err(pg_temp.list_plans(pg_temp.m_block(), 'aal1', 50, null, null, false)),
+  'UNAUTHORIZED_ACTOR',
+  'D01-B: un comercio con AAL1 no lista el catálogo'
+);
+select is(
+  pg_temp.err(pg_temp.list_plans(pg_temp.m_block(), 'aal2', 50, null, null, false)),
+  'UNAUTHORIZED_ACTOR',
+  'D01-B: un comercio con AAL2 tampoco lista el catálogo'
+);
+select is(
+  pg_temp.err(pg_temp.list_plans(pg_temp.courier1(), 'aal2', 50, null, null, false)),
+  'UNAUTHORIZED_ACTOR',
+  'D01-B: un repartidor no lista el catálogo'
+);
+select is(
+  pg_temp.err(pg_temp.list_plans(pg_temp.admin(), 'aal1', 50, null, null, false)),
+  'AAL2_REQUIRED',
+  'D01-B: el admin con AAL1 recibe AAL2_REQUIRED'
+);
+select is(
+  pg_temp.err(pg_temp.list_plans(pg_temp.m_block(), 'aal2', 50, 1, null, false)),
+  'UNAUTHORIZED_ACTOR',
+  'D01-B: la autorización se evalúa antes que el cursor (no filtra información por validación)'
+);
+select is(
+  jsonb_array_length(pg_temp.list_plans(pg_temp.admin(), 'aal2', 50, null, null, false)->'data'->'items'),
+  50,
+  'D01-B: el admin con AAL2 lista la primera página de 50'
+);
+
+-- La tabla sigue cerrada: sin SELECT directo para clientes, ni siquiera el admin con AAL2.
+select is(
+  pg_temp.rpc(pg_temp.admin(), 'aal2', 'select to_jsonb(count(*)) from public.publication_plans')->>'sqlstate',
+  '42501',
+  'D01-B: el admin con AAL2 no puede leer publication_plans directo'
+);
+select is(
+  pg_temp.rpc(pg_temp.m_block(), 'aal1', 'select to_jsonb(count(*)) from public.publication_plans')->>'sqlstate',
+  '42501',
+  'D01-B: un comercio no puede leer publication_plans directo'
+);
+select is(
+  pg_temp.rpc_anon('select to_jsonb(count(*)) from public.publication_plans')->>'sqlstate',
+  '42501',
+  'D01-B: anon no puede leer publication_plans directo'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.publication_plans', 'select')
+    and not has_table_privilege('anon', 'public.publication_plans', 'select')
+    and (select relrowsecurity from pg_class where oid = 'public.publication_plans'::regclass),
+  'D01-B: publication_plans sigue con RLS y sin SELECT para anon/authenticated'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.admin_list_publication_plans(integer, integer, uuid, boolean)', 'execute')
+    and not has_function_privilege('anon', 'public.admin_list_publication_plans(integer, integer, uuid, boolean)', 'execute'),
+  'D01-B: execute solo para authenticated'
+);
+select ok(
+  (select p.prosecdef and p.proconfig @> array['search_path=public, pg_temp']
+   from pg_proc p where p.oid = 'public.admin_list_publication_plans(integer, integer, uuid, boolean)'::regprocedure),
+  'D01-B: security definer con search_path fijo'
+);
+
+-- Validación (como admin AAL2).
+select is(pg_temp.err(pg_temp.list_plans(pg_temp.admin(), 'aal2', 0, null, null, false)), 'VALIDATION_ERROR', 'D01-B: límite 0 se rechaza');
+select is(pg_temp.err(pg_temp.list_plans(pg_temp.admin(), 'aal2', 51, null, null, false)), 'VALIDATION_ERROR', 'D01-B: límite 51 se rechaza');
+select is(pg_temp.err(pg_temp.list_plans(pg_temp.admin(), 'aal2', null, null, null, false)), 'VALIDATION_ERROR', 'D01-B: límite null se rechaza');
+select is(pg_temp.err(pg_temp.list_plans(pg_temp.admin(), 'aal2', 50, null, null, null)), 'VALIDATION_ERROR', 'D01-B: activeOnly null se rechaza');
+select is(pg_temp.err(pg_temp.list_plans(pg_temp.admin(), 'aal2', 50, 1, null, false)), 'VALIDATION_ERROR', 'D01-B: cursor con sort sin id se rechaza');
+select is(
+  pg_temp.err(pg_temp.list_plans(pg_temp.admin(), 'aal2', 50, null, pg_temp.id('999'), false)),
+  'VALIDATION_ERROR',
+  'D01-B: cursor con id sin sort se rechaza'
+);
+
+-- Paginación completa: 50/50/50/1, mismo orden (sort, id) que la tabla, sin perder ni repetir.
+select is(
+  pg_temp.walk_plans(false)->'sizes',
+  '[50, 50, 50, 1]'::jsonb,
+  'D01-B: 151 planes se recorren en páginas 50/50/50/1'
+);
+select is(
+  pg_temp.walk_plans(false)->'ids',
+  (select jsonb_agg(to_jsonb(id::text) order by sort, id) from public.publication_plans),
+  'D01-B: el recorrido devuelve cada plan una vez, en orden (sort, id)'
+);
+select is(
+  (pg_temp.walk_plans(false)->>'cursorsFromLastRow')::boolean,
+  true,
+  'D01-B: cada nextCursor es la última fila devuelta, no la extra'
+);
+select is(
+  pg_temp.walk_plans(true)->'ids',
+  (select jsonb_agg(to_jsonb(id::text) order by sort, id) from public.publication_plans where active),
+  'D01-B: activeOnly recorre solo los activos, completos y en orden'
+);
+select is(
+  (
+    select count(*)::integer
+    from jsonb_array_elements_text(pg_temp.walk_plans(true)->'ids') as x(id)
+    join public.publication_plans pl on pl.id = x.id::uuid
+    where not pl.active
+  ),
+  0,
+  'D01-B: activeOnly no filtra ningún plan inactivo'
+);
+select is(
+  (
+    with ranked as (
+      select sort, id, row_number() over (order by sort, id) as rn from public.publication_plans
+    ),
+    after_row as (select sort, id from ranked where rn = 101)
+    select jsonb_build_object(
+      'size', jsonb_array_length(r->'data'->'items'),
+      'next', r->'data'->'nextCursor',
+      'first', r->'data'->'items'->0->>'id'
+    )
+    from after_row, lateral (select pg_temp.list_plans(pg_temp.admin(), 'aal2', 50, after_row.sort, after_row.id, false) as r) as page
+  ),
+  jsonb_build_object(
+    'size', 50,
+    'next', 'null'::jsonb,
+    'first', (select id::text from (select id, row_number() over (order by sort, id) as rn from public.publication_plans) as t where rn = 102)
+  ),
+  'D01-B: con exactamente 50 filas restantes no hay nextCursor y la página sigue a la fila del cursor'
+);
+select is(
+  (
+    select jsonb_build_object(
+      'kind', item->>'kind', 'monthlyCredits', item->'monthlyCredits', 'referencePriceArs', item->'referencePriceArs',
+      'keys', (select jsonb_agg(k order by k) from jsonb_object_keys(item) as k)
+    )
+    from (select pg_temp.list_plans(pg_temp.admin(), 'aal2', 1, null, null, false)->'data'->'items'->0 as item) as x
+  ),
+  (
+    select jsonb_build_object(
+      'kind', kind, 'monthlyCredits', to_jsonb(monthly_credits), 'referencePriceArs', to_jsonb(reference_price_ars),
+      'keys', '["active", "code", "id", "kind", "monthlyCredits", "name", "referencePriceArs", "sort"]'::jsonb
+    )
+    from public.publication_plans order by sort, id limit 1
+  ),
+  'D01-B: cada fila trae exactamente los campos del contrato'
+);
+
 select ok(pg_temp.ledger_consistent(), 'libro y saldo derivado coinciden al final de la suite');
 
 select * from finish();

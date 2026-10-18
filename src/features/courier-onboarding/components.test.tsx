@@ -15,6 +15,7 @@ import {
   combineDniDocumentStatus,
   getDocumentStatusPresentation,
   type DocumentReviewStatus,
+  type CourierReviewStatus,
 } from './components/courier-profile-view';
 import * as actionsModule from './actions';
 import { vehiclePlateSchema } from './schemas';
@@ -737,6 +738,112 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       }
     });
 
+    describe('T-367: Visualización de avatar autorizado del repartidor en su perfil', () => {
+      it('renderiza la foto del avatar con alt accesible y estilos definidos cuando avatarUrl está disponible', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'verified',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: 'https://test-storage.local/courier-docs/courier/carlos/avatar_123.jpg?token=valid',
+            }}
+          />
+        );
+
+        const img = screen.getByRole('img', { name: 'Foto de perfil de Carlos Gómez' });
+        expect(img).toBeDefined();
+        expect(img.getAttribute('src')).toBe(
+          'https://test-storage.local/courier-docs/courier/carlos/avatar_123.jpg?token=valid'
+        );
+        expect(img.className).toContain('object-cover');
+      });
+
+      it('muestra el ícono genérico User si avatarUrl es null o undefined', () => {
+        const { container } = render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: null,
+            }}
+          />
+        );
+
+        expect(screen.queryByRole('img', { name: /foto de perfil/i })).toBeNull();
+        expect(screen.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeDefined();
+        const svg = container.querySelector('svg.lucide-user');
+        expect(svg).not.toBeNull();
+      });
+
+      it('hace fallback al ícono User si la imagen de avatarUrl dispara error de carga (onError)', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: 'https://test-storage.local/courier-docs/courier/carlos/expired.jpg',
+            }}
+          />
+        );
+
+        const img = screen.getByRole('img', { name: 'Foto de perfil de Carlos Gómez' });
+        expect(img).toBeDefined();
+
+        fireEvent.error(img);
+
+        expect(screen.queryByRole('img', { name: 'Foto de perfil de Carlos Gómez' })).toBeNull();
+        expect(screen.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeDefined();
+      });
+
+      it('invariante de seguridad: jamás renderiza DNI o selfie como avatar si no hay avatarUrl', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: null,
+            }}
+          />
+        );
+
+        expect(screen.queryByRole('img', { name: /foto de perfil/i })).toBeNull();
+        expect(screen.queryByRole('img', { name: /selfie/i })).toBeNull();
+        expect(screen.queryByRole('img', { name: /dni/i })).toBeNull();
+      });
+    });
+
     describe('T-334: repartidor recién registrado sin onboarding enviado', () => {
       const freshCourier = {
         displayName: 'Repartidor Nuevo',
@@ -775,6 +882,152 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         expect(screen.getByText('En revisión administrativa')).toBeDefined();
         expect(screen.queryByText('Completá tu registro')).toBeNull();
         expect(screen.queryByRole('link', { name: /continuar registro/i })).toBeNull();
+      });
+    });
+
+    describe('T-355: Datos personales y edición de teléfono en CourierProfileView', () => {
+      const baseCourier = {
+        courierId: 'courier-123',
+        displayName: 'Lautaro Repartidor',
+        email: 'lautaro@cadeapp.test',
+        phone: '3865123456',
+        hasDniOnFile: true,
+        vehicleType: 'moto',
+        plate: 'A 123 BCD',
+        dniStatus: 'verified' as DocumentReviewStatus,
+        selfieStatus: 'verified' as DocumentReviewStatus,
+        licenseStatus: 'none' as DocumentReviewStatus,
+        insuranceStatus: 'none' as DocumentReviewStatus,
+        courierStatus: 'approved' as CourierReviewStatus,
+        onboardingComplete: true,
+      };
+
+      it('renderiza la sección Datos personales con nombre, email, DNI y teléfono formateado', () => {
+        render(<CourierProfileView profile={baseCourier} />);
+
+        // Tarjeta Datos personales visible
+        const personalCard = screen.getByText('Datos personales').closest('.space-y-4');
+        if (!personalCard) throw new Error('No se encontró la tarjeta Datos personales');
+        expect(personalCard).toBeDefined();
+
+        // Nombre solo lectura
+        expect(within(personalCard as HTMLElement).getByText('Lautaro Repartidor')).toBeDefined();
+        // Email solo lectura
+        expect(within(personalCard as HTMLElement).getByText('lautaro@cadeapp.test')).toBeDefined();
+        // DNI o identificación de legajo
+        expect(within(personalCard as HTMLElement).getByText(/Documento de identidad|DNI/i)).toBeDefined();
+        // Teléfono formateado
+        expect(within(personalCard as HTMLElement).getByText('3865 12-3456')).toBeDefined();
+
+        // Botón exclusivo "Editar teléfono" disponible
+        expect(within(personalCard as HTMLElement).getByRole('button', { name: /editar teléfono/i })).toBeDefined();
+
+        // Ningún input editable visible en la tarjeta principal
+        const inputs = screen.queryAllByRole('textbox');
+        expect(inputs).toHaveLength(0);
+
+        // Sin botones de edición para nombre, email ni DNI
+        expect(within(personalCard as HTMLElement).queryByRole('button', { name: /editar nombre/i })).toBeNull();
+        expect(within(personalCard as HTMLElement).queryByRole('button', { name: /editar email/i })).toBeNull();
+        expect(within(personalCard as HTMLElement).queryByRole('button', { name: /editar dni/i })).toBeNull();
+      });
+
+      it('muestra «Sin teléfono registrado» cuando phone es null y permite abrir edición', () => {
+        render(<CourierProfileView profile={{ ...baseCourier, phone: null }} />);
+
+        expect(screen.getByText('Sin teléfono registrado')).toBeDefined();
+        const editBtn = screen.getByRole('button', { name: /editar teléfono/i });
+        expect(editBtn).toBeDefined();
+        fireEvent.click(editBtn);
+
+        // Abre diálogo con input de teléfono vacío
+        const dialog = screen.getByRole('dialog');
+        const phoneInput = within(dialog).getByLabelText(/teléfono de contacto/i);
+        expect(phoneInput).toBeDefined();
+        expect((phoneInput as HTMLInputElement).value).toBe('');
+      });
+
+      it('precarga el teléfono actual en el diálogo de edición y valida formato en submit', async () => {
+        render(<CourierProfileView profile={baseCourier} />);
+
+        const editBtn = screen.getByRole('button', { name: /editar teléfono/i });
+        fireEvent.click(editBtn);
+
+        // Input precargado con el teléfono actual
+        const dialog = screen.getByRole('dialog');
+        const phoneInput = within(dialog).getByLabelText(/teléfono de contacto/i) as HTMLInputElement;
+        expect(phoneInput.value).toBe('3865123456');
+
+        // Modifica a un teléfono inválido
+        fireEvent.change(phoneInput, { target: { value: '12345' } });
+        const saveBtn = within(dialog).getByRole('button', { name: /guardar|confirmar/i });
+        fireEvent.click(saveBtn);
+
+        // Muestra error de validación y no llama a la acción
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toBeDefined();
+          expect(screen.getByRole('alert').textContent).toMatch(/10 dígitos nacionales|número argentino válido/i);
+        });
+      });
+
+      it('al guardar exitosamente actualiza la UI, muestra confirmación y llama a router.refresh()', async () => {
+        const spyAction = vi.spyOn(actionsModule, 'updateCourierPhoneAction').mockResolvedValueOnce({
+          ok: true,
+          data: { phone: '3865999888', redirectTo: '/courier/profile' },
+        });
+
+        render(<CourierProfileView profile={baseCourier} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /editar teléfono/i }));
+
+        const dialog = screen.getByRole('dialog');
+        const phoneInput = within(dialog).getByLabelText(/teléfono de contacto/i) as HTMLInputElement;
+        fireEvent.change(phoneInput, { target: { value: '3865999888' } });
+
+        const saveBtn = within(dialog).getByRole('button', { name: /guardar|confirmar/i });
+        fireEvent.click(saveBtn);
+
+        await waitFor(() => {
+          expect(spyAction).toHaveBeenCalledWith({ phone: '3865999888' });
+        });
+
+        // UI refleja el nuevo teléfono formateado
+        await waitFor(() => {
+          expect(screen.getByText('3865 99-9888')).toBeDefined();
+        });
+
+        expect(mockRouterRefresh).toHaveBeenCalled();
+        spyAction.mockRestore();
+      });
+
+      it('al ocurrir un error de red/servidor conserva el valor anterior sin borrar el dato previo', async () => {
+        const spyAction = vi.spyOn(actionsModule, 'updateCourierPhoneAction').mockResolvedValueOnce({
+          ok: false,
+          code: 'INTERNAL_ERROR',
+        });
+
+        render(<CourierProfileView profile={baseCourier} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /editar teléfono/i }));
+
+        const dialog = screen.getByRole('dialog');
+        const phoneInput = within(dialog).getByLabelText(/teléfono de contacto/i) as HTMLInputElement;
+        fireEvent.change(phoneInput, { target: { value: '3865999888' } });
+
+        const saveBtn = within(dialog).getByRole('button', { name: /guardar|confirmar/i });
+        fireEvent.click(saveBtn);
+
+        await waitFor(() => {
+          expect(within(dialog).getByRole('alert')).toBeDefined();
+        });
+
+        // Cancelar o cerrar diálogo
+        const cancelBtn = within(dialog).getByRole('button', { name: /cancelar|volver/i });
+        fireEvent.click(cancelBtn);
+
+        // El teléfono previo original se preserva intacto
+        expect(screen.getByText('3865 12-3456')).toBeDefined();
+        spyAction.mockRestore();
       });
     });
   });

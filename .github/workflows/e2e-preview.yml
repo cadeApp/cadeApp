@@ -51,7 +51,7 @@ jobs:
     if: needs.resolve.outputs.run == 'true'
     runs-on: ubuntu-latest
     environment: develop
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     # Un solo grupo para todas las PR: Supabase Develop es compartido y `--workers=1` solo serializa adentro

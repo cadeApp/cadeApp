@@ -1,5 +1,13 @@
 import 'server-only';
 
+import {
+  RPC_CONTRACTS,
+  err,
+  ok,
+  type ActionResult,
+  type PublicationBalance,
+  type RpcErrorCode,
+} from '@/domain';
 import { createClient } from '@/server/supabase/server';
 import type { Database } from '@/types/database.types';
 
@@ -200,4 +208,35 @@ export async function getMerchantProfileForEdit(): Promise<MerchantProfileFormDa
     notes: merchant.notes ?? null,
     isComplete,
   };
+}
+
+export type MyPublicationBalanceResult = ActionResult<
+  PublicationBalance,
+  RpcErrorCode<'get_my_publication_balance'>
+>;
+
+/**
+ * CC-029: saldo de publicación del comercio autenticado (`get_my_publication_balance`). La RPC reconcilia las vencidas y
+ * materializa el arrastre; acá solo se valida la respuesta contra el contrato. Un error se devuelve (no se lanza) para
+ * que `/merchant/plan` siga mostrando el resto de la cuenta con un aviso propio.
+ */
+export async function getMyPublicationBalance(): Promise<MyPublicationBalanceResult> {
+  const contract = RPC_CONTRACTS.get_my_publication_balance;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc('get_my_publication_balance');
+    if (error) {
+      const candidate = error.message.trim();
+      const allowed: readonly string[] = contract.errorCodes;
+      return err(
+        allowed.includes(candidate)
+          ? (candidate as RpcErrorCode<'get_my_publication_balance'>)
+          : 'INTERNAL_ERROR'
+      );
+    }
+    const parsed = contract.outputSchema.safeParse(data);
+    return parsed.success ? ok(parsed.data) : err('INTERNAL_ERROR');
+  } catch {
+    return err('INTERNAL_ERROR');
+  }
 }

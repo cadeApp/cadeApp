@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import * as React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDomainErrorMessage } from '@/lib/error-messages';
 import { notify } from '@/ui/notify';
@@ -347,6 +347,53 @@ describe('T-340: CreateRequestForm multi-drop', () => {
     expect(alert.textContent).toContain(expected);
     expect(notify.error).toHaveBeenCalledWith(expected);
     expect(notify.success).not.toHaveBeenCalled();
+  });
+
+  it('T-369 / CC-029: sin créditos muestra el rechazo de la RPC con acceso a Mi plan, y no lo ofrece para otros errores', async () => {
+    const fillAndSubmit = () => {
+      fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+        target: { value: 'Av. Sarmiento 1200' },
+      });
+      fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+        target: { value: 'Lucía Gómez' },
+      });
+      fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+        target: { value: '3815551234' },
+      });
+      fireEvent.click(screen.getByRole('checkbox'));
+      fireEvent.click(screen.getByRole('button', { name: /publicar solicitud/i }));
+    };
+    vi.mocked(actions.createDeliveryRequestAction)
+      .mockResolvedValueOnce({ ok: false, code: 'PUBLICATION_CREDITS_EXHAUSTED' })
+      .mockResolvedValueOnce({ ok: false, code: 'RATE_LIMITED' });
+
+    render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: zoneCentro.id,
+          defaultPickupLat: -27.43,
+          defaultPickupLng: -65.61,
+          notes: '',
+        }}
+      />
+    );
+    fillAndSubmit();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(getDomainErrorMessage('PUBLICATION_CREDITS_EXHAUSTED'));
+    const link = within(alert).getByRole('link', { name: 'Ver mis créditos y planes' });
+    expect(link.getAttribute('href')).toBe('/merchant/plan');
+    // El botón sigue habilitado: la RPC es la autoridad y el comercio puede reintentar.
+    expect((screen.getByRole('button', { name: /publicar solicitud/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect(notify.success).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /publicar solicitud/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain(getDomainErrorMessage('RATE_LIMITED'))
+    );
+    expect(screen.queryByRole('link', { name: 'Ver mis créditos y planes' })).toBeNull();
   });
 
   it('T-371: si la publicación es rechazada por PUBLICATION_CREDITS_EXHAUSTED muestra la alerta correspondiente', async () => {

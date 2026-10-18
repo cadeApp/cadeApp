@@ -10,6 +10,7 @@ import {
   type DocumentReviewStatus,
   type CourierReviewStatus,
 } from '@/features/courier-onboarding';
+import { getCourierApprovedAvatarUrl } from '@/features/courier-onboarding/server';
 
 
 export default async function CourierProfilePage() {
@@ -30,12 +31,12 @@ export default async function CourierProfilePage() {
   const [profileResult, courierResult, docsResult] = await Promise.all([
     supabase
       .from('profiles')
-      .select('display_name, role')
+      .select('display_name, role, phone')
       .eq('id', user.id)
-      .maybeSingle<{ display_name: string | null; role: string }>(),
+      .maybeSingle<{ display_name: string | null; role: string; phone: string | null }>(),
     supabase
       .from('couriers')
-      .select('vehicle_type, vehicle_plate, license_status, insurance_status, status')
+      .select('vehicle_type, vehicle_plate, license_status, insurance_status, status, dni_hmac')
       .eq('profile_id', user.id)
       .maybeSingle<{
         vehicle_type: string | null;
@@ -43,6 +44,7 @@ export default async function CourierProfilePage() {
         license_status: DocumentReviewStatus;
         insurance_status: DocumentReviewStatus;
         status: CourierReviewStatus;
+        dni_hmac: string | null;
       }>(),
     supabase
       .from('courier_documents')
@@ -88,12 +90,23 @@ export default async function CourierProfilePage() {
   const selfieDoc = docsMap.get('selfie');
   const licenseDoc = docsMap.get('license');
   const insuranceDoc = docsMap.get('insurance');
+  const avatarDoc = docsMap.get('avatar');
 
   const dniFrontStatus: DocumentReviewStatus = dniFrontDoc?.status ?? 'none';
   const dniBackStatus: DocumentReviewStatus = dniBackDoc?.status ?? 'none';
   const selfieStatus: DocumentReviewStatus = selfieDoc?.status ?? 'none';
   const licenseStatus: DocumentReviewStatus = licenseDoc?.status ?? 'none';
   const insuranceStatus: DocumentReviewStatus = insuranceDoc?.status ?? 'none';
+  const avatarStatus: DocumentReviewStatus = avatarDoc?.status ?? 'none';
+
+  let avatarUrl: string | null = null;
+  if (courier.status === 'approved' && avatarStatus === 'verified') {
+    try {
+      avatarUrl = await getCourierApprovedAvatarUrl(user.id, { client: supabase });
+    } catch {
+      avatarUrl = null;
+    }
+  }
 
   const dniStatus = combineDniDocumentStatus(dniFrontStatus, dniBackStatus);
 
@@ -101,8 +114,12 @@ export default async function CourierProfilePage() {
     courierId: user.id,
     displayName: profileResult.data?.display_name ?? 'Sin nombre registrado',
     email: user.email ?? '',
+    phone: profileResult.data?.phone ?? null,
+    hasDniOnFile: Boolean(courier.dni_hmac),
     vehicleType: courier.vehicle_type,
     plate: courier.vehicle_plate,
+    avatarUrl,
+    avatarStatus,
     dniStatus,
     dniFrontStatus,
     dniFrontRejectionMessage:

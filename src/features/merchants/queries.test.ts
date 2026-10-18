@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
-import { getActiveZones, getMerchantAccountProfile, getMerchantProfileForEdit } from './queries';
+import { getActiveZones, getMerchantAccountProfile, getMerchantProfileForEdit, getMyPublicationBalance } from './queries';
 import { getSubscriptionDisplay, type MerchantSubscriptionStatus } from './copy';
 
 vi.mock('@/server/supabase/server', () => ({
@@ -298,5 +298,52 @@ describe('T-111 / T-118: queries de merchants y estado de suscripción (C08)', (
 
       await expect(getMerchantProfileForEdit()).rejects.toThrow(/Error al consultar comercio/);
     });
+  });
+});
+
+const BALANCE = {
+  merchantId: '20000000-0000-4000-8000-000000000369',
+  mode: 'credits',
+  canPublish: true,
+  subscriptionStatus: 'expired',
+  legacyPaidUntil: null,
+  available: 3,
+  reserved: 1,
+  scheduled: 0,
+  currentPeriod: null,
+  nextPeriod: null,
+  lots: [],
+};
+
+function mockRpc(result: { data: unknown; error: { message: string; code?: string } | null } | Error) {
+  const rpc =
+    result instanceof Error ? vi.fn().mockRejectedValue(result) : vi.fn().mockResolvedValue(result);
+  vi.mocked(serverSupabase.createClient).mockResolvedValue({ rpc } as unknown as Awaited<
+    ReturnType<typeof serverSupabase.createClient>
+  >);
+  return rpc;
+}
+
+describe('T-369 / CC-029 — getMyPublicationBalance', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('llama a get_my_publication_balance con la sesión y devuelve el saldo validado', async () => {
+    const rpc = mockRpc({ data: BALANCE, error: null });
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: true, data: BALANCE });
+    expect(rpc).toHaveBeenCalledWith('get_my_publication_balance');
+  });
+
+  it('mapea los códigos del contrato y todo lo demás a INTERNAL_ERROR', async () => {
+    mockRpc({ data: null, error: { message: 'UNAUTHORIZED_ACTOR', code: 'P0001' } });
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    mockRpc({ data: null, error: { message: 'connection refused' } });
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+
+  it('una respuesta fuera de contrato o una caída de red no se muestran como saldo', async () => {
+    mockRpc({ data: { ...BALANCE, available: -1 }, error: null });
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    mockRpc(new Error('fetch failed'));
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
   });
 });

@@ -128,3 +128,76 @@ export function getSubscriptionDisplay(
     }
   }
 }
+
+/** CC-029 (T-369): textos de «Mi plan» con el saldo real de `get_my_publication_balance`. */
+export const publicationBalanceCopy = {
+  sectionTitle: 'Mi plan',
+  modeBadge: {
+    pilot: 'Piloto',
+    legacy_paid: 'Abono vigente',
+    unlimited: 'Plan ilimitado',
+    credits: 'Créditos',
+  },
+  modeHeadline: {
+    pilot: 'Estás en el piloto gratis',
+    legacy_paid: 'Tu abono está vigente',
+    unlimited: 'Tenés un plan ilimitado',
+    credits: 'Publicás con créditos',
+  },
+  modeDescription: {
+    pilot: 'Publicar es gratis e ilimitado mientras dure el piloto. No se usan créditos.',
+    legacy_paid:
+      'Publicás sin usar créditos hasta que termine tu abono. Después se usan tu plan o tus créditos.',
+    unlimited:
+      'Publicás sin usar créditos mientras el plan esté vigente. Tus créditos sueltos se conservan.',
+    credits:
+      'Al publicar se reserva el costo de la solicitud. Se descuenta cuando asignás un repartidor y vuelve a tu saldo si vence o la cancelás antes.',
+  },
+  blockedHeadline: {
+    noCredits: 'No tenés créditos disponibles',
+    notEnabled: 'No podés publicar en este momento',
+    cancelled: 'Tu cuenta de comercio está pausada',
+  },
+  blockedDescription: {
+    noCredits:
+      'Para volver a publicar, escribinos y coordinamos la compra de créditos o de un plan. cadeApp no cobra dentro de la app.',
+    notEnabled: 'Tu comercio no está habilitado para publicar. Escribinos para regularizarlo.',
+    cancelled: 'Escribinos para reactivarla.',
+  },
+  stats: {
+    available: 'Créditos disponibles',
+    reserved: 'Reservados en solicitudes',
+    scheduled: 'Programados',
+  },
+  pilotCreditsNote: 'Durante el piloto tus créditos no se usan: quedan guardados para después.',
+  legacyUntil: (date: string) => `Abono registrado hasta el ${date}.`,
+  currentPeriodTitle: 'Plan vigente',
+  nextPeriodTitle: 'Próximo período',
+  periodQuota: (credits: number) => `${credits} créditos por mes`,
+  periodUnlimited: 'Publicaciones ilimitadas',
+  periodRange: (from: string, to: string) => `Del ${from} al ${to}`,
+  periodStarts: (from: string) => `Empieza el ${from}`,
+  streak: (months: number, pct: number) =>
+    pct > 0
+      ? `${months} meses seguidos · arrastrás el ${pct} % del cupo sin usar`
+      : `${months} ${months === 1 ? 'mes' : 'meses'} seguidos`,
+  lotsTitle: 'Tus créditos',
+  lotsTableLabel: 'Créditos por lote',
+  lotsColumns: { kind: 'Tipo', available: 'Disponibles', expires: 'Vencimiento' },
+  lotKind: {
+    plan: 'Del plan',
+    carryover: 'Arrastrados',
+    loose: 'Sueltos',
+    refund: 'Devueltos',
+  },
+  lotAvailable: (available: number, granted: number) => `${available} de ${granted}`,
+  lotNeverExpires: 'No vencen',
+  lotExpires: (date: string) => `Vencen el ${date}`,
+  lotScheduled: (date: string) => `Se habilitan el ${date}`,
+  emptyTitle: 'Todavía no tenés créditos ni plan',
+  emptyDescription:
+    'Cuando cadeApp registre tu compra de créditos o de un plan, la vas a ver acá con su vencimiento.',
+  errorTitle: 'No pudimos cargar tu saldo de créditos',
+  errorDescription: 'El resto de tu cuenta sigue disponible. Reintentá en unos instantes.',
+  retry: 'Reintentar',
+} as const;

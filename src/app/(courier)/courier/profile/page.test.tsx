@@ -6,15 +6,20 @@ import type { CourierProfileData, DocumentReviewStatus } from '@/features/courie
 
 const mocks = vi.hoisted(() => ({
   CourierProfileView: vi.fn((_props: { profile: CourierProfileData | null }) => null),
+  getCourierApprovedAvatarUrl: vi.fn(),
   getUser: vi.fn(),
   from: vi.fn(),
   vehicleType: 'motorcycle' as string | null,
+  courierStatus: 'pending' as string,
   documents: [] as Array<{ kind: string; status: DocumentReviewStatus }>,
 }));
 
 vi.mock('@/features/courier-onboarding', () => ({
   CourierProfileView: mocks.CourierProfileView,
   combineDniDocumentStatus: vi.fn(() => 'none'),
+}));
+vi.mock('@/features/courier-onboarding/server', () => ({
+  getCourierApprovedAvatarUrl: mocks.getCourierApprovedAvatarUrl,
 }));
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(async () => ({
@@ -36,6 +41,10 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
     vi.clearAllMocks();
     mocks.documents = [];
     mocks.vehicleType = 'motorcycle';
+    mocks.courierStatus = 'pending';
+    mocks.getCourierApprovedAvatarUrl.mockResolvedValue(
+      'https://test-storage.local/courier-docs/avatar.jpg?token=valid'
+    );
     mocks.getUser.mockResolvedValue({
       data: { user: { id: 'courier-123', email: 'courier@example.test' } },
       error: null,
@@ -53,7 +62,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
                   vehicle_plate: null,
                   license_status: 'none',
                   insurance_status: 'none',
-                  status: 'pending',
+                  status: mocks.courierStatus,
                 },
           error: null,
         }),
@@ -150,5 +159,146 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
       });
     });
   });
+
+  describe('T-367: Proyección de avatar autorizado del repartidor', () => {
+    it('proyecta avatarUrl firmada cuando el repartidor está aprobado y su avatar verificado', async () => {
+      mocks.courierStatus = 'approved';
+      mocks.documents = [{ kind: 'avatar', status: 'verified', is_current: true } as any];
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        avatarUrl: 'https://test-storage.local/courier-docs/avatar.jpg?token=valid',
+        avatarStatus: 'verified',
+      });
+      expect(mocks.getCourierApprovedAvatarUrl).toHaveBeenCalledWith('courier-123', expect.any(Object));
+    });
+
+    it('proyecta avatarUrl null cuando el repartidor está en estado pendiente', async () => {
+      mocks.courierStatus = 'pending';
+      mocks.documents = [{ kind: 'avatar', status: 'verified', is_current: true } as any];
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        avatarUrl: null,
+        avatarStatus: 'verified',
+      });
+      expect(mocks.getCourierApprovedAvatarUrl).not.toHaveBeenCalled();
+    });
+
+    it('proyecta avatarUrl null cuando el avatar está rechazado', async () => {
+      mocks.courierStatus = 'approved';
+      mocks.documents = [{ kind: 'avatar', status: 'rejected', is_current: true } as any];
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        avatarUrl: null,
+        avatarStatus: 'rejected',
+      });
+      expect(mocks.getCourierApprovedAvatarUrl).not.toHaveBeenCalled();
+    });
+
+    it('invariante de seguridad: jamás proyecta selfie ni DNI como avatarUrl ante ausencia de avatar', async () => {
+      mocks.courierStatus = 'approved';
+      mocks.documents = [
+        { kind: 'selfie', status: 'verified', is_current: true } as any,
+        { kind: 'dni_front', status: 'verified', is_current: true } as any,
+      ];
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        avatarUrl: null,
+        avatarStatus: 'none',
+      });
+      expect(mocks.getCourierApprovedAvatarUrl).not.toHaveBeenCalled();
+    });
+
+    it('proyecta avatarUrl null sin romper la página si getCourierApprovedAvatarUrl falla', async () => {
+      mocks.courierStatus = 'approved';
+      mocks.documents = [{ kind: 'avatar', status: 'verified', is_current: true } as any];
+      mocks.getCourierApprovedAvatarUrl.mockRejectedValueOnce(new Error('Storage failure'));
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        avatarUrl: null,
+        avatarStatus: 'verified',
+      });
+    });
+  });
+
+  describe('T-355: /courier/profile proyecta teléfono persistido y DNI para solo lectura', () => {
+    it('proyecta phone y hasDniOnFile de forma segura sin exponer prefijo ni hash completo', async () => {
+      const syntheticHmac = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+      mocks.from.mockImplementation((table: string) => {
+        const query = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data:
+              table === 'profiles'
+                ? { display_name: 'Repartidor de prueba', role: 'courier', phone: '3865123456' }
+                : {
+                    vehicle_type: mocks.vehicleType,
+                    vehicle_plate: null,
+                    license_status: 'none',
+                    insurance_status: 'none',
+                    status: mocks.courierStatus,
+                    dni_hmac: syntheticHmac,
+                  },
+            error: null,
+          }),
+        };
+        if (table === 'courier_documents') {
+          query.eq.mockResolvedValue({ data: mocks.documents, error: null });
+        }
+        return query;
+      });
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        phone: '3865123456',
+        hasDniOnFile: true,
+      });
+
+      // Exigir que JSON.stringify(profileData) no contenga ni el prefijo ni el HMAC completo (H07)
+      const serialized = JSON.stringify(profile);
+      expect(serialized).not.toContain('abcdef12');
+      expect(serialized).not.toContain(syntheticHmac);
+      expect(profile).not.toHaveProperty('dniHash');
+    });
+
+    it('proyecta phone null y hasDniOnFile false cuando no hay teléfono ni dni_hmac', async () => {
+      mocks.from.mockImplementation((table: string) => {
+        const query = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data:
+              table === 'profiles'
+                ? { display_name: 'Repartidor de prueba', role: 'courier', phone: null }
+                : {
+                    vehicle_type: mocks.vehicleType,
+                    vehicle_plate: null,
+                    license_status: 'none',
+                    insurance_status: 'none',
+                    status: mocks.courierStatus,
+                    dni_hmac: null,
+                  },
+            error: null,
+          }),
+        };
+        if (table === 'courier_documents') {
+          query.eq.mockResolvedValue({ data: mocks.documents, error: null });
+        }
+        return query;
+      });
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        phone: null,
+        hasDniOnFile: false,
+      });
+    });
+  });
 });
+
 

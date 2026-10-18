@@ -232,10 +232,16 @@ jobs:
             pnpm supabase test db supabase/tests/cc030_courier_docs_orphans.sql
             echo 'CC030_GRACE_MUTATION GREEN: la suite original pasa tras reaplicar la migración.'
 
+            # Inmutabilidad de display_name de courier CC-031 (T-355): carreras multisesión y controles RED->GREEN
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc031_profile_concurrency.mjs
+
             # Control negativo RED->GREEN de mutaciones funcionales en DB efímera (H15 / T-340, H06 / CC-025)
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs --mutation-check
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_backfill.mjs --mutation-check
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t369_publication_credits_concurrency.mjs --mutation-check
+            # T-369 / CC-029 addendum D01-B (revisión PR #402): RED->GREEN de admin_list_publication_plans con la misma
+            # suite pgTAP (sin guarda AAL2, select de tabla concedido, sin predicado del cursor) en esta base efímera.
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t369_admin_list_plans_mutations.mjs
 
             # Verificación final GREEN de toda la suite tras restauración
             pnpm supabase test db

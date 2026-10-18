@@ -11,6 +11,9 @@ import {
   verifyAdminMfaAction,
   setMerchantSubscriptionAction,
   updatePlatformSettingAction,
+  grantPublicationCreditsAction,
+  registerPlanPeriodAction,
+  upsertPublicationPlanAction,
 } from './actions';
 import { sanitizeAdminRedirect } from './redirect';
 
@@ -28,6 +31,9 @@ vi.mock('@/server/rpc/admin', () => ({
   adminVerifyDocumentRpc: vi.fn(),
   adminSetSubscriptionRpc: vi.fn(),
   adminUpdateSettingRpc: vi.fn(),
+  adminGrantPublicationCreditsRpc: vi.fn(),
+  adminRegisterPlanPeriodRpc: vi.fn(),
+  adminUpsertPublicationPlanRpc: vi.fn(),
 }));
 
 vi.mock('next/cache', () => ({
@@ -867,4 +873,131 @@ describe('T-123: updatePlatformSettingAction (A04, admin_update_setting con aal2
       expect(revalidatePath).not.toHaveBeenCalled();
     }
   );
+});
+
+// T-369 / CC-029: acreditación, períodos y catálogo
+const OPERATION_KEY = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44';
+const PLAN_ID = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a55';
+
+describe('T-369: acciones admin de créditos de publicación', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const grantInput = {
+    merchantId: MERCHANT_ID,
+    credits: 10,
+    source: 'purchase' as const,
+    operationKey: OPERATION_KEY,
+    note: 'Transferencia confirmada',
+  };
+  const registerInput = { merchantId: MERCHANT_ID, planId: PLAN_ID, isPurchase: true, operationKey: OPERATION_KEY, note: null };
+  const planInput = {
+    planId: null,
+    code: 'plan-40',
+    name: 'Plan 40',
+    kind: 'quota' as const,
+    monthlyCredits: 40,
+    referencePriceArs: 20000,
+    active: true,
+    sort: 1,
+  };
+
+  it.each([
+    ['grant', () => grantPublicationCreditsAction(grantInput), () => adminRpc.adminGrantPublicationCreditsRpc],
+    ['register', () => registerPlanPeriodAction(registerInput), () => adminRpc.adminRegisterPlanPeriodRpc],
+    ['plan', () => upsertPublicationPlanAction(planInput), () => adminRpc.adminUpsertPublicationPlanRpc],
+  ] as const)('%s: sin AAL2, sin rol admin o sin sesión no llega a la RPC', async (_name, run, rpc) => {
+    for (const [session, code] of [
+      [{ role: 'admin', aal: 'aal1' as const }, 'AAL2_REQUIRED'],
+      [{ role: 'merchant' }, 'UNAUTHORIZED_ACTOR'],
+      [{ user: null }, 'UNAUTHENTICATED'],
+    ] as const) {
+      mockSession(session);
+      await expect(run()).resolves.toEqual({ ok: false, code });
+    }
+    expect(rpc()).not.toHaveBeenCalled();
+  });
+
+  it('grant: valida el contrato (créditos, origen y clave) antes de la RPC', async () => {
+    mockSession({ role: 'admin' });
+    for (const bad of [
+      { ...grantInput, credits: 0 },
+      { ...grantInput, credits: 10_001 },
+      { ...grantInput, source: 'gift' },
+      { ...grantInput, operationKey: 'no-uuid' },
+    ]) {
+      await expect(grantPublicationCreditsAction(bad)).resolves.toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    expect(adminRpc.adminGrantPublicationCreditsRpc).not.toHaveBeenCalled();
+  });
+
+  it('grant: con AAL2 usa el cliente de sesión, devuelve el resultado idempotente y revalida el detalle', async () => {
+    const client = mockSession({ role: 'admin' });
+    const data = {
+      lotId: PLAN_ID,
+      merchantId: MERCHANT_ID,
+      credits: 10,
+      source: 'purchase' as const,
+      launchDiscountPct: 0,
+      idempotent: true,
+    };
+    vi.mocked(adminRpc.adminGrantPublicationCreditsRpc).mockResolvedValue({ ok: true, data });
+
+    await expect(grantPublicationCreditsAction(grantInput)).resolves.toEqual({ ok: true, data });
+    expect(adminRpc.adminGrantPublicationCreditsRpc).toHaveBeenCalledWith(client, grantInput);
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/merchants/${MERCHANT_ID}/credits`);
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/audit');
+  });
+
+  it.each([
+    ['grant', 'IDEMPOTENCY_CONFLICT'],
+    ['register', 'PLAN_INACTIVE'],
+    ['plan', 'PLAN_IN_USE'],
+  ] as const)('%s: propaga %s de la RPC sin revalidar', async (name, code) => {
+    mockSession({ role: 'admin' });
+    if (name === 'grant') {
+      vi.mocked(adminRpc.adminGrantPublicationCreditsRpc).mockResolvedValue({ ok: false, code });
+      await expect(grantPublicationCreditsAction(grantInput)).resolves.toEqual({ ok: false, code });
+    } else if (name === 'register') {
+      vi.mocked(adminRpc.adminRegisterPlanPeriodRpc).mockResolvedValue({ ok: false, code });
+      await expect(registerPlanPeriodAction(registerInput)).resolves.toEqual({ ok: false, code });
+    } else {
+      vi.mocked(adminRpc.adminUpsertPublicationPlanRpc).mockResolvedValue({ ok: false, code });
+      await expect(upsertPublicationPlanAction(planInput)).resolves.toEqual({ ok: false, code });
+    }
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('register y plan: llaman a su RPC con el cliente de sesión y revalidan su pantalla', async () => {
+    const client = mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminRegisterPlanPeriodRpc).mockResolvedValue({
+      ok: true,
+      data: {
+        periodId: PLAN_ID,
+        merchantId: MERCHANT_ID,
+        planId: PLAN_ID,
+        startsAt: '2026-10-17T15:00:00.000Z',
+        endsAt: '2026-11-17T15:00:00.000Z',
+        streak: 1,
+        carryoverPct: 0,
+        launchDiscountPct: null,
+        idempotent: false,
+      },
+    });
+    await registerPlanPeriodAction(registerInput);
+    expect(adminRpc.adminRegisterPlanPeriodRpc).toHaveBeenCalledWith(client, registerInput);
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/merchants/${MERCHANT_ID}/credits`);
+
+    vi.mocked(adminRpc.adminUpsertPublicationPlanRpc).mockResolvedValue({
+      ok: true,
+      data: { ...planInput, planId: PLAN_ID },
+    });
+    await upsertPublicationPlanAction({ ...planInput, kind: 'unlimited', monthlyCredits: 40 });
+    expect(adminRpc.adminUpsertPublicationPlanRpc).not.toHaveBeenCalled();
+    await upsertPublicationPlanAction(planInput);
+    expect(adminRpc.adminUpsertPublicationPlanRpc).toHaveBeenCalledWith(client, planInput);
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/merchants/plans');
+  });
 });

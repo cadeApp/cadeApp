@@ -860,6 +860,38 @@ export const adminGetMerchantPublicationCreditsOutputSchema = z.object({
   nextCursor: z.number().int().positive().nullable(),
 });
 
+// CC-029 addendum D01-B (PR #402): listado del catálogo para el admin AAL2, paginado por (sort, id).
+export const publicationPlanListItemSchema = z.object({
+  id: uuidSchema,
+  code: z.string().min(1),
+  name: z.string().min(1),
+  kind: publicationPlanKindSchema,
+  monthlyCredits: z.number().int().positive().nullable(),
+  referencePriceArs: z.number().int().nonnegative().nullable(),
+  active: z.boolean(),
+  sort: z.number().int().nonnegative(),
+});
+export type PublicationPlanListItem = z.infer<typeof publicationPlanListItemSchema>;
+export const publicationPlansCursorSchema = z.object({
+  sort: z.number().int(),
+  id: uuidSchema,
+});
+export const adminListPublicationPlansInputSchema = z
+  .object({
+    limit: z.number().int().min(1).max(50).optional(),
+    afterSort: z.number().int().nullable().optional(),
+    afterId: uuidSchema.nullable().optional(),
+    activeOnly: z.boolean().optional(),
+  })
+  .refine((data) => (data.afterSort == null) === (data.afterId == null), {
+    message: 'El cursor lleva sort e id juntos.',
+    path: ['afterId'],
+  });
+export const adminListPublicationPlansOutputSchema = z.object({
+  items: z.array(publicationPlanListItemSchema).max(50),
+  nextCursor: publicationPlansCursorSchema.nullable(),
+});
+
 export const getMyPublicationBalanceInputSchema = z.object({}).strict();
 export const getMyPublicationBalanceOutputSchema = publicationBalanceSchema;
 
@@ -1436,6 +1468,17 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  admin_list_publication_plans: {
+    inputSchema: adminListPublicationPlansInputSchema,
+    outputSchema: adminListPublicationPlansOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   get_my_publication_balance: {
     inputSchema: getMyPublicationBalanceInputSchema,
     outputSchema: getMyPublicationBalanceOutputSchema,
@@ -1482,6 +1525,7 @@ export const ALL_RPC_NAMES = [
   'admin_grant_publication_credits',
   'admin_register_plan_period',
   'admin_get_merchant_publication_credits',
+  'admin_list_publication_plans',
   'get_my_publication_balance',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 
