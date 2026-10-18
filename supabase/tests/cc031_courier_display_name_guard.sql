@@ -140,15 +140,15 @@ select is(pg_temp.cc031_run(99,
 select is((select display_name from public.profiles where id = pg_temp.cc031_id(2)),
   'Service corrected', 'service role write persists without a client grant');
 
--- Control de mutación SOLO en transacción de prueba de la base efímera.
--- Misma sonda/oráculo: quitar el trigger debe cambiar el rechazo a una escritura real.
+-- Prueba positiva de bypass deliberado SOLO en transacción de prueba de la base efímera.
+-- La evidencia RED independiente genuina se ejecuta externamente deshabilitando el trigger (ver cc031_profile_concurrency.mjs).
 savepoint cc031_mutation;
 alter table public.profiles disable trigger guard_courier_display_name_update;
 select isnt(pg_temp.cc031_name_probe(),
   '{"code":"42501","message":"COURIER_DISPLAY_NAME_IMMUTABLE"}'::jsonb,
-  'RED mutation: original rejection oracle fails with guard disabled');
+  'prueba positiva de bypass deliberado: original rejection oracle fails with guard disabled');
 select is((select display_name from public.profiles where id = pg_temp.cc031_id(1)),
-  'Changed', 'RED mutation: bypass really persisted the forbidden name');
+  'Changed', 'prueba positiva de bypass deliberado: bypass really persisted the forbidden name');
 rollback to savepoint cc031_mutation;
 select is(pg_temp.cc031_name_probe(),
   '{"code":"42501","message":"COURIER_DISPLAY_NAME_IMMUTABLE"}'::jsonb,
@@ -156,9 +156,8 @@ select is(pg_temp.cc031_name_probe(),
 select is((select display_name from public.profiles where id = pg_temp.cc031_id(1)),
   'Admin corrected', 'mutation data rolled back');
 
--- Transiciones competidoras y serialización de identidad (T-103 / CC-031).
--- En supabase/postgres, dblink_connect está prohibido para no-superusuarios por pg_hba trust (T-103).
--- Se prueba la serialización de estado mediante transiciones competidoras directas bajo RLS:
+-- Transiciones secuenciales unitarias de identidad (T-103 / CC-031).
+-- Verificación secuencial unitaria bajo RLS (las carreras reales multisesión se prueban en cc031_profile_concurrency.mjs):
 
 -- 1. Teléfono actualizado y posterior intento de cambio de nombre:
 select is(pg_temp.cc031_run(1,
