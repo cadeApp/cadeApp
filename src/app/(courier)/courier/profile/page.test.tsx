@@ -224,5 +224,81 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
       });
     });
   });
+
+  describe('T-355: /courier/profile proyecta teléfono persistido y DNI para solo lectura', () => {
+    it('proyecta phone y hasDniOnFile de forma segura sin exponer prefijo ni hash completo', async () => {
+      const syntheticHmac = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+      mocks.from.mockImplementation((table: string) => {
+        const query = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data:
+              table === 'profiles'
+                ? { display_name: 'Repartidor de prueba', role: 'courier', phone: '3865123456' }
+                : {
+                    vehicle_type: mocks.vehicleType,
+                    vehicle_plate: null,
+                    license_status: 'none',
+                    insurance_status: 'none',
+                    status: mocks.courierStatus,
+                    dni_hmac: syntheticHmac,
+                  },
+            error: null,
+          }),
+        };
+        if (table === 'courier_documents') {
+          query.eq.mockResolvedValue({ data: mocks.documents, error: null });
+        }
+        return query;
+      });
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        phone: '3865123456',
+        hasDniOnFile: true,
+      });
+
+      // Exigir que JSON.stringify(profileData) no contenga ni el prefijo ni el HMAC completo (H07)
+      const serialized = JSON.stringify(profile);
+      expect(serialized).not.toContain('abcdef12');
+      expect(serialized).not.toContain(syntheticHmac);
+      expect(profile).not.toHaveProperty('dniHash');
+    });
+
+    it('proyecta phone null y hasDniOnFile false cuando no hay teléfono ni dni_hmac', async () => {
+      mocks.from.mockImplementation((table: string) => {
+        const query = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data:
+              table === 'profiles'
+                ? { display_name: 'Repartidor de prueba', role: 'courier', phone: null }
+                : {
+                    vehicle_type: mocks.vehicleType,
+                    vehicle_plate: null,
+                    license_status: 'none',
+                    insurance_status: 'none',
+                    status: mocks.courierStatus,
+                    dni_hmac: null,
+                  },
+            error: null,
+          }),
+        };
+        if (table === 'courier_documents') {
+          query.eq.mockResolvedValue({ data: mocks.documents, error: null });
+        }
+        return query;
+      });
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        phone: null,
+        hasDniOnFile: false,
+      });
+    });
+  });
 });
+
 
