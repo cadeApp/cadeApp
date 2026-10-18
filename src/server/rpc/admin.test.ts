@@ -5,6 +5,11 @@ import { RPC_CONTRACTS } from '@/domain/rpc-contracts';
 import { createFakeRpcClient } from '@/domain/testing/rpc-fake';
 import {
   adminDecideCourierRpc,
+  adminGetMerchantPublicationCreditsRpc,
+  adminListPublicationPlansRpc,
+  adminGrantPublicationCreditsRpc,
+  adminRegisterPlanPeriodRpc,
+  adminUpsertPublicationPlanRpc,
   adminListIncidentsRpc,
   adminResolveIncidentRpc,
   adminSetSubscriptionRpc,
@@ -870,3 +875,213 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
   });
 });
 
+describe('T-369 / CC-029 · wrappers admin de créditos de publicación', () => {
+  const OPERATION_KEY = '00000000-0000-4000-8000-0000000000e1';
+  const PLAN_ID = '00000000-0000-4000-8000-0000000000f1';
+  const caller = (response: { data: unknown; error: { message: string; code?: string } | null }) => {
+    const rpc = vi.fn().mockResolvedValue(response);
+    return { client: { rpc } as SupabaseRpcCaller, rpc };
+  };
+  const balance = {
+    merchantId: MERCHANT_ID,
+    mode: 'credits',
+    canPublish: true,
+    subscriptionStatus: 'expired',
+    legacyPaidUntil: null,
+    available: 5,
+    reserved: 0,
+    scheduled: 0,
+    currentPeriod: null,
+    nextPeriod: null,
+    lots: [],
+  };
+
+  it('grant: manda los parámetros p_* exactos, con nota null si no viene', async () => {
+    const data = { lotId: PLAN_ID, merchantId: MERCHANT_ID, credits: 5, source: 'adjustment', launchDiscountPct: null, idempotent: false };
+    const { client, rpc } = caller({ data, error: null });
+    await expect(
+      adminGrantPublicationCreditsRpc(client, { merchantId: MERCHANT_ID, credits: 5, source: 'adjustment', operationKey: OPERATION_KEY })
+    ).resolves.toEqual({ ok: true, data });
+    expect(rpc).toHaveBeenCalledWith('admin_grant_publication_credits', {
+      p_merchant_id: MERCHANT_ID,
+      p_credits: 5,
+      p_source: 'adjustment',
+      p_operation_key: OPERATION_KEY,
+      p_note: null,
+    });
+  });
+
+  it('register y get: parámetros, límite por defecto 50 y cursor', async () => {
+    const period = {
+      periodId: PLAN_ID,
+      merchantId: MERCHANT_ID,
+      planId: PLAN_ID,
+      startsAt: '2026-10-17T15:00:00.000Z',
+      endsAt: '2026-11-17T15:00:00.000Z',
+      streak: 1,
+      carryoverPct: 0,
+      launchDiscountPct: 0,
+      idempotent: false,
+    };
+    const register = caller({ data: period, error: null });
+    await expect(
+      adminRegisterPlanPeriodRpc(register.client, { merchantId: MERCHANT_ID, planId: PLAN_ID, isPurchase: true, operationKey: OPERATION_KEY, note: 'Nota' })
+    ).resolves.toEqual({ ok: true, data: period });
+    expect(register.rpc).toHaveBeenCalledWith('admin_register_plan_period', {
+      p_merchant_id: MERCHANT_ID,
+      p_plan_id: PLAN_ID,
+      p_is_purchase: true,
+      p_operation_key: OPERATION_KEY,
+      p_note: 'Nota',
+    });
+
+    const get = caller({ data: { balance, movements: [], nextCursor: null }, error: null });
+    await adminGetMerchantPublicationCreditsRpc(get.client, { merchantId: MERCHANT_ID, beforeId: 77 });
+    expect(get.rpc).toHaveBeenCalledWith('admin_get_merchant_publication_credits', {
+      p_merchant_id: MERCHANT_ID,
+      p_limit: 50,
+      p_before_id: 77,
+    });
+  });
+
+  it('upsert: valida el contrato antes de llamar y mapea PLAN_IN_USE', async () => {
+    const { client, rpc } = caller({ data: null, error: { message: 'PLAN_IN_USE', code: 'P0001' } });
+    const input = {
+      planId: PLAN_ID,
+      code: 'plan-40',
+      name: 'Plan 40',
+      kind: 'quota',
+      monthlyCredits: 40,
+      referencePriceArs: null,
+      active: true,
+      sort: 0,
+    };
+    await expect(adminUpsertPublicationPlanRpc(client, { ...input, kind: 'unlimited' })).resolves.toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+    await expect(adminUpsertPublicationPlanRpc(client, input)).resolves.toEqual({ ok: false, code: 'PLAN_IN_USE' });
+    expect(rpc).toHaveBeenCalledWith('admin_upsert_publication_plan', {
+      p_plan_id: PLAN_ID,
+      p_code: 'plan-40',
+      p_name: 'Plan 40',
+      p_kind: 'quota',
+      p_monthly_credits: 40,
+      p_reference_price_ars: null,
+      p_active: true,
+      p_sort: 0,
+    });
+  });
+
+  it('códigos fuera de contrato y respuestas inválidas terminan en INTERNAL_ERROR', async () => {
+    const unknownCode = caller({ data: null, error: { message: 'PLAN_INACTIVE' } });
+    await expect(
+      adminGrantPublicationCreditsRpc(unknownCode.client, { merchantId: MERCHANT_ID, credits: 1, source: 'purchase', operationKey: OPERATION_KEY })
+    ).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+
+    const badShape = caller({ data: { balance: { ...balance, available: -1 }, movements: [], nextCursor: null }, error: null });
+    await expect(adminGetMerchantPublicationCreditsRpc(badShape.client, { merchantId: MERCHANT_ID })).resolves.toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+
+    const aal = caller({ data: null, error: { message: 'AAL2_REQUIRED', code: 'P0001' } });
+    await expect(adminGetMerchantPublicationCreditsRpc(aal.client, { merchantId: MERCHANT_ID })).resolves.toEqual({
+      ok: false,
+      code: 'AAL2_REQUIRED',
+    });
+  });
+});
+
+describe('CC-029 addendum D01-B · admin_list_publication_plans (PR402-H03/H04)', () => {
+  const PLAN = {
+    id: '00000000-0000-4000-8000-0000000000f1',
+    code: 'plan-40',
+    name: 'Plan 40',
+    kind: 'quota',
+    monthlyCredits: 40,
+    referencePriceArs: null,
+    active: true,
+    sort: 3,
+  };
+  const caller = (response: { data: unknown; error: { message: string; code?: string } | null }) => {
+    const rpc = vi.fn().mockResolvedValue(response);
+    return { client: { rpc } as SupabaseRpcCaller, rpc };
+  };
+
+  it('manda límite 50, sin cursor y todos los planes por defecto; con cursor, sort e id juntos', async () => {
+    const first = caller({ data: { items: [PLAN], nextCursor: { sort: 3, id: PLAN.id } }, error: null });
+    await expect(adminListPublicationPlansRpc(first.client, {})).resolves.toEqual({
+      ok: true,
+      data: { items: [PLAN], nextCursor: { sort: 3, id: PLAN.id } },
+    });
+    expect(first.rpc).toHaveBeenCalledWith('admin_list_publication_plans', {
+      p_limit: 50,
+      p_after_sort: null,
+      p_after_id: null,
+      p_active_only: false,
+    });
+
+    const next = caller({ data: { items: [], nextCursor: null }, error: null });
+    await adminListPublicationPlansRpc(next.client, { limit: 10, afterSort: 3, afterId: PLAN.id, activeOnly: true });
+    expect(next.rpc).toHaveBeenCalledWith('admin_list_publication_plans', {
+      p_limit: 10,
+      p_after_sort: 3,
+      p_after_id: PLAN.id,
+      p_active_only: true,
+    });
+  });
+
+  it('cursor incompleto, límite fuera de 1..50 o id inválido: VALIDATION_ERROR sin llamar a la RPC', async () => {
+    for (const input of [
+      { afterSort: 3 },
+      { afterId: PLAN.id },
+      { afterSort: 3, afterId: null },
+      { limit: 0 },
+      { limit: 51 },
+      { limit: 1.5 },
+      { afterSort: 3, afterId: 'not-a-uuid' },
+      { activeOnly: 'yes' },
+    ]) {
+      const { client, rpc } = caller({ data: null, error: null });
+      await expect(adminListPublicationPlansRpc(client, input)).resolves.toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(rpc).not.toHaveBeenCalled();
+    }
+  });
+
+  it('valida la salida (máximo 50, cursor completo) y mapea los rechazos de la RPC', async () => {
+    const tooMany = caller({ data: { items: Array.from({ length: 51 }, () => PLAN), nextCursor: null }, error: null });
+    await expect(adminListPublicationPlansRpc(tooMany.client, {})).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    const halfCursor = caller({ data: { items: [PLAN], nextCursor: { sort: 3 } }, error: null });
+    await expect(adminListPublicationPlansRpc(halfCursor.client, {})).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    for (const code of ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'AAL2_REQUIRED', 'VALIDATION_ERROR'] as const) {
+      const rejected = caller({ data: null, error: { message: code, code: 'P0001' } });
+      await expect(adminListPublicationPlansRpc(rejected.client, {})).resolves.toEqual({ ok: false, code });
+    }
+  });
+
+  it('los códigos que levanta la migración coinciden con el contrato y la RPC empieza por assert_admin_aal2', () => {
+    const sql = fs.readFileSync(
+      path.resolve(process.cwd(), 'supabase/migrations/20261017200000_t369_admin_list_publication_plans.sql'),
+      'utf8',
+    );
+    const adminSql = fs.readFileSync(
+      path.resolve(process.cwd(), 'supabase/migrations/20260924013700_rpc_admin_v1.sql'),
+      'utf8',
+    );
+    const body = sql.slice(sql.indexOf('create function public.admin_list_publication_plans('));
+    const beginIndex = body.indexOf('begin');
+    expect(body.slice(beginIndex, beginIndex + 60)).toMatch(/^begin\s+perform app_private\.assert_admin_aal2\(\);/);
+    const preamble = adminSql.slice(adminSql.indexOf('create or replace function app_private.assert_admin_aal2()'));
+    const raised = new Set(
+      [...(body + preamble.slice(0, preamble.indexOf('$$;'))).matchAll(/message = '([A-Z0-9_]+)'/g)].map((m) => m[1] ?? ''),
+    );
+    raised.add('INTERNAL_ERROR');
+    expect([...raised].sort()).toEqual([...RPC_CONTRACTS.admin_list_publication_plans.errorCodes].sort());
+    expect(sql).toMatch(/security definer\s+set search_path = public, pg_temp/);
+    expect(sql).toMatch(/revoke all on function public\.admin_list_publication_plans\(integer, integer, uuid, boolean\)\s+from public, anon, authenticated;/);
+    expect(sql).not.toMatch(/grant\s+select/i);
+    expect(sql).not.toMatch(/policy/i);
+  });
+});

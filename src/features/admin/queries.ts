@@ -3,10 +3,19 @@ import 'server-only';
 import { z } from 'zod';
 import {
   PLATFORM_SETTING_KEYS,
+  err,
   merchantSubscriptionStatusSchema,
+  ok,
+  type ActionResult,
+  type DomainErrorCode,
   type PlatformSettingKey,
+  type RpcOutput,
 } from '@/domain';
-import type { SupabaseRpcCaller } from '@/server/rpc/admin';
+import {
+  adminGetMerchantPublicationCreditsRpc,
+  adminListPublicationPlansRpc,
+  type SupabaseRpcCaller,
+} from '@/server/rpc/admin';
 import { createClient } from '@/server/supabase/server';
 import { ADMIN_COPY } from './copy';
 import { updatePlatformSettingSchema, type AdminAuditFilters } from './schemas';
@@ -20,6 +29,9 @@ import type {
   AuditLogItem,
   AuditLogResult,
   PlatformSettingsSnapshot,
+  PublicationPlansPage,
+  PublicationPlansQuery,
+  AdminMerchantHeader,
   ApplicantDetail,
   ApplicantDocumentDetail,
   ApplicantListItem,
@@ -431,6 +443,15 @@ export async function getPlatformSettings(): Promise<PlatformSettingsSnapshot> {
     pilotTermsVersion: read('pilot_terms_version', isString),
     subscriptionGraceDays: read('subscription_grace_days', isNumber),
     maxDropsPerRequest: read('max_drops_per_request', isNumber),
+    publicationDropsPerCredit: read('publication_drops_per_credit', isNumber),
+    carryoverBasePct: read('carryover_base_pct', isNumber),
+    carryoverStepPct: read('carryover_step_pct', isNumber),
+    carryoverCapPct: read('carryover_cap_pct', isNumber),
+    launchDiscountPct: read('launch_discount_pct', isNumber),
+    // CC-029: la migración no le da valor; queda vacío hasta que el admin lo cargue.
+    looseCreditReferencePriceArs: values.has('loose_credit_reference_price_ars')
+      ? read('loose_credit_reference_price_ars', isNumber)
+      : null,
   };
 }
 
@@ -603,4 +624,81 @@ export async function getAuditActors(): Promise<readonly AuditActorOption[]> {
       name: row.display_name?.trim() || ADMIN_COPY.audit.unnamedOperator,
     })
   );
+}
+
+// ---------------------------------------------------------------------------
+// CC-029 (T-369): créditos de publicación y catálogo de planes
+// ---------------------------------------------------------------------------
+
+const PUBLICATION_PLANS_PAGE_SIZE = 50;
+
+/**
+ * Catálogo de planes, de a 50, por `admin_list_publication_plans` con la sesión (CC-029 addendum D01-B): la RPC exige
+ * admin con AAL2 y la tabla sigue cerrada para `authenticated`. Orden `(sort, id)` y cursor de la última fila.
+ */
+export async function getPublicationPlans(
+  query: Partial<PublicationPlansQuery> = {}
+): Promise<ActionResult<PublicationPlansPage, DomainErrorCode>> {
+  const supabase = await createClient();
+  return adminListPublicationPlansRpc(supabase, {
+    limit: PUBLICATION_PLANS_PAGE_SIZE,
+    activeOnly: query.activeOnly ?? false,
+    afterSort: query.after?.sort ?? null,
+    afterId: query.after?.id ?? null,
+  });
+}
+
+const publicationPlansParamsSchema = z.object({
+  afterSort: z.coerce.number().int().min(0).max(1000),
+  afterId: z.string().uuid(),
+});
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/**
+ * Lee la página del catálogo desde la URL (`?active=1&afterSort=..&afterId=..`). Un cursor incompleto o inválido se
+ * ignora y vuelve a la primera página; nunca llega a la RPC.
+ */
+export function parsePublicationPlansParams(raw: {
+  readonly active?: string | string[];
+  readonly afterSort?: string | string[];
+  readonly afterId?: string | string[];
+}): PublicationPlansQuery {
+  const cursor = publicationPlansParamsSchema.safeParse({
+    afterSort: firstParam(raw.afterSort),
+    afterId: firstParam(raw.afterId),
+  });
+  return {
+    activeOnly: firstParam(raw.active) === '1',
+    after: cursor.success ? { sort: cursor.data.afterSort, id: cursor.data.afterId } : null,
+  };
+}
+
+/** Nombre del comercio para el encabezado del detalle de créditos (RLS de admin). */
+export async function getAdminMerchantHeader(merchantId: string): Promise<AdminMerchantHeader | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('merchants')
+    .select('profile_id, business_name')
+    .eq('profile_id', merchantId)
+    .maybeSingle<{ profile_id: string; business_name: string }>();
+  if (error) {
+    throw new Error(`Error al consultar el comercio: ${error.message}`);
+  }
+  return data ? { id: data.profile_id, businessName: data.business_name } : null;
+}
+
+/** Saldo, plan y libro paginado de un comercio vía `admin_get_merchant_publication_credits` (AAL2 en la RPC). */
+export async function getAdminMerchantPublicationCredits(input: {
+  readonly merchantId: string;
+  readonly beforeId?: number | null;
+}): Promise<ActionResult<RpcOutput<'admin_get_merchant_publication_credits'>, DomainErrorCode>> {
+  const supabase = await createClient();
+  return adminGetMerchantPublicationCreditsRpc(supabase, {
+    merchantId: input.merchantId,
+    limit: 50,
+    beforeId: input.beforeId ?? null,
+  });
 }

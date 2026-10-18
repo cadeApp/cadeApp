@@ -66,9 +66,17 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">{COPY.title}</h1>
-        <p className="text-sm text-muted-foreground">{COPY.description}</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{COPY.title}</h1>
+          <p className="text-sm text-muted-foreground">{COPY.description}</p>
+        </div>
+        <Link
+          href="/admin/merchants/plans"
+          className="inline-flex min-h-12 items-center rounded-md border border-border bg-card px-4 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {COPY.plansLink}
+        </Link>
       </div>
 
       {result.items.length === 0 ? (
@@ -118,7 +126,14 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
                   <TableCell className="px-6 py-4 text-right text-sm font-semibold tabular-nums">
                     {merchant.deliveredCount}
                   </TableCell>
-                  <TableCell className="px-6 py-4 text-right">
+                  <TableCell className="space-x-2 whitespace-nowrap px-6 py-4 text-right">
+                    <Link
+                      href={`/admin/merchants/${merchant.id}/credits`}
+                      className="inline-flex min-h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {COPY.credits}
+                      <span className="sr-only"> {COPY.creditsFor(merchant.businessName)}</span>
+                    </Link>
                     <Button
                       type="button"
                       size="sm"

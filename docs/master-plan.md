@@ -28,7 +28,7 @@ Su función es de intermediario tecnológico: da visibilidad, confianza y coordi
 | D3 | Datos del destinatario | Revelación progresiva: antes de aceptar se muestran solo barrio, distancia aproximada (calculada en el servidor), tipo de paquete y medio de pago (con si necesita cambio). Dirección exacta, nombre, teléfono, indicaciones y monto exacto de cambio los ve únicamente el repartidor elegido. Con varias entregas (CC-022) la regla se aplica por entrega. |
 | D4 | Solicitantes | **Solo comercios y emprendedores** en el MVP. Los particulares quedan para otra fase. |
 | D5 | Piloto | **Gratis.** La duración la fijan ustedes en los términos del piloto (por ejemplo, 2 días) y lo cierran cuando vean que funciona. |
-| D6 | Cobro del abono | Después del piloto, los comercios que se adhieran pagan en forma directa y el admin activa la suscripción a mano. Mercado Pago Suscripciones queda para el futuro. **No habrá facturación** (decisión humana; ver disenso X3). |
+| D6 | Cobro del abono | Después del piloto, los comercios que se adhieran pagan en forma directa y el admin registra a mano lo comprado: **créditos de publicación sueltos** (no vencen) o un **plan mensual** con cupo de créditos o ilimitado (CC-029, T-369). El abono con `paid_until` sigue vigente como compatibilidad (`legacy_paid`). Mercado Pago Suscripciones queda para el futuro. **No habrá facturación** (decisión humana; ver disenso X3). |
 | D7 | Cercanía | **Lista única por ciudad**: todos los repartidores disponibles ven todas las solicitudes abiertas de Aguilares, sin ranking por cercanía ni GPS. |
 | D8 | DNI y selfie | Se guardan **mientras el repartidor esté activo** y se borran **30 días después de la baja** (o del rechazo); las versiones históricas reemplazadas se borran **30 días después de su reemplazo/obsolescencia** (Decisión B). **Quedan fuera del backup.** |
 | D9 | Licencia y seguro | **Opcionales.** Quien sube más documentación verificada gana prioridad y visibilidad. |
@@ -259,8 +259,15 @@ Legal (sin acceso a fuentes durante la revisión) dejó estos puntos. **Antes de
 ## 11. Monetización
 
 - **Piloto (D5):** `platform_settings.pilot_active = true`. Todos los comercios con `subscription_status = pilot` publican gratis. La duración y las condiciones se publican en los términos del piloto (`pilot_terms_version`) y el admin lo cierra desde el panel.
-- **Después del piloto (D6):** el comercio que se adhiere paga en forma directa. El admin registra el pago y fija `paid_until`. Con `paid_until < hoy` (gracia `subscription_grace_days`, 0 por defecto, S6) el comercio no puede publicar solicitudes nuevas, pero las que están en curso siguen.
-- **Precio del abono:** sin definir. Es un parámetro que se decide antes del primer cobro (S7).
+- **Después del piloto (D6, CC-029):** el comercio que se adhiere paga en forma directa, fuera de la app; cadeApp no procesa ni registra montos. El admin (AAL2) registra en `/admin/merchants` lo que el comercio compró:
+  - **créditos sueltos** (`admin_grant_publication_credits`, origen compra o ajuste), que no vencen;
+  - un **período de plan** (`admin_register_plan_period`) del catálogo `publication_plans`: con cupo mensual de créditos o ilimitado. El período dura un mes desde la activación; renovar antes lo agenda al terminar el vigente y un plan comprado con abono vigente empieza al terminar ese abono.
+  - Cada operación es idempotente por clave y queda en el libro `publication_credit_movements` y en `audit_log`.
+- **Costo de publicar:** `1 + max(0, entregas − publication_drops_per_credit)` créditos (N = 2 por defecto). Se reserva al publicar, se consume al asignar repartidor y vuelve al saldo si la solicitud vence o se cancela antes del match; `no_show` y la cancelación del repartidor antes del retiro devuelven el consumo a reserva sin cobrar de nuevo. Se usan primero los créditos del plan (y los arrastrados), después los sueltos; con plan ilimitado o abono vigente no se reserva nada.
+- **Fidelidad:** al renovar sin cortes (dentro de `subscription_grace_days`) se arrastra un porcentaje del cupo sin usar (`carryover_base_pct` 5 %, `+carryover_step_pct` 5 % por renovación, tope `carryover_cap_pct` 35 %), que vence con el período siguiente. La gracia solo preserva la racha: no da días extra de plan ni de ilimitado.
+- **Descuento de lanzamiento:** `launch_discount_pct` se registra una sola vez, en la primera compra de cada comercio, aunque sea 0 %; ajustes y cortesías no lo consumen.
+- **Compatibilidad:** con `paid_until` vigente (más la gracia) el comercio publica sin reservar créditos (`legacy_paid`); sin créditos ni plan ni abono, la RPC rechaza con `PUBLICATION_CREDITS_EXHAUSTED` y las solicitudes en curso siguen. Un comercio `cancelled` sigue recibiendo `SUBSCRIPTION_INACTIVE`.
+- **Precios:** sin definir. El catálogo guarda un precio de referencia informativo por plan y `loose_credit_reference_price_ars` para el crédito suelto; se deciden antes del primer cobro (S7).
 - **Futuro:** integrar Mercado Pago Suscripciones con webhook firmado e idempotente. Legal y Finanzas lo condicionan a términos de adhesión, botón de baja y encuadre fiscal.
 - **Costos de operación** (Finanzas; son supuestos, no datos verificados):
   - Supabase y hosting se facturan en USD con tarjeta argentina, con impuestos y percepciones;

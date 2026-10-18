@@ -29,6 +29,8 @@ export interface TripMerchantViewProps {
   onReportNoShow?: () => void;
   isReportingNoShow?: boolean;
   onCancelTrip?: () => void;
+  /** D-C2b: abre el diálogo de «sacar al repartidor» (solo con la solicitud asignada). */
+  onReplaceCourier?: () => void;
 }
 
 export function TripMerchantView({
@@ -36,6 +38,7 @@ export function TripMerchantView({
   onReportNoShow,
   isReportingNoShow = false,
   onCancelTrip,
+  onReplaceCourier,
 }: TripMerchantViewProps) {
   const isMatched = trip.status === 'matched';
   const isInTransit = trip.status === 'in_transit';
@@ -299,6 +302,18 @@ export function TripMerchantView({
             >
               <AlertTriangle className="mr-2 h-4 w-4" />
               {isReportingNoShow ? 'Reportando...' : 'El repartidor no llegó'}
+            </Button>
+          )}
+
+          {onReplaceCourier && isMatched && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isReportingNoShow}
+              onClick={onReplaceCourier}
+              className="min-h-[48px] w-full"
+            >
+              Cambiar de repartidor
             </Button>
           )}
 
