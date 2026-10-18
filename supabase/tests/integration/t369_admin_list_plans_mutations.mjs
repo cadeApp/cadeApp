@@ -8,7 +8,8 @@
  *      tabla) y comprueba que quedó instalada;
  *   2. corre la MISMA suite `supabase/tests/t369_publication_credits.sql`, sin cambios, y exige RED: psql termina bien
  *      (sin errores de sintaxis, conexión ni timeout), el plan tiene la misma cantidad de pruebas que el baseline,
- *      fallan todas las aserciones esperadas y ninguna fuera de D01-B;
+ *      fallan todas las aserciones esperadas y ninguna fuera de D01-B, salvo las que la mutación declara como
+ *      detección legítima de la misma regresión (`alsoAllowed`);
  *   3. restaura la función o los permisos originales, verifica que quedaron idénticos (md5 de la definición o ACL de
  *      la tabla) y exige GREEN con la misma suite.
  * Si una mutación no produce RED, o el RED no es el esperado, el runner termina con código 1 y CI falla.
@@ -137,6 +138,8 @@ const MUTATIONS = [
   {
     id: 'M2 select de publication_plans concedido a authenticated',
     expected: TABLE_BYPASS,
+    // La matriz de privilegios de las tablas de CC-029 (paso 1) también detecta el grant: es la misma regresión.
+    alsoAllowed: ['anon y authenticated no tienen select/insert/update/delete en las tablas nuevas'],
     apply: () => {
       runSql('grant select on table public.publication_plans to authenticated;');
       if (runSql("select has_table_privilege('authenticated', 'public.publication_plans', 'select');") !== 't') {
@@ -178,7 +181,8 @@ for (const mutation of MUTATIONS) {
     restore();
   }
   const missing = mutation.expected.filter((name) => !red.failed.includes(name));
-  const foreign = red.failed.filter((name) => !name.startsWith('D01-B: '));
+  const allowed = mutation.alsoAllowed ?? [];
+  const foreign = red.failed.filter((name) => !name.startsWith('D01-B: ') && !allowed.includes(name));
   if (red.total !== baseline.total || red.failed.length === 0 || missing.length > 0 || foreign.length > 0) {
     problems += 1;
     console.error(
