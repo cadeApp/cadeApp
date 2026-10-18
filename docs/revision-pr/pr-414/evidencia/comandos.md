@@ -72,3 +72,34 @@ Infraestructura existente: `supabase/tests/integration/cc025_b0_concurrency.mjs`
 ## Integración contra develop
 
 GitHub reporta `mergeable=true`, comparación `develop...head`: ahead 6/behind 0 y archivos exactamente `docs/contracts/CC-031.md`, nueva migración, suite pgTAP y `rls_coordinates.sql`. No se corrió `git merge-tree --write-tree`; ejecutar al retomar desde un clon.
+
+
+---
+
+## Ronda 2 — evidencia CI efectivamente ejecutada (2026-10-18)
+
+> La batería propuesta en la sección **ronda 1** más arriba sigue siendo un artefacto histórico. **Ahora existe un runner implementado y ejecutado por GitHub CI**, distinto del script propuesto. El revisor leyó sus fuentes y logs; NO ejecutó personalmente Docker o pnpm local.
+
+- SHA de código `426d83877b7f5a4a83e4375abf5ab1d0bc19489b`.
+- [Workflow 39103034249](https://github.com/cadeApp/cadeApp/actions/runs/39103034249) y [db-tests job 117603036050](https://github.com/cadeApp/cadeApp/actions/runs/39103034249/job/117603036050), éxito.
+- Integración: `DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc031_profile_concurrency.mjs` agregada a `.github/workflows/ci.yml:236`, con el ambiente DB efímero. Código fuente inspecionado: procesos `docker exec -i ... psql` separados, `pg_backend_pid`, `pg_locks`, `pg_stat_activity.wait_event_type='Lock'`, JWTs de fixtures sintéticas. No exige `dblink` ni toca DB remota.
+- **Escenarios reales CI, salida resumida (06:16:53–06:16:55Z):**
+  - Escenario A: `GREEN: bloqueo en lock verificado, 42501 obtenido, display_name intacto, teléfono persistido.`
+  - Escenario B: `GREEN: corrección administrativa preservada, teléfono actualizado por courier.`
+  - Escenario C: error real `42501: new row violates row-level security policy for table "profiles"`, se conservan consentimiento revocado y teléfono anterior.
+  - Escenario A mutado: `RED confirmado: sin trigger el courier sobrescribe display_name`; posterior `GREEN restaurado`.
+- **H01: mismo test pgTAP intacto** `supabase/tests/cc031_courier_display_name_guard.sql`, `49` tests: antes `exit 0/Result PASS` (06:16:57Z); mutación `exit 1/Result FAIL` (06:16:59Z), incluye `Failed test 1: "GREEN: direct courier name update rejected with exact non-sensitive error"` y `Failed tests: 1-5, 26, 39-40, 42-43`; restored `exit 0/Result PASS` (06:17:01Z).
+- **Final post-restauración:** `Files=30, Tests=2815, Result: PASS` (06:18:10Z).
+- **Otros mutantes preexistentes:** T-340 H14 registra `[H08/H14] Timeout...` durante **mutación intencional**; la posterior restauración pasa `11/11 OK`. No presentarlo como fallo abierto de CC-031; sí conservar log original para diagnosticar flakiness si apareciera fuera de ese control.
+- Estado externo `e2e-preview=error` porque no puede validar aún la migración sobre Supabase Develop; no hay evidencia E2E final de T-355.
+
+**Comandos para revalidar después de un nuevo SHA, desde CI efímero solamente:**
+```bash
+pnpm supabase test db supabase/tests/cc031_courier_display_name_guard.sql
+DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc031_profile_concurrency.mjs
+pnpm supabase test db
+pnpm db:types --local
+git diff --exit-code -- src/types/database.types.ts
+```
+
+**No ejecutado por este revisor:** Git clone/merge-tree, pgTAP/runner multisesión local, CI manual, despliegues/SQL remoto. La revisión independiente consistió en inspección del código y los logs inmutables del job automático para el SHA indicado.
