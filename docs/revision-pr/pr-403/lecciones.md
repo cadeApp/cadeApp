@@ -19,3 +19,8 @@ El icono `User` se usa tanto en `CourierNav` como en el fallback del avatar. Un 
 - Un gate E2E puede fallar en código ajeno a la PR aun cuando todos los casos del feature pasaron. La ejecución `chromium=87/87` incluye T-367, mientras `global-settings` de T-306 falla al buscar un error de dominio eliminado por CC-029.
 - El test actualizado `PUBLICATION_CREDITS_EXHAUSTED` ya había sido mergeado en `develop` vía PR407/T-371; una rama anterior que sigue 21 commits atrás conserva expectativas obsoletas. Solución estable: merge normal de `origin/develop` antes de aprobar, no alterar el gate ni volver a implementar el test upstream en la PR.
 - **Regla futura propuesta solo si reincide en otra PR:** cruzar el error de CI con los cambios ajenos incorporados a develop antes de atribuirlo al autor del feature. No numerar nueva AG a partir de un único episodio.
+
+## Ronda 5 — Dos cautelas que no son bloqueantes
+
+- Un workflow con `conclusion=success` puede contener una prueba flaky que falló antes de su retry; siempre registrar el desglose exacto. Aquí Chromium = **86 PASS + 1 flaky recuperado (T-358)** y `global-settings=3/3 PASS`. No informar 87/87 sin matiz ni exigir corregir un test de otro módulo en la PR del avatar.
+- GitHub `repository_dispatch` de E2E publica metadata `head_sha` del checkout confiable del workflow (la base de `develop`), **no necesariamente el SHA del código de aplicación realmente probado**. Revisar log `HEAD is now at 0e99879` del job y el status `e2e-preview` asociado al PR antes de certificar el run de T-367.

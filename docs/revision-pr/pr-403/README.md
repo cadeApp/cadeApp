@@ -1,27 +1,31 @@
 # PR #403 — T-367 · Avatar aprobado del repartidor
 
-**PR:** https://github.com/cadeApp/cadeApp/pull/403  
-**Autor:** `asako669` · **Rama:** `feat/T-367-avatar-perfil` → `develop`  
-**Último SHA revisado:** `1f37cd52ad634e20d550fa5c7cbee0ec9030ed47`  
-**Estado:** **CON BLOQUEANTES (gate E2E global-settings desactualizado en rama; T-367 Chromium aprobado)**. NO MERGEAR hasta integrar develop y ver E2E completo verde.
+| Campo | Valor |
+|---|---|
+| PR | https://github.com/cadeApp/cadeApp/pull/403 |
+| Autor de implementación | `asako669` |
+| Rama | `feat/T-367-avatar-perfil` → `develop` |
+| SHA de implementación R5 | `0e99879d95fb9f833f84fcc4b137b23894f4f30b` |
+| Base mergeada | `0488f8a98f44b67101c7c520696c356d46c161ff` |
+| Veredicto R5 | **SIN BLOQUEANTES · LISTA PARA MERGE** |
 
-## Rondas
+## Rondas independientes
 
-| Ronda | SHA | Resultado | Informe |
+| Ronda | SHA de código | Resultado | Informe |
 |---|---|---|---|
-| R1 | `d1af180b` | 4 técnicos y 1 de proceso | [R1](revisiones/ronda-1.md) |
-| R2 | `97fc11a6` | H07 sesión E2E, H05 evidencia | [R2](revisiones/ronda-2.md) |
-| R3 | `aa7903bc` | H08: selector del icono de fallback | [R3](revisiones/ronda-3.md) |
-| R4 | `1f37cd52ad634e20d550fa5c7cbee0ec9030ed47` | H08 corregido, T-367 E2E PASS, H09 integración `develop`/T-371 | [R4](revisiones/ronda-4.md) |
+| R1 | `d1af180b` | Guardas, E2E, mocks, evidencia + proceso | [R1](revisiones/ronda-1.md) |
+| R2 | `97fc11a6` | Sesión E2E H07 y mutación visual pendiente | [R2](revisiones/ronda-2.md) |
+| R3 | `aa7903bc` | Selector ambiguo de fallback H08 | [R3](revisiones/ronda-3.md) |
+| R4 | `1f37cd52` | Avatar E2E PASS; H09 de integración bloqueaba gate global | [R4](revisiones/ronda-4.md) |
+| **R5** | `0e99879d95fb9f833f84fcc4b137b23894f4f30b` | **SIN BLOQUEANTES — E2E completo SUCCESS, approval-policy SUCCESS** | [R5](revisiones/ronda-5.md) |
 
-## Resultado observable R4
+## Pruebas del SHA funcional R5
 
-- H01/H03/H06: corregidos por inspección y CI unit PASS.
-- H02/H07/H08: E2E T-367 GREEN con 87 Chromium PASS; H08 verificada por ejecución confiable.
-- H04: autorrevisión previa preservada separada, sin nueva edición del agente en la carpeta.
-- H05: mutación RED→GREEN documentada por autor; no repetida independientemente.
-- H09: nuevo bloqueante operativo. En `feat/T-367-avatar-perfil` quedó el test de T-306 con `SUBSCRIPTION_INACTIVE`; el PR #407 / T-371 ya alineó `develop` a `PUBLICATION_CREDITS_EXHAUSTED`. Su falta de integración deja E2E global-settings RED.
+- CI `39086582843`: 141 suites/2696 unit PASS, pgTAP 29 archivos/2735 pruebas PASS; build/typecheck/lint/audit/bundle-budget SUCCESS.
+- E2E Preview `39086663866`: T-367 PASS (26,6s), global-settings T-306 3/3 PASS, Chromium **86 pass + 1 flaky recuperado**; gate SUCCESS.
+- Approval-policy `39088272905`: SUCCESS con aprobación vigente de Lautaro073.
+- Mejora no bloqueante fuera del alcance: un test T-358 de merchant registration fue flaky (primer intento esperaba `/merchant/plan` y recibió `/merchant/onboarding`); hacer seguimiento separado si se repite.
 
-[Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md)
+[Hallazgos estructurados](hallazgos.jsonl) · [Evidencia y comandos](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
-**Siguiente paso:** el autor hace merge normal de `origin/develop` sobre la rama, push y solicita R5. No tocar `docs/revision-pr/**`. Approval-policy se atiende cuando revisión y gates no tengan bloqueantes.
+**El agy no debe editar la carpeta del revisor ni mergear por cuenta propia.** Falta la validación humana de staging, prevista para después de la promoción; no se exige antes del merge. La revisión R5 no modifica implementación.

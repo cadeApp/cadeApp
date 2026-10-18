@@ -199,3 +199,31 @@ git ls-remote origin feat/T-367-avatar-perfil
 ```
 
 E2E se dispara **por flujo normal** al push del SHA de merge en Preview con Supabase Develop. No hacer dispatch manual ni ejecutar contra Supabase remoto desde revisión. No manipular `subscription.global-settings.spec.ts` a mano; llega de `origin/develop`. No pedir un nuevo CI exitoso solo por el commit documental de este informe.
+
+## Ronda 5 — 2026-10-17 — SHA `0e99879d95fb9f833f84fcc4b137b23894f4f30b`
+
+### Integración upstream y diferencia de archivos
+
+- Commit `f29fe8109f8c7790d7df4b79f7458d9d59cb48e3` con padres reales `7c4fcffff0b24865a7b6199a803b3d9d713c03c0` y `0488f8a98f44b67101c7c520696c356d46c161ff`. Inspección de GitHub Git Commit REST.
+- `compare_commits(base="develop",head="0e99879d95fb9f833f84fcc4b137b23894f4f30b")` devolvió `status=ahead, ahead=17, behind=0`. La lista de **18 archivos** corresponde exactamente a los 11 archivos de T-367 de implementación/log/ficha y los 7 archivos de `docs/revision-pr/pr-403/**`. No incluye infraestructura ni tests T-306 extra.
+- Contenido actual `e2e/specs/subscription.global-settings.spec.ts` incluye `PUBLICATION_CREDITS_EXHAUSTED` y snapshot restaurable de suscripción, como `develop`. No fue editado por los commits de feature (ausente del diff final contra develop).
+
+### CI — todos los checks exitosos en SHA funcional
+
+- GitHub Actions CI: https://github.com/cadeApp/cadeApp/actions/runs/39086582843, jobs 117554333416 typecheck PASS, 117554333516 audit PASS, 117554333544 build PASS, 117554333570 unit PASS, 117554333576 DB PASS, 117554333578 lint PASS, 117554601545 bundle-budget PASS.
+- Unit job 117554333570: `Test Files 141 passed (141)`, `Tests 2696 passed (2696)`; 79 tests de workflows y 6 ADR adicionalmente PASS.
+- DB job 117554333576: `Files=29, Tests=2735, Result: PASS`; tipos locales generados y `git diff --exit-code -- src/types/database.types.ts` sin cambios. `Result: FAIL` intermedios son ejercicios de mutación controlados y seguidos de PASS, el job no falló.
+- Vercel SHA `0e99879d95fb9f833f84fcc4b137b23894f4f30b` status success.
+- Approval-policy re-evaluado https://github.com/cadeApp/cadeApp/actions/runs/39088272905, job 117559333404: `Aprobación de Lautaro073 vigente.` SUCCESS; review APPROVED del 2026-10-18 01:56:22Z.
+
+### E2E completo y límite preciso
+
+- Trusted workflow E2E Preview https://github.com/cadeApp/cadeApp/actions/runs/39086663866, job 117554606613, **checkout SHA `0e99879d95fb9f833f84fcc4b137b23894f4f30b` real en log**.
+- T-367 `e2e/specs/courier-onboarding.spec.ts:1500`: PASS **26,6s** (línea ~555).
+- Resultado Chromium: `1 flaky` en T-358 (test de registro de comercio, expectativa `/merchant/plan` vs URL `/merchant/onboarding` en primer intento), `86 passed (23.0m)`. Recuperado en retry y **el job terminó SUCCESS**; no presentar como 87 pases limpios.
+- Resultado global-settings: `3 passed (1.0m)`, T-306 piloto apagado + expired, piloto activo, plan al día. El caso que estaba RED en R4 ahora PASS.
+- Resultado global `e2e-preview=success` ligado al SHA del PR; no inferirlo del SHA base reportado en la metadata del evento `repository_dispatch`, que por contrato usa el commit confiable del workflow. **La prueba real hizo checkout del SHA `0e99879d95fb9f833f84fcc4b137b23894f4f30b`**, tal como consta en job 117554606613.
+
+### Verificaciones NO ejecutadas en esta sesión
+
+- No clon local, no `pnpm`, no `git diff --check` local ni `pnpm test:db`, no Docker, no mutaciones manuales ni browser local. Todas las afirmaciones runtime se atribuyen a logs de CI; no fabricar una segunda corrida.
