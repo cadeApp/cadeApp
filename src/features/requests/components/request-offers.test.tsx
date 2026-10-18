@@ -1352,6 +1352,156 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       });
     });
 
+    describe('PR390-H19: invalidación online bloquea Cargar más mientras query completa refresca páginas', () => {
+      it('PR390-H19: invalidación online bloquea Cargar más mientras query completa refresca páginas', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        const offerPage1 = initialOffers[0];
+        if (!offerPage1) throw new Error('Falta offerPage1');
+        const cursor1 = {
+          createdAt: offerPage1.createdAt,
+          id: offerPage1.id,
+        };
+        const secondInitial = initialOffers[1];
+        if (!secondInitial) throw new Error('Falta secondInitial');
+        const offerX: MerchantOfferItem = {
+          ...secondInitial,
+          id: '99999999-9999-4999-8999-999999999999',
+          courierName: 'Cadete Que Cancelo',
+          status: 'pending',
+        };
+        const cursor3 = {
+          createdAt: '2026-09-24T00:50:00.000Z',
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        };
+
+        const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                data: [offerX],
+                nextCursor: cursor3,
+              }),
+            } as Response;
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response;
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList
+              request={mockRequest}
+              initialOffers={[offerPage1]}
+              initialNextCursor={cursor1}
+            />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        // 1. Cargar página 2 de forma obligatoria; permanece online y sincronizado
+        const loadMoreBtn = screen.getByRole('button', { name: /cargar más/i });
+        await waitFor(() => {
+          expect(loadMoreBtn.hasAttribute('disabled')).toBe(false);
+        });
+        fireEvent.click(loadMoreBtn);
+        await screen.findByText('Cadete Que Cancelo');
+        expect(
+          fetchSpy.mock.calls.some(([callUrl]) =>
+            String(callUrl).includes(`cursorCreatedAt=${encodeURIComponent(cursor1.createdAt)}`)
+          )
+        ).toBe(true);
+
+        // Al terminar la carga de pág 2, como cursor3 no es nulo, Cargar más sigue presente y habilitado
+        await waitFor(() => {
+          expect(loadMoreBtn.hasAttribute('disabled')).toBe(false);
+        });
+
+        // 2. Configurar refetch online con página 2 diferida
+        let resolvePage2: ((res: Response) => void) | null = null;
+        const page2Promise = new Promise<Response>((resolve) => {
+          resolvePage2 = resolve;
+        });
+
+        fetchSpy.mockImplementation((input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return page2Promise;
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response);
+        });
+
+        fetchSpy.mockClear();
+
+        // 3. Disparar invalidación online (sin tocar onlineManager ni cortar red)
+        const queryKey = requestKeys.offers(mockRequest.id);
+        void queryClient.invalidateQueries({ queryKey });
+
+        // Esperar a que la consulta esté activamente en fetching (isFetching === true)
+        await waitFor(() => {
+          const state = queryClient.getQueryState(queryKey);
+          expect(state?.fetchStatus).toBe('fetching');
+        });
+
+        // H19: Online=true y offersSyncedAfterReconnect=true.
+        // La ÚNICA guarda que bloquea Cargar más es Boolean(isFetching).
+        expect(loadMoreBtn.hasAttribute('disabled')).toBe(true);
+
+        // Simular intento de click durante la invalidación: NO debe disparar llamadas extra
+        const callsCountBefore = fetchSpy.mock.calls.length;
+        fireEvent.click(loadMoreBtn);
+        expect(fetchSpy.mock.calls.length).toBe(callsCountBefore);
+
+        // 4. Resolver página 2
+        await act(async () => {
+          if (resolvePage2) {
+            resolvePage2({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [offerX], nextCursor: cursor3 }),
+            } as Response);
+          }
+          await page2Promise;
+        });
+
+        // Tras el settle, vuelve a idle y Cargar más se rehabilita
+        await waitFor(() => {
+          const state = queryClient.getQueryState(queryKey);
+          expect(state?.fetchStatus).toBe('idle');
+          expect(loadMoreBtn.hasAttribute('disabled')).toBe(false);
+        });
+      });
+    });
+
     it('handleConfirmAccept valida membresía en offers y no llama a acceptOfferAction si la oferta desapareció', async () => {
       const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: 0 } },
