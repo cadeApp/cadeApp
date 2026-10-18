@@ -30,3 +30,7 @@
 - **H17:** `fetchNextPage` (cancelRefetch:true) puede cancelar el refetch de una InfiniteQuery y hacer que el latch considere exitosa una sola operación sin haber refrescado páginas previas. Bloquear load-more con `isFetching` general y gate de sincronización.
 - **H18:** si una prueba de multipaginación usa `queryByRole` + `if` para el único click de segunda página, la precondición es opcional. Exigir `getByRole` y cursor/DOM visible antes de desconexión, probar mutación.
 - **CI:** no declarar verde lo que estaba `in_progress`/`pending`, ni pedir rerun por commit documental.
+
+## Ronda 7 — 2026-10-18
+- **H19:** mutación RED de una conjunción de guardas debe aislar la **rama individual** que se afirma proteger. Offline/reconnect no mata retirar `isFetching` porque `!online` o `!synced` sigue true. Agregar invalidación ONLINE con datos sincronizados.
+- **H20:** una CI/E2E GREEN contra HEAD antiguo no acredita cambios críticos que se mergearon después en develop (ej. specs T-369); comprobar behind y versión de workflows + pruebas antes de autorizar merge. Solo requerir nueva CI por merge FUNCIONAL, nunca por docs de revisión.

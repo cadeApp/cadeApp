@@ -296,3 +296,37 @@ NODE
 node /tmp/pr390-r6-concurrency-model.cjs
 ```
 Resultados del modelo: las 3 líneas `R6 H17`×2, `R6 H18`×1; exit 0 (modelo solo). `container.exec git ls-remote` -> no resuelve github.com. No se hicieron tests locales ni mutaciones reales, no se falsearon.
+
+## Ronda 7 — 18/10/2026 — SHA funcional 3dc1d6ad3816a2757fff82e1905f910e37b6c707
+- `compare_commits(e0ca8f67,3dc1d6a)` -> solo 4 archivos propios; no toca revisor ni esquema.
+- `compare_commits(develop,feat/T-365-...)` -> behind 28 y ahead 16; GitHub `mergeable_state=clean`.
+- `get_pr_info(#411)`: `merged=true`, merged_at 2026-10-18T22:48:43Z, nuevas suites T369 E2E están en develop pero fuera de rama #390.
+- `get_commit_status(3dc1d6ad3816a2757fff82e1905f910e37b6c707)` -> `e2e-preview: success`, target run 39173436933.
+- `fetch_workflow_job_logs(117811152050)`: `86 passed (26.7m)`, `1 flaky` (map-privacy), `3 passed (1.2m)` global-settings; trusted job success.
+- `fetch_workflow_job_logs(117810917284)`: tras mutaciones deliberadas y restauradas, pgTAP `All tests successful. Files=30 Tests=2815 Result: PASS`. Unit: `145 Test Files passed`; workflows 79/79, ADR 6/6.
+- `fetch_file` SHA: UI `isLoadMoreDisabled` incorpora `isFetching`; handler guarda antes `fetchNextPage()`. Test H17 chequea solo offline y reconnect; test H18 fuerza carga de pág2.
+- Ejecuté análisis puro en Node sin checkout, con código completo abajo; no es React ni Vitest:
+```bash
+node - <<'NODE'
+const assert=require('node:assert/strict');
+const original=({isFetching,isFetchingNextPage,isOnline,synced})=>Boolean(isFetching)||Boolean(isFetchingNextPage)||!isOnline||!synced;
+const mutant=({isFetchingNextPage,isOnline,synced})=>Boolean(isFetchingNextPage)||!isOnline||!synced;
+const states={
+ offline:{isFetching:false,isFetchingNextPage:false,isOnline:false,synced:false},
+ reconnect:{isFetching:true,isFetchingNextPage:false,isOnline:true,synced:false},
+ onlineInvalidate:{isFetching:true,isFetchingNextPage:false,isOnline:true,synced:true}
+};
+for(const [name,s] of Object.entries(states))console.log(name+': originalDisabled='+original(s)+' mutantWithoutIsFetchingDisabled='+mutant(s));
+assert.equal(original(states.offline),mutant(states.offline));
+assert.equal(original(states.reconnect),mutant(states.reconnect));
+assert.notEqual(original(states.onlineInvalidate),mutant(states.onlineInvalidate));
+console.log('MODEL PASS: offline/reconnect checks cannot detect mutating isFetching guard, live-online invalidate can');
+NODE
+```
+Resultado real:
+```
+offline: originalDisabled=true mutantWithoutIsFetchingDisabled=true
+reconnect: originalDisabled=true mutantWithoutIsFetchingDisabled=true
+onlineInvalidate: originalDisabled=true mutantWithoutIsFetchingDisabled=false
+MODEL PASS: offline/reconnect checks cannot detect mutating isFetching guard, live-online invalidate can
+```
