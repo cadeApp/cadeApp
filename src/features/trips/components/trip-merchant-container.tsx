@@ -40,10 +40,18 @@ export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
     startTransition(async () => {
       setReplaceError(null);
       setReplaceCreditsExhausted(false);
-      const res = await merchantReportNoShowAction({
-        requestId: trip.id,
-        republish: true,
-      });
+      let res: Awaited<ReturnType<typeof merchantReportNoShowAction>>;
+      try {
+        res = await merchantReportNoShowAction({
+          requestId: trip.id,
+          republish: true,
+        });
+      } catch {
+        // PR402-H02: una falla de transporte no cierra el diálogo ni republica; el reintento queda a cargo del comercio.
+        if (replaceOpen) setReplaceError(getDomainErrorMessage('INTERNAL_ERROR'));
+        notify.error('No se pudo reportar al repartidor.');
+        return;
+      }
 
       if (res.ok) {
         notify.success('El repartidor fue reportado. Solicitud republicada para recibir nuevas ofertas.');

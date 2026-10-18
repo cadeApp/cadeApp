@@ -173,6 +173,27 @@ describe('T-369 / CC-029 D-C2b — diálogo de «sacar al repartidor»', () => {
     expect(mocks.republishTripAction).not.toHaveBeenCalled();
   });
 
+  it('PR402-H02: si la acción de no-show se rechaza (red), el error queda en el diálogo sin cerrar ni republicar', async () => {
+    mocks.merchantReportNoShowAction
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({ ok: true, data: {} });
+    render(<TripMerchantContainer trip={trip} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de repartidor' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reportar que no se presentó' }));
+
+    const alert = await within(screen.getByRole('alertdialog')).findByRole('alert');
+    expect(alert.textContent).toBe(getDomainErrorMessage('INTERNAL_ERROR'));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(mocks.merchantReportNoShowAction).toHaveBeenCalledTimes(1);
+    expect(mocks.republishTripAction).not.toHaveBeenCalled();
+    expect(mocks.push).not.toHaveBeenCalled();
+
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Reportar que no se presentó' }));
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith(`/merchant/requests/${REQUEST_ID}`));
+    expect(mocks.merchantReportNoShowAction).toHaveBeenCalledTimes(2);
+    expect(mocks.republishTripAction).not.toHaveBeenCalled();
+  });
+
   it('cerrar el diálogo tras un no-show fallido limpia el error', async () => {
     mocks.merchantReportNoShowAction.mockResolvedValue({ ok: false, code: 'INVALID_STATE_TRANSITION' });
     render(<TripMerchantContainer trip={trip} />);
