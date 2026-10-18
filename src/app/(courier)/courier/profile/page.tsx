@@ -31,12 +31,12 @@ export default async function CourierProfilePage() {
   const [profileResult, courierResult, docsResult] = await Promise.all([
     supabase
       .from('profiles')
-      .select('display_name, role')
+      .select('display_name, role, phone')
       .eq('id', user.id)
-      .maybeSingle<{ display_name: string | null; role: string }>(),
+      .maybeSingle<{ display_name: string | null; role: string; phone: string | null }>(),
     supabase
       .from('couriers')
-      .select('vehicle_type, vehicle_plate, license_status, insurance_status, status')
+      .select('vehicle_type, vehicle_plate, license_status, insurance_status, status, dni_hmac')
       .eq('profile_id', user.id)
       .maybeSingle<{
         vehicle_type: string | null;
@@ -44,6 +44,7 @@ export default async function CourierProfilePage() {
         license_status: DocumentReviewStatus;
         insurance_status: DocumentReviewStatus;
         status: CourierReviewStatus;
+        dni_hmac: string | null;
       }>(),
     supabase
       .from('courier_documents')
@@ -113,6 +114,8 @@ export default async function CourierProfilePage() {
     courierId: user.id,
     displayName: profileResult.data?.display_name ?? 'Sin nombre registrado',
     email: user.email ?? '',
+    phone: profileResult.data?.phone ?? null,
+    dniHash: courier.dni_hmac ? `${courier.dni_hmac.slice(0, 8)}...` : null,
     vehicleType: courier.vehicle_type,
     plate: courier.vehicle_plate,
     avatarUrl,

@@ -11,7 +11,11 @@ import { replaceCourierDocumentInputSchema } from '@/domain/rpc-contracts';
 import { replaceCourierDocumentRpc, type ReplaceCourierDocumentResult } from '@/server/rpc/courier';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import type { SupabaseRpcCaller } from '@/server/rpc/offers';
-import { courierOnboardingSchema, courierUpdateVehicleSchema } from './schemas';
+import {
+  courierOnboardingSchema,
+  courierUpdateVehicleSchema,
+  courierUpdatePhoneSchema,
+} from './schemas';
 import { logoutAction } from '@/features/auth/server';
 import { areCurrentLegalVersions } from '@/features/legal';
 
@@ -457,4 +461,86 @@ export async function updateCourierVehicleAction(
     redirectTo: '/courier/profile',
   });
 }
+
+export interface CourierUpdatePhoneResult {
+  readonly phone: string;
+  readonly redirectTo?: string;
+}
+
+/**
+ * T-355: Acción de servidor autenticada para actualizar exclusivamente el teléfono de contacto del repartidor.
+ *
+ * Invariantes y controles:
+ * 1. Autenticación de sesión activa requerida (UNAUTHENTICATED).
+ * 2. Actor verificado con rol 'courier' (UNAUTHORIZED_ACTOR).
+ * 3. Allowlist estricta vía Zod `.strict()`: solo admite `{ phone: string }`. Rechaza cualquier campo extra
+ *    (rol, email, dni, status, vehículo, etc.) con VALIDATION_ERROR.
+ * 4. Normaliza el teléfono argentino a 10 dígitos nacionales.
+ * 5. Muta únicamente la columna `phone` en la tabla `profiles` para el `user.id` de la sesión autenticada.
+ * 6. Jamás registra teléfonos completos en logs ni mensajes de error (privacidad de datos de contacto).
+ * 7. Revalida la ruta `/courier/profile` tras mutación exitosa.
+ */
+export async function updateCourierPhoneAction(
+  input: unknown
+): Promise<ActionResult<CourierUpdatePhoneResult, DomainErrorCode>> {
+  // 1. Cliente autenticado y verificación de sesión
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  // 2. Verificación de rol del actor (debe ser courier)
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'courier') {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  // 3. Validación de datos de entrada (allowlist estricta)
+  const parsed = courierUpdatePhoneSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  // 4. Actualización atómica del teléfono en profiles para el usuario autenticado
+  const { data: updatedProfile, error: updateError } = await supabase
+    .from('profiles')
+    .update({ phone: parsed.data.phone } as never)
+    .eq('id', user.id)
+    .select('id, phone')
+    .maybeSingle<{ id: string; phone: string | null }>();
+
+  if (updateError) {
+    // Invariante de privacidad: omitir el número telefónico completo del log de error
+    console.error('Error al actualizar teléfono de perfil:', updateError.message);
+    return err('INTERNAL_ERROR');
+  }
+
+  if (!updatedProfile || updatedProfile.id !== user.id) {
+    return err('NOT_FOUND');
+  }
+
+  revalidatePath('/courier/profile');
+
+  return ok({
+    phone: parsed.data.phone,
+    redirectTo: '/courier/profile',
+  });
+}
+
 

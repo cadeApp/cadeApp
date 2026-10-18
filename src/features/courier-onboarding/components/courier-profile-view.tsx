@@ -16,13 +16,27 @@ import {
   CheckCircle2,
   Clock,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
 import { Card } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { Button, buttonVariants } from '@/ui/button';
+import { Input } from '@/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/ui/dialog';
+import { notify } from '@/ui/notify';
+import { formatPhone } from '@/lib/format';
+import { isValidArgentinePhone } from '@/lib/whatsapp';
 import { BrandLogo } from '@/ui/brand-logo';
 import { cn } from '@/ui/cn';
 import { logoutAction } from '@/features/auth';
+import { updateCourierPhoneAction } from '../actions';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import {
   type DocumentReviewStatus,
@@ -49,6 +63,8 @@ export interface CourierProfileData {
   readonly courierId?: string;
   readonly displayName: string;
   readonly email: string;
+  readonly phone?: string | null;
+  readonly dniHash?: string | null;
   readonly vehicleType: string | null;
   readonly plate: string | null;
   readonly dniStatus: DocumentReviewStatus;
@@ -167,6 +183,48 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
   const [avatarImageError, setAvatarImageError] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+  const [isPhoneDialogOpen, setIsPhoneDialogOpen] = React.useState(false);
+  const [phoneInputValue, setPhoneInputValue] = React.useState('');
+  const [phoneError, setPhoneError] = React.useState<string | null>(null);
+  const [isSavingPhone, setIsSavingPhone] = React.useState(false);
+
+  const handleOpenPhoneDialog = React.useCallback(() => {
+    setPhoneInputValue(localProfile?.phone ?? profile?.phone ?? '');
+    setPhoneError(null);
+    setIsPhoneDialogOpen(true);
+  }, [localProfile?.phone, profile?.phone]);
+
+  const handleSavePhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPhoneError(null);
+
+    if (!isValidArgentinePhone(phoneInputValue)) {
+      setPhoneError('Ingresá un número argentino válido (10 dígitos nacionales sin 0 ni 15)');
+      return;
+    }
+
+    setIsSavingPhone(true);
+    try {
+      const res = await updateCourierPhoneAction({ phone: phoneInputValue });
+      if (!res.ok) {
+        if (res.code === 'VALIDATION_ERROR') {
+          setPhoneError('Número de teléfono inválido o formato no permitido');
+        } else {
+          setPhoneError('Ocurrió un error al guardar el teléfono. Por favor, intentá nuevamente.');
+        }
+        return;
+      }
+
+      setLocalProfile((prev) => (prev ? { ...prev, phone: res.data.phone } : prev));
+      setIsPhoneDialogOpen(false);
+      notify.success('Teléfono actualizado correctamente');
+      router.refresh();
+    } catch {
+      setPhoneError('Error de conexión al actualizar el teléfono. Conservamos tu dato anterior.');
+    } finally {
+      setIsSavingPhone(false);
+    }
+  };
 
   React.useEffect(() => {
     setLocalProfile(profile);
@@ -356,6 +414,89 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
           </Link>
         </Card>
       )}
+
+      {/* Datos personales (T-355) */}
+      <Card className="space-y-4 p-4 sm:p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">
+            Datos personales
+          </h2>
+          <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+            <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+            Solo lectura
+          </span>
+        </div>
+
+        <div className="divide-y divide-border/60 text-sm">
+          {/* Nombre */}
+          <div className="py-2.5 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium text-muted-foreground">Nombre y apellido</span>
+              <p className="font-medium text-foreground">{activeProfile.displayName}</p>
+            </div>
+            <Badge variant="outline" className="text-sm text-muted-foreground">
+              Bloqueado
+            </Badge>
+          </div>
+
+          {/* Email */}
+          <div className="py-2.5 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium text-muted-foreground">Correo electrónico</span>
+              <p className="font-medium text-foreground">{activeProfile.email}</p>
+            </div>
+            <Badge variant="outline" className="text-sm text-muted-foreground">
+              Bloqueado
+            </Badge>
+          </div>
+
+          {/* DNI */}
+          <div className="py-2.5 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium text-muted-foreground">Documento de identidad (DNI)</span>
+              <p className="font-medium text-foreground">
+                {activeProfile.dniHash
+                  ? 'Registrado en legajo'
+                  : activeProfile.dniStatus === 'verified'
+                    ? 'Documento verificado'
+                    : activeProfile.dniStatus === 'submitted'
+                      ? 'Documento en revisión'
+                      : 'Pendiente de carga'}
+              </p>
+            </div>
+            <Badge variant="outline" className="text-sm text-muted-foreground">
+              {activeProfile.dniStatus === 'verified' ? 'Acreditado' : 'Legajo'}
+            </Badge>
+          </div>
+
+          {/* Teléfono */}
+          <div className="pt-2.5 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium text-muted-foreground">Teléfono de contacto</span>
+              <p className="font-medium text-foreground">
+                {activeProfile.phone
+                  ? (() => {
+                      try {
+                        return formatPhone(activeProfile.phone);
+                      } catch {
+                        return activeProfile.phone;
+                      }
+                    })()
+                  : 'Sin teléfono registrado'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleOpenPhoneDialog}
+              className="font-medium text-primary-dark"
+            >
+              Editar teléfono
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* Vehículo registrado */}
       <Card className="space-y-3 p-4 sm:p-5">
@@ -644,6 +785,57 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
           {isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
         </Button>
       </div>
+
+      {/* Diálogo para editar teléfono (T-355) */}
+      <Dialog open={isPhoneDialogOpen} onOpenChange={setIsPhoneDialogOpen}>
+        <DialogContent preventCloseOnEscape={isSavingPhone}>
+          <DialogHeader>
+            <DialogTitle>Editar teléfono de contacto</DialogTitle>
+            <DialogDescription>
+              Ingresá tu número celular de 10 dígitos nacionales (código de área sin 0 ni 15, ej: 3865 123456).
+              Solo se actualizará tu teléfono de contacto.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSavePhone} className="space-y-4">
+            <div>
+              <label htmlFor="courier-phone-input" className="block text-sm font-medium text-foreground">
+                Teléfono de contacto
+              </label>
+              <Input
+                id="courier-phone-input"
+                type="tel"
+                value={phoneInputValue}
+                onChange={(e) => {
+                  setPhoneInputValue(e.target.value);
+                  if (phoneError) setPhoneError(null);
+                }}
+                placeholder="3865 123456"
+                disabled={isSavingPhone}
+                className="mt-1"
+                autoFocus
+              />
+              {phoneError && (
+                <p role="alert" className="mt-1 text-sm font-medium text-destructive">
+                  {phoneError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSavingPhone}
+                onClick={() => setIsPhoneDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" variant="default" isPending={isSavingPhone}>
+                Guardar teléfono
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   vehiclePlateSchema,
   courierOnboardingSchema,
   courierUpdateVehicleSchema,
+  courierUpdatePhoneSchema,
 } from './schemas';
 
 describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () => {
@@ -261,5 +262,57 @@ describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () =
       expect(courierUpdateVehicleSchema.safeParse({ vehicleType: 'bike', status: 'approved' }).success).toBe(false);
     });
   });
+
+  describe('T-355: courierUpdatePhoneSchema para edición de teléfono de repartidor', () => {
+    it('acepta y normaliza números argentinos válidos a 10 dígitos', () => {
+      const cases = [
+        { input: '3865123456', expected: '3865123456' },
+        { input: '+5493865123456', expected: '3865123456' },
+        { input: '+54 9 3865 123456', expected: '3865123456' },
+        { input: '(03865) 15-123456', expected: '3865123456' },
+        { input: '0381 15 4123456', expected: '3814123456' },
+      ];
+      for (const { input, expected } of cases) {
+        const res = courierUpdatePhoneSchema.safeParse({ phone: input });
+        expect(res.success).toBe(true);
+        if (res.success) {
+          expect(res.data.phone).toBe(expected);
+        }
+      }
+    });
+
+    it('rechaza teléfonos con letras, símbolos no permitidos o longitud incorrecta', () => {
+      const invalid = [
+        '3865123456abc',
+        'palabra',
+        '12345',
+        '000000000000000000000000000000000',
+        '',
+        '   ',
+        '<script>alert(1)</script>',
+      ];
+      for (const phone of invalid) {
+        const res = courierUpdatePhoneSchema.safeParse({ phone });
+        expect(res.success).toBe(false);
+      }
+    });
+
+    it('rechaza payloads con campos extra no autorizados (allowlist estricta)', () => {
+      const forbidden = [
+        { phone: '3865123456', role: 'admin' },
+        { phone: '3865123456', email: 'test@example.com' },
+        { phone: '3865123456', dni: '12345678' },
+        { phone: '3865123456', status: 'approved' },
+        { phone: '3865123456', vehicleType: 'moto' },
+        { phone: '3865123456', displayName: 'Nombre Cambiado' },
+        { phone: '3865123456', profile_id: 'otro-uuid' },
+      ];
+      for (const payload of forbidden) {
+        const res = courierUpdatePhoneSchema.safeParse(payload);
+        expect(res.success).toBe(false);
+      }
+    });
+  });
 });
+
 

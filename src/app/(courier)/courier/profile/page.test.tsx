@@ -224,5 +224,74 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
       });
     });
   });
+
+  describe('T-355: /courier/profile proyecta teléfono persistido y DNI para solo lectura', () => {
+    it('proyecta el teléfono del perfil cuando está cargado en profiles', async () => {
+      mocks.from.mockImplementation((table: string) => {
+        const query = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data:
+              table === 'profiles'
+                ? { display_name: 'Repartidor de prueba', role: 'courier', phone: '3865123456' }
+                : {
+                    vehicle_type: mocks.vehicleType,
+                    vehicle_plate: null,
+                    license_status: 'none',
+                    insurance_status: 'none',
+                    status: mocks.courierStatus,
+                    dni_hmac: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+                  },
+            error: null,
+          }),
+        };
+        if (table === 'courier_documents') {
+          query.eq.mockResolvedValue({ data: mocks.documents, error: null });
+        }
+        return query;
+      });
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        phone: '3865123456',
+        dniHash: 'abcdef12...',
+      });
+    });
+
+    it('proyecta phone null cuando no hay teléfono registrado en profiles', async () => {
+      mocks.from.mockImplementation((table: string) => {
+        const query = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data:
+              table === 'profiles'
+                ? { display_name: 'Repartidor de prueba', role: 'courier', phone: null }
+                : {
+                    vehicle_type: mocks.vehicleType,
+                    vehicle_plate: null,
+                    license_status: 'none',
+                    insurance_status: 'none',
+                    status: mocks.courierStatus,
+                    dni_hmac: null,
+                  },
+            error: null,
+          }),
+        };
+        if (table === 'courier_documents') {
+          query.eq.mockResolvedValue({ data: mocks.documents, error: null });
+        }
+        return query;
+      });
+
+      const profile = await renderPage();
+      expect(profile).toMatchObject({
+        phone: null,
+        dniHash: null,
+      });
+    });
+  });
 });
+
 
