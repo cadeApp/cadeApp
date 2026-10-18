@@ -518,9 +518,10 @@ export async function updateCourierPhoneAction(
   }
 
   // 4. Actualización atómica del teléfono en profiles para el usuario autenticado
+  const patch: TablesUpdate<'profiles'> = { phone: parsed.data.phone };
   const { data: updatedProfile, error: updateError } = await supabase
     .from('profiles')
-    .update({ phone: parsed.data.phone } as never)
+    .update(patch as never)
     .eq('id', user.id)
     .eq('role', 'courier')
     .select('id, phone')

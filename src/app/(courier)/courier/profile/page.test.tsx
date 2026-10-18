@@ -263,7 +263,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
       const serialized = JSON.stringify(profile);
       expect(serialized).not.toContain('abcdef12');
       expect(serialized).not.toContain(syntheticHmac);
-      expect((profile as any).dniHash).toBeUndefined();
+      expect(profile).not.toHaveProperty('dniHash');
     });
 
     it('proyecta phone null y hasDniOnFile false cuando no hay teléfono ni dni_hmac', async () => {

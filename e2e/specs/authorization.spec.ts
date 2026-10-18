@@ -323,7 +323,8 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
 
     expect(initialProfileError).toBeNull();
     expect(initialProfile).not.toBeNull();
-    const previousPhone = initialProfile!.phone;
+    if (!initialProfile) throw new Error('No se pudo leer el perfil inicial');
+    const previousPhone = initialProfile.phone;
 
     let secondContext: BrowserContext | null = null;
 
@@ -387,7 +388,7 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
       expect(updatedProfileError).toBeNull();
       expect(updatedProfile?.phone).toBe(newPhone);
       expect(updatedProfile?.role).toBe('courier');
-      expect(updatedProfile?.display_name).toBe(initialProfile!.display_name);
+      expect(updatedProfile?.display_name).toBe(initialProfile.display_name);
     } finally {
       if (secondContext) {
         await secondContext.close();

@@ -906,7 +906,8 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         render(<CourierProfileView profile={baseCourier} />);
 
         // Tarjeta Datos personales visible
-        const personalCard = screen.getByText('Datos personales').closest('.space-y-4')!;
+        const personalCard = screen.getByText('Datos personales').closest('.space-y-4');
+        if (!personalCard) throw new Error('No se encontró la tarjeta Datos personales');
         expect(personalCard).toBeDefined();
 
         // Nombre solo lectura
