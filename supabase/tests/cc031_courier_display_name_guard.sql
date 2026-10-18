@@ -134,6 +134,11 @@ select ok(not exists (
     and a.grantee = 0 and a.privilege_type = 'EXECUTE'), 'PUBLIC has no EXECUTE grant');
 select ok((select relrowsecurity from pg_class where oid = 'public.profiles'::regclass),
   'profiles RLS remains enabled');
+select is(pg_temp.cc031_run(99,
+  'update public.profiles set display_name = ''Service corrected'' where id = pg_temp.cc031_id(2)', 'service_role')->>'code',
+  '00000', 'trusted service role keeps its existing administrative write path');
+select is((select display_name from public.profiles where id = pg_temp.cc031_id(2)),
+  'Service corrected', 'service role write persists without a client grant');
 
 -- Control de mutación SOLO en transacción de prueba de la base efímera.
 -- Misma sonda/oráculo: quitar el trigger debe cambiar el rechazo a una escritura real.
@@ -150,6 +155,88 @@ select is(pg_temp.cc031_name_probe(),
   'GREEN restored: same oracle rejects after restoring trigger');
 select is((select display_name from public.profiles where id = pg_temp.cc031_id(1)),
   'Admin corrected', 'mutation data rolled back');
+
+-- Dos sesiones contra la misma base efímera de CI, por socket local, sin claves.
+-- La fixture remota debe confirmarse para ser visible entre las sesiones; se elimina abajo.
+create extension if not exists dblink with schema extensions;
+select dblink_connect('cc031_a', format('dbname=%L host=%L application_name=cc031_a',
+  current_database(), split_part(current_setting('unix_socket_directories'), ',', 1)));
+select dblink_connect('cc031_b', format('dbname=%L host=%L application_name=cc031_b',
+  current_database(), split_part(current_setting('unix_socket_directories'), ',', 1)));
+select dblink_exec('cc031_a', $remote$
+  insert into auth.users(id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
+  values ('31000000-0000-4000-8000-000000000090', '00000000-0000-0000-0000-000000000000',
+    'authenticated', 'authenticated', 'cc031.race@example.test', 'pwd', '{"role":"courier"}');
+  update public.profiles set display_name = 'Race original', consent_status = 'active'
+  where id = '31000000-0000-4000-8000-000000000090';
+$remote$);
+select dblink_exec(connection_name, $remote$
+  set statement_timeout = '10s';
+  set role authenticated;
+  set request.jwt.claims = '{"sub":"31000000-0000-4000-8000-000000000090","role":"authenticated"}';
+$remote$) from unnest(array['cc031_a', 'cc031_b']) connection_name;
+
+create function pg_temp.cc031_wait_for_lock() returns boolean language plpgsql as $$
+declare deadline timestamptz := clock_timestamp() + interval '5 seconds';
+begin
+  loop
+    perform pg_stat_clear_snapshot();
+    if exists (select 1 from pg_stat_activity
+      where application_name = 'cc031_b' and wait_event_type = 'Lock') then
+      return true;
+    end if;
+    exit when clock_timestamp() >= deadline;
+  end loop;
+  return false;
+end;
+$$;
+
+select dblink_exec('cc031_a', $remote$
+  begin;
+  update public.profiles set phone = '3865000090'
+  where id = '31000000-0000-4000-8000-000000000090';
+$remote$);
+select is(dblink_send_query('cc031_b', $remote$
+  update public.profiles set display_name = 'Race forbidden'
+  where id = '31000000-0000-4000-8000-000000000090' returning display_name;
+$remote$), 1, 'concurrent name update dispatched');
+select ok(pg_temp.cc031_wait_for_lock(), 'name writer really waits for phone row lock');
+select dblink_exec('cc031_a', 'commit');
+select is((select count(*) from dblink_get_result('cc031_b', false) as result(value text)),
+  0::bigint, 'concurrent forbidden update returned no rows');
+select like(dblink_error_message('cc031_b'), '%COURIER_DISPLAY_NAME_IMMUTABLE%',
+  'concurrent name update fails at guard after phone commits');
+select * from dblink_get_result('cc031_b', false) as result(value text);
+select is((select display_name || ':' || phone from dblink('cc031_a',
+  'select display_name, phone from public.profiles where id = ''31000000-0000-4000-8000-000000000090''')
+  as result(display_name text, phone text)), 'Race original:3865000090',
+  'concurrent outcome preserves identity and commits phone');
+
+-- Administración concurrente: el teléfono no debe restaurar un nombre obsoleto.
+select dblink_exec('cc031_a', $remote$
+  reset role;
+  set request.jwt.claims = '{}';
+  begin;
+  update public.profiles set display_name = 'Race corrected'
+  where id = '31000000-0000-4000-8000-000000000090';
+$remote$);
+select is(dblink_send_query('cc031_b', $remote$
+  update public.profiles set phone = '3865000091'
+  where id = '31000000-0000-4000-8000-000000000090' returning phone;
+$remote$), 1, 'concurrent phone update dispatched');
+select ok(pg_temp.cc031_wait_for_lock(), 'phone writer really waits for correction lock');
+select dblink_exec('cc031_a', 'commit');
+select is((select value from dblink_get_result('cc031_b') as result(value text)),
+  '3865000091', 'phone succeeds after administrative correction commits');
+select * from dblink_get_result('cc031_b') as result(value text);
+select is((select display_name || ':' || phone from dblink('cc031_a',
+  'select display_name, phone from public.profiles where id = ''31000000-0000-4000-8000-000000000090''')
+  as result(display_name text, phone text)), 'Race corrected:3865000091',
+  'serialized phone write preserves corrected identity');
+select dblink_exec('cc031_a',
+  'delete from auth.users where id = ''31000000-0000-4000-8000-000000000090''');
+select dblink_disconnect('cc031_a');
+select dblink_disconnect('cc031_b');
 
 select * from finish();
 rollback;
