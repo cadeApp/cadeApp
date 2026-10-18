@@ -204,7 +204,7 @@ select ok(pg_temp.cc031_wait_for_lock(), 'name writer really waits for phone row
 select dblink_exec('cc031_a', 'commit');
 select is((select count(*) from dblink_get_result('cc031_b', false) as result(value text)),
   0::bigint, 'concurrent forbidden update returned no rows');
-select like(dblink_error_message('cc031_b'), '%COURIER_DISPLAY_NAME_IMMUTABLE%',
+select matches(dblink_error_message('cc031_b'), 'COURIER_DISPLAY_NAME_IMMUTABLE',
   'concurrent name update fails at guard after phone commits');
 select * from dblink_get_result('cc031_b', false) as result(value text);
 select is((select display_name || ':' || phone from dblink('cc031_a',
