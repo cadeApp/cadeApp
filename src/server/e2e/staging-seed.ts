@@ -22,6 +22,8 @@ export interface StagingSeedContext {
   createdZoneIds: string[];
   createdContactRequestIds?: string[];
   createdIncidentIds?: string[];
+  /** CC-029 (T-369): planes de publicación creados por la corrida; se borran después de los comercios. */
+  createdPublicationPlanIds?: string[];
   merchantUser?: UserCredentials;
   courierUsers?: UserCredentials[];
   adminUser?: UserCredentials;
@@ -217,7 +219,7 @@ export function createStagingSeedContext(): StagingSeedContext {
  */
 export function trackEntityForCleanup(
   context: StagingSeedContext,
-  type: 'request' | 'offer' | 'user' | 'zone' | 'contact' | 'incident',
+  type: 'request' | 'offer' | 'user' | 'zone' | 'contact' | 'incident' | 'publication_plan',
   id: string
 ): void {
   assertValidUuid(id, `trackEntityForCleanup(${type})`);
@@ -235,6 +237,9 @@ export function trackEntityForCleanup(
   } else if (type === 'incident') {
     if (!context.createdIncidentIds) context.createdIncidentIds = [];
     if (!context.createdIncidentIds.includes(id)) context.createdIncidentIds.push(id);
+  } else if (type === 'publication_plan') {
+    if (!context.createdPublicationPlanIds) context.createdPublicationPlanIds = [];
+    if (!context.createdPublicationPlanIds.includes(id)) context.createdPublicationPlanIds.push(id);
   }
 }
 
@@ -1443,6 +1448,26 @@ export async function cleanupStagingData(
     }
   }
 
+  // 5b. CC-029 (T-369): planes del catálogo creados por la corrida. Van después de los comercios: sus períodos se
+  // borran en cascada con el comercio y recién entonces el plan queda sin referencias.
+  if (context.createdPublicationPlanIds && context.createdPublicationPlanIds.length > 0) {
+    const toDeletePlans = [...context.createdPublicationPlanIds];
+    try {
+      const { error: planErr } = await admin.from('publication_plans').delete().in('id', toDeletePlans);
+      if (planErr) {
+        cleanupErrors.push({ entity: 'publication_plans', ids: toDeletePlans, error: planErr.message });
+      } else {
+        context.createdPublicationPlanIds = [];
+      }
+    } catch (err: unknown) {
+      cleanupErrors.push({
+        entity: 'publication_plans',
+        ids: toDeletePlans,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // 6. Limpieza de usuarios auth
   if (context.createdUserIds.length > 0) {
     for (const userId of context.createdUserIds) {
@@ -2035,3 +2060,34 @@ export async function setMerchantSubscriptionStatus(
   }
 }
 
+/**
+ * CC-029 (T-369): precondición del reintegro por vencimiento. Mueve `expires_at` de una solicitud publicada del
+ * comercio de la corrida al pasado; la transición (vencer y liberar la reserva) la hace la reconciliación real de la
+ * base al leer el saldo o la solicitud. Nunca toca solicitudes de otro comercio ni ejecuta la transición.
+ */
+export async function expirePublishedRequestForRefund(
+  context: StagingSeedContext,
+  requestId: string,
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<void> {
+  assertAllowedE2EEnvironment(env);
+  assertValidUuid(requestId, 'requestId');
+  const merchantId = context.merchantUser?.id;
+  if (!merchantId) {
+    throw new Error('[E2E Seed Error] Se requiere el comercio de la corrida para vencer una solicitud');
+  }
+  const admin = client ?? createAdminClient();
+  const { data, error } = await admin
+    .from('delivery_requests')
+    .update({ expires_at: new Date(Date.now() - 60_000).toISOString() })
+    .eq('id', requestId)
+    .eq('merchant_id', merchantId)
+    .eq('status', 'published')
+    .select('id');
+  if (error || !data || data.length !== 1) {
+    throw new Error(
+      `[E2E Seed Error] No se pudo vencer la solicitud ${requestId}: ${error?.message ?? 'no es una solicitud publicada del comercio de la corrida'}`
+    );
+  }
+}
