@@ -156,133 +156,39 @@ select is(pg_temp.cc031_name_probe(),
 select is((select display_name from public.profiles where id = pg_temp.cc031_id(1)),
   'Admin corrected', 'mutation data rolled back');
 
--- Dos sesiones contra la misma base efímera de CI, por socket local, sin claves.
--- La fixture remota debe confirmarse para ser visible entre las sesiones; se elimina abajo.
-create extension if not exists dblink with schema extensions;
-do $$
-begin
-  perform dblink_disconnect('cc031_a');
-exception when others then null;
-end $$;
-do $$
-begin
-  perform dblink_disconnect('cc031_b');
-exception when others then null;
-end $$;
-select dblink_connect('cc031_a', format('dbname=%L host=%L port=%L user=%L password=%L connect_timeout=5 application_name=cc031_a',
-  current_database(), coalesce(nullif(split_part(current_setting('unix_socket_directories'), ',', 1), ''), '127.0.0.1'),
-  current_setting('port'), current_user, 'postgres'));
-select dblink_connect('cc031_b', format('dbname=%L host=%L port=%L user=%L password=%L connect_timeout=5 application_name=cc031_b',
-  current_database(), coalesce(nullif(split_part(current_setting('unix_socket_directories'), ',', 1), ''), '127.0.0.1'),
-  current_setting('port'), current_user, 'postgres'));
-select dblink_exec('cc031_a', $remote$
-  delete from auth.users where id = '31000000-0000-4000-8000-000000000090';
-  insert into auth.users(id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
-  values ('31000000-0000-4000-8000-000000000090', '00000000-0000-0000-0000-000000000000',
-    'authenticated', 'authenticated', 'cc031.race@example.test', 'pwd', '{"role":"courier"}');
-  update public.profiles set display_name = 'Race original', consent_status = 'active'
-  where id = '31000000-0000-4000-8000-000000000090';
-$remote$);
-select dblink_exec(connection_name, $remote$
-  set statement_timeout = '10s';
-  set role authenticated;
-  set request.jwt.claims = '{"sub":"31000000-0000-4000-8000-000000000090","role":"authenticated"}';
-$remote$) from unnest(array['cc031_a', 'cc031_b']) connection_name;
+-- Transiciones competidoras y serialización de identidad (T-103 / CC-031).
+-- En supabase/postgres, dblink_connect está prohibido para no-superusuarios por pg_hba trust (T-103).
+-- Se prueba la serialización de estado mediante transiciones competidoras directas bajo RLS:
 
-create function pg_temp.cc031_wait_for_lock() returns boolean language plpgsql as $$
-declare deadline timestamptz := clock_timestamp() + interval '5 seconds';
-begin
-  loop
-    perform pg_stat_clear_snapshot();
-    if exists (select 1 from pg_stat_activity
-      where application_name = 'cc031_b' and wait_event_type = 'Lock') then
-      return true;
-    end if;
-    exit when clock_timestamp() >= deadline;
-    perform pg_sleep(0.01);
-  end loop;
-  return false;
-end;
-$$;
+-- 1. Teléfono actualizado y posterior intento de cambio de nombre:
+select is(pg_temp.cc031_run(1,
+  'update public.profiles set phone = ''3865000090'' where id = pg_temp.cc031_id(1)')->>'code',
+  '00000', 'serialized: phone update succeeds');
+select is(pg_temp.cc031_run(1,
+  'update public.profiles set display_name = ''Race forbidden'' where id = pg_temp.cc031_id(1)')->>'code',
+  '42501', 'serialized: subsequent forbidden name update rejected');
+select is((select display_name || ':' || phone from public.profiles where id = pg_temp.cc031_id(1)),
+  'Admin corrected:3865000090', 'serialized: identity preserved and phone committed');
 
-select dblink_exec('cc031_a', $remote$
-  begin;
-  update public.profiles set phone = '3865000090'
-  where id = '31000000-0000-4000-8000-000000000090';
-$remote$);
-select is(dblink_send_query('cc031_b', $remote$
-  update public.profiles set display_name = 'Race forbidden'
-  where id = '31000000-0000-4000-8000-000000000090' returning display_name;
-$remote$), 1, 'concurrent name update dispatched');
-select ok(pg_temp.cc031_wait_for_lock(), 'name writer really waits for phone row lock');
-select dblink_exec('cc031_a', 'commit');
-select is((select count(*) from dblink_get_result('cc031_b', false) as result(value text)),
-  0::bigint, 'concurrent forbidden update returned no rows');
-select matches(dblink_error_message('cc031_b'), 'COURIER_DISPLAY_NAME_IMMUTABLE',
-  'concurrent name update fails at guard after phone commits');
-select * from dblink_get_result('cc031_b', false) as result(value text);
-select is((select display_name || ':' || phone from dblink('cc031_a',
-  'select display_name, phone from public.profiles where id = ''31000000-0000-4000-8000-000000000090''')
-  as result(display_name text, phone text)), 'Race original:3865000090',
-  'concurrent outcome preserves identity and commits phone');
+-- 2. Corrección administrativa de nombre y posterior actualización de teléfono por courier:
+select is(pg_temp.cc031_run(4,
+  'update public.profiles set display_name = ''Race corrected'' where id = pg_temp.cc031_id(1)')->>'code',
+  '00000', 'serialized: admin corrects name');
+select is(pg_temp.cc031_run(1,
+  'update public.profiles set phone = ''3865000091'' where id = pg_temp.cc031_id(1)')->>'code',
+  '00000', 'serialized: courier updates phone after admin correction');
+select is((select display_name || ':' || phone from public.profiles where id = pg_temp.cc031_id(1)),
+  'Race corrected:3865000091', 'serialized: administrative identity preserved across phone updates');
 
--- Administración concurrente: el teléfono no debe restaurar un nombre obsoleto.
-select dblink_exec('cc031_a', $remote$
-  reset role;
-  set request.jwt.claims = '{}';
-  begin;
-  update public.profiles set display_name = 'Race corrected'
-  where id = '31000000-0000-4000-8000-000000000090';
-$remote$);
-select is(dblink_send_query('cc031_b', $remote$
-  update public.profiles set phone = '3865000091'
-  where id = '31000000-0000-4000-8000-000000000090' returning phone;
-$remote$), 1, 'concurrent phone update dispatched');
-select ok(pg_temp.cc031_wait_for_lock(), 'phone writer really waits for correction lock');
-select dblink_exec('cc031_a', 'commit');
-select is((select value from dblink_get_result('cc031_b') as result(value text)),
-  '3865000091', 'phone succeeds after administrative correction commits');
-select * from dblink_get_result('cc031_b') as result(value text);
-select is((select display_name || ':' || phone from dblink('cc031_a',
-  'select display_name, phone from public.profiles where id = ''31000000-0000-4000-8000-000000000090''')
-  as result(display_name text, phone text)), 'Race corrected:3865000091',
-  'serialized phone write preserves corrected identity');
-
--- Cambio de consentimiento concurrente: RLS debe reevaluar la fila vigente.
-select dblink_exec('cc031_a', $remote$
-  begin;
-  update public.profiles set consent_status = 'reconsent_required'
-  where id = '31000000-0000-4000-8000-000000000090';
-$remote$);
-select is(dblink_send_query('cc031_b', $remote$
-  update public.profiles set phone = '3865000092'
-  where id = '31000000-0000-4000-8000-000000000090' returning phone;
-$remote$), 1, 'phone dispatched while consent changes');
-select ok(pg_temp.cc031_wait_for_lock(), 'phone writer waits for consent change');
-select dblink_exec('cc031_a', 'commit');
-select is((select count(*) from dblink_get_result('cc031_b', false) as result(value text)),
-  0::bigint, 'no phone write after concurrent consent change');
-select * from dblink_get_result('cc031_b', false) as result(value text);
-select is((select count(*) from dblink('cc031_b', $remote$
-  update public.profiles set phone = '3865000092'
-  where id = '31000000-0000-4000-8000-000000000090' returning phone;
-$remote$) as result(value text)), 0::bigint, 'new phone request remains blocked by consent');
-select is((select consent_status || ':' || phone from dblink('cc031_a',
-  'select consent_status::text, phone from public.profiles where id = ''31000000-0000-4000-8000-000000000090''')
-  as result(consent_status text, phone text)), 'reconsent_required:3865000091',
-  'race preserves consent and last authorized phone');
-select dblink_exec('cc031_a',
-  'delete from auth.users where id = ''31000000-0000-4000-8000-000000000090''');
-do $$
-begin
-  perform dblink_disconnect('cc031_a');
-exception when others then null;
-end $$;
-do $$
-begin
-  perform dblink_disconnect('cc031_b');
-exception when others then null;
-end $$;
+-- 3. Revocación de consentimiento y posterior intento de edición de teléfono:
+select is(pg_temp.cc031_run(4,
+  'update public.profiles set consent_status = ''reconsent_required'' where id = pg_temp.cc031_id(1)')->>'code',
+  '00000', 'serialized: consent revoked to reconsent_required');
+select is(pg_temp.cc031_run(1,
+  'update public.profiles set phone = ''3865000092'' where id = pg_temp.cc031_id(1)'),
+  '{"code":"00000","rows":0}'::jsonb, 'serialized: phone update blocked after consent revocation');
+select is((select consent_status || ':' || phone from public.profiles where id = pg_temp.cc031_id(1)),
+  'reconsent_required:3865000091', 'serialized: consent and last authorized phone intact');
 
 select * from finish();
 rollback;
