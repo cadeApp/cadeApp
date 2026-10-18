@@ -5,6 +5,7 @@ import {
   replaceCourierDocumentAction,
   updateCourierVehicleAction,
   validateCurrentDocumentSet,
+  updateCourierPhoneAction,
 } from './actions';
 import * as serverAuth from '@/server/supabase/server';
 import * as adminAuth from '@/server/supabase/admin';
@@ -1965,4 +1966,263 @@ describe('CC-025 / T-356: replaceCourierDocumentAction', () => {
     expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
   });
 });
+
+describe('T-355: updateCourierPhoneAction (edición segura y exclusiva del teléfono del repartidor)', () => {
+  const courierId = 'courier-uuid-123';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function setupAuthUser(role: string = 'courier') {
+    const mockUpdate = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { id: courierId, phone: '3865123456' },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    });
+
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: courierId, role, phone: '3865000000' },
+                error: null,
+              }),
+            }),
+          }),
+          update: mockUpdate,
+        };
+      }
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        update: vi.fn().mockReturnThis(),
+      };
+    });
+
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: courierId, email: 'courier@cadeapp.test' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    return { mockFrom, mockUpdate };
+  }
+
+  it('rechaza con UNAUTHENTICATED si no hay usuario autenticado', async () => {
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: new Error('Sin sesión') }),
+      },
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    const result = await updateCourierPhoneAction({ phone: '3865123456' });
+    expect(result).toEqual({ ok: false, code: 'UNAUTHENTICATED' });
+  });
+
+  it('rechaza con UNAUTHORIZED_ACTOR si el usuario no tiene rol courier (ej: merchant o admin)', async () => {
+    setupAuthUser('merchant');
+
+    const result = await updateCourierPhoneAction({ phone: '3865123456' });
+    expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+  });
+
+  it('rechaza con VALIDATION_ERROR si el teléfono es inválido o contiene letras/símbolos', async () => {
+    setupAuthUser('courier');
+
+    const result = await updateCourierPhoneAction({ phone: '3865abc123' });
+    expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+  });
+
+  it('rechaza con VALIDATION_ERROR intentos de inyectar campos ajenos (allowlist estricta: rol, email, dni, status, vehículo)', async () => {
+    const { mockFrom, mockUpdate } = setupAuthUser('courier');
+
+    const maliciousPayloads = [
+      { phone: '3865123456', role: 'admin' },
+      { phone: '3865123456', email: 'otro@test.com' },
+      { phone: '3865123456', dni: '12345678' },
+      { phone: '3865123456', status: 'approved' },
+      { phone: '3865123456', vehicleType: 'auto' },
+      { phone: '3865123456', profile_id: 'otro-uuid' },
+      { phone: '3865123456', displayName: 'Hacker' },
+    ];
+
+    for (const payload of maliciousPayloads) {
+      const result = await updateCourierPhoneAction(payload);
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockUpdate).not.toHaveBeenCalled();
+    }
+
+    // Comprobar que jamás se llamó a couriers
+    expect(mockFrom).not.toHaveBeenCalledWith('couriers');
+  });
+
+  it('actualiza exitosamente el teléfono normalizado a 10 dígitos, valida rol en UPDATE y llama a revalidatePath', async () => {
+    const mockUpdate = vi.fn();
+    const mockEqId = vi.fn();
+    const mockEqRole = vi.fn();
+    const mockSelect = vi.fn();
+    const mockMaybeSingle = vi.fn().mockResolvedValue({
+      data: { id: courierId, phone: '3865123456' },
+      error: null,
+    });
+
+    mockSelect.mockReturnValue({ maybeSingle: mockMaybeSingle });
+    mockEqRole.mockReturnValue({ select: mockSelect });
+    mockEqId.mockReturnValue({ eq: mockEqRole });
+    mockUpdate.mockReturnValue({ eq: mockEqId });
+
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: courierId, email: 'courier@cadeapp.test' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { id: courierId, role: 'courier', phone: '3865000000' },
+                  error: null,
+                }),
+              }),
+            }),
+            update: mockUpdate,
+          };
+        }
+        throw new Error(`Tabla no autorizada: ${table}`);
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    const result = await updateCourierPhoneAction({ phone: '+54 9 3865 123456' });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        phone: '3865123456',
+        redirectTo: '/courier/profile',
+      },
+    });
+
+    expect(mockUpdate).toHaveBeenCalledWith({ phone: '3865123456' });
+    expect(mockEqId).toHaveBeenCalledWith('id', courierId);
+    expect(mockEqRole).toHaveBeenCalledWith('role', 'courier');
+    expect(revalidatePath).toHaveBeenCalledWith('/courier/profile');
+  });
+
+  it('falla de forma segura (NOT_FOUND) si el rol cambió entre SELECT y UPDATE sin revalidar ni mutar', async () => {
+    const mockUpdate = vi.fn();
+    const mockEqId = vi.fn();
+    const mockEqRole = vi.fn();
+    const mockSelect = vi.fn();
+    const mockMaybeSingle = vi.fn().mockResolvedValue({
+      data: null,
+      error: null,
+    });
+
+    mockSelect.mockReturnValue({ maybeSingle: mockMaybeSingle });
+    mockEqRole.mockReturnValue({ select: mockSelect });
+    mockEqId.mockReturnValue({ eq: mockEqRole });
+    mockUpdate.mockReturnValue({ eq: mockEqId });
+
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: courierId, email: 'courier@cadeapp.test' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { id: courierId, role: 'courier', phone: '3865000000' },
+                  error: null,
+                }),
+              }),
+            }),
+            update: mockUpdate,
+          };
+        }
+        throw new Error(`Tabla no autorizada: ${table}`);
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    const result = await updateCourierPhoneAction({ phone: '3865123456' });
+    expect(result).toEqual({ ok: false, code: 'NOT_FOUND' });
+    expect(mockEqId).toHaveBeenCalledWith('id', courierId);
+    expect(mockEqRole).toHaveBeenCalledWith('role', 'courier');
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('devuelve INTERNAL_ERROR ante fallo de base de datos sin registrar el teléfono completo ni mensajes contaminados', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: courierId, email: 'courier@cadeapp.test' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { id: courierId, role: 'courier', phone: '3865000000' },
+                  error: null,
+                }),
+              }),
+            }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  select: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: null,
+                      error: { message: 'violación: 3865123456', code: '23514' },
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        throw new Error(`Tabla no autorizada: ${table}`);
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    const result = await updateCourierPhoneAction({ phone: '3865123456' });
+    expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+
+    expect(errorSpy).toHaveBeenCalled();
+    for (const call of errorSpy.mock.calls) {
+      const loggedStr = call.map((c) => String(c)).join(' ');
+      expect(loggedStr).not.toContain('3865123456');
+      expect(loggedStr).not.toContain('violación');
+    }
+    errorSpy.mockRestore();
+  });
+});
+
 
