@@ -15,7 +15,7 @@ import { evaluateRouteGuard } from '@/features/auth/guards';
 import { ADMIN_COPY } from '@/features/admin/copy';
 import { COURIER_ONBOARDING_COPY } from '@/features/courier-onboarding/copy';
 import { COURIER_DOCS_BUCKET } from '@/features/courier-onboarding/upload-manager';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 
 // Buffer PNG real 2x2 válido para pruebas de subida (H11)
 const DUMMY_2X2_PNG = Buffer.from(
@@ -112,6 +112,34 @@ function requireDniHmacSecret(): string {
     throw new Error('[E2E Precondition Error] DNI_HMAC_SECRET es obligatorio para T-302');
   }
   return secret;
+}
+
+/**
+ * T-372: DNI de 8 dígitos para el caso de deduplicación, derivado de la corrida y del azar, que solo se usa si su
+ * HMAC no está registrado en `couriers`. Evita depender de un DNI fijo que otra corrida dejó en Supabase Develop;
+ * no borra ni modifica repartidores ajenos.
+ */
+async function pickAvailableDni(
+  dbAdmin: ReturnType<typeof createAdminClient>,
+  hmacSecret: string,
+  testRunId: string
+): Promise<{ dni: string; dniHmac: string }> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const digest = createHash('sha256')
+      .update(`${testRunId}:${attempt}:${randomBytes(8).toString('hex')}`)
+      .digest();
+    const dni = String(20_000_000 + (digest.readUInt32BE(0) % 70_000_000));
+    const dniHmac = createHmac('sha256', hmacSecret).update(dni).digest('hex');
+    const { count, error } = await dbAdmin
+      .from('couriers')
+      .select('profile_id', { count: 'exact', head: true })
+      .eq('dni_hmac', dniHmac);
+    if (error) {
+      throw new Error(`[E2E Seed Error] No se pudo verificar la disponibilidad del DNI: ${error.message}`);
+    }
+    if (count === 0) return { dni, dniHmac };
+  }
+  throw new Error('[E2E Seed Error] No se encontró un DNI libre en 10 intentos');
 }
 
 test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado', () => {
@@ -547,12 +575,14 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
     }
 
-    // 1. Asignar DNI fijo a courier 1 en base de datos
-    const existingDni = '35999888';
+    // 1. Asignar a courier 1 un DNI libre y propio de la corrida (T-372)
     const hmacSecret = requireDniHmacSecret();
-    const existingHmac = createHmac('sha256', hmacSecret).update(existingDni).digest('hex');
-
     const dbAdmin = createAdminClient();
+    const { dni: existingDni, dniHmac: existingHmac } = await pickAvailableDni(
+      dbAdmin,
+      hmacSecret,
+      stagingContext.testRunId
+    );
     const { error: seedErr } = await dbAdmin
       .from('couriers')
       .update({ dni_hmac: existingHmac, status: 'approved' })
