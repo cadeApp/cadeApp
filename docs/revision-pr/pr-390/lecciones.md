@@ -25,3 +25,8 @@
 - **H15 / puerta externa:** no confundir éxito en CI de GitHub unit/db con estado del gate confiable `e2e-preview` publicado vía commit status externo; R4 informó apta para merge sin mirar el contexto RED. El fallo concreto era T-306 y ya tenía issue #405 + fix PR #407 mergeado en develop, así que integrar ese fix por merge y evitar duplicar tarea.
 - **H16 / carrera multipágina:** un resultado exitoso de `queryFn` de página 1 NO certifica `useInfiniteQuery` entera. Sin test de 2+ páginas, el setter de frescura reabre UI con cache de página 2 mientras el fetch general sigue en curso; mover la habilitación al settle global de consulta después de epoch de reconexión.
 - **Distinguir certeza:** H15 es hecho comprobado en status/logs; H16 es riesgo causal fundado en estructura y semántica documentada, aún exige test React/TanStack real para confirmar regresión.
+
+## Ronda 6 — 2026-10-18
+- **H17:** `fetchNextPage` (cancelRefetch:true) puede cancelar el refetch de una InfiniteQuery y hacer que el latch considere exitosa una sola operación sin haber refrescado páginas previas. Bloquear load-more con `isFetching` general y gate de sincronización.
+- **H18:** si una prueba de multipaginación usa `queryByRole` + `if` para el único click de segunda página, la precondición es opcional. Exigir `getByRole` y cursor/DOM visible antes de desconexión, probar mutación.
+- **CI:** no declarar verde lo que estaba `in_progress`/`pending`, ni pedir rerun por commit documental.

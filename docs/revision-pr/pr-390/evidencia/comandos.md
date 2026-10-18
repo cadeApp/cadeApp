@@ -264,3 +264,35 @@ node /tmp/pr390-r5-multipage-model.cjs
 ```
 
 **Pendiente**: test de integración real con QueryClient, 2 páginas, refetch asincrónico secuencial, segunda promesa diferida, y mutaciones adversarias del reviewer. No simular dichos resultados; la solicitud a Kira es hacer RED/GREEN real y que la siguiente ronda ejecute el checker propio.
+
+## Ronda 6 — auditoría del SHA 115235956844a43b767209ca7c42ed2f07223ba2
+- GitHub compare `origin/develop...branch` -> ahead 14 / behind 0, mergeable=true.
+- GitHub compare `f6d106f0..1152359` -> 4 archivos propios en los globs permitidos; origin/develop trae los demás.
+- Código UI verificado: `{hasNextPage&&!isError}` y botón `onClick={() => void fetchNextPage()}`, `disabled={isFetchingNextPage}`. Hook retorna isFetchingNextPage pero NO isFetching.
+- Guía oficial TanStack https://tanstack.com/query/latest/docs/framework/react/guides/infinite-queries confirma `fetchNextPage` default `cancelRefetch:true` puede interrumpir refetch; recomienda `!isFetching`.
+- Test H16 de UI: `const loadMoreButton=screen.queryByRole(...)`, `if(loadMoreButton)` envuelve click y aserción página 2.
+- Corrí este modelo en Node, NO React/Vitest:
+```bash
+cat > /tmp/pr390-r6-concurrency-model.cjs <<'NODE'
+'use strict';
+const assert = require('node:assert/strict');
+const preClick = {online:true, synced:false, hasNextPage:true, isError:false, isFetching:true, isFetchingNextPage:false};
+assert.equal(preClick.isFetchingNextPage,false);
+assert.equal(!preClick.online||!preClick.synced||preClick.isFetching||preClick.isFetchingNextPage,true);
+console.log('R6 H17: current Cargar mas enabled during general refetch; safe guard disabled');
+const s={online:true, requiredPostReconnectGeneration:8, fetchGeneration:8,
+ fetchStatus:'idle', error:null, isError:false, isRefetchError:false,
+ dataUpdatedAt:1020, reconnectEpoch:1010, errorUpdatedAt:900, priorPagesVerified:false};
+const latch=s.online&&s.fetchGeneration>=s.requiredPostReconnectGeneration&&
+ s.fetchStatus==='idle'&&!s.error&&!s.isError&&!s.isRefetchError&&
+ s.dataUpdatedAt>=s.reconnectEpoch&&s.dataUpdatedAt>=s.errorUpdatedAt;
+assert.equal(latch,true);assert.equal(s.priorPagesVerified,false);
+console.log('R6 H17: possible latch TRUE after load-more without verifying old pages (model only)');
+let page2Asserted=false;const loadMoreButton=null;
+if(loadMoreButton){page2Asserted=true;}
+assert.equal(page2Asserted,false);
+console.log('R6 H18: conditional test can skip page 2 precondition');
+NODE
+node /tmp/pr390-r6-concurrency-model.cjs
+```
+Resultados del modelo: las 3 líneas `R6 H17`×2, `R6 H18`×1; exit 0 (modelo solo). `container.exec git ls-remote` -> no resuelve github.com. No se hicieron tests locales ni mutaciones reales, no se falsearon.
