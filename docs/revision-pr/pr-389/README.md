@@ -79,3 +79,12 @@ CI sobre código integrado: 142 archivos y 2.685 tests unit PASS; DB 29 archivos
 | ae05b35cf46b5217f37932c76fdff9cad2fe996a | T-362 E2E PASS (44.9s), Chromium 87/87 PASS; E2E global FAIL por T-306, issue #405; aprobación pendiente | [ronda-5.md](revisiones/ronda-5.md) |
 
 El HEAD de PR 37c7e8a solo cambia bitácora respecto de ae05b35: no invalida E2E de T-362. El run #39064324483 terminó con 87 tests Chromium PASS (no 77 como cita la bitácora), pero el job total FAIL por global-settings T-306 DoD1. Issue separado #405. No repetir CI solo por documentación.
+
+
+## Ronda 6 — 2026-10-17
+
+| SHA integrado | Resultado | Informe |
+|---|---|---|
+| `476ff4dbee7bf0e6fc43b4b507a1e772e27c62f4` | Fix T-371 integrado, detrás de develop=0; CI 142/2687 unit PASS y DB 29/2735 PASS; E2E auto #39079295420 CANCELLED antes de Playwright, falta gate real y aprobación P1 | [ronda-6.md](revisiones/ronda-6.md) |
+
+Se conservaron exactamente los blobs del código y el spec E2E de T-362 respecto al SHA ae05b35 que pasó su test específico. La PR #407 T-371 se mergeó a develop, issue #405 cerrado y su E2E global quedó GREEN. La PR #389 **sigue bloqueada**, no por el viejo error T-306 sino porque el nuevo run de #389 fue CANCELLED. R6 registrada por revisor; no exigir otro CI solo por cambios documentales.

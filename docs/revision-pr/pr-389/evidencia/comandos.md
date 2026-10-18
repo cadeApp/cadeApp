@@ -267,3 +267,19 @@ No corrí tests locales ni mutaciones; no certificar como verificado-runtime. No
 - Run nuevo por push exclusivamente documental: 39066467970 in_progress al momento de la lectura; resultado no anticipado. No exigir CI nuevo solo por cambio de log/revisión.
 
 No ejecuté Playwright localmente ni mutaciones locales. La verificación de H01/H02/R01/R02 fue independiente mediante lectura del log y matching SHA del E2E real ejecutado por CI sobre código sin cambios funcionales posteriores. R03 permanece sin reproducción autónoma.
+
+
+---
+
+## Ronda 6 — corroboración remota de integración y gates
+
+- Functional SHA: `476ff4dbee7bf0e6fc43b4b507a1e772e27c62f4`. Base develop: `0488f8a98f44b67101c7c520696c356d46c161ff`. Compare develop...branch: ahead=15, behind=0, GitHub mergeable=true.
+- PR T-371 mergeada: https://github.com/cadeApp/cadeApp/pull/407 ; merge SHA 0488f8a, 2026-10-17T23:17:23Z; issue #405 cerrado. E2E T-371 run https://github.com/cadeApp/cadeApp/actions/runs/39075847138 = SUCCESS.
+- Todos los blobs funcionales T-362 (dialog, test, courier container/view, merchant container/view, e2e/specs/request-states.spec.ts) permanecen idénticos a SHA ae05b35.
+- CI #389: https://github.com/cadeApp/cadeApp/actions/runs/39079233749 → completed SUCCESS para 476ff4d. Unit job 117532620740 142 archivos PASS, 2687 tests PASS, workflows 79/79 y ADR 6/6. DB job 117532620761 Files=29, Tests=2735, Result: PASS. Typecheck/lint/audit/build/bundle-budget SUCCESS.
+- E2E del propio SHA: https://github.com/cadeApp/cadeApp/actions/runs/39079295420 → resolve-preview success, e2e-preview cancelled (job 117532834069, log BlobNotFound), report-preview-status success. Job de publicación informa RESULT: cancelled; TARGET_SHA: 476ff4d...; status e2e-preview=error. No log Chromium ni pruebas reproducidas para este SHA.
+- Approval-policy check #39079231341 job 117532613738 FAIL: El PR requiere aprobación vigente de Lautaro073.
+- Review artifact files de la R5 sin alteraciones por autora entre commits 09e9147 y 476ff4d.
+- No se ejecutaron tests ni mutaciones locales, ni git merge-tree por no haber clon disponible. No se dispararon workflows manualmente.
+
+**Acciones para repetir legítimamente el gate:** el operador autorizado puede usar Re-run all jobs en el run #39079295420. Comprobar el mismo TARGET_SHA, `e2e-preview=success`, oráculos del E2E T-362 y los tres global-settings, antes de registrar la conclusión. Reejecución E2E en un run real NO implica reejecutar unit/DB por documentos. Sin falsos GREEN.

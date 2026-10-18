@@ -40,3 +40,11 @@ No asignar AG nuevo ni alterar AGENTS.md sin validar máximo de todas las ramas 
 - Las cifras declaradas en bitácora pueden diferir del log real (77 vs 87 Chromium); usar siempre el dato del run, SHA y job.
 - Cuando el último SHA probado y HEAD nuevo difieren SOLO en bitácora, el E2E probado sigue representando el mismo código funcional. No pedir otro CI green por docs.
 - No inferir bypass de subscripción por falta de alerta: el test falla antes del oráculo SQL; abrir issue separado con traza y RCA pendiente (#405), sin modificar T-362 ni reducir el gate.
+
+
+## Ronda 6 — gates tras integrar tarea ajena
+
+- Que un arreglo de E2E global haya pasado y se haya mergeado en develop NO convierte automáticamente en PASS a un Preview de otra rama: exigir run target SHA y resultado real de su propio workflow, o documentar que se carece de él.
+- Comparar los hashes de todos los archivos funcionales originales del feature antes/después de integrar develop evita pedir refactors ficticios o imputar cambios ajenos a KiraK72.
+- El status `e2e-preview=error` con `RESULT: cancelled` solo significa que Playwright NO concluyó; no se puede diagnosticar fallo de test ni asegurar causa sin log. No arreglar E2E mediante `.skip` ni alterar mocks.
+- Aunque una nueva ronda documental cambie HEAD, la regla 10 prohíbe exigir otra CI GREEN por ese único cambio.
