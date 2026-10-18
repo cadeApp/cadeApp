@@ -57,3 +57,66 @@ git status --short && git rev-parse HEAD && git ls-remote origin feat/T-369-ui
 Las pruebas SQL van en CI `db-tests` contra base efímera. No conectar ni alterar Supabase Develop/staging/producción manualmente. Registrar comandos, entorno, run URLs, SHA y resultados reales en `docs/tasks/log/T-369.md`.
 
 **Regla obligatoria:** prohibido tests falsos, asserts adulteradas, `.skip`/`.only`, fake que evita el camino real, desactivar gates, fingir RED o escribir la carpeta `docs/revision-pr/pr-402/**` desde agy. Al añadir solo documentación de la revisión, no pedir nuevo CI green exclusivamente por ello.
+
+## Ronda 3 — harness completo de controles independientes (estáticos)
+
+Se ejecutó el mismo código de `audit`/negativos en una sesión aislada con los contenidos de cinco archivos obtenidos vía GitHub del SHA `cd573afbc4c7c6d895145eea26285ca0ee14ffad`, con resultados `14/14` y `7/7`. Se reproduce sobre un checkout idéntico del SHA con Node, sin dependencias ni DB.
+
+```js
+// Revisión independiente PR402 ronda 3. Ejecutar en raíz del repo: node /tmp/pr402-r3-oraculo.mjs
+// Lee archivos del SHA checkout; NO conecta a DB, no ejecuta mutaciones SQL.
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const paths={
+ runner:'supabase/tests/integration/t369_admin_list_plans_mutations.mjs',
+ sql:'supabase/tests/t369_publication_credits.sql',
+ ui:'src/features/trips/components/trip-merchant-container.tsx',
+ test:'src/features/trips/components/trip-replace-courier-dialog.test.tsx',
+ workflow:'.github/workflows/ci.yml'
+};
+const f=Object.fromEntries(Object.entries(paths).map(([key,path])=>[key,readFileSync(path,'utf8')]));
+function audit(g){
+ const specs=[
+ ['runner en CI',g.runner.includes("process.env.CI !== 'true'")&&g.runner.includes("/^supabase_db_/")],
+ ['suite inmutable',g.runner.includes("readFileSync(SUITE, 'utf8')")&&g.runner.includes("runSuite('baseline')")],
+ ['rechazo fallo de psql',g.runner.includes("if (res.status !== 0)")&&g.runner.includes("if (res.error || res.signal)")],
+ ['plan y fallos detectados por TAP',g.runner.includes("/^1\\.\\.\\d+$/")&&g.runner.includes("/^not ok \\d+/")],
+ ['mutante autorizado real',g.runner.includes("redefine('M1'")&&g.runner.includes('assert_admin_aal2();')],
+ ['mutante grant ACL real',g.runner.includes('grant select on table public.publication_plans to authenticated')&&g.runner.includes('revoke select on table public.publication_plans from authenticated')],
+ ['mutante cursor real',g.runner.includes("redefine('M3'")&&g.runner.includes('(pl.sort, pl.id) > (p_after_sort, p_after_id)')],
+ ['mutante desempate real',g.runner.includes("redefine('M3b'")&&g.runner.includes('pl.sort > p_after_sort')],
+ ['rechaza RED sin aserciones',g.runner.includes('red.failed.length === 0 || missing.length > 0')&&g.runner.includes('red.total !== baseline.total')],
+ ['restauración garantizada',g.runner.includes("finally {\n    restore();")&&g.runner.includes('functionMd5() !== originalMd5 || tableAcl() !== originalAcl')],
+ ['suite pgTAP contiene nombres esperados',[
+ 'D01-B: sin usuario autenticado da UNAUTHENTICATED',
+ 'D01-B: 151 planes se recorren en páginas 50/50/50/1',
+ 'D01-B: publication_plans sigue con RLS y sin SELECT para anon/authenticated'
+ ].every(s=>g.sql.includes(s))],
+ ['H02 catch + alerta',g.ui.includes("try {\n        res = await merchantReportNoShowAction")&&g.ui.includes("if (replaceOpen) setReplaceError(getDomainErrorMessage('INTERNAL_ERROR'))")],
+ ['H02 test rechazo real',g.test.includes("mockRejectedValueOnce(new Error('network'))")&&g.test.includes("getDomainErrorMessage('INTERNAL_ERROR')")],
+ ['runner en CI y GREEN posterior',g.workflow.includes('node supabase/tests/integration/t369_admin_list_plans_mutations.mjs')&&g.workflow.includes('# Verificación final GREEN de toda la suite tras restauración')]
+ ];
+ return specs;
+}
+const original=audit(f);
+for(const [name,ok] of original)assert.equal(ok,true,'Control original: '+name);
+const mutations=[
+ ['sin guarda CI',{...f,runner:f.runner.replace("process.env.CI !== 'true'",'false')},'runner en CI'],
+ ['sin baseline',{...f,runner:f.runner.replace("runSuite('baseline')",'({total:0,failed:[]})')},'suite inmutable'],
+ ['sin M1',{...f,runner:f.runner.replace("redefine('M1'","redefine('M5'")},'mutante autorizado real'],
+ ['sin condición RED vacío',{...f,runner:f.runner.replace('red.failed.length === 0 || missing.length > 0','missing.length > 0')},'rechaza RED sin aserciones'],
+ ['sin finally restore',{...f,runner:f.runner.replace("finally {\n    restore();","finally {\n    // restore();")},'restauración garantizada'],
+ ['sin catch no-show',{...f,ui:f.ui.replace("try {\n        res = await merchantReportNoShowAction","// try removed\n        res = await merchantReportNoShowAction")},'H02 catch + alerta'],
+ ['sin test rechazo',{...f,test:f.test.replace("mockRejectedValueOnce(new Error('network'))","mockResolvedValueOnce({ok:false,code:'INTERNAL_ERROR'})")},'H02 test rechazo real']
+];
+for(const [label,mutant,target] of mutations){
+ const result=audit(mutant).find(([name])=>name===target)?.[1];
+ assert.equal(result,false,'Control negativo no detectó '+label);
+}
+console.log('ORACULO_ESTÁTICO PR402: 14/14 propiedades + 7/7 controles negativos PASS');
+// LIMITACIÓN: son verificaciones de texto/estructura, no sustituyen el runtime del job db-tests.
+// Ver CI auténtico: https://github.com/cadeApp/cadeApp/actions/runs/39087097148/job/117555836464
+
+```
+
+**Límite:** las mutaciones de este script modifican solo COPIAS DE TEXTO. Los mutantes SQL reales que prueban la RPC se ejecutaron en el job `117555836464` del run `39087097148`, con logs citados en `evidencia/ronda-3.md`.
