@@ -23,3 +23,23 @@ pnpm typecheck && pnpm lint && pnpm test
 ```
 
 Los datos de E2E son desechables y se rastrean por testRunId. No borrar/actualizar datos de otros runs, no probar contra staging ni producción por esta reparación. Si la falla global-settings aparece tras desbloquear T-302, levantar hallazgo nuevo con log y pruebas del mismo SHA.
+
+## Ronda 3 — Reproducción del oráculo independiente
+
+El revisor usó fuentes reales de GitHub, diffs y logs (14 controles positivos y 6 negativos en memoria); no ejecutó Playwright local. Script equivalente para correr en checkout de SHA eaf3689:
+
+```js
+const cp=require('node:child_process');
+const assert=require('node:assert/strict');
+const old='a91263615730f36c817811f0ac92f56058838409';
+const git=(...a)=>cp.execFileSync('git',a,{encoding:'utf8'});
+const paths=['e2e/specs/publication-credits.spec.ts','e2e/specs/publication-credits.global-settings.spec.ts','e2e/specs/subscription.global-settings.spec.ts','src/server/e2e/staging-seed.ts'];
+const diff=git('diff','--name-only',old,'HEAD').trim().split('\n');
+assert.deepEqual(diff,['docs/tasks/log/T-369.md']);
+for(const path of paths){ const src=git('show',old+':'+path); const dst=git('show','HEAD:'+path);assert.equal(dst,src);assert.notEqual(dst+'mutant',src); }
+const text=git('show','HEAD:e2e/specs/publication-credits.global-settings.spec.ts');
+const marker='await setPilotActive(original);';assert.ok(text.includes(marker));assert.ok(!text.replace(marker,'removed').includes(marker));
+console.log('Control de identidad de código y negativos PASS');
+```
+
+Resultado E2E real observado en logs de https://github.com/cadeApp/cadeApp/actions/runs/39159260485/job/117768945794. **No confundir control estático de fuente con ejecución de Playwright**. Se constató postintegración CC-031, 88+6 PASS; sin ejecutar de nuevo por commits solo documentales.

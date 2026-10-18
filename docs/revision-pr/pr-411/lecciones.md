@@ -10,3 +10,10 @@
 - H01/P15: la PR T-372 resolvió el bloqueo y permitió verificar realmente T-369 (88+6). Comprobar el SHA exacto del checkout, no el HEAD de bitácora.
 - H02/P15: un CI verde deja de ser evidencia del merge final cuando develop avanza. Revalidar ahead/behind al cerrar cada ronda y ejecutar el gate después de integrar nuevas migraciones, sin adulterar las pruebas.
 - Mejora condicional, no defecto observado: registrar los planes por identidad única ANTES de Save para limpieza incluso si falla la lectura posterior.
+
+
+## Ronda 3
+
+- H02: tras incorporar CC-031 y timeout 45m, el gate real probó 88 Chromium + 6 global-settings sobre SHA a912636. Documentación posterior no altera código, aunque puede disparar/cancelar otro status. No alterar checks ni fingir éxito.
+- Riesgo operativo observado: un runner cancelado mientras `withPilot(false)` cambia ajustes compartidos puede impedir el finally y afectar E2E de otras PR. Diseñar recuperación externa segura en tarea separada, guardando estado previo y sin imponer true a ciegas.
+- Antes de cierre: atrás=0, contrastar SHA real de checkout y revisar logs de 3 T-369 + 3 T-306.
