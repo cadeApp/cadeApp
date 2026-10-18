@@ -159,13 +159,24 @@ select is((select display_name from public.profiles where id = pg_temp.cc031_id(
 -- Dos sesiones contra la misma base efímera de CI, por socket local, sin claves.
 -- La fixture remota debe confirmarse para ser visible entre las sesiones; se elimina abajo.
 create extension if not exists dblink with schema extensions;
-select dblink_connect('cc031_a', format('dbname=%L host=%L port=%L user=%L connect_timeout=5 application_name=cc031_a',
-  current_database(), split_part(current_setting('unix_socket_directories'), ',', 1),
-  current_setting('port'), current_user));
-select dblink_connect('cc031_b', format('dbname=%L host=%L port=%L user=%L connect_timeout=5 application_name=cc031_b',
-  current_database(), split_part(current_setting('unix_socket_directories'), ',', 1),
-  current_setting('port'), current_user));
+do $$
+begin
+  perform dblink_disconnect('cc031_a');
+exception when others then null;
+end $$;
+do $$
+begin
+  perform dblink_disconnect('cc031_b');
+exception when others then null;
+end $$;
+select dblink_connect('cc031_a', format('dbname=%L host=%L port=%L user=%L password=%L connect_timeout=5 application_name=cc031_a',
+  current_database(), coalesce(nullif(split_part(current_setting('unix_socket_directories'), ',', 1), ''), '127.0.0.1'),
+  current_setting('port'), current_user, 'postgres'));
+select dblink_connect('cc031_b', format('dbname=%L host=%L port=%L user=%L password=%L connect_timeout=5 application_name=cc031_b',
+  current_database(), coalesce(nullif(split_part(current_setting('unix_socket_directories'), ',', 1), ''), '127.0.0.1'),
+  current_setting('port'), current_user, 'postgres'));
 select dblink_exec('cc031_a', $remote$
+  delete from auth.users where id = '31000000-0000-4000-8000-000000000090';
   insert into auth.users(id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
   values ('31000000-0000-4000-8000-000000000090', '00000000-0000-0000-0000-000000000000',
     'authenticated', 'authenticated', 'cc031.race@example.test', 'pwd', '{"role":"courier"}');
@@ -188,6 +199,7 @@ begin
       return true;
     end if;
     exit when clock_timestamp() >= deadline;
+    perform pg_sleep(0.01);
   end loop;
   return false;
 end;
@@ -261,8 +273,16 @@ select is((select consent_status || ':' || phone from dblink('cc031_a',
   'race preserves consent and last authorized phone');
 select dblink_exec('cc031_a',
   'delete from auth.users where id = ''31000000-0000-4000-8000-000000000090''');
-select dblink_disconnect('cc031_a');
-select dblink_disconnect('cc031_b');
+do $$
+begin
+  perform dblink_disconnect('cc031_a');
+exception when others then null;
+end $$;
+do $$
+begin
+  perform dblink_disconnect('cc031_b');
+exception when others then null;
+end $$;
 
 select * from finish();
 rollback;
