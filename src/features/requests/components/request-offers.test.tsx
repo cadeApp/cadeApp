@@ -1037,6 +1037,145 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       });
     });
 
+    describe('PR390-H16: protección de reconexión multipágina en UI (2+ páginas)', () => {
+      it('con 2 páginas cargadas, durante el refetch post-reconexión mientras página 2 está en vuelo, los botones Aceptar están bloqueados', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        const offerPage1 = initialOffers[0];
+        if (!offerPage1) throw new Error('Falta offerPage1');
+        const cursor1 = {
+          createdAt: offerPage1.createdAt,
+          id: offerPage1.id,
+        };
+        const secondInitial = initialOffers[1];
+        if (!secondInitial) throw new Error('Falta secondInitial');
+        const offerX: MerchantOfferItem = {
+          ...secondInitial,
+          id: '99999999-9999-4999-8999-999999999999',
+          courierName: 'Cadete Que Cancelo',
+          status: 'pending',
+        };
+
+        let resolvePage2: ((res: Response) => void) | null = null;
+        const page2Promise = new Promise<Response>((resolve) => {
+          resolvePage2 = resolve;
+        });
+
+        // 1. Montaje con página 1 y cursor para página 2
+        vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                data: [offerX],
+                nextCursor: null,
+              }),
+            } as Response;
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response;
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList
+              request={mockRequest}
+              initialOffers={[offerPage1]}
+              initialNextCursor={cursor1}
+            />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        // Cargar página 2
+        const loadMoreButton = screen.queryByRole('button', { name: /cargar más/i });
+        if (loadMoreButton) {
+          fireEvent.click(loadMoreButton);
+          await waitFor(() => {
+            expect(screen.getByText('Cadete Que Cancelo')).toBeDefined();
+          });
+        }
+
+        // Antes del corte: hay botones Aceptar disponibles
+        expect(screen.getAllByRole('button', { name: /^aceptar$/i }).length).toBeGreaterThan(0);
+
+        // 2. Corte de red (offline)
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        // Inmediatamente sin botones Aceptar
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+
+        // 3. Configurar refetch post-reconexión:
+        // Página 1 resuelve rápido con offerPage1
+        // Página 2 diferida
+        vi.spyOn(global, 'fetch').mockImplementation((input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return page2Promise;
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response);
+        });
+
+        // 4. Reconexión
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        // Inmediatamente tras volver online y mientras página 2 está en vuelo:
+        // PR390-H16: los botones Aceptar DEBEN permanecer bloqueados
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+        expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+
+        // 5. Resolver página 2 sin la oferta cancelada
+        await act(async () => {
+          if (resolvePage2) {
+            resolvePage2({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [], nextCursor: null }),
+            } as Response);
+          }
+          await page2Promise;
+        });
+
+        // Ahora que la consulta completa asentó: reaparece CTA solo para oferta válida
+        await waitFor(() => {
+          expect(screen.getAllByRole('button', { name: /^aceptar$/i })).toHaveLength(1);
+        });
+        expect(screen.queryByText('Cadete Que Cancelo')).toBeNull();
+      });
+    });
+
     it('handleConfirmAccept valida membresía en offers y no llama a acceptOfferAction si la oferta desapareció', async () => {
       const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: 0 } },

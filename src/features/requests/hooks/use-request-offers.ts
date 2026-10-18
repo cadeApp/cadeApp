@@ -74,6 +74,8 @@ export function useRequestOffers(
   );
   // PR390-H13: Generación mínima requerida para autorizar la sincronización post-reconexión.
   const syncRequiredGenerationRef = useRef(0);
+  // PR390-H16: Timestamp de reconexión para validar que dataUpdatedAt sea posterior.
+  const reconnectEpochRef = useRef(0);
 
   useEffect(() => {
     let wasOnline = onlineManager.isOnline();
@@ -87,6 +89,7 @@ export function useRequestOffers(
         setSyncedAfterReconnect(false);
         // Exigir que la consulta que autorice la caché haya iniciado DESPUÉS de este momento
         syncRequiredGenerationRef.current = fetchGenerationRef.current + 1;
+        reconnectEpochRef.current = Date.now();
       }
     });
     return () => {
@@ -127,15 +130,6 @@ export function useRequestOffers(
           const json: unknown = await res.json();
           const { liveOffersResponseSchema } = await import('@/lib/live-contracts');
           response = liveOffersResponseSchema.parse(json);
-        }
-
-        if (
-          onlineManager.isOnline() &&
-          syncRequiredGenerationRef.current > 0 &&
-          generation >= syncRequiredGenerationRef.current
-        ) {
-          syncRequiredGenerationRef.current = 0;
-          setSyncedAfterReconnect(true);
         }
 
         return response;
@@ -226,7 +220,15 @@ export function useRequestOffers(
     };
   }, [enabled, queryClient, requestId]);
 
-  const { fetchStatus, dataUpdatedAt, errorUpdatedAt, refetch } = query;
+  const {
+    fetchStatus,
+    dataUpdatedAt,
+    errorUpdatedAt,
+    isError,
+    isRefetchError,
+    error,
+    refetch,
+  } = query;
 
   useEffect(() => {
     const pending = reconnectDuringFetchRef.current;
@@ -242,6 +244,43 @@ export function useRequestOffers(
       void refetch({ cancelRefetch: false });
     }
   }, [fetchStatus, dataUpdatedAt, errorUpdatedAt, refetch, queryClient, requestId]);
+
+  // PR390-H16: La sincronización post-reconexión SOLO es válida cuando toda la consulta
+  // infinita (todas sus páginas secuenciales) asentó con éxito en idle, sin errores
+  // y con timestamp posterior a la reconexión.
+  useEffect(() => {
+    if (!isOnline || !onlineManager.isOnline()) {
+      return;
+    }
+
+    if (syncRequiredGenerationRef.current === 0) {
+      return;
+    }
+
+    const hasPostReconnectGeneration =
+      fetchGenerationRef.current >= syncRequiredGenerationRef.current;
+    const isSettledSuccess =
+      fetchStatus === 'idle' &&
+      !isError &&
+      !isRefetchError &&
+      !error &&
+      dataUpdatedAt >= reconnectEpochRef.current &&
+      dataUpdatedAt >= errorUpdatedAt;
+    const noPendingReconnectFetch = reconnectDuringFetchRef.current === null;
+
+    if (hasPostReconnectGeneration && isSettledSuccess && noPendingReconnectFetch) {
+      syncRequiredGenerationRef.current = 0;
+      setSyncedAfterReconnect(true);
+    }
+  }, [
+    isOnline,
+    fetchStatus,
+    isError,
+    isRefetchError,
+    error,
+    dataUpdatedAt,
+    errorUpdatedAt,
+  ]);
 
   // Invalidación en tiempo real: NO muta la caché a mano; solo invalida con debounce
   useRealtimeInvalidation({
@@ -265,6 +304,8 @@ export function useRequestOffers(
     refetch: query.refetch,
     isOnline,
     offersSyncedAfterReconnect,
+    fetchStatus: query.fetchStatus,
+    dataUpdatedAt: query.dataUpdatedAt,
   };
 }
 
