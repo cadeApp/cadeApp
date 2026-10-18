@@ -78,3 +78,71 @@ corepack pnpm test
 ```
 
 Para SQL/RLS usar el log `db-tests` de CI en el CC #412; **no levantar Supabase ni Docker local por esta revisión**. Para E2E, registrar un Vercel Preview READY y el run `e2e-preview` del SHA exacto sobre Supabase Develop, sin deploy de mutaciones inseguras.
+
+
+## Ronda 2 — 2026-10-18 · SHA 56c458a335e0ff7b729038e16b2e34ad101a8175
+
+**Consulta remota sin secretos:** GitHub PR, diff, CI jobs y logs. Desde este contenedor `git ls-remote https://github.com/cadeApp/cadeApp.git refs/heads/develop` devolvió `Could not resolve host: github.com`. No es posible ejecutar worktree, mutaciones de código o Playwright local; **la batería siguiente queda PROYECTADA, NO EJECUTADA** y los hallazgos están etiquetados por inspección.
+
+- `develop` merge commit CC-031: `29a44225513621ca9430924cd90d4c929c219e8d`.
+- Branch code HEAD examinado: `56c458a335e0ff7b729038e16b2e34ad101a8175` (ahead 9, behind 0).
+- CI [39106586647](https://github.com/cadeApp/cadeApp/actions/runs/39106586647): typecheck, lint, unit, build, audit, bundle-budget, db-tests, approval-policy PASS.
+- db-tests [117613641146](https://github.com/cadeApp/cadeApp/actions/runs/39106586647/job/117613641146): 30 archivos/2815 pgTAP PASS, mutaciones CC-031 RED/GREEN con logs verificables, tipos generados sin diff.
+- unit [117613641164](https://github.com/cadeApp/cadeApp/actions/runs/39106586647/job/117613641164): 145 archivos Vitest PASS.
+- Vercel READY. [E2E run 39106647405](https://github.com/cadeApp/cadeApp/actions/runs/39106647405), job `117614583076`, estaba `in_progress` («Run preview E2E gate») a la inspección; la casilla sigue pendiente.
+- **Mutaciones de H01/H03/H06/H07:** el autor declara mutaciones RED→GREEN en bitácora; solo se comprobó por inspección el oráculo final y su CI GREEN. Esta revisión **NO** afirma haber reproducido sus mutantes.
+
+### Comprobador estático independiente propuesto para H09
+
+Script completo para escribir en `/tmp/pr410-r2-guard.mjs`, ejecutar **solo** desde el worktree del SHA después de sincronizar. No modifica código, umbrales, fixtures, ni workflows. Debe fallar hoy por las expresiones agregadas y pasar una vez corregidas, sin falsificar suites:
+
+```js
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const checks = [
+  {
+    file: 'src/app/(courier)/courier/profile/page.test.tsx',
+    banned: /\(profile as any\)\.dniHash/,
+    label: 'new any on dniHash',
+  },
+  {
+    file: 'src/features/courier-onboarding/components.test.tsx',
+    banned: /\.closest\('\.space-y-4'\)!/,
+    label: 'new non-null assertion on personalCard',
+  },
+  {
+    file: 'e2e/specs/authorization.spec.ts',
+    banned: /initialProfile!\.(phone|display_name)/,
+    label: 'new E2E non-null assertions',
+  },
+];
+
+let errors = 0;
+for (const { file, banned, label } of checks) {
+  const source = fs.readFileSync(file, 'utf8');
+  const violates = banned.test(source);
+  console.log(`${violates ? 'FAIL' : 'PASS'} | ${file} | ${label}`);
+  if (violates) errors++;
+}
+assert.equal(errors, 0, `${errors} expresiones prohibidas nuevas`);
+```
+
+**Control de sensibilidad propuesto (no ejecutado):** después de que la autora corrija, correr baseline PASS de la misma comprobación; sobre una COPIA temporal de esos tres archivos reintroducir una a una las cadenas prohibidas y exigir fallo específico; restaurar siempre desde contenido en memoria, sin `git checkout` ni alteraciones de tests. No aceptar un chequeo que nunca cae en rojo.
+
+### Comandos para el agente tras arreglar
+
+```bash
+git fetch origin
+git switch feat/T-355-courier-phone-edit
+git pull --ff-only
+node /tmp/pr410-r2-guard.mjs
+pnpm typecheck
+pnpm lint
+pnpm test
+git diff --check
+git status --short
+git ls-remote origin feat/T-355-courier-phone-edit
+```
+
+Revisar el E2E mediante UI de Actions **del SHA exacto**, no invocar `workflow_dispatch`, no usar consola remota ni correr SQL privilegiado.

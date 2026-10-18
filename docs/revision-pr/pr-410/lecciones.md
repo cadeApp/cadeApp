@@ -8,3 +8,11 @@
 - **No se asigna AG nuevo** hasta ejecutar una batería propia en ronda posterior y hallar el máximo AG en TODAS las ramas remotas. Evitar duplicados y lecciones no verificadas.
 
 Todos los riesgos funcionales aquí requieren confirmación RED en la próxima ronda. Estados de CI/Preview fueron revisados en logs.
+
+
+## Ronda 2 — 2026-10-18
+
+- No confundir **aprobación de CI funcional** con cumplimiento de las **reglas estáticas del repositorio**: la PR añadió `as any` y 3 non-null assertions en tests y E2E y pasó typecheck/lint. Si este patrón reaparece, automatizar una regla AST enfocada en líneas nuevas.
+- La integración de CC-031 fue resuelta en una PR distinta; el autor hizo merge normal de `develop`, resolviendo H02 sin SQL duplicado en T-355.
+- E2E separado **en progreso** no es FAIL ni PASS. El informe debe anclarse al run y distinguir código E2E correcto por inspección de persistencia realmente ejercitada.
+- Un cast `as never` nuevo en un UPDATE que solo toca phone es deuda de tipado si se podía expresar mediante tipo `profiles.Update`; no inventar un fallo de seguridad mientras su payload siga cerrado y RLS proteja la fila.
