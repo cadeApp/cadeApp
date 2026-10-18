@@ -398,26 +398,25 @@ async function main() {
   const adminId = crypto.randomUUID();
 
   // Setup fixtures sintéticas en la base efímera
+  // handle_new_user exige role in ('merchant', 'courier'); para admin creamos usuario merchant y actualizamos role a admin en profiles.
   runSql(`
     insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
     values
       ('${courierId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'courier_${courierId}@cc031.test', 'pwd', '{"role":"courier"}'::jsonb),
-      ('${adminId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin_${adminId}@cc031.test', 'pwd', '{"role":"admin"}'::jsonb)
+      ('${adminId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin_${adminId}@cc031.test', 'pwd', '{"role":"merchant"}'::jsonb)
     on conflict (id) do nothing;
 
-    insert into public.profiles (id, role, consent_status, display_name, phone)
-    values
-      ('${courierId}', 'courier', 'active', 'Original Name', '3865000001'),
-      ('${adminId}', 'admin', 'active', 'Admin User', '3865999999')
-    on conflict (id) do update set
-      role = excluded.role,
-      consent_status = excluded.consent_status,
-      display_name = excluded.display_name,
-      phone = excluded.phone;
+    update public.profiles
+    set role = 'courier', consent_status = 'active', display_name = 'Original Name', phone = '3865000001'
+    where id = '${courierId}';
 
-    insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
-    values ('${courierId}', 'pending', false, 'moto', 'CC31INT')
-    on conflict (profile_id) do update set status = 'pending';
+    update public.profiles
+    set role = 'admin', consent_status = 'active', display_name = 'Admin User', phone = '3865999999'
+    where id = '${adminId}';
+
+    update public.couriers
+    set status = 'pending', available = false, vehicle_type = 'moto', vehicle_plate = 'CC31INT'
+    where profile_id = '${courierId}';
   `);
 
   try {
@@ -448,7 +447,8 @@ async function main() {
     // Teardown de fixtures sintéticas
     runSql(`
       delete from public.audit_log where actor_id in ('${courierId}', '${adminId}');
-      delete from public.couriers where profile_id = '${courierId}';
+      delete from public.merchants where profile_id in ('${courierId}', '${adminId}');
+      delete from public.couriers where profile_id in ('${courierId}', '${adminId}');
       delete from public.profiles where id in ('${courierId}', '${adminId}');
       delete from auth.users where id in ('${courierId}', '${adminId}');
     `);
