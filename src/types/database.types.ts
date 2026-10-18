@@ -1319,6 +1319,15 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_list_publication_plans: {
+        Args: {
+          p_active_only?: boolean
+          p_after_id?: string
+          p_after_sort?: number
+          p_limit?: number
+        }
+        Returns: Json
+      }
       admin_merchant_delivered_counts: {
         Args: { p_merchant_ids: string[] }
         Returns: Json

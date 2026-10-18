@@ -8,7 +8,12 @@ export default function MerchantPlanLoading() {
         <Skeleton className="h-4 w-72" />
       </div>
       <Skeleton className="h-44 w-full rounded-xl" />
+      <div className="flex items-center justify-between pt-1">
+        <Skeleton className="h-6 w-24" />
+        <Skeleton className="h-6 w-28 rounded-full" />
+      </div>
       <Skeleton className="h-56 w-full rounded-xl" />
+      <Skeleton className="h-40 w-full rounded-xl" />
     </div>
   );
 }

@@ -12,5 +12,7 @@ export * from './components/merchants-table';
 export * from './components/platform-settings-form';
 export * from './components/recent-setting-changes';
 export * from './components/audit-log-table';
+export * from './components/merchant-credits-view';
+export * from './components/publication-plans-manager';
 export * from './components/platform-skeletons';
 export * from './copy';

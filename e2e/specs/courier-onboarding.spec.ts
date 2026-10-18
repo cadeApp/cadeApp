@@ -15,7 +15,7 @@ import { evaluateRouteGuard } from '@/features/auth/guards';
 import { ADMIN_COPY } from '@/features/admin/copy';
 import { COURIER_ONBOARDING_COPY } from '@/features/courier-onboarding/copy';
 import { COURIER_DOCS_BUCKET } from '@/features/courier-onboarding/upload-manager';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 
 // Buffer PNG real 2x2 válido para pruebas de subida (H11)
 const DUMMY_2X2_PNG = Buffer.from(
@@ -112,6 +112,34 @@ function requireDniHmacSecret(): string {
     throw new Error('[E2E Precondition Error] DNI_HMAC_SECRET es obligatorio para T-302');
   }
   return secret;
+}
+
+/**
+ * T-372: DNI de 8 dígitos para el caso de deduplicación, derivado de la corrida y del azar, que solo se usa si su
+ * HMAC no está registrado en `couriers`. Evita depender de un DNI fijo que otra corrida dejó en Supabase Develop;
+ * no borra ni modifica repartidores ajenos.
+ */
+async function pickAvailableDni(
+  dbAdmin: ReturnType<typeof createAdminClient>,
+  hmacSecret: string,
+  testRunId: string
+): Promise<{ dni: string; dniHmac: string }> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const digest = createHash('sha256')
+      .update(`${testRunId}:${attempt}:${randomBytes(8).toString('hex')}`)
+      .digest();
+    const dni = String(20_000_000 + (digest.readUInt32BE(0) % 70_000_000));
+    const dniHmac = createHmac('sha256', hmacSecret).update(dni).digest('hex');
+    const { count, error } = await dbAdmin
+      .from('couriers')
+      .select('profile_id', { count: 'exact', head: true })
+      .eq('dni_hmac', dniHmac);
+    if (error) {
+      throw new Error(`[E2E Seed Error] No se pudo verificar la disponibilidad del DNI: ${error.message}`);
+    }
+    if (count === 0) return { dni, dniHmac };
+  }
+  throw new Error('[E2E Seed Error] No se encontró un DNI libre en 10 intentos');
 }
 
 test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado', () => {
@@ -547,12 +575,14 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
     }
 
-    // 1. Asignar DNI fijo a courier 1 en base de datos
-    const existingDni = '35999888';
+    // 1. Asignar a courier 1 un DNI libre y propio de la corrida (T-372)
     const hmacSecret = requireDniHmacSecret();
-    const existingHmac = createHmac('sha256', hmacSecret).update(existingDni).digest('hex');
-
     const dbAdmin = createAdminClient();
+    const { dni: existingDni, dniHmac: existingHmac } = await pickAvailableDni(
+      dbAdmin,
+      hmacSecret,
+      stagingContext.testRunId
+    );
     const { error: seedErr } = await dbAdmin
       .from('couriers')
       .update({ dni_hmac: existingHmac, status: 'approved' })
@@ -1491,6 +1521,143 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
           status: 'approved',
         })
         .eq('profile_id', courier.id);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-367: Avatar autorizado en /courier/profile
+  // ---------------------------------------------------------------------------
+  test('T-367: Cadete habilitado con avatar verificado ve su foto real en /courier/profile, con fallback si no está verificado', async ({
+    page,
+    browser,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere courier en stagingContext');
+    }
+    const courier1 = stagingContext.courierUsers?.[1];
+    if (!courier1) {
+      throw new Error('[E2E Error] Se requiere segundo courier para aislamiento');
+    }
+    const dbAdmin = createAdminClient();
+
+    // 1. Subir archivo real de prueba a courier-docs con nombre canónico avatar_<timestamp>.png
+    const storagePath = `courier/${courier.id}/avatar_${Date.now()}.png`;
+    const { error: uploadError } = await dbAdmin.storage
+      .from(COURIER_DOCS_BUCKET)
+      .upload(storagePath, DUMMY_2X2_PNG, {
+        contentType: 'image/png',
+        upsert: true,
+      });
+    expect(uploadError).toBeNull();
+
+    try {
+      // 2. Insertar documento kind='avatar' con status='verified' e is_current=true
+      await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id).eq('kind', 'avatar');
+      const { error: docInsertError } = await dbAdmin.from('courier_documents').insert({
+        courier_id: courier.id,
+        kind: 'avatar',
+        status: 'verified',
+        storage_path: storagePath,
+        is_current: true,
+      });
+      expect(docInsertError).toBeNull();
+
+      // Asegurar que el courier está aprobado
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier.id);
+
+      // 3. Iniciar sesión y navegar a /courier/profile
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+
+      // 4. Verificar que se renderiza la imagen del avatar con alt accesible y que decodificó exitosamente
+      const avatarImg = page.locator('img[alt^="Foto de perfil de"]');
+      await expect(avatarImg).toBeVisible();
+      const src = await avatarImg.getAttribute('src');
+      expect(src).toContain(storagePath);
+      expect(src).toContain('token=');
+      await expect(avatarImg).toHaveJSProperty('complete', true);
+      await expect
+        .poll(async () => {
+          return await avatarImg.evaluate((img: HTMLImageElement) => img.naturalWidth);
+        })
+        .toBeGreaterThan(0);
+
+      // 5. Aislamiento estricto entre usuarios: segundo courier de stagingContext
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier1.id);
+
+      // Cliente autenticado de courier 1 NO puede generar URL firmada para el objeto de courier 0 por RLS
+      const courier1Client = await createAuthenticatedClient(courier1);
+      const { data: crossSigned, error: crossSignedError } = await courier1Client.storage
+        .from(COURIER_DOCS_BUCKET)
+        .createSignedUrl(storagePath, 300);
+
+      expect(crossSigned?.signedUrl == null || crossSignedError != null).toBe(true);
+
+      // En la sesión de courier 1 (en contexto aislado), se muestra fallback y nunca la foto ajena
+      const otherContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
+      try {
+        const otherPage = await otherContext.newPage();
+        await loginAsCourier(1, otherPage);
+        await otherPage.goto('/courier/profile');
+        await waitForNoSkeletons(otherPage);
+        await expect(otherPage.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
+        await expect(otherPage.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
+      } finally {
+        await otherContext.close();
+      }
+
+      // 6. Volver a courier 0 (conserva su sesión en page) y verificar fallback cuando el avatar es rechazado
+      await dbAdmin
+        .from('courier_documents')
+        .update({ status: 'rejected' })
+        .eq('courier_id', courier.id)
+        .eq('kind', 'avatar');
+
+      await page.reload();
+      await waitForNoSkeletons(page);
+      await expect(page.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
+      await expect(page.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
+
+      // 7. Resiliencia ante error de Storage (archivo faltante no rompe el perfil)
+      const missingPath = `courier/${courier.id}/avatar_${Date.now() + 5000}.png`;
+      await dbAdmin
+        .from('courier_documents')
+        .update({ status: 'verified', storage_path: missingPath })
+        .eq('courier_id', courier.id)
+        .eq('kind', 'avatar');
+
+      await page.reload();
+      await waitForNoSkeletons(page);
+      // Fallback no bloqueante activo ante error de recurso
+      await expect(page.getByRole('img', { name: /^Foto de perfil de / })).toHaveCount(0);
+      await expect(page.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
+
+      // 8. Recarga con URL renovada y archivo válido recupera visualización
+      await dbAdmin
+        .from('courier_documents')
+        .update({ status: 'verified', storage_path: storagePath })
+        .eq('courier_id', courier.id)
+        .eq('kind', 'avatar');
+
+      await page.reload();
+      await waitForNoSkeletons(page);
+      const renewedImg = page.locator('img[alt^="Foto de perfil de"]');
+      await expect(renewedImg).toBeVisible();
+      await expect(renewedImg).toHaveJSProperty('complete', true);
+      await expect
+        .poll(async () => {
+          return await renewedImg.evaluate((img: HTMLImageElement) => img.naturalWidth);
+        })
+        .toBeGreaterThan(0);
+    } finally {
+      // Cleanup de fixture en bucket y base sin afectar cuentas existentes
+      await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove([storagePath]);
+      await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id).eq('kind', 'avatar');
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier.id);
     }
   });
 });

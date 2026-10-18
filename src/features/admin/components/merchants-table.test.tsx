@@ -67,6 +67,14 @@ describe('T-123: MerchantsTable (A03)', () => {
     expect(next.getAttribute('href')).toBe(`/admin/merchants?cursor=${MERCHANT_ID}`);
   });
 
+  it('T-369: cada comercio enlaza a sus créditos y la cabecera al catálogo de planes', () => {
+    render(<MerchantsTable result={result} />);
+    expect(
+      screen.getByRole('link', { name: 'Créditos de Panadería La Espiga' }).getAttribute('href')
+    ).toBe(`/admin/merchants/${MERCHANT_ID}/credits`);
+    expect(screen.getByRole('link', { name: 'Catálogo de planes' }).getAttribute('href')).toBe('/admin/merchants/plans');
+  });
+
   it('muestra un estado vacío cuando no hay comercios', () => {
     render(
       <MerchantsTable result={{ items: [], pageSize: 20, nextCursor: null, hasNextPage: false }} />

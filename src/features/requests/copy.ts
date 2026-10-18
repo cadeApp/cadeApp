@@ -68,6 +68,7 @@ export const requestsCopy = {
     distanceEstimate: (meters: number) => `Distancia estimada: ${(meters / 1000).toFixed(1)} km`,
     zoneCentroidNotice: 'Calculando distancia estimada entre barrios de Aguilares.',
     errorGeneric: 'Ocurrió un error al crear la solicitud. Por favor, intentá nuevamente.',
+    viewCreditsLink: 'Ver mis créditos y planes',
     errorSubscription:
       'Tu cuenta no cuenta con una suscripción activa ni período piloto para publicar envíos. Contactate con soporte.',
     addDropButton: 'Agregar otra entrega',

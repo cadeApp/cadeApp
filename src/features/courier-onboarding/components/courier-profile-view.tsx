@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -62,6 +63,8 @@ export interface CourierProfileData {
   readonly insuranceStatus: DocumentReviewStatus;
   readonly insuranceRejectionMessage?: string | null;
   readonly courierStatus: CourierReviewStatus;
+  readonly avatarUrl?: string | null;
+  readonly avatarStatus?: DocumentReviewStatus;
   /** T-334: `false` si el repartidor nunca envió el onboarding (`couriers.vehicle_type` nulo). */
   readonly onboardingComplete: boolean;
   readonly documents?: readonly DocumentItemData[];
@@ -161,11 +164,13 @@ function getDocStatusBadge(status: DocumentReviewStatus) {
 export function CourierProfileView({ profile }: { profile: CourierProfileData | null }) {
   const router = useRouter();
   const [localProfile, setLocalProfile] = React.useState<CourierProfileData | null>(profile);
+  const [avatarImageError, setAvatarImageError] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
 
   React.useEffect(() => {
     setLocalProfile(profile);
+    setAvatarImageError(false);
   }, [profile]);
 
   const initialRejectedDocsRef = React.useRef({
@@ -301,8 +306,20 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
 
       {/* Tarjeta de identidad principal */}
       <Card className="flex items-center gap-4 p-4 sm:p-5">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary-dark">
-          <User className="h-7 w-7" aria-hidden="true" />
+        <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/15 text-primary-dark">
+          {activeProfile.avatarUrl && !avatarImageError ? (
+            <Image
+              src={activeProfile.avatarUrl}
+              alt={`Foto de perfil de ${activeProfile.displayName}`}
+              width={56}
+              height={56}
+              unoptimized
+              className="h-full w-full object-cover"
+              onError={() => setAvatarImageError(true)}
+            />
+          ) : (
+            <User className="h-7 w-7" role="img" aria-label="Avatar de perfil no disponible" />
+          )}
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
