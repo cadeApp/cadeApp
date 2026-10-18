@@ -318,7 +318,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
               onError={() => setAvatarImageError(true)}
             />
           ) : (
-            <User className="h-7 w-7" aria-hidden="true" />
+            <User className="h-7 w-7" role="img" aria-label="Avatar de perfil no disponible" />
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-1">

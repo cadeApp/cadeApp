@@ -785,6 +785,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         );
 
         expect(screen.queryByRole('img', { name: /foto de perfil/i })).toBeNull();
+        expect(screen.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeDefined();
         const svg = container.querySelector('svg.lucide-user');
         expect(svg).not.toBeNull();
       });
@@ -814,6 +815,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         fireEvent.error(img);
 
         expect(screen.queryByRole('img', { name: 'Foto de perfil de Carlos Gómez' })).toBeNull();
+        expect(screen.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeDefined();
       });
 
       it('invariante de seguridad: jamás renderiza DNI o selfie como avatar si no hay avatarUrl', () => {

@@ -1575,7 +1575,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         await otherPage.goto('/courier/profile');
         await waitForNoSkeletons(otherPage);
         await expect(otherPage.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
-        await expect(otherPage.locator('svg.lucide-user').first()).toBeVisible();
+        await expect(otherPage.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
       } finally {
         await otherContext.close();
       }
@@ -1590,7 +1590,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await page.reload();
       await waitForNoSkeletons(page);
       await expect(page.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
-      await expect(page.locator('svg.lucide-user').first()).toBeVisible();
+      await expect(page.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
 
       // 7. Resiliencia ante error de Storage (archivo faltante no rompe el perfil)
       const missingPath = `courier/${courier.id}/avatar_${Date.now() + 5000}.png`;
@@ -1603,7 +1603,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await page.reload();
       await waitForNoSkeletons(page);
       // Fallback no bloqueante activo ante error de recurso
-      await expect(page.locator('svg.lucide-user').first()).toBeVisible();
+      await expect(page.getByRole('img', { name: /^Foto de perfil de / })).toHaveCount(0);
+      await expect(page.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
 
       // 8. Recarga con URL renovada y archivo válido recupera visualización
       await dbAdmin
