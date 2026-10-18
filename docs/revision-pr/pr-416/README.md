@@ -1,18 +1,17 @@
-# PR #416 — T-372 · Fixture DNI E2E T-302
+# PR #416 — T-372 · fixture DNI E2E T-302
 
 | Campo | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/416 |
-| Autor | Lautaro073 |
-| Rama | `feat/T-372-dni-unico-onboarding` → `develop` |
-| Código HEAD revisado ronda 1 | `a5a3dc5a5dabb0e07aee922f2857f67f8b9fb6bc` |
-| Base Develop | `1958c9aba18543c233a8809385adb65adfd023f1` |
-| Estado | **Ronda 1: CON BLOQUEANTES (1)** |
+| SHA ronda 1 | `a5a3dc5a5dabb0e07aee922f2857f67f8b9fb6bc` |
+| SHA ronda 2 | `789284d50ca3393f5aec7de6c2be91bfa31d1bbc` |
+| Estado actual | **Ronda 2 SIN BLOQUEANTES** · esperar gates efectivos antes de merge |
 
 ## Rondas
 
-- [Ronda 1](revisiones/ronda-1.md): `PR416-H01` — ficha T-372 con primer DoD distinto a la columna DoD del plan. E2E verde en el SHA anterior al commit de bitácora; HEAD actual falla `unit` por sincronía de ficha.
+- [Ronda 1](revisiones/ronda-1.md): PR416-H01 bloqueante, primer DoD desincronizado.
+- [Ronda 2](revisiones/ronda-2.md): PR416-H01 `arreglado-verificado`, igualdad real de ficha y plan + unit CI original verde.
 
-[Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
+[Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/ronda-2.md) · [Lecciones](lecciones.md).
 
-No se aprobó ni mergeó; el código de E2E se dejó intacto. #415 y PR #411 requieren su secuencia normal.
+La revisión no ejecutó DB/E2E local; comprobó estructura del DoD con control negativo y CI del SHA. Sin merge ni aprobación, issue #415 abierta. La PR #411 continúa su proceso después del merge de #416.
