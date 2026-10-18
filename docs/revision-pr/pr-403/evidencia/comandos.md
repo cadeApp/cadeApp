@@ -102,3 +102,57 @@ La batería de `components.test.tsx` incluye `screen.getByRole('img', { name: 'F
 ### CI
 
 CI 39079711559 en curso al consultar; E2E Preview 39079762114 pendiente. `approval-policy` 39079708461: `El PR requiere aprobación vigente de Lautaro073`.
+
+## Ronda 3 — 2026-10-17 — HEAD `aa7903bc35bec39a9b711194a29670a5b7ea2c68`
+
+**Fuentes:** `e2e/specs/courier-onboarding.spec.ts:1578,1593,1606`, `src/app/(courier)/courier-nav.tsx`, `src/app/(courier)/layout.tsx`, `src/ui/bottom-nav.tsx`, `src/features/courier-onboarding/components/courier-profile-view.tsx:309-323`.
+
+**Hallazgo H08, demostrado por lógica del selector:** el `svg.lucide-user` de `CourierNav` sigue existiendo y visible aunque desaparezca `<User>` del avatar. Es una propiedad del DOM que se desprende de la fuente. **No es una mutación RED ejecutada** y no debe anotarse como tal.
+
+### Harness independiente propuesto (NO EJECUTADO; correr solo después del fix)
+
+Copiar **el bloque completo** a `/tmp/pr403-h08.cjs`; correr `node /tmp/pr403-h08.cjs` desde un worktree limpio de la rama. Se limita a mutar el nombre accesible del fallback en memoria, restaurando contenido original en `finally` sin hacer checkout. El test que prueba el fallback debe fallar cuando el nombre accesible desaparece, y recuperarse al restaurarlo.
+
+```js
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const file = 'src/features/courier-onboarding/components/courier-profile-view.tsx';
+const original = fs.readFileSync(file, 'utf8');
+const accessible = 'role="img" aria-label="Avatar de perfil no disponible"';
+const weakened = 'aria-hidden="true"';
+const testName = 'muestra el ícono genérico User si avatarUrl es null o undefined';
+if (!original.includes(accessible)) {
+  throw new Error('PRECONDICION: el fix accesible no existe o tiene otro formato; adaptar explícitamente, no simular resultado');
+}
+function run(label) {
+  const p = spawnSync('pnpm', ['exec','vitest','run','src/features/courier-onboarding/components.test.tsx','-t',testName], { encoding: 'utf8' });
+  console.log(label, 'exit=', p.status);
+  console.log((p.stdout || '').split('\n').filter(s => /Test Files|Tests |FAIL|PASS|Avatar de perfil/.test(s)).slice(-30).join('\n'));
+  console.log((p.stderr || '').slice(-1600));
+  if (p.error) throw p.error;
+  return p.status;
+}
+if (run('CONTROL GREEN') !== 0) throw new Error('Control GREEN falló antes de mutar');
+let red;
+try {
+  fs.writeFileSync(file, original.replace(accessible, weakened));
+  red = run('MUTACION RED: quitar nombre accesible de placeholder');
+} finally {
+  fs.writeFileSync(file, original);
+}
+if (red === 0) throw new Error('TEST TAUTOLOGICO: falta placeholder y el control sigue GREEN');
+if (fs.readFileSync(file,'utf8') !== original) throw new Error('No se restauró el original');
+if (run('CONTROL RESTAURADO GREEN') !== 0) throw new Error('Falla al restaurar el control');
+```
+
+**Exigir fallo del caso seleccionado por la ausencia de `getByRole('img', ...)`, no por un error de compilación.** Para el E2E, el nuevo selector accesible ya no puede confundirse con el ícono oculto de `CourierNav`.
+
+### Logs de CI confirmados
+
+- `CI` 39080700590, `unit` job 117536931103: `Test Files 141 passed (141)`, `Tests 2696 passed (2696)`. En el log hay errores de consola no fatales, el job final es success.
+- `db-tests` job 117536930904: `Files=29, Tests=2735, Result: PASS` y verificación de tipos regenerados sin diffs. Runs de mutación pgTAP `FAIL` intermedias son RED esperadas con posterior `PASS`, no fallo del job.
+- `approval-policy` run 39080699306: falta aprobación vigente de Lautaro073; no corresponde aprobar hasta levantar bloqueantes.
+- `e2e-preview` 39080764903: pending en el SHA examinado, no afirmamos GREEN ni RED.
+- GitHub `mergeable=true`; sin clon local no se ejecutó `git merge-tree`.
+
+**Limitación:** `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` devolvió `Could not resolve host: github.com` en este contenedor. Por eso no corrí mutaciones ni pruebas unitarias; el reporte es por fuente y CI.

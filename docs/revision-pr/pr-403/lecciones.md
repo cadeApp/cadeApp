@@ -9,3 +9,7 @@
 ## Hallazgo nuevo de R2
 
 - **H07 (P01/P08):** no se puede cambiar de cuenta en una misma `page` de Playwright navegando a `/login`, porque el middleware redirige a usuarios autenticados. Probar actores distintos en `BrowserContext` separados y exigir la existencia real del segundo usuario. Antes de dar una prueba E2E por válida, cruzar sus page objects con las guardas auténticas del sistema. No crear una regla global nueva por un solo caso.
+
+## Ronda 3 — H08: controles que apuntan a un icono compartido
+
+El icono `User` se usa tanto en `CourierNav` como en el fallback del avatar. Un selector global `.lucide-user` no diferencia ambas piezas, por lo que la E2E puede parecer verde aun si desaparece el fallback. Los placeholders accesibles deben tener nombre específico verificable por `getByRole`, y la batería RED debe retirar el **objeto del dominio**, no otro recurso de la página. Antes de elevar a `AG-xx`, contrastar con dos PRs distintas para no duplicar reglas por una sola incidencia.

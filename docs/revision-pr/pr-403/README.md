@@ -1,32 +1,36 @@
 # PR #403 — T-367 · Avatar aprobado del repartidor
 
-**PR:** https://github.com/cadeApp/cadeApp/pull/403  
-**Autor:** @asako669 · **Rama:** `feat/T-367-avatar-perfil` → `develop`  
-**Estado:** CON BLOQUEANTES — NO MERGEAR.
+| Campo | Valor |
+|---|---|
+| PR | https://github.com/cadeApp/cadeApp/pull/403 |
+| Autor del código | asako669 |
+| Rama | `feat/T-367-avatar-perfil` → `develop` |
+| Estado | **CON BLOQUEANTES — no mergear** |
+| SHA revisado R3 | `aa7903bc35bec39a9b711194a29670a5b7ea2c68` |
 
 ## Rondas
 
-| Ronda | SHA del código | Resultado | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `d1af180b` | 4 bloqueantes, 1 incidencia de proceso y 1 mejora | [ronda-1.md](revisiones/ronda-1.md) |
-| 2 | `97fc11a62e545eee71581beec0c1825304ef80be` | 1 regresión E2E nueva + evidencia visual pendiente; H01/H03/H06 corregidos por inspección | [ronda-2.md](revisiones/ronda-2.md) |
-
-La [autorrevisión del autor](revisiones/autorrevision-agy-r1.md) se conservó para contraste sin certificarla como independiente.
+| 1 | `d1af180b` | 4 bloqueantes, incidencia de proceso, mejora | [R1](revisiones/ronda-1.md) |
+| 2 | `97fc11a6` | H07 nueva regresión E2E, H05 residual | [R2](revisiones/ronda-2.md) |
+| 3 | `aa7903bc35bec39a9b711194a29670a5b7ea2c68` | **1 bloqueante (H08)**, E2E Preview sin verde | [R3](revisiones/ronda-3.md) |
 
 ## Estado de hallazgos
 
-| ID | Estado R2 | Detalle |
+| ID | Estado R3 | Resumen |
 |---|---|---|
-| H01 | Arreglado sin verificación ejecutada | Path canónico `avatar_<decimal>.<imagen>` |
-| H02 | Parcial / pendiente E2E | Mejoró prueba real, pero H07 la bloquea |
-| H03 | Arreglado sin verificación ejecutada | Mocks tipados y aserciones de consulta |
-| H04 | Separado, sin nueva edición del autor | Autorrevisión preservada |
-| H05 | Parcial / bloqueante evidencia | Mutación visual sin traza y E2E pendiente |
-| H06 | Arreglado sin verificación ejecutada | `is_current=true` en SQL |
-| H07 | **Nuevo bloqueante** | El E2E intenta entrar en `/login` conservando una sesión activa |
+| H01 | arreglado-sin-verificar | Guard de ruta canónica |
+| H02 | parcial | Prueba de imagen y cross-user ampliada; H08 la debilita para fallback |
+| H03 | arreglado-sin-verificar | Eliminar `any` de mocks |
+| H04 | arreglado-sin-verificar | Autorrevisión archivada y carpeta preservada |
+| H05 | arreglado-sin-verificar | Mutación visual informada por autor, pendiente de verificación independiente |
+| H06 | arreglado-sin-verificar | `is_current=true` antes de `limit(1)` |
+| H07 | arreglado-sin-verificar | Contextos separados de navegador; falta verde remoto |
+| H08 | **abierto, bloqueante** | Ícono de barra inferior satisface falsamente prueba del fallback |
 
-Ver [hallazgos.jsonl](hallazgos.jsonl), [evidencia/comandos.md](evidencia/comandos.md) y [lecciones.md](lecciones.md).
+[Hallazgos estructurados](hallazgos.jsonl) · [Evidencia/comandos](evidencia/comandos.md) · [Lecciones](lecciones.md)
 
-## Próximo paso
+## Continuación
 
-Agy: arreglar H07 y documentar prueba visual RED→GREEN H05. Hacer push y pedir ronda 3. No editar `docs/revision-pr/**`. CI/E2E del HEAD final deben evaluarse antes de merge; validación humana después de promoción.
+El agy debe pullear la revisión, corregir **solo H08** en 3 archivos más bitácora y dejar `docs/revision-pr/**` en manos de la revisión independiente. CI/E2E del SHA siguiente y revisión R4 antes de aprobación/merge. Comprobación humana en staging tras promoción.
