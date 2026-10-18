@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(24);
+select plan(26);
 
 -- IDs de prueba para actores
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000061a1'::uuid $$;
@@ -310,13 +310,24 @@ select throws_ok(
   'PR56-H22: profiles_update_self forbids altering created_at timestamp'
 );
 
--- 20. Modificación legítima de display_name y phone en profiles respetando created_at
-select lives_ok(
+-- 20. CC-031: nombre bloqueado; teléfono propio sigue siendo editable.
+select throws_ok(
   format(
     'update public.profiles set display_name = ''Repartidor Uno Actualizado'', phone = ''3815559999'' where id = ''%s''',
     pg_temp.courier_approved_1_id()
   ),
-  'profiles_update_self allows legitimate display_name and phone update'
+  '42501',
+  'COURIER_DISPLAY_NAME_IMMUTABLE',
+  'courier cannot change display_name together with phone'
+);
+select lives_ok(
+  format('update public.profiles set phone = ''3815559999'' where id = ''%s''', pg_temp.courier_approved_1_id()),
+  'profiles_update_self allows legitimate phone update'
+);
+select is(
+  (select phone from public.profiles where id = pg_temp.courier_approved_1_id()),
+  '3815559999',
+  'courier phone update persists'
 );
 
 select * from finish();
