@@ -156,3 +156,46 @@ if (run('CONTROL RESTAURADO GREEN') !== 0) throw new Error('Falla al restaurar e
 - GitHub `mergeable=true`; sin clon local no se ejecutó `git merge-tree`.
 
 **Limitación:** `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` devolvió `Could not resolve host: github.com` en este contenedor. Por eso no corrí mutaciones ni pruebas unitarias; el reporte es por fuente y CI.
+
+## Ronda 4 — 2026-10-17 — SHA `1f37cd52ad634e20d550fa5c7cbee0ec9030ed47`
+
+### Criterio de falsación de H08 — prueba ejecutada por el gate confiable
+
+- Fuente: `src/features/courier-onboarding/components/courier-profile-view.tsx:321`, `src/features/courier-onboarding/components.test.tsx:788,818`, `e2e/specs/courier-onboarding.spec.ts:1578,1593,1606-1607`.
+- R3 pidió fallback etiquetado como `Avatar de perfil no disponible`; código y tests lo exigen ahora; no queda aserción global `svg.lucide-user` en T-367.
+- **GREEN observado, externo y ejecutado:** `https://github.com/cadeApp/cadeApp/actions/runs/39082879612`; job 117543358816, checkout explícito `HEAD is now at 1f37cd5`, `T-367 ... (29.1s)` PASS y `87 passed (26.0m)` de Chromium.
+- **RED de mutación accesible H08:** solo evidencia declarada por autor en `docs/tasks/log/T-367.md:155-189`, no reproducida por revisor; no afirmar `verificado-runtime` de esa mutación.
+- Unit 39082823396 job 117543157338: `Test Files 141 passed` / `Tests 2696 passed`. pgTAP job 117543157370: `Files=29, Tests=2735, Result: PASS`. Entradas FAIL intermedias de pgTAP en ese job son mutaciones intencionales y terminan con PASS; el job completo es SUCCESS.
+
+### H09 — único bloqueante en gate
+
+- `e2e-preview` run 39082879612, job 117543358816:
+  - `87 passed (26.0m)` Chromium, incluida T-367 (línea ~558);
+  - comienza `Running 3 tests using 1 worker` en proyecto `global-settings`;
+  - prueba `T-306: DoD 1 ... SUBSCRIPTION_INACTIVE` falla en 3 intentos;
+  - `getByRole('alert').filter({hasText:/suscripción está vencida|SUBSCRIPTION_INACTIVE/i})` no encontrado a los 10s;
+  - `1 failed`, `2 did not run` (no ocultar esos dos omitidos).
+- Comparación de lectura entre ramas:
+  - `feat/T-367-avatar-perfil` espera `SUBSCRIPTION_INACTIVE` en `e2e/specs/subscription.global-settings.spec.ts:133-136`;
+  - `develop` ya integra PR #407/T-371, espera `PUBLICATION_CREDITS_EXHAUSTED`, valida snapshot de suscripción y restoration; SHA merge develop `0488f8a9`.
+  - PR #407 merged, trusted E2E run `39069904081` SUCCESS; revisión independiente PR407 declara 86 Chromium y 3 global-settings PASS.
+- **Hipótesis fuerte de causa:** test viejo de la rama contra contrato nuevo de CC-029/develop. **Prueba pendiente:** mergear develop sin rebase y comprobar que `global-settings` se vuelve GREEN en el SHA mergeado. No se corrió en esta revisión.
+
+### Comandos exigidos al autor tras sincronizar (no ejecutados por revisor)
+
+```bash
+git fetch origin
+git switch feat/T-367-avatar-perfil
+git pull --ff-only origin feat/T-367-avatar-perfil
+git merge --no-ff origin/develop  # no rebase, no force-push
+git diff --check
+pnpm exec vitest run tools/verify-fichas.test.ts
+pnpm exec vitest run src/features/courier-onboarding/queries.test.ts \
+  src/features/courier-onboarding/components.test.tsx \
+  'src/app/(courier)/courier/profile/page.test.tsx'
+pnpm typecheck && pnpm lint && pnpm test
+git push origin feat/T-367-avatar-perfil
+git ls-remote origin feat/T-367-avatar-perfil
+```
+
+E2E se dispara **por flujo normal** al push del SHA de merge en Preview con Supabase Develop. No hacer dispatch manual ni ejecutar contra Supabase remoto desde revisión. No manipular `subscription.global-settings.spec.ts` a mano; llega de `origin/develop`. No pedir un nuevo CI exitoso solo por el commit documental de este informe.

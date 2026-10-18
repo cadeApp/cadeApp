@@ -1,36 +1,27 @@
 # PR #403 — T-367 · Avatar aprobado del repartidor
 
-| Campo | Valor |
-|---|---|
-| PR | https://github.com/cadeApp/cadeApp/pull/403 |
-| Autor del código | asako669 |
-| Rama | `feat/T-367-avatar-perfil` → `develop` |
-| Estado | **CON BLOQUEANTES — no mergear** |
-| SHA revisado R3 | `aa7903bc35bec39a9b711194a29670a5b7ea2c68` |
+**PR:** https://github.com/cadeApp/cadeApp/pull/403  
+**Autor:** `asako669` · **Rama:** `feat/T-367-avatar-perfil` → `develop`  
+**Último SHA revisado:** `1f37cd52ad634e20d550fa5c7cbee0ec9030ed47`  
+**Estado:** **CON BLOQUEANTES (gate E2E global-settings desactualizado en rama; T-367 Chromium aprobado)**. NO MERGEAR hasta integrar develop y ver E2E completo verde.
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA | Resultado | Informe |
 |---|---|---|---|
-| 1 | `d1af180b` | 4 bloqueantes, incidencia de proceso, mejora | [R1](revisiones/ronda-1.md) |
-| 2 | `97fc11a6` | H07 nueva regresión E2E, H05 residual | [R2](revisiones/ronda-2.md) |
-| 3 | `aa7903bc35bec39a9b711194a29670a5b7ea2c68` | **1 bloqueante (H08)**, E2E Preview sin verde | [R3](revisiones/ronda-3.md) |
+| R1 | `d1af180b` | 4 técnicos y 1 de proceso | [R1](revisiones/ronda-1.md) |
+| R2 | `97fc11a6` | H07 sesión E2E, H05 evidencia | [R2](revisiones/ronda-2.md) |
+| R3 | `aa7903bc` | H08: selector del icono de fallback | [R3](revisiones/ronda-3.md) |
+| R4 | `1f37cd52ad634e20d550fa5c7cbee0ec9030ed47` | H08 corregido, T-367 E2E PASS, H09 integración `develop`/T-371 | [R4](revisiones/ronda-4.md) |
 
-## Estado de hallazgos
+## Resultado observable R4
 
-| ID | Estado R3 | Resumen |
-|---|---|---|
-| H01 | arreglado-sin-verificar | Guard de ruta canónica |
-| H02 | parcial | Prueba de imagen y cross-user ampliada; H08 la debilita para fallback |
-| H03 | arreglado-sin-verificar | Eliminar `any` de mocks |
-| H04 | arreglado-sin-verificar | Autorrevisión archivada y carpeta preservada |
-| H05 | arreglado-sin-verificar | Mutación visual informada por autor, pendiente de verificación independiente |
-| H06 | arreglado-sin-verificar | `is_current=true` antes de `limit(1)` |
-| H07 | arreglado-sin-verificar | Contextos separados de navegador; falta verde remoto |
-| H08 | **abierto, bloqueante** | Ícono de barra inferior satisface falsamente prueba del fallback |
+- H01/H03/H06: corregidos por inspección y CI unit PASS.
+- H02/H07/H08: E2E T-367 GREEN con 87 Chromium PASS; H08 verificada por ejecución confiable.
+- H04: autorrevisión previa preservada separada, sin nueva edición del agente en la carpeta.
+- H05: mutación RED→GREEN documentada por autor; no repetida independientemente.
+- H09: nuevo bloqueante operativo. En `feat/T-367-avatar-perfil` quedó el test de T-306 con `SUBSCRIPTION_INACTIVE`; el PR #407 / T-371 ya alineó `develop` a `PUBLICATION_CREDITS_EXHAUSTED`. Su falta de integración deja E2E global-settings RED.
 
-[Hallazgos estructurados](hallazgos.jsonl) · [Evidencia/comandos](evidencia/comandos.md) · [Lecciones](lecciones.md)
+[Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md)
 
-## Continuación
-
-El agy debe pullear la revisión, corregir **solo H08** en 3 archivos más bitácora y dejar `docs/revision-pr/**` en manos de la revisión independiente. CI/E2E del SHA siguiente y revisión R4 antes de aprobación/merge. Comprobación humana en staging tras promoción.
+**Siguiente paso:** el autor hace merge normal de `origin/develop` sobre la rama, push y solicita R5. No tocar `docs/revision-pr/**`. Approval-policy se atiende cuando revisión y gates no tengan bloqueantes.
