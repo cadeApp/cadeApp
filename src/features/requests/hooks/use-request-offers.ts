@@ -67,6 +67,8 @@ export function useRequestOffers(
 
   // T-333: generación de cada fetch, incrementada al entrar realmente al queryFn (ver latch de reconexión).
   const fetchGenerationRef = useRef(0);
+  // PR390-H16: Generación del último fetch que completó exitosamente su resolución.
+  const lastResolvedGenerationRef = useRef(0);
 
   const [isOnline, setIsOnline] = useState(() => onlineManager.isOnline());
   const [offersSyncedAfterReconnect, setSyncedAfterReconnect] = useState(() =>
@@ -132,6 +134,7 @@ export function useRequestOffers(
           response = liveOffersResponseSchema.parse(json);
         }
 
+        lastResolvedGenerationRef.current = generation;
         return response;
       },
       initialPageParam: null as LivePageCursor | null,
@@ -258,7 +261,7 @@ export function useRequestOffers(
     }
 
     const hasPostReconnectGeneration =
-      fetchGenerationRef.current >= syncRequiredGenerationRef.current;
+      lastResolvedGenerationRef.current >= syncRequiredGenerationRef.current;
     const isSettledSuccess =
       fetchStatus === 'idle' &&
       !isError &&
@@ -296,6 +299,7 @@ export function useRequestOffers(
     offers: currentOffers,
     hasNextPage: query.hasNextPage,
     fetchNextPage: query.fetchNextPage,
+    isFetching: query.isFetching,
     isFetchingNextPage: query.isFetchingNextPage,
     isLoading: query.isLoading,
     isRefetching: query.isRefetching,

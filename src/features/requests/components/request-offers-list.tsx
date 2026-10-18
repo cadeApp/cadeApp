@@ -85,6 +85,7 @@ export function RequestOffersList({
     offers,
     hasNextPage,
     fetchNextPage,
+    isFetching,
     isFetchingNextPage,
     isError,
     refetch,
@@ -143,6 +144,19 @@ export function RequestOffersList({
   const canAccept = request.status === 'published' && isOnline && offersSyncedAfterReconnect;
   const isOfferEligible = (o: MerchantOfferItem) =>
     o.status === 'pending' && canAccept && !isExpired && !isReconciling;
+
+  // PR390-H17: El botón y handler de Cargar más se bloquean mientras haya peticiones en vuelo,
+  // la app esté offline o la reconexión aún no haya completado la sincronización total.
+  const isLoadMoreDisabled =
+    Boolean(isFetching) ||
+    Boolean(isFetchingNextPage) ||
+    !isOnline ||
+    !offersSyncedAfterReconnect;
+
+  const handleLoadMore = () => {
+    if (isLoadMoreDisabled || !hasNextPage) return;
+    void fetchNextPage();
+  };
 
   // PR390-H05: Una vez que el hook entrega lista actual, la fuente de verdad de elegibilidad es offers (la query del cliente).
   // Si la oferta seleccionada desaparece de la lista actual, pasa a terminal o el pedido deja de ser aceptable, cerrar modal.
@@ -512,8 +526,8 @@ export function RequestOffersList({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void fetchNextPage()}
-                disabled={isFetchingNextPage}
+                onClick={handleLoadMore}
+                disabled={isLoadMoreDisabled}
               >
                 {isFetchingNextPage
                   ? requestsCopy.offers.loadingMore

@@ -413,6 +413,33 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       createdAt: '2026-09-26T11:40:00.000Z',
     };
 
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const urlStr =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+          ? input.toString()
+          : '';
+      if (urlStr.includes('cursorCreatedAt')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [page2Offer],
+            nextCursor: null,
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: initialOffers,
+          nextCursor: cursor,
+        }),
+      } as Response;
+    });
+
     render(
       <RequestOffersList
         request={mockRequest}
@@ -422,20 +449,11 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
     );
 
     const loadMoreBtn = screen.getByRole('button', { name: requestsCopy.offers.loadMore });
-    expect(loadMoreBtn).toBeDefined();
-
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: [page2Offer],
-        nextCursor: null,
-      }),
-    } as Response);
-
-    await act(async () => {
-      fireEvent.click(loadMoreBtn);
+    await waitFor(() => {
+      expect(loadMoreBtn.hasAttribute('disabled')).toBe(false);
     });
+
+    fireEvent.click(loadMoreBtn);
 
     await waitFor(() => {
       expect(screen.getByText('Esteban Q.')).toBeDefined();
@@ -1064,7 +1082,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
         });
 
         // 1. Montaje con página 1 y cursor para página 2
-        vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+        const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
           const urlStr =
             typeof input === 'string'
               ? input
@@ -1103,14 +1121,18 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
         await flushRealtimeSetup();
 
-        // Cargar página 2
-        const loadMoreButton = screen.queryByRole('button', { name: /cargar más/i });
-        if (loadMoreButton) {
-          fireEvent.click(loadMoreButton);
-          await waitFor(() => {
-            expect(screen.getByText('Cadete Que Cancelo')).toBeDefined();
-          });
-        }
+        // Cargar página 2 de forma obligatoria (H18)
+        const loadMoreButton = screen.getByRole('button', { name: /cargar más/i });
+        await waitFor(() => {
+          expect(loadMoreButton.hasAttribute('disabled')).toBe(false);
+        });
+        fireEvent.click(loadMoreButton);
+        await screen.findByText('Cadete Que Cancelo');
+        expect(
+          fetchSpy.mock.calls.some(([callUrl]) =>
+            String(callUrl).includes(`cursorCreatedAt=${encodeURIComponent(cursor1.createdAt)}`)
+          )
+        ).toBe(true);
 
         // Antes del corte: hay botones Aceptar disponibles
         expect(screen.getAllByRole('button', { name: /^aceptar$/i }).length).toBeGreaterThan(0);
@@ -1173,6 +1195,160 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
           expect(screen.getAllByRole('button', { name: /^aceptar$/i })).toHaveLength(1);
         });
         expect(screen.queryByText('Cadete Que Cancelo')).toBeNull();
+      });
+    });
+
+    describe('PR390-H17: protección de Cargar más durante refetch e invalidación', () => {
+      it('mientras un refetch post-reconexión está en vuelo, Cargar más está disabled y su click no dispara peticiones competidoras', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        const offerPage1 = initialOffers[0];
+        if (!offerPage1) throw new Error('Falta offerPage1');
+        const cursor1 = {
+          createdAt: offerPage1.createdAt,
+          id: offerPage1.id,
+        };
+        const secondInitial = initialOffers[1];
+        if (!secondInitial) throw new Error('Falta secondInitial');
+        const offerX: MerchantOfferItem = {
+          ...secondInitial,
+          id: '99999999-9999-4999-8999-999999999999',
+          courierName: 'Cadete Que Cancelo',
+          status: 'pending',
+        };
+        const cursor2 = {
+          createdAt: offerX.createdAt,
+          id: offerX.id,
+        };
+
+        const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                data: [offerX],
+                nextCursor: cursor2,
+              }),
+            } as Response;
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response;
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList
+              request={mockRequest}
+              initialOffers={[offerPage1]}
+              initialNextCursor={cursor1}
+            />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        // Cargar página 2 de forma obligatoria
+        const loadMoreBtnBefore = screen.getByRole('button', { name: /cargar más/i });
+        await waitFor(() => {
+          expect(loadMoreBtnBefore.hasAttribute('disabled')).toBe(false);
+        });
+        fireEvent.click(loadMoreBtnBefore);
+        await screen.findByText('Cadete Que Cancelo');
+        expect(
+          fetchSpy.mock.calls.some(([callUrl]) =>
+            String(callUrl).includes(`cursorCreatedAt=${encodeURIComponent(cursor1.createdAt)}`)
+          )
+        ).toBe(true);
+
+        expect(screen.getAllByRole('button', { name: /^aceptar$/i }).length).toBeGreaterThan(0);
+
+        // Pasar a offline
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        // En offline, Cargar más DEBE estar disabled
+        const loadMoreBtnOffline = screen.getByRole('button', { name: /cargar más/i });
+        expect(loadMoreBtnOffline.hasAttribute('disabled')).toBe(true);
+
+        // Configurar refetch post-reconexión diferido en página 2
+        let resolvePage2: ((res: Response) => void) | null = null;
+        const page2Promise = new Promise<Response>((resolve) => {
+          resolvePage2 = resolve;
+        });
+
+        fetchSpy.mockImplementation((input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return page2Promise;
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response);
+        });
+
+        fetchSpy.mockClear();
+
+        // Reconectar a online
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        // Mientras la página 2 está en vuelo (isFetching === true, offersSyncedAfterReconnect === false):
+        const loadMoreBtnInFlight = screen.getByRole('button', { name: /cargar más/i });
+        expect(loadMoreBtnInFlight.hasAttribute('disabled')).toBe(true);
+
+        // Simular intento de click en Cargar más: NO debe disparar peticiones
+        const callsCountBefore = fetchSpy.mock.calls.length;
+        fireEvent.click(loadMoreBtnInFlight);
+        expect(fetchSpy.mock.calls.length).toBe(callsCountBefore);
+
+        // Botones Aceptar permanecen bloqueados (gate false)
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+
+        // Resolver página 2
+        await act(async () => {
+          if (resolvePage2) {
+            resolvePage2({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [], nextCursor: cursor2 }),
+            } as Response);
+          }
+          await page2Promise;
+        });
+
+        // Tras el settle exitoso: CTA de ofertas pendientes disponibles y Cargar más habilitado
+        await waitFor(() => {
+          expect(screen.getAllByRole('button', { name: /^aceptar$/i })).toHaveLength(1);
+        });
+        const loadMoreBtnSettled = screen.getByRole('button', { name: /cargar más/i });
+        expect(loadMoreBtnSettled.hasAttribute('disabled')).toBe(false);
       });
     });
 
