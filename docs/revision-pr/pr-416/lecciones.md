@@ -1,0 +1,6 @@
+# Lecciones PR #416 — T-372
+
+- **PR416-H01 / P08:** las nuevas fichas tienen un contrato documental con la fila correspondiente de `docs/implementation-plan.md`: el **primer ítem** del DoD debe ser **idéntico byte a byte** a la celda DoD del plan. Equivalencia semántica no pasa `tools/verify-fichas.test.ts`. Reproducir ese test antes de pedir revisión, especialmente si se crea ficha y fila simultáneamente.
+- **E2E por SHA:** una corrida verde de `b6396784` verifica el código de ese SHA. Una modificación posterior exclusivamente documental puede conservar evidencia funcional, pero **no convierte los gates de `a5a3dc5` en verdes**.
+- **Señal de cobertura precisa:** las 3 pruebas `global-settings` que pasaron pertenecen a T-306 (suscripción), no a la nueva suite T-369 de PR #411 aún sin merge. No atribuir cobertura futura por coincidencia de números.
+- El código generador tiene control de disponibilidad por HMAC, límite de intentos y depende de la restricción única en DB para el caso muy poco probable de una carrera entre consulta y update. No se confirmó ninguna regresión nueva en el E2E de deduplicación.
