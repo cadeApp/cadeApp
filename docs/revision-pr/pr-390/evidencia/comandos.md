@@ -221,3 +221,46 @@ git merge-tree $(git merge-base origin/develop HEAD) origin/develop HEAD
   - `lint`: SUCCESS (49s)
   - `bundle-budget`: SUCCESS (11s)
 - Estado general de CI en commit `368a9d2b`: **SUCCESS**.
+
+
+## Ronda 5 — evidencia independiente y modelo — 2026-10-18
+- SHA funcional: `368a9d2b7f23570ea0a956696c1b13afa4281f68`; HEAD documental: `efdff17f909f045d60811cea568e2a99d0f88c61`.
+- GitHub CI run `39063665319`: `unit` 141 suites, 2698 PASS (job `117486695194`); `db-tests` Files=29, Tests=2735, Result:PASS (job `117486695120`). Documentación de revisión R4 lo corroboró localmente (no volver a atribuir esas ejecuciones a R5).
+- GitHub status code SHA: `e2e-preview=failure`; run `39063757689`, job `117550374345`: 86 Chromium PASS, una global-settings FAIL (T-306 DoD1, expected alert SUBSCRIPTION_INACTIVE no encontrada en 3 intentos), dos tests no ejecutados.
+- GitHub status HEAD docs: `e2e-preview=error` por cancelled en `39105885299`; otros checks CI success. `mergeable_state=unstable`.
+- PR #407/T-371 cerró issue #405; merge SHA `0488f8a98f44b67101c7c520696c356d46c161ff`, develop muestra `PUBLICATION_CREDITS_EXHAUSTED` mientras PR #390 aún `SUBSCRIPTION_INACTIVE`.
+- TanStack docs guía oficial: https://tanstack.com/query/latest/docs/framework/react/guides/infinite-queries ; un refetch infinite query solicita páginas secuencialmente. Inspección del código: `setSyncedAfterReconnect(true)` dentro de `queryFn` antes de retorno de cada página y `currentOffers` desde `query.data.pages` durante refetch.
+- Este script propio modela la carrera conceptual, fue ejecutado en Node y devuelve las dos líneas documentadas (NO es test React).
+
+```bash
+cat >/tmp/pr390-r5-multipage-model.cjs <<'NODE'
+'use strict';
+const assert = require('node:assert/strict');
+const state={
+  online:true, requestStatus:'published', syncedAfterReconnect:false,
+  fetchStatus:'fetching',
+  oldCachedPages:[
+    [{id:'new-offer',status:'pending'}],
+    [{id:'cancelled-in-database',status:'pending'}],
+  ],
+  completedPages:0, totalPages:2,
+};
+const gate = s => s.requestStatus==='published'&&s.online&&s.syncedAfterReconnect;
+assert.equal(gate(state),false);
+// En la implementación original, queryFn marca synced=true al finalizar primera página.
+state.completedPages=1;
+state.syncedAfterReconnect=true;
+assert.equal(state.fetchStatus,'fetching');
+assert.equal(state.completedPages<state.totalPages,true);
+const staleVisible=state.oldCachedPages.flat().some(o=>o.id==='cancelled-in-database'&&o.status==='pending');
+assert.equal(staleVisible,true);
+assert.equal(gate(state),true);
+console.log('MODELO: gate TRUE con 1/2 páginas completas; caché vieja todavía contiene oferta pending cancelada');
+const saferGate=s=>gate(s)&&s.fetchStatus==='idle'&&s.completedPages===s.totalPages;
+assert.equal(saferGate(state),false);
+console.log('MODELO GUARDA DE CONSULTA COMPLETA: FALSE hasta settlement de 2/2 páginas');
+NODE
+node /tmp/pr390-r5-multipage-model.cjs
+```
+
+**Pendiente**: test de integración real con QueryClient, 2 páginas, refetch asincrónico secuencial, segunda promesa diferida, y mutaciones adversarias del reviewer. No simular dichos resultados; la solicitud a Kira es hacer RED/GREEN real y que la siguiente ronda ejecute el checker propio.

@@ -20,3 +20,8 @@
 ## Ronda 4 — 2026-10-18
 - **Tracking de generación para sincronización post-reconexión:** Validar la frescura de datos tras reconexión requiere vincular cada petición a un contador de generación iniciado estrictamente después del cambio a online, evitando que respuestas rezagadas de peticiones previas habiliten acciones sobre caché obsoleta.
 - **Mocks con semántica real de BD:** Cuando una consulta utiliza claves compuestas de ordenamiento (`created_at` DESC, `id` DESC) y paginación keyset, el mock del builder debe reproducir fielmente esa ordenación y desempates; de lo contrario, los tests de cursor calculan expectativas erróneas sobre el array crudo.
+
+## Ronda 5 — 2026-10-18
+- **H15 / puerta externa:** no confundir éxito en CI de GitHub unit/db con estado del gate confiable `e2e-preview` publicado vía commit status externo; R4 informó apta para merge sin mirar el contexto RED. El fallo concreto era T-306 y ya tenía issue #405 + fix PR #407 mergeado en develop, así que integrar ese fix por merge y evitar duplicar tarea.
+- **H16 / carrera multipágina:** un resultado exitoso de `queryFn` de página 1 NO certifica `useInfiniteQuery` entera. Sin test de 2+ páginas, el setter de frescura reabre UI con cache de página 2 mientras el fetch general sigue en curso; mover la habilitación al settle global de consulta después de epoch de reconexión.
+- **Distinguir certeza:** H15 es hecho comprobado en status/logs; H16 es riesgo causal fundado en estructura y semántica documentada, aún exige test React/TanStack real para confirmar regresión.
