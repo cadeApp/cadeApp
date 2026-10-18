@@ -6,3 +6,9 @@
 - **H04 / P10:** anotar «decisión de Lautaro073» en ficha desde una PR no prueba aprobación. La decisión auténtica D01-B reemplaza service role por RPC admin AAL2 con permisos mínimos y nuevas pruebas SQL, sin editar migración mergeada.
 
 Se revisó estructura/CI pero no se ejecutaron tests ni mutaciones localmente. Por tanto se deja cada hallazgo `abierto` y se espera RED→GREEN verificable antes de certificarlo. No asignar numeración global AG-XX sin buscar el máximo en ramas remotas; referencias canónicas PR402-Hxx.
+
+## Ronda 2
+
+- **H02 — P08:** Manejar `ActionResult.ok=false` no equivale a manejar `Promise` rechazada. El caso de error de transporte requiere catch independiente; un diálogo que ofrece recuperación no puede depender de una promesa que siempre resuelve.
+- **H04 — P08:** pgTAP verde de autorización y RLS no sustituye un control RED real en SQL mutado. Una mutación estática del texto no certifica que el test DB detecte un bypass. Hacer la mutación en DB efímera y exigir una **aserción de autorización roja**, no error de setup.
+- D01-B continúa cerrada: arquitectura SQL correcta por inspección pero completar pruebas de sensibilidad antes de certificar. No elevar la regla de prueba a `arreglado-verificado` sin ejecución de un tercero.
