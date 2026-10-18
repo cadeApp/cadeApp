@@ -16,3 +16,7 @@
 - **PR390-H14:** Un builder mock que respeta `eq` pero ignora `order` entrega cursor de la entrada y aparenta probar keyset. La prueba debe simular exactamente `order(desc created_at,desc id) -> limit(51)` y un empate.
 - **PR390-H09:** GitHub `mergeable_state: dirty` impide afirmar merge-ready aun con approval-policy success; mergear develop sin rebase/force y revisar conflictos.
 - **CI y bitácora:** Enforce regla del usuario: no exigir re-correr CI SOLO por informe o bitácora. Con código nuevo faltante de CI (d156e12), la evidencia de pipeline del SHA del cambio funcional sí importa; no confundir casos.
+
+## Ronda 4 — 2026-10-18
+- **Tracking de generación para sincronización post-reconexión:** Validar la frescura de datos tras reconexión requiere vincular cada petición a un contador de generación iniciado estrictamente después del cambio a online, evitando que respuestas rezagadas de peticiones previas habiliten acciones sobre caché obsoleta.
+- **Mocks con semántica real de BD:** Cuando una consulta utiliza claves compuestas de ordenamiento (`created_at` DESC, `id` DESC) y paginación keyset, el mock del builder debe reproducir fielmente esa ordenación y desempates; de lo contrario, los tests de cursor calculan expectativas erróneas sobre el array crudo.

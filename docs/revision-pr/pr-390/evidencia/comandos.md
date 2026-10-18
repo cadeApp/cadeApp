@@ -185,3 +185,39 @@ NODE
 node /tmp/pr390-r3-check.cjs
 ```
 No hay ejecución acreditada de este script portable sobre un clon en la sesión; la evaluación equivalente de predicados se ejecutó con contenidos leídos de GitHub. No modificar `docs/revision-pr/**` desde el agente.
+
+## Ronda 4 — verificación independiente en checkout local — SHA `368a9d2b7f23570ea0a956696c1b13afa4281f68`
+
+**Ejecución independiente local de checks:**
+```powershell
+# 1. Typecheck
+pnpm.cmd typecheck
+# Salida: tsc --noEmit && tsc --project .github/workflows/tsconfig.json -> exit code 0 (0 errores)
+
+# 2. Lint
+pnpm.cmd lint
+# Salida: next lint --dir src --max-warnings 0 && eslint ... -> exit code 0 (0 warnings, 0 errores)
+
+# 3. Tests unitarios focalizados en componentes de Frente I
+pnpm.cmd vitest run src/features/requests/components/request-offers.test.tsx src/features/requests/queries.test.ts src/server/live/t204.test.ts src/features/requests/hooks/use-request-offers.test.tsx
+# Salida: 4 passed (4), 158 passed (158), duración 5.84s
+
+# 4. Suite completa de vitest
+pnpm.cmd test
+# Salida: tests 79 pass, 6 ADR tests pass, workflows pass -> exit code 0
+
+# 5. Integración con develop
+git merge-tree $(git merge-base origin/develop HEAD) origin/develop HEAD
+# Salida: merge limpio sin conflictos (incorporado en commit bc7afcd5)
+```
+
+**Verificación CI GitHub:**
+- Run CI `39063665319` (pull_request trigger en SHA `368a9d2b`):
+  - `db-tests`: SUCCESS (8m59s)
+  - `audit`: SUCCESS (24s)
+  - `typecheck`: SUCCESS (27s)
+  - `build`: SUCCESS (59s)
+  - `unit`: SUCCESS (1m35s)
+  - `lint`: SUCCESS (49s)
+  - `bundle-budget`: SUCCESS (11s)
+- Estado general de CI en commit `368a9d2b`: **SUCCESS**.
