@@ -146,3 +146,29 @@ git ls-remote origin feat/T-355-courier-phone-edit
 ```
 
 Revisar el E2E mediante UI de Actions **del SHA exacto**, no invocar `workflow_dispatch`, no usar consola remota ni correr SQL privilegiado.
+
+
+---
+
+## Ronda 3 — `843bd2b851ad65f74866e588c2b9993279f1a343` — evidence 2026-10-18
+
+- Código y diff comprobados con GitHub API: solo seis rutas de T-355 tocadas desde la revisión previa. `H09` corregida sin debilitar las expectations. `H10` implementa `patch: TablesUpdate<'profiles'>` y mantiene `as never` en la llamada del cliente.
+- CI normal del SHA: [run 39148535044](https://github.com/cadeApp/cadeApp/actions/runs/39148535044), checks de aplicación/db PASS y approval-policy PASS.
+- E2E específico del SHA (¡NO equivalente a éxito de suite!): [run 39148607765](https://github.com/cadeApp/cadeApp/actions/runs/39148607765), job `117737516829`, `17:18:22Z ✓ 5 [chromium] e2e/specs/authorization.spec.ts:305 ... T-355 ... (23.0s)`.
+- Job E2E comenzó `17:16:15Z` y terminó `17:46:32Z`; `The operation was canceled` en el log, `conclusion=cancelled`, check `e2e-preview=error`. Es exactamente el orden de magnitud del antiguo `timeout-minutes: 30`. No hubo resumen final ni artifact.
+- Antes de la cancelación: `✘` en **30 intentos** (`retry #1/#2` incluidos), **10 casos únicos**: 3 en `fixed-price.spec.ts`, 2 en `main-flow.spec.ts`, 2 en `map-privacy.spec.ts`, 2 en `multi-drop.spec.ts` y 1 en `request-states.spec.ts`. No se dispone de stack trace en el job cancelado, así que la causa queda **sin diagnosticar**; no inventar falla de la implementación de T-355.
+- Timeout workflow `.github/workflows/e2e-preview.yml:54`: base anterior `29a442255...` = `timeout-minutes:30`; develop commit `7a428bde5aa213ce976e9fabbc3e1d6e03ad9942` = `timeout-minutes:45`. Sólo nuevas ejecuciones toman nuevo límite.
+- Anterior test global verde comprobado en [run 39108468053](https://github.com/cadeApp/cadeApp/actions/runs/39108468053): 88 chromium + 3 global-settings PASS, **SHA anterior** `d3b5070`; el código funcional de T-355 no cambió desde entonces, únicamente guard TS E2E y tipado de patch.
+
+**Pruebas propuestas para H11 (no ejecutadas por el revisor):**
+```bash
+# En CI autorizado, sobre PR Preview + Supabase Develop, esperar un nuevo evento Vercel.
+# No invocar workflows manualmente; no tocar credenciales, .env, DB remota ni secrets.
+# Consultar nuevo job de e2e-preview y verificar:
+# - HEAD y Vercel Preview resueltos coinciden con rama; workflow de rama por defecto tiene 45 min.
+# - test T-355 ejecutado y PASSED, no skipped.
+# - salida Playwright final de 88 tests chromium y 3 global-settings.
+# - cero tests ✘; si los hay, descargar artifacts/trace del run CONCLUIDO para diagnosticar.
+# - status e2e-preview SUCCESS en el HEAD que se mergeará.
+```
+Este apartado es un plan de verificación, no un log de su ejecución.

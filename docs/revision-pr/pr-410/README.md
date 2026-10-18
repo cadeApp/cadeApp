@@ -1,11 +1,12 @@
 # PR #410 — T-355 · revisión independiente
 
-- **Rama:** `feat/T-355-courier-phone-edit` (autora P2 `asako669`). **Fecha:** 2026-10-18.
-- **Ronda 1:** SHA `dfdee176761e6f580d0e56481595c8ce6a68f090` → 6 bloqueantes / 2 mejoras. Documento original [ronda 1](revisiones/ronda-1.md).
-- **Ronda 2:** SHA **`56c458a335e0ff7b729038e16b2e34ad101a8175`**, base develop `29a44225513621ca9430924cd90d4c929c219e8d`; **CON BLOQUEANTES (2)**: H05 (E2E no concluido al inspeccionar) y H09 (nuevos `any`/non-null assertions, violan AGENTS.md §4). Mejora H10 (nuevo cast `as never`).
-- **Hallazgos anteriores:** H01/H02/H03/H04/H06/H07/H08 contrastados y corregidos en código/CC-031; H05 parcial hasta ejecución E2E acreditada. `verificado_en_sha` ancla únicamente el SHA de código; el nuevo commit documental de esta ronda no entra en esa columna.
-- **Estado CI SHA de código:** `unit/typecheck/lint/build/audit/bundle-budget/db-tests/approval-policy` SUCCESS; `db-tests` 30 archivos / 2815 PASS y CC-031 mutaciones en runner; Vercel READY. [`e2e-preview` run 39106647405](https://github.com/cadeApp/cadeApp/actions/runs/39106647405) **in_progress al cierre de inspección**, no presentado como exitoso.
-- **Sin aprobación ni merge.** No se corrieron tests, Docker ni mutaciones en la máquina del revisor (DNS Github inaccesible), ni se tocó entorno remoto.
-- **Alcance:** 16 archivos de tarea y `docs/revision-pr/pr-410/**`, sin rutas prohibidas nuevas. GitHub `mergeable=true` no equivale a pruebas.
+- Rama `feat/T-355-courier-phone-edit`, autora `asako669`. Fecha 2026-10-18.
+- **Ronda 1:** [ronda-1.md](revisiones/ronda-1.md); 6 bloqueantes sobre `dfdee176`.
+- **Ronda 2:** [ronda-2.md](revisiones/ronda-2.md); 2 bloqueantes, H05/H09, sobre `56c458a`.
+- **Ronda 3:** [ronda-3.md](revisiones/ronda-3.md), **SHA de código `843bd2b851ad65f74866e588c2b9993279f1a343`**. **SIN BLOQUEANTES de código T-355**, H09 corregido-verificado; H10 tipado parcial aceptado, no bloqueante. **CON BLOQUEANTE de integración (1): PR410-H11**, gate global E2E cancelado por el límite antiguo de 30 min y 10 tests ajenos `✘` antes de esa cancelación.
+- **E2E de T-355 propio:** PASS real en run [39148607765](https://github.com/cadeApp/cadeApp/actions/runs/39148607765) job 117737516829, `authorization.spec.ts:305` test #5 `✓` 23 s. El E2E global fue CANCELLED y no se declara verde.
+- **CI principal:** [run 39148535044](https://github.com/cadeApp/cadeApp/actions/runs/39148535044) typecheck/lint/unit/build/db-tests/audit/bundle-budget PASS; approval-policy PASS; Vercel READY.
+- **Timeout de E2E:** workflow anterior 30min; desde develop commit `7a428bde` ahora `45min`. No retroactivo. Rama 1 commit behind debido solo a este cambio.
+- **Método:** análisis estático y logs reales de CI; sin ejecución local independiente ni mutaciones propias, SQL remoto o pruebas manuales. No aprobado ni mergeado.
 
-[Informe ronda 2](revisiones/ronda-2.md) · [Ronda 1](revisiones/ronda-1.md) · [Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
+[Hallazgos actualizados](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).

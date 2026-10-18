@@ -16,3 +16,9 @@ Todos los riesgos funcionales aquí requieren confirmación RED en la próxima r
 - La integración de CC-031 fue resuelta en una PR distinta; el autor hizo merge normal de `develop`, resolviendo H02 sin SQL duplicado en T-355.
 - E2E separado **en progreso** no es FAIL ni PASS. El informe debe anclarse al run y distinguir código E2E correcto por inspección de persistencia realmente ejercitada.
 - Un cast `as never` nuevo en un UPDATE que solo toca phone es deuda de tipado si se podía expresar mediante tipo `profiles.Update`; no inventar un fallo de seguridad mientras su payload siga cerrado y RLS proteja la fila.
+
+## Ronda 3 — 2026-10-18
+- El bloqueante de código H09 se solucionó exactamente como se solicitó, sin inventar casos, y se contrastaron las líneas más recientes con CI `typecheck/lint/unit` verde.
+- Distinguir el **test E2E específico que pasó** del **gate E2E global cancelado**: este caso tiene un test T-355 `✓` en un job `cancelled`, y la suite puede tener otros fallos independientes.
+- Subir un timeout de 30 a 45 minutos evita ese corte en ejecuciones nuevas, pero **no corrige otros `✘`**. No convertir un problema de tiempo en un certificado de que toda la suite es verde.
+- Guardar el SHA del workflow confiable de `develop`, distinto del SHA objetivo de la PR, para explicar por qué un run usa la versión de 30 minutos aunque `develop` ya tenga la de 45.
