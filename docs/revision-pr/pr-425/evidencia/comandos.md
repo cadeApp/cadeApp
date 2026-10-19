@@ -182,6 +182,80 @@ válidas de ambas RPC.
 - Head documental `e1fa4748`: CI general, Vercel y E2E 39240221298 verdes; `approval-policy` rojo al cerrar la ronda,
   a la espera de actualizar el informe del autor.
 
+---
+
+# Ronda 3 — implementación `9ab27a099e36d4abf0c4dae5716d32d0ead88edb`
+
+## Sincronización y alcance
+
+```bash
+git fetch origin
+git diff --shortstat origin/develop...9ab27a099e36d4abf0c4dae5716d32d0ead88edb
+git diff --name-status origin/develop...9ab27a099e36d4abf0c4dae5716d32d0ead88edb
+git diff --check 126e7497cc578734c8005038419928a2c8a14e64..9ab27a099e36d4abf0c4dae5716d32d0ead88edb
+```
+
+Resultado: 28 archivos, +1593/-16 contra `origin/develop`; las cuatro rutas modificadas después de ronda 2 están
+autorizadas por T-373 y el delta de implementación no tiene errores de whitespace.
+
+## Mutaciones independientes de H02 y H03
+
+Archivo: `src/features/trips/queries.ts`. SHA-256 original y restaurado:
+
+```text
+3CA79E78925AECFF3B008A8CBED84C4988391600764E1B11DD60DD3ED190D939
+```
+
+H02, mutación temporal:
+
+```diff
+- if (result.code === 'INTERNAL_ERROR') throw new TripDetailsUnavailableError();
++ if (result.code === 'INTERNAL_ERROR') return null;
+```
+
+`pnpm exec vitest run src/features/trips/queries.test.ts`: RED 2 failed / 31 passed. Fallaron el código interno y la
+composición paralela con historial propio.
+
+H03, mutación temporal: quitar `if (!STATUSES_WITH_CANCELLATION_HISTORY.includes(status)) return null;`.
+
+El mismo comando: RED 4 failed / 29 passed para `draft`, `matched`, `in_transit` y `delivered`. Tras cada restauración:
+GREEN 33/33 y hash exacto recuperado.
+
+## PR425-H04 · reproducción en el consumidor real
+
+Prueba reviewer-owned temporal en `trip-report-wiring.test.tsx`: perfil courier, detalle `null`, historial
+`INTERNAL_ERROR` y oráculo de que `notFound` no debía ejecutarse.
+
+```text
+Test Files  1 failed (1)
+Tests       1 failed | 9 skipped (10)
+AssertionError: expected vi.fn() to not be called at all, but actually been called 1 times
+```
+
+El archivo se restauró al SHA-256 original:
+
+```text
+5DB3125D57E7024E3865357E2DBC0D3F0D1DEBA1375B7CCD3F5CF5C630BC88E3
+```
+
+## Batería local
+
+```text
+pnpm typecheck: exit 0
+pnpm lint: exit 0, sin warnings ni errores
+pnpm test: exit 0; 148 archivos / 2882 pruebas; workflows 79/79; ADR 6/6
+dirigidas: 12 archivos / 248 pruebas; exit 0
+pnpm test:db: exit 1; ECONNREFUSED 127.0.0.1:54322
+```
+
+## Evidencia remota
+
+- CI: https://github.com/cadeApp/cadeApp/actions/runs/39245877273 — SHA exacto `9ab27a09`, unit, typecheck, lint,
+  build, audit, bundle-budget y db-tests verdes.
+- E2E: https://github.com/cadeApp/cadeApp/actions/runs/39245994799 — status `e2e-preview` verde publicado sobre
+  `9ab27a09`; 91 Chromium + 6 global-settings; T-373 pasó en 47.4 s.
+- Head documental al iniciar: `e9c599f41274c7b1e54b4c2467c5bae241fae9bb`; PR abierta y Draft.
+
 ## Evidencia remota
 
 - CC-032 mergeado: PR #424, merge `9f1d1a6f335915b723d6fe98763990d3097706f4`.
