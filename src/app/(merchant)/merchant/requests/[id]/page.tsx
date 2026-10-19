@@ -4,7 +4,8 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
 import { getMerchantRequestWithOffers } from '@/features/requests/server';
 import { RequestOffersList } from '@/features/requests';
-import { CancellationHistorySection, CancellationHistorySkeleton } from '@/features/trips/server';
+import { CancellationHistoryCard } from '@/features/trips';
+import { getRequestCancellationHistoryServer } from '@/server/rpc/request-cancellation-history';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { buttonVariants } from '@/ui/button';
@@ -26,7 +27,11 @@ export default async function CanonicalMerchantRequestDetailPage({
     redirect('/login');
   }
 
-  const result = await getMerchantRequestWithOffers(id, user.id);
+  // T-373: el historial (CC-032) se lee en paralelo con el pedido; la RPC exige que sea del comercio.
+  const [result, cancellationHistory] = await Promise.all([
+    getMerchantRequestWithOffers(id, user.id),
+    getRequestCancellationHistoryServer({ requestId: id }),
+  ]);
 
   if (!result) {
     notFound();
@@ -97,9 +102,7 @@ export default async function CanonicalMerchantRequestDetailPage({
           </CardFooter>
         </Card>
         <div className="mt-4">
-          <React.Suspense fallback={<CancellationHistorySkeleton />}>
-            <CancellationHistorySection requestId={id} viewer="merchant" />
-          </React.Suspense>
+          <CancellationHistoryCard requestId={id} viewer="merchant" result={cancellationHistory} />
         </div>
       </div>
     );
@@ -148,9 +151,7 @@ export default async function CanonicalMerchantRequestDetailPage({
       />
       {/* T-373: un pedido reabierto tras una cancelación del repartidor sigue publicado; la cronología lo explica. */}
       <div className="mx-auto w-full max-w-3xl">
-        <React.Suspense fallback={<CancellationHistorySkeleton />}>
-          <CancellationHistorySection requestId={id} viewer="merchant" />
-        </React.Suspense>
+        <CancellationHistoryCard requestId={id} viewer="merchant" result={cancellationHistory} />
       </div>
     </div>
   );

@@ -34,14 +34,6 @@ vi.mock('@/features/requests', () => ({
   RequestOffersList: () => <div data-testid="request-offers-list" />,
 }));
 
-// T-373 (ampliación autorizada): la sección de historial (CC-032) es un componente de servidor async que react-dom no
-// renderiza en este test. Acá se reemplaza por un stub; su comportamiento se prueba en
-// src/features/trips/cancellation-history.test.tsx.
-vi.mock('@/features/trips/server', () => ({
-  CancellationHistorySection: () => <div data-testid="cancellation-history" />,
-  CancellationHistorySkeleton: () => null,
-}));
-
 describe('T-359: CanonicalMerchantRequestDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -2,7 +2,6 @@ import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
 import { getTripDetailsServer } from '@/server/rpc/trips';
-import { getRequestCancellationHistoryServer } from '@/server/rpc/request-cancellation-history';
 import type { TripDetails } from './types';
 
 /**
@@ -292,9 +291,4 @@ export async function getActiveTripsForCourier(): Promise<{
     courierId: user.id,
     trips: uniqueTrips,
   };
-}
-
-/** T-373: primera página del historial de cancelaciones de asignación de un pedido (CC-032). */
-export async function getCancellationHistory(requestId: string) {
-  return getRequestCancellationHistoryServer({ requestId });
 }

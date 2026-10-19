@@ -5,17 +5,11 @@ import React from 'react';
 import type { RequestCancellationHistory, RequestCancellationHistoryEvent } from '@/domain';
 import { CancellationHistoryList } from './components/cancellation-history-list';
 import { CourierCancelledAssignmentView } from './components/courier-cancelled-assignment-view';
-import { CancellationHistorySection } from './components/cancellation-history-section';
-import { CancellationHistorySkeleton } from './components/cancellation-history-skeleton';
+import { CancellationHistoryCard } from './components/cancellation-history-card';
 
 const mockLoadPage = vi.fn();
 vi.mock('./actions', () => ({
   loadCancellationHistoryPageAction: (...args: unknown[]) => mockLoadPage(...args),
-}));
-
-const mockGetHistory = vi.fn();
-vi.mock('./queries', () => ({
-  getCancellationHistory: (...args: unknown[]) => mockGetHistory(...args),
 }));
 
 const REQUEST_ID = '00000000-0000-4000-8000-000000037301';
@@ -66,6 +60,24 @@ describe('T-373 — CancellationHistoryList', () => {
     expect(screen.queryByRole('button', { name: 'Ver más' })).toBeNull();
   });
 
+  it('respeta el orden de la RPC (más reciente primero) y distingue actor y categoría de cada evento', () => {
+    // El orden lo fija la RPC: created_at DESC, id DESC, con desempate por id probado en
+    // supabase/tests/cc032_request_cancellation_history.sql («un empate exacto en created_at desempata por id desc»).
+    // La UI no reordena: muestra exactamente la secuencia recibida.
+    const courierB = { id: '00000000-0000-4000-8000-000000037312', role: 'courier' as const, displayName: 'Cadete B' };
+    const newerB = event(2, { actor: courierB, category: 'personal_emergency', categoryLabel: 'Emergencia' });
+    const olderA = event(1);
+    render(<CancellationHistoryList requestId={REQUEST_ID} initialEvents={[newerB, olderA]} initialNextCursor={null} />);
+
+    const items = screen.getAllByRole('listitem');
+    expect(items.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Emergencia'),
+      expect.stringContaining('Problema con el vehículo'),
+    ]);
+    expect(items[0]?.textContent).toContain('Cadete B');
+    expect(items[1]?.textContent).toContain('Juan P.');
+  });
+
   it('no muestra identidad falsa si el perfil fue borrado y nunca renderiza el texto libre', () => {
     render(
       <CancellationHistoryList
@@ -108,51 +120,40 @@ describe('T-373 — CancellationHistoryList', () => {
   });
 });
 
-describe('T-373 — CancellationHistorySection (servidor)', () => {
-  async function renderSection(viewer: 'merchant' | 'courier') {
-    const node = await CancellationHistorySection({ requestId: REQUEST_ID, viewer });
-    return node ? render(node) : null;
+describe('T-373 — CancellationHistoryCard', () => {
+  function renderCard(viewer: 'merchant' | 'courier', result: Parameters<typeof CancellationHistoryCard>[0]['result']) {
+    return render(<CancellationHistoryCard requestId={REQUEST_ID} viewer={viewer} result={result} />);
   }
 
-  it('comercio sin cancelaciones: estado vacío legible', async () => {
-    mockGetHistory.mockResolvedValue({ ok: true, data: history([]) });
-    await renderSection('merchant');
-    expect(mockGetHistory).toHaveBeenCalledExactlyOnceWith(REQUEST_ID);
+  it('comercio sin cancelaciones: estado vacío legible, sin sumar una región viva', () => {
+    renderCard('merchant', { ok: true, data: history([]) });
     expect(screen.getByText('Ningún repartidor canceló una asignación de este pedido.')).toBeTruthy();
     // No agrega una región viva: la página ya tiene la suya (aviso offline, toasts).
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('comercio con cancelaciones: aclara que el pedido no se canceló y lista los eventos', async () => {
-    mockGetHistory.mockResolvedValue({ ok: true, data: history([event(2), event(1)]) });
-    await renderSection('merchant');
+  it('comercio con cancelaciones: aclara que el pedido no se canceló y lista los eventos', () => {
+    renderCard('merchant', { ok: true, data: history([event(2), event(1)]) });
     expect(screen.getByText(/Eso no cancela el pedido/)).toBeTruthy();
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
   });
 
-  it('error de la RPC: alerta accesible, sin detalles internos', async () => {
-    mockGetHistory.mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
-    await renderSection('merchant');
+  it('error de la RPC: alerta accesible, sin detalles internos', () => {
+    renderCard('merchant', { ok: false, code: 'INTERNAL_ERROR' });
     expect(screen.getByRole('alert').textContent).toBe(
       'No pudimos cargar el historial de asignaciones. Recargá la página para reintentar.'
     );
   });
 
-  it('repartidor sin cancelaciones propias (NOT_FOUND) no ve nada', async () => {
-    mockGetHistory.mockResolvedValue({ ok: false, code: 'NOT_FOUND' });
-    expect(await CancellationHistorySection({ requestId: REQUEST_ID, viewer: 'courier' })).toBeNull();
+  it('repartidor sin cancelaciones propias (NOT_FOUND) no ve nada', () => {
+    const { container } = renderCard('courier', { ok: false, code: 'NOT_FOUND' });
+    expect(container.innerHTML).toBe('');
   });
 
-  it('repartidor con cancelaciones propias ve su cronología', async () => {
-    mockGetHistory.mockResolvedValue({ ok: true, data: history([event(1)]) });
-    await renderSection('courier');
+  it('repartidor con cancelaciones propias ve su cronología', () => {
+    renderCard('courier', { ok: true, data: history([event(1)]) });
     expect(screen.getByText('Tus cancelaciones de asignación en este pedido.')).toBeTruthy();
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
-  });
-
-  it('el skeleton anuncia la carga sin contenido real', () => {
-    render(<CancellationHistorySkeleton />);
-    expect(screen.getByLabelText('Cargando historial de asignaciones').getAttribute('aria-busy')).toBe('true');
   });
 });
 

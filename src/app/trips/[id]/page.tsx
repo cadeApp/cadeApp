@@ -1,14 +1,14 @@
 import * as React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
+import { getTripDetails } from '@/features/trips/server';
 import {
-  CancellationHistorySection,
-  CancellationHistorySkeleton,
   CourierCancelledAssignmentView,
-  getCancellationHistory,
-  getTripDetails,
-} from '@/features/trips/server';
-import { TripMerchantContainer, TripCourierContainer } from '@/features/trips';
+  TripMerchantContainer,
+  TripCourierContainer,
+  type CancellationHistoryResult,
+} from '@/features/trips';
+import { getRequestCancellationHistoryServer } from '@/server/rpc/request-cancellation-history';
 import { ReportIncidentButton } from '@/features/incidents';
 
 interface TripDetailPageProps {
@@ -19,8 +19,7 @@ interface TripDetailPageProps {
  * T-373 / 5-A: un repartidor que ya no está asignado ve sus propias cancelaciones de este pedido en vez del 404. Sin
  * cancelaciones propias, la RPC responde NOT_FOUND y sigue el 404 de siempre.
  */
-async function renderCourierCancelledAssignment(requestId: string) {
-  const history = await getCancellationHistory(requestId);
+function renderCourierCancelledAssignment(requestId: string, history: CancellationHistoryResult) {
   if (!history.ok || history.data.events.length === 0) notFound();
   return (
     <div className="mx-auto w-full max-w-lg space-y-4 px-4 py-4">
@@ -52,12 +51,16 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
     notFound();
   }
 
-  const trip = await getTripDetails(id);
+  // T-373: el historial (CC-032) se lee en paralelo con el viaje; la RPC decide qué ve cada actor.
+  const [trip, cancellationHistory] = await Promise.all([
+    getTripDetails(id),
+    getRequestCancellationHistoryServer({ requestId: id }),
+  ]);
 
   // Instante con el que el botón de reporte evalúa la ventana de 24 h (D05-A).
   const renderedAt = Date.now();
   if (!trip) {
-    if (profile.role === 'courier') return renderCourierCancelledAssignment(id);
+    if (profile.role === 'courier') return renderCourierCancelledAssignment(id, cancellationHistory);
     notFound();
   }
 
@@ -67,10 +70,7 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
     }
     return (
       <div className="mx-auto w-full max-w-lg space-y-4 px-4 py-4">
-        <TripMerchantContainer trip={trip} />
-        <React.Suspense fallback={<CancellationHistorySkeleton />}>
-          <CancellationHistorySection requestId={trip.id} viewer="merchant" />
-        </React.Suspense>
+        <TripMerchantContainer trip={trip} cancellationHistory={cancellationHistory} />
         <ReportIncidentButton
           requestId={trip.id}
           actorRole={profile.role}
@@ -84,14 +84,11 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
 
   if (profile.role === 'courier') {
     if (trip.courierId !== user.id) {
-      return renderCourierCancelledAssignment(id);
+      return renderCourierCancelledAssignment(id, cancellationHistory);
     }
     return (
       <div className="mx-auto w-full max-w-lg space-y-4 px-4 py-4">
-        <TripCourierContainer trip={trip} />
-        <React.Suspense fallback={<CancellationHistorySkeleton />}>
-          <CancellationHistorySection requestId={trip.id} viewer="courier" />
-        </React.Suspense>
+        <TripCourierContainer trip={trip} cancellationHistory={cancellationHistory} />
         <ReportIncidentButton
           requestId={trip.id}
           actorRole={profile.role}
