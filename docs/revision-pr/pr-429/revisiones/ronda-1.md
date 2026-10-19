@@ -1,7 +1,9 @@
 # Informe revisar-pr — T-374 · PR #429 · ronda 1 · 2026-10-19
 
-**Resultado: CON BLOQUEANTES (2).**  
-**SHA revisado:** `78ffecaebb97ae54a43a52d593f66919a2d58aa1`  
+**Resultado: CON BLOQUEANTES (2).**
+
+**SHA revisado:** `78ffecaebb97ae54a43a52d593f66919a2d58aa1`
+
 **Base:** `develop` @ `59fb3daa82eb1c0394dca9bad143d7fd246ec34b`
 
 ## BLOQUEANTES

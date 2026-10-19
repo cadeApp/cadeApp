@@ -1,8 +1,11 @@
 # Informe revisar-pr — T-374 · PR #429 · ronda 2 · 2026-10-19
 
-**Resultado: SIN BLOQUEANTES.**  
-**SHA funcional/documental revisado:** `c07ee34feb75649e2e399676a77371c2c6054d9d`  
-**Base:** `develop` @ `59fb3daa82eb1c0394dca9bad143d7fd246ec34b`  
+**Resultado: SIN BLOQUEANTES.**
+
+**SHA funcional/documental revisado:** `c07ee34feb75649e2e399676a77371c2c6054d9d`
+
+**Base:** `develop` @ `59fb3daa82eb1c0394dca9bad143d7fd246ec34b`
+
 **Checks locales:** typecheck ✅ · lint ✅ · test ✅ · test:db n.a.
 
 ## Cierre de hallazgos anteriores
