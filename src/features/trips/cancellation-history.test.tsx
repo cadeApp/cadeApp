@@ -1,0 +1,166 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import React from 'react';
+import type { RequestCancellationHistory, RequestCancellationHistoryEvent } from '@/domain';
+import { CancellationHistoryList } from './components/cancellation-history-list';
+import { CourierCancelledAssignmentView } from './components/courier-cancelled-assignment-view';
+import { CancellationHistorySection } from './components/cancellation-history-section';
+import { CancellationHistorySkeleton } from './components/cancellation-history-skeleton';
+
+const mockLoadPage = vi.fn();
+vi.mock('./actions', () => ({
+  loadCancellationHistoryPageAction: (...args: unknown[]) => mockLoadPage(...args),
+}));
+
+const mockGetHistory = vi.fn();
+vi.mock('./queries', () => ({
+  getCancellationHistory: (...args: unknown[]) => mockGetHistory(...args),
+}));
+
+const REQUEST_ID = '00000000-0000-4000-8000-000000037301';
+const COURIER_ID = '00000000-0000-4000-8000-000000037311';
+
+function event(n: number, overrides: Partial<RequestCancellationHistoryEvent> = {}): RequestCancellationHistoryEvent {
+  return {
+    id: `00000000-0000-4000-8000-0000000373${String(n).padStart(2, '0')}`,
+    action: 'courier_cancel_match',
+    actionLabel: 'Cancelado por el repartidor',
+    category: 'vehicle_breakdown',
+    categoryLabel: 'Problema con el vehículo',
+    createdAt: `2026-10-18T2${n % 10}:30:00.000000+00:00`,
+    actor: { id: COURIER_ID, role: 'courier', displayName: 'Juan P.' },
+    offerId: null,
+    rawReason: null,
+    ...overrides,
+  };
+}
+
+function history(
+  events: RequestCancellationHistoryEvent[],
+  nextCursor: RequestCancellationHistory['pagination']['nextCursor'] = null
+): RequestCancellationHistory {
+  return {
+    version: '1.0',
+    requestId: REQUEST_ID,
+    events,
+    pagination: { limit: 50, hasMore: nextCursor !== null, nextCursor },
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('T-373 — CancellationHistoryList', () => {
+  it('muestra cada evento con acción, motivo permitido, fecha/hora de Argentina y actor', () => {
+    render(<CancellationHistoryList requestId={REQUEST_ID} initialEvents={[event(1)]} initialNextCursor={null} />);
+
+    const item = within(screen.getByRole('list', { name: 'Historial de asignaciones' })).getByRole('listitem');
+    expect(within(item).getByText('Cancelado por el repartidor')).toBeTruthy();
+    expect(within(item).getByText('Problema con el vehículo')).toBeTruthy();
+    const time = item.querySelector('time');
+    expect(time?.getAttribute('dateTime')).toBe('2026-10-18T21:30:00.000000+00:00');
+    expect(time?.textContent).toBe('18/10/2026 18:30');
+    expect(item.textContent).toContain('Juan P.');
+    expect(screen.queryByRole('button', { name: 'Ver más' })).toBeNull();
+  });
+
+  it('no muestra identidad falsa si el perfil fue borrado y nunca renderiza el texto libre', () => {
+    render(
+      <CancellationHistoryList
+        requestId={REQUEST_ID}
+        initialEvents={[event(1, { actor: null, rawReason: 'texto privado del cadete' })]}
+        initialNextCursor={null}
+      />
+    );
+
+    expect(screen.getByText(/Repartidor no disponible/)).toBeTruthy();
+    expect(screen.queryByText(/texto privado del cadete/)).toBeNull();
+  });
+
+  it('«Ver más» pide la página siguiente con el cursor keyset, agrega sin duplicar y se oculta al final', async () => {
+    const cursor = { beforeCreatedAt: '2026-10-18T21:30:00.000000+00:00', beforeId: event(1).id };
+    mockLoadPage.mockResolvedValue({ ok: true, data: history([event(1), event(2)]) });
+
+    render(<CancellationHistoryList requestId={REQUEST_ID} initialEvents={[event(1)]} initialNextCursor={cursor} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ver más' }));
+
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2));
+    expect(mockLoadPage).toHaveBeenCalledExactlyOnceWith({ requestId: REQUEST_ID, cursor });
+    expect(screen.queryByRole('button', { name: 'Ver más' })).toBeNull();
+  });
+
+  it('si falla la página siguiente avisa con role=alert, conserva lo cargado y permite reintentar', async () => {
+    const cursor = { beforeCreatedAt: '2026-10-18T21:30:00.000000+00:00', beforeId: event(1).id };
+    mockLoadPage.mockResolvedValueOnce({ ok: false, code: 'INTERNAL_ERROR' });
+
+    render(<CancellationHistoryList requestId={REQUEST_ID} initialEvents={[event(1)]} initialNextCursor={cursor} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ver más' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe('No pudimos cargar más eventos del historial.');
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+
+    mockLoadPage.mockRejectedValueOnce(new Error('network'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    await waitFor(() => expect(mockLoadPage).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('alert')).toBeTruthy();
+  });
+});
+
+describe('T-373 — CancellationHistorySection (servidor)', () => {
+  async function renderSection(viewer: 'merchant' | 'courier') {
+    const node = await CancellationHistorySection({ requestId: REQUEST_ID, viewer });
+    return node ? render(node) : null;
+  }
+
+  it('comercio sin cancelaciones: estado vacío legible', async () => {
+    mockGetHistory.mockResolvedValue({ ok: true, data: history([]) });
+    await renderSection('merchant');
+    expect(mockGetHistory).toHaveBeenCalledExactlyOnceWith(REQUEST_ID);
+    expect(screen.getByRole('status').textContent).toBe('Ningún repartidor canceló una asignación de este pedido.');
+  });
+
+  it('comercio con cancelaciones: aclara que el pedido no se canceló y lista los eventos', async () => {
+    mockGetHistory.mockResolvedValue({ ok: true, data: history([event(2), event(1)]) });
+    await renderSection('merchant');
+    expect(screen.getByText(/Eso no cancela el pedido/)).toBeTruthy();
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('error de la RPC: alerta accesible, sin detalles internos', async () => {
+    mockGetHistory.mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+    await renderSection('merchant');
+    expect(screen.getByRole('alert').textContent).toBe(
+      'No pudimos cargar el historial de asignaciones. Recargá la página para reintentar.'
+    );
+  });
+
+  it('repartidor sin cancelaciones propias (NOT_FOUND) no ve nada', async () => {
+    mockGetHistory.mockResolvedValue({ ok: false, code: 'NOT_FOUND' });
+    expect(await CancellationHistorySection({ requestId: REQUEST_ID, viewer: 'courier' })).toBeNull();
+  });
+
+  it('repartidor con cancelaciones propias ve su cronología', async () => {
+    mockGetHistory.mockResolvedValue({ ok: true, data: history([event(1)]) });
+    await renderSection('courier');
+    expect(screen.getByText('Tus cancelaciones de asignación en este pedido.')).toBeTruthy();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('el skeleton anuncia la carga sin contenido real', () => {
+    render(<CancellationHistorySkeleton />);
+    expect(screen.getByLabelText('Cargando historial de asignaciones').getAttribute('aria-busy')).toBe('true');
+  });
+});
+
+describe('T-373 / 5-A — CourierCancelledAssignmentView', () => {
+  it('explica que la asignación se canceló sin cancelar el pedido, lista sus eventos y vuelve al feed', () => {
+    render(<CourierCancelledAssignmentView requestId={REQUEST_ID} history={history([event(1)])} />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Cancelaste esta asignación' })).toBeTruthy();
+    expect(screen.getByText(/No es una cancelación del pedido/)).toBeTruthy();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Volver a pedidos disponibles' }).getAttribute('href')).toBe('/courier/feed');
+  });
+});

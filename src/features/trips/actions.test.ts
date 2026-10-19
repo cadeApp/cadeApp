@@ -11,6 +11,7 @@ import {
   republishTripAction,
   markDropDeliveredAction,
   markDropFailedAction,
+  loadCancellationHistoryPageAction,
 } from './actions';
 
 vi.mock('next/cache', () => ({
@@ -535,5 +536,52 @@ describe('T-115 DoD: tests de actions por transición de viaje', () => {
       expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
       expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
     });
+  });
+});
+
+describe('T-373 — loadCancellationHistoryPageAction', () => {
+  const requestId = '11111111-1111-4111-8111-111111111111';
+  const cursor = { beforeCreatedAt: '2026-10-18T21:30:00.123456+00:00', beforeId: '22222222-2222-4222-8222-222222222222' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('valida requestId y cursor completo antes de tocar Supabase', async () => {
+    for (const input of [
+      { requestId: 'bad', cursor },
+      { requestId },
+      { requestId, cursor: { beforeCreatedAt: cursor.beforeCreatedAt } },
+      { requestId, cursor: { ...cursor, extra: 1 } },
+    ]) {
+      expect(await loadCancellationHistoryPageAction(input)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    expect(serverSupabase.createClient).not.toHaveBeenCalled();
+  });
+
+  it('pide la página con la sesión del usuario y el cursor tal cual, sin revalidar rutas', async () => {
+    const page = {
+      version: '1.0',
+      requestId,
+      events: [],
+      pagination: { limit: 50, hasMore: false, nextCursor: null },
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: page, error: null });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ rpc } as never);
+
+    expect(await loadCancellationHistoryPageAction({ requestId, cursor })).toEqual({ ok: true, data: page });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('get_request_cancellation_history', {
+      p_request_id: requestId,
+      p_limit: null,
+      p_before_created_at: cursor.beforeCreatedAt,
+      p_before_id: cursor.beforeId,
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('propaga el NOT_FOUND de la RPC (pedido ajeno o repartidor sin cancelaciones propias)', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: 'NOT_FOUND' } });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ rpc } as never);
+    expect(await loadCancellationHistoryPageAction({ requestId, cursor })).toEqual({ ok: false, code: 'NOT_FOUND' });
   });
 });

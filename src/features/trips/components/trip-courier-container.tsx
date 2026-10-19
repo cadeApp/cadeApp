@@ -90,7 +90,8 @@ export function TripCourierContainer({ trip }: TripCourierContainerProps) {
       if (res.ok) {
         notify.success('Viaje cancelado.');
         setCancelModalOpen(false);
-        router.push('/courier/feed');
+        // T-373 / 5-A: se queda en /trips/[id], que ahora muestra «Cancelaste esta asignación» con su historial.
+        router.refresh();
       } else {
         notify.error('No se pudo cancelar el viaje.');
       }

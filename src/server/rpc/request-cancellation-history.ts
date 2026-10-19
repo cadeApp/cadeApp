@@ -8,6 +8,7 @@ import {
   type RequestCancellationHistory,
   type RpcErrorCode,
 } from '@/domain';
+import { createClient } from '@/server/supabase/server';
 import type { SupabaseRpcCaller, SupabaseRpcErrorLike } from './offers';
 
 type HistoryErrorCode = RpcErrorCode<'get_request_cancellation_history'>;
@@ -52,6 +53,18 @@ export async function getRequestCancellationHistoryRpc(
     }
 
     return ok(output.data);
+  } catch {
+    return err('INTERNAL_ERROR');
+  }
+}
+
+/** T-373: la misma frontera con el cliente de sesión del request (cookies); nunca con service role. */
+export async function getRequestCancellationHistoryServer(
+  rawInput: unknown
+): Promise<ActionResult<RequestCancellationHistory, HistoryErrorCode>> {
+  try {
+    const client = await createClient();
+    return await getRequestCancellationHistoryRpc(client, rawInput);
   } catch {
     return err('INTERNAL_ERROR');
   }

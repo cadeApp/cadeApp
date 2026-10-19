@@ -15,6 +15,12 @@ vi.mock('@/server/supabase/server', () => ({
 
 vi.mock('@/features/trips/server', () => ({
   getTripDetails: vi.fn(),
+  // T-373 (ampliación autorizada): el historial de CC-032 no es parte de este cableado. Sin cancelaciones propias,
+  // la RPC responde NOT_FOUND, y el repartidor no asignado sigue recibiendo el 404.
+  getCancellationHistory: async () => ({ ok: false, code: 'NOT_FOUND' }),
+  CancellationHistorySection: () => <div data-testid="cancellation-history" />,
+  CancellationHistorySkeleton: () => null,
+  CourierCancelledAssignmentView: () => <div data-testid="courier-cancelled-assignment" />,
 }));
 
 vi.mock('@/features/trips', () => ({

@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
 import { getMerchantRequestWithOffers } from '@/features/requests/server';
 import { RequestOffersList } from '@/features/requests';
+import { CancellationHistorySection, CancellationHistorySkeleton } from '@/features/trips/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { buttonVariants } from '@/ui/button';
@@ -95,6 +96,11 @@ export default async function CanonicalMerchantRequestDetailPage({
             </Link>
           </CardFooter>
         </Card>
+        <div className="mt-4">
+          <React.Suspense fallback={<CancellationHistorySkeleton />}>
+            <CancellationHistorySection requestId={id} viewer="merchant" />
+          </React.Suspense>
+        </div>
       </div>
     );
   }
@@ -134,12 +140,18 @@ export default async function CanonicalMerchantRequestDetailPage({
   }
 
   return (
-    <div className="px-4 py-4">
+    <div className="space-y-4 px-4 py-4">
       <RequestOffersList
         request={result.request}
         initialOffers={result.offers}
         initialNextCursor={result.nextOffersCursor}
       />
+      {/* T-373: un pedido reabierto tras una cancelación del repartidor sigue publicado; la cronología lo explica. */}
+      <div className="mx-auto w-full max-w-3xl">
+        <React.Suspense fallback={<CancellationHistorySkeleton />}>
+          <CancellationHistorySection requestId={id} viewer="merchant" />
+        </React.Suspense>
+      </div>
     </div>
   );
 }
