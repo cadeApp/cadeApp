@@ -105,10 +105,18 @@ test.describe('T-373 — historial de cancelaciones del repartidor (CC-032)', ()
       const reacceptA1 = await merchantClient.rpc('accept_offer', { p_offer_id: offerA1 });
       expect(reacceptA1.error, 'la oferta cancelada no debe poder aceptarse otra vez').not.toBeNull();
 
-      // MUTACIÓN DE PRUEBA (PR425-H01, RED): se omite la segunda cancelación (la de B). El oráculo del comercio, que
-      // exige dos eventos, tiene que fallar. El commit siguiente restaura el paso.
+      // 2. B es asignado y cancela por la UI con otra categoría («Emergencia»).
+      await offerAndAccept(courierBClient, 20);
       const courierBPage = await courierBContext.newPage();
       await loginAsCourier(1, courierBPage);
+      await cancelAssignmentFromTrip(courierBPage, requestId, 'Emergencia');
+
+      // B ve exclusivamente su evento.
+      await expect(historyItems(courierBPage)).toHaveCount(1);
+      await expect(historyItems(courierBPage).first()).toContainText('Emergencia');
+      await expect(historyItems(courierBPage).first()).toContainText(nameB);
+      await expect(courierBPage.getByText('Problema con el vehículo')).toHaveCount(0);
+      expect((await getRequestInspectionData(stagingContext, requestId)).requestStatus).toBe('published');
 
       // 3. El comercio ve exactamente dos eventos en el detalle publicado: B (más reciente) primero, A después.
       const merchantPage = await merchantContext.newPage();
