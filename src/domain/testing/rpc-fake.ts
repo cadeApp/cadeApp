@@ -1,6 +1,8 @@
 import { type ActionResult, type DomainErrorCode, err, isDomainErrorCode, ok } from '../errors';
 import { computeDocLevel } from '../priority';
 import {
+  COURIER_CANCELLATION_CATEGORY_LABELS,
+  type CourierCancellationCategory,
   type RpcClientContract,
   type RpcErrorCode,
   type RpcInput,
@@ -293,6 +295,19 @@ export interface FakeIncidentRecord {
   readonly createdAt: string;
 }
 
+// CC-032: filas de `request_cancellation_reasons`. `actorId`/`offerId` en null replican el `on delete set null`.
+export interface FakeSeedCancellationReason {
+  readonly id: string;
+  readonly requestId: string;
+  readonly offerId: string | null;
+  readonly actorId: string | null;
+  readonly action: string;
+  readonly reason: string;
+  readonly createdAt: string;
+}
+
+export type FakeCancellationReasonRecord = FakeSeedCancellationReason;
+
 // CC-029 (T-369): registros en memoria de créditos de publicación.
 export interface FakePublicationPlanRecord {
   readonly id: string;
@@ -375,6 +390,7 @@ export interface FakeRpcOptions {
   readonly initialMerchants?: readonly FakeSeedMerchant[];
   readonly initialDocuments?: readonly FakeSeedDocument[];
   readonly initialIncidents?: readonly FakeSeedIncident[];
+  readonly initialCancellationReasons?: readonly FakeSeedCancellationReason[];
 }
 
 export interface FakeRpcClient extends RpcClientContract {
@@ -391,6 +407,9 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly getDocument: (documentId: string) => FakeDocumentRecord | undefined;
   readonly seedIncident: (incident: FakeSeedIncident) => void;
   readonly getIncident: (incidentId: string) => FakeIncidentRecord | undefined;
+  /** CC-032: siembra una fila de `request_cancellation_reasons` (cualquier acción, para probar el filtro). */
+  readonly seedCancellationReason: (row: FakeSeedCancellationReason) => void;
+  readonly getCancellationReasons: (requestId: string) => readonly FakeCancellationReasonRecord[];
   readonly getRequest: (requestId: string) => FakeRequestRecord | undefined;
   /** CC-029: cargos de publicación de una solicitud (históricos incluidos), en orden de creación. */
   readonly getPublicationCharges: (requestId: string) => readonly FakePublicationChargeRecord[];
@@ -451,6 +470,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_get_merchant_publication_credits: ['admin'],
   admin_list_publication_plans: ['admin'],
   get_my_publication_balance: ['merchant'],
+  get_request_cancellation_history: ['merchant', 'courier', 'admin'],
 };
 
 // CC-012 / D05-A: el comercio dueño reporta en matched, in_transit y delivered (≤ 24 h);
@@ -500,6 +520,28 @@ function compareIncidentKeysetDesc(
 }
 
 const INCIDENT_WINDOW_MS = 24 * 3_600_000;
+
+// CC-032 / 2-A: coincidencia exacta tras trim, minúsculas y sin tildes, como el `case` de la función SQL.
+const COURIER_CANCELLATION_REASON_MATCHES: Readonly<Record<string, CourierCancellationCategory>> = {
+  'tuve un imprevisto': 'unforeseen_issue',
+  unforeseen_issue: 'unforeseen_issue',
+  'problema con el vehiculo': 'vehicle_breakdown',
+  vehicle_breakdown: 'vehicle_breakdown',
+  'no puedo llegar al punto de retiro': 'pickup_issue',
+  pickup_issue: 'pickup_issue',
+  emergencia: 'personal_emergency',
+  personal_emergency: 'personal_emergency',
+};
+
+function classifyCourierCancellationReason(reason: string): CourierCancellationCategory {
+  const normalized = reason
+    .trim()
+    .toLowerCase()
+    .replace(/[áéíóúü]/g, (ch) => ({ á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ü: 'u' })[ch] ?? ch);
+  return Object.hasOwn(COURIER_CANCELLATION_REASON_MATCHES, normalized)
+    ? (COURIER_CANCELLATION_REASON_MATCHES[normalized] ?? 'other')
+    : 'other';
+}
 
 function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatformSettings {
   if (!options || typeof options !== 'object' || !options.settings) {
@@ -561,6 +603,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const merchants = new Map<string, FakeMerchantRecord>();
   const documents = new Map<string, FakeDocumentRecord>();
   const incidents = new Map<string, FakeIncidentRecord>();
+  const cancellationReasons: FakeCancellationReasonRecord[] = [];
+  let cancellationReasonSeq = 0;
   const rateLimits = new Map<string, number>();
   const multiDropSnapshots = new Map<
     string,
@@ -1214,6 +1258,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   (options.initialMerchants ?? []).forEach(putMerchant);
   (options.initialDocuments ?? []).forEach(putDocument);
   (options.initialIncidents ?? []).forEach(putIncident);
+  (options.initialCancellationReasons ?? []).forEach((row) => cancellationReasons.push({ ...row }));
 
   function checkCourierEligibility(): ActionResult<
     FakeCourierRecord,
@@ -1240,9 +1285,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     if (!actor.userId || !actor.role) {
       return err('UNAUTHENTICATED' as RpcErrorCode<K>);
     }
-    // CC-023: la RPC valida el id antes del rol (misma precedencia que la función SQL).
+    // CC-023 / CC-032: la RPC valida el id (y el cursor) antes del rol (misma precedencia que la función SQL).
     if (
-      rpcName === 'get_merchant_request_private_fields' &&
+      (rpcName === 'get_merchant_request_private_fields' ||
+        rpcName === 'get_request_cancellation_history') &&
       !RPC_CONTRACTS[rpcName].inputSchema.safeParse(rawInput).success
     ) {
       return err('VALIDATION_ERROR' as RpcErrorCode<K>);
@@ -1257,6 +1303,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       (rpcName === 'get_trip_details' ||
         rpcName === 'get_request_offer_couriers' ||
         rpcName === 'get_merchant_request_private_fields' ||
+        rpcName === 'get_request_cancellation_history' ||
         rpcName === 'reconcile_expired_requests' ||
         rpcName === 'report_incident' ||
         rpcName === 'submit_offer' ||
@@ -1354,6 +1401,11 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     getDocument: (documentId) => documents.get(documentId),
     seedIncident: putIncident,
     getIncident: (incidentId) => incidents.get(incidentId),
+    seedCancellationReason: (row) => {
+      cancellationReasons.push({ ...row });
+    },
+    getCancellationReasons: (requestId) =>
+      cancellationReasons.filter((row) => row.requestId === requestId).map((row) => ({ ...row })),
     getRequest: (requestId) => requests.get(requestId),
     getPublicationCharges: (requestId) =>
       charges.filter((c) => c.requestId === requestId).map((c) => ({ ...c, parts: c.parts.map((p) => ({ ...p })) })),
@@ -2487,6 +2539,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
         acceptedOffer.status = 'cancelled';
 
+        // Misma fila que inserta app_private.request_cycle en request_cancellation_reasons (CC-032 la proyecta).
+        cancellationReasonSeq += 1;
+        cancellationReasons.push({
+          id: `32000000-0000-4000-8000-${String(cancellationReasonSeq).padStart(12, '0')}`,
+          requestId: req.requestId,
+          offerId: cancelledOfferId,
+          actorId: actor.userId,
+          action: 'courier_cancel_match',
+          reason: input.reason.trim(),
+          createdAt: currentNow.toISOString(),
+        });
+
         const expiresAt = new Date(
           currentNow.getTime() + settings.requestTtlMinutes * 60_000
         ).toISOString();
@@ -2796,6 +2860,70 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           requestId: req.requestId,
           notes: req.notes,
           cashChangeAmount: req.cashChangeAmount,
+        });
+      }),
+
+    // CC-032: mismo filtro (acción y actor antes de paginar), orden (created_at, id) desc y cursor de la última fila
+    // devuelta que la función SQL.
+    get_request_cancellation_history: (rawInput) =>
+      executeRpc('get_request_cancellation_history', rawInput, false, (input) => {
+        const isAdmin = actor.role === 'admin';
+        const ownCancellations = (row: FakeCancellationReasonRecord) =>
+          row.requestId === input.requestId &&
+          row.action === 'courier_cancel_match' &&
+          row.actorId === actor.userId;
+        const req = requests.get(input.requestId);
+        if (isAdmin) {
+          if (!req) return err('NOT_FOUND');
+        } else if (actor.role === 'merchant') {
+          if (!req || req.merchantId !== actor.userId) return err('NOT_FOUND');
+        } else if (!cancellationReasons.some(ownCancellations)) {
+          return err('NOT_FOUND');
+        }
+
+        const limit = input.limit ?? 50;
+        const cursor = input.cursor ?? null;
+        const toKey = (row: FakeCancellationReasonRecord) => ({ createdAt: row.createdAt, incidentId: row.id });
+        const cursorKey = cursor ? { createdAt: cursor.beforeCreatedAt, incidentId: cursor.beforeId } : null;
+        const rows = cancellationReasons
+          .filter((row) => row.requestId === input.requestId && row.action === 'courier_cancel_match')
+          .filter((row) => actor.role !== 'courier' || row.actorId === actor.userId)
+          .sort((a, b) => compareIncidentKeysetDesc(toKey(a), toKey(b)))
+          .filter((row) => !cursorKey || compareIncidentKeysetDesc(toKey(row), cursorKey) > 0)
+          .slice(0, limit + 1);
+        const page = rows.slice(0, limit);
+        const last = page[page.length - 1];
+        const hasMore = rows.length > limit;
+
+        return ok({
+          version: '1.0' as const,
+          requestId: input.requestId,
+          events: page.map((row) => {
+            const category = classifyCourierCancellationReason(row.reason);
+            const courier = row.actorId ? couriers.get(row.actorId) : undefined;
+            return {
+              id: row.id,
+              action: 'courier_cancel_match' as const,
+              actionLabel: 'Cancelado por el repartidor' as const,
+              category,
+              categoryLabel: COURIER_CANCELLATION_CATEGORY_LABELS[category],
+              createdAt: row.createdAt,
+              actor: courier
+                ? {
+                    id: courier.courierId,
+                    role: 'courier' as const,
+                    displayName: courier.displayName.trim() || 'Repartidor',
+                  }
+                : null,
+              offerId: row.offerId,
+              rawReason: isAdmin ? row.reason : null,
+            };
+          }),
+          pagination: {
+            limit,
+            hasMore,
+            nextCursor: hasMore && last ? { beforeCreatedAt: last.createdAt, beforeId: last.id } : null,
+          },
         });
       }),
 
