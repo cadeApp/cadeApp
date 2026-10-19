@@ -118,7 +118,9 @@ describe('T-373 — CancellationHistorySection (servidor)', () => {
     mockGetHistory.mockResolvedValue({ ok: true, data: history([]) });
     await renderSection('merchant');
     expect(mockGetHistory).toHaveBeenCalledExactlyOnceWith(REQUEST_ID);
-    expect(screen.getByRole('status').textContent).toBe('Ningún repartidor canceló una asignación de este pedido.');
+    expect(screen.getByText('Ningún repartidor canceló una asignación de este pedido.')).toBeTruthy();
+    // No agrega una región viva: la página ya tiene la suya (aviso offline, toasts).
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('comercio con cancelaciones: aclara que el pedido no se canceló y lista los eventos', async () => {

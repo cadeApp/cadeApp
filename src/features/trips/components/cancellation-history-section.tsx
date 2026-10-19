@@ -29,7 +29,9 @@ export function CancellationHistoryCard({ requestId, viewer, history }: Cancella
       </CardHeader>
       <CardContent>
         {history.events.length === 0 ? (
-          <p role="status" className="text-sm text-muted-foreground">
+          // Texto estático: sin role="status", para no sumar una segunda región viva a la página (el aviso offline y
+          // los toasts ya usan esa región).
+          <p className="text-sm text-muted-foreground">
             {CANCELLATION_HISTORY_COPY.empty}
           </p>
         ) : (
