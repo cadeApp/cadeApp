@@ -3,16 +3,17 @@ import { test, expect, findRequestIdByNotesMarker, generateTotp, seedAdminUser, 
 import type { StagingSeedContext, UserCredentials } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { waitForFormHydration } from '../helpers/hydration';
+import { createPilotGuard, createSupabasePilotStore, PILOT_BASELINE } from '../helpers/pilot';
 import { LoginPage, type MerchantPage } from '../pages';
 import { expirePublishedRequestForRefund, trackEntityForCleanup } from '@/server/e2e/staging-seed';
 import { createAdminClient } from '@/server/supabase/admin';
-import type { Json } from '@/types/database.types';
 
 /**
  * T-369 / CC-029 paso 3: E2E de créditos de publicación y planes (proyecto global-settings, serial).
  *
- * Cada prueba usa su propio comercio, repartidores y admin de la corrida, apaga `pilot_active` y lo restaura en
- * `finally`. El caso de piloto activo vive en `publication-credits.spec.ts` (proyecto chromium, sin tocar settings).
+ * Cada prueba usa su propio comercio, repartidores y admin de la corrida y apaga `pilot_active`; los hooks lo
+ * restauran al valor base aunque la prueba expire (T-375). El caso de piloto activo vive en
+ * `publication-credits.spec.ts` (proyecto chromium, sin tocar settings).
  *   1. Sin créditos se bloquea; el admin AAL2 acredita por la UI; publicar reserva y aceptar una oferta consume.
  *   2. Una solicitud que vence devuelve el crédito reservado (reconciliación real de la base al leer el saldo).
  *   3. Plan ilimitado: el admin lo crea y registra por la UI y el comercio publica sin créditos.
@@ -23,40 +24,20 @@ test.describe.configure({ mode: 'serial' });
 
 type ChargeRow = { mode: string; cost: number; state: string; is_current: boolean };
 
-async function getPilotActive(): Promise<boolean> {
-  const { data, error } = await createAdminClient()
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'pilot_active')
-    .single();
-  if (error || !data || typeof data.value !== 'boolean') {
-    throw new Error(`[E2E Credits Fail-Closed] No se pudo leer pilot_active: ${error?.message ?? 'valor no booleano'}`);
-  }
-  return data.value;
-}
+const pilot = createPilotGuard(createSupabasePilotStore('E2E Credits Fail-Closed'), 'E2E Credits Fail-Closed');
 
-async function setPilotActive(active: boolean): Promise<void> {
-  const { data, error } = await createAdminClient()
-    .from('platform_settings')
-    .update({ value: active as unknown as Json })
-    .eq('key', 'pilot_active')
-    .select('value')
-    .single();
-  if (error || !data || data.value !== active) {
-    throw new Error(`[E2E Credits Fail-Closed] No se pudo fijar pilot_active=${active}: ${error?.message ?? 'no quedó aplicado'}`);
-  }
-}
-
-/** Corre `body` con el piloto en `active` y restaura el valor original, verificándolo, pase lo que pase. */
+/**
+ * Corre `body` con el piloto en `active`. La restauración al valor base vive en los hooks (T-375), que Playwright
+ * ejecuta también si la prueba expira; el `finally` es solo la primera línea de defensa.
+ */
 async function withPilot(active: boolean, body: () => Promise<void>): Promise<void> {
-  const original = await getPilotActive();
   try {
-    await setPilotActive(active);
-    expect(await getPilotActive()).toBe(active);
+    await pilot.set(active);
+    expect(await pilot.read()).toBe(active);
     await body();
   } finally {
-    await setPilotActive(original);
-    expect(await getPilotActive()).toBe(original);
+    await pilot.restore();
+    expect(await pilot.read()).toBe(PILOT_BASELINE);
   }
 }
 
@@ -162,6 +143,18 @@ async function grantLooseCreditsInUi(adminPage: Page, merchantId: string, credit
 }
 
 test.describe('T-369 — créditos de publicación y planes (CC-029)', () => {
+  test.beforeAll(async () => {
+    await pilot.assertBaseline();
+  });
+
+  test.afterEach(async () => {
+    await pilot.restore();
+  });
+
+  test.afterAll(async () => {
+    await pilot.restore();
+  });
+
   test('sin créditos se bloquea; el admin AAL2 acredita; publicar reserva y aceptar una oferta consume', async ({
     page,
     browser,
