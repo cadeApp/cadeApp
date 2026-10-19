@@ -283,3 +283,17 @@ No ejecuté Playwright localmente ni mutaciones locales. La verificación de H01
 - No se ejecutaron tests ni mutaciones locales, ni git merge-tree por no haber clon disponible. No se dispararon workflows manualmente.
 
 **Acciones para repetir legítimamente el gate:** el operador autorizado puede usar Re-run all jobs en el run #39079295420. Comprobar el mismo TARGET_SHA, `e2e-preview=success`, oráculos del E2E T-362 y los tres global-settings, antes de registrar la conclusión. Reejecución E2E en un run real NO implica reejecutar unit/DB por documentos. Sin falsos GREEN.
+
+
+---
+
+## Ronda 7 — comprobación final de HEAD `88ef846a74b4ff6a46ca344f0c4b2e728f9bbbe2`
+
+- Estado PR #389: open, draft=false, mergeable=true, mergeable_state=unstable; base `99a7b9d` y HEAD `88ef846`. Compare develop...PR: ahead=20, behind=22 al consultar. PR review `Lautaro073` APPROVED con commit_id `88ef846a74b4ff6a46ca344f0c4b2e728f9bbbe2`, submitted 2026-10-19T00:35:10Z.
+- Main CI real: https://github.com/cadeApp/cadeApp/actions/runs/39175736175, HEAD `88ef846a74b4ff6a46ca344f0c4b2e728f9bbbe2`, SUCCESS. Unit job `117817893095`: `Test Files 146 passed (146)`, `Tests 2799 passed (2799)`, 79 workflow y 6 ADR PASS. DB job `117817893141`: `Files=30, Tests=2815, Result: PASS`. Los jobs typecheck/lint/build/audit/bundle-budget SUCCESS.
+- E2E Preview final: https://github.com/cadeApp/cadeApp/actions/runs/39175803818, attempt **2**, SUCCESS. Job Playwright `117828546542`, checkout `HEAD is now at 88ef846` en línea de log. Suite Chromium `90 passed (24.4m)`; caso T-362 `✓ 79 [chromium] ... request-states.spec.ts:1149:7 ... (49.9s)`. Global-settings `6 passed (2.6m)`; T-306 DoD1, DoD2, DoD3 OK. Estado de commit e2e-preview SUCCESS publicado 2026-10-19T00:36:18Z.
+- Approval-policy: https://github.com/cadeApp/cadeApp/actions/runs/39181437838, success, línea literal `Aprobación de Lautaro073 vigente.`.
+- Los 22 commits aún no integrados en develop afectan `docs/revision-pr/pr-390/**`, `docs/tasks/log/T-365.md`, `src/features/requests/**`, `src/server/live/t204*`. No tocan `src/features/trips/**` ni `e2e/specs/request-states.spec.ts`, por lo que no hay indicio de choque; GitHub confirma mergeable=true.
+- Las pruebas independientes RED→GREEN de H03/H04/R03 continúan sin ejecución propia del revisor. No se cambian a arreglado-verificado. Fuente real de E2E y CI: logs remotos, no ejecución local inventada.
+
+**Regla 10:** si el reviewer hace un commit solo documental, preservar la evidencia CI/E2E ya correlacionada al SHA funcional `88ef846` sin pedir una segunda corrida. La plataforma podría exigir aprobación nueva por movimiento de HEAD.

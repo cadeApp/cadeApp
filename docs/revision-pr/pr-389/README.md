@@ -88,3 +88,12 @@ El HEAD de PR 37c7e8a solo cambia bitácora respecto de ae05b35: no invalida E2E
 | `476ff4dbee7bf0e6fc43b4b507a1e772e27c62f4` | Fix T-371 integrado, detrás de develop=0; CI 142/2687 unit PASS y DB 29/2735 PASS; E2E auto #39079295420 CANCELLED antes de Playwright, falta gate real y aprobación P1 | [ronda-6.md](revisiones/ronda-6.md) |
 
 Se conservaron exactamente los blobs del código y el spec E2E de T-362 respecto al SHA ae05b35 que pasó su test específico. La PR #407 T-371 se mergeó a develop, issue #405 cerrado y su E2E global quedó GREEN. La PR #389 **sigue bloqueada**, no por el viejo error T-306 sino porque el nuevo run de #389 fue CANCELLED. R6 registrada por revisor; no exigir otro CI solo por cambios documentales.
+
+
+## Ronda 7 — 2026-10-18
+
+| SHA funcional verificado | Resultado | Informe |
+|---|---|---|
+| `88ef846a74b4ff6a46ca344f0c4b2e728f9bbbe2` | **SIN BLOQUEANTES de código ni gate**: CI 146 suites / 2799 unit PASS; DB 30 archivos / 2815 tests PASS; E2E Chromium **90 PASS** y global-settings **6 PASS** (run 39175803818); PR Ready + aprobación P1 vigente en ese SHA. `develop` ahead 22 sin conflicto GitHub. | [ronda-7.md](revisiones/ronda-7.md) |
+
+H05 se marca ahora arreglado-verificado: el E2E original cancelado fue reemplazado por una **ejecución completa real y GREEN** del HEAD 88ef846. Para el commit exclusivamente documental de R7 **no exigir nuevo CI**; revisar si la aprobación existente sigue vigente después de este commit.

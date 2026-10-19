@@ -48,3 +48,11 @@ No asignar AG nuevo ni alterar AGENTS.md sin validar máximo de todas las ramas 
 - Comparar los hashes de todos los archivos funcionales originales del feature antes/después de integrar develop evita pedir refactors ficticios o imputar cambios ajenos a KiraK72.
 - El status `e2e-preview=error` con `RESULT: cancelled` solo significa que Playwright NO concluyó; no se puede diagnosticar fallo de test ni asegurar causa sin log. No arreglar E2E mediante `.skip` ni alterar mocks.
 - Aunque una nueva ronda documental cambie HEAD, la regla 10 prohíbe exigir otra CI GREEN por ese único cambio.
+
+
+## Ronda 7 — evidencia final
+
+- Un workflow `repository_dispatch` puede tener en su metadata `head_sha` de develop mientras el checkout y el target status son el HEAD de la PR. Confirmar el `HEAD is now at ...` real en logs para no atribuir E2E al commit equivocado.
+- La suma de tests crece al integrar develop: para el HEAD final fueron 90 chromium + 6 global-settings, **no** los 87+3 de la ronda previa ni las 142 suites unitarias de la bitácora antigua. Comparar contra log, no contra una cifra previa.
+- Una PR puede ser `mergeable=true` y estar detrás de develop; la cifra behind por sí sola no prueba conflicto. Comparar nombres de archivos, policy y resultados antes de forzar otra integración.
+- Evitar CI repetido solo por registrar la revisión; vigilar que la aprobación P1 no quede stale luego del commit documental de R7.
