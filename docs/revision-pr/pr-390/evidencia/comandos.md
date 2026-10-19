@@ -330,3 +330,39 @@ reconnect: originalDisabled=true mutantWithoutIsFetchingDisabled=true
 onlineInvalidate: originalDisabled=true mutantWithoutIsFetchingDisabled=false
 MODEL PASS: offline/reconnect checks cannot detect mutating isFetching guard, live-online invalidate can
 ```
+
+## Ronda 8 — auditoría independiente — código HEAD 939e8341001ab40d5f509a160f98438bf8387c04
+1. `get_pr_info(#390)` y REST `/pulls/390`: HEAD 939e8341001ab40d5f509a160f98438bf8387c04, base develop SHA `99a7b9de121d76f0614dbff52139beb08c3ddeec`, mergeable true / clean.
+2. `compare_commits(develop,feat/T-365-cancelacion-cadete-ofertas-historial)`: ahead 20 / behind 0, globs del diff contra develop limitados a archivos autorizados. `compare_commits(3bcf1e0..b05ff590)`: solo test UI de 150 líneas añadidas. Commit merge e79fb751 parent 2 `99a7b9de`.
+3. `fetch_file(request-offers.test.tsx, HEAD)`: test H19 QueryClientProvider real, `getByRole Cargar más`, `fireEvent.click`, `findByText Cadete Que Cancelo`, cursor real, `void queryClient.invalidateQueries`, segunda página deferred, `fetchStatus fetching`, asserts disabled y no requests competidoras; luego resolve y button enabled. `fetch_file(request-offers-list.tsx, HEAD)`: `isLoadMoreDisabled` contiene `Boolean(isFetching)` y otras condiciones + `handleLoadMore` guardado.
+4. `fetch_workflow_job_logs(117820848157)`: `checkout ref: 939e8341001ab40d5f509a160f98438bf8387c04`, `HEAD is now at 939e834`; Chromium `89 passed (22.4m)`; global-settings `6 passed (2.7m)` (3 nuevos T-369, 3 T-306). Job/status `e2e-preview` SUCCESS, run 39176723923. Sin flakes.
+5. `fetch_workflow_job_logs(117820745505)` unidad: `145 Test Files passed`; workflows #pass 79 #fail 0; ADR #pass 6 #fail 0. `fetch_workflow_job_logs(117820745300)`: pgTAP final `All tests successful. Files=30, Tests=2815, Result: PASS`. GitHub check runs de SHA HEAD: audit, build, lint, typecheck, unit, db-tests, bundle-budget, approval-policy SUCCESS.
+6. Modelo booleano aislado, ejecutado en este ambiente vía `node /tmp/pr390-r8-h19-model.cjs` (NO es test real React/Vitest ni reejecución del mutante del autor):
+```js
+'use strict';
+const assert = require('node:assert/strict');
+const disabled = s => Boolean(s.isFetching) || Boolean(s.isFetchingNextPage) || !s.isOnline || !s.synced;
+const mutantNoIsFetching = s => Boolean(s.isFetchingNextPage) || !s.isOnline || !s.synced;
+const scenarios = {
+  idle: {isFetching:false,isFetchingNextPage:false,isOnline:true,synced:true},
+  onlineInvalidate: {isFetching:true,isFetchingNextPage:false,isOnline:true,synced:true},
+  offline: {isFetching:false,isFetchingNextPage:false,isOnline:false,synced:false},
+  reconnect: {isFetching:true,isFetchingNextPage:false,isOnline:true,synced:false}
+};
+for (const [name,s] of Object.entries(scenarios)) console.log(`${name}: real=${disabled(s)}, mutated=${mutantNoIsFetching(s)}`);
+assert.equal(disabled(scenarios.onlineInvalidate),true);
+assert.equal(mutantNoIsFetching(scenarios.onlineInvalidate),false);
+assert.equal(disabled(scenarios.idle),false);
+assert.equal(disabled(scenarios.offline),true);
+assert.equal(disabled(scenarios.reconnect),true);
+console.log('R8 H19 logical guard model PASS; not a React or Vitest execution');
+```
+Salida literal:
+```
+idle: real=false, mutated=false
+onlineInvalidate: real=true, mutated=false
+offline: real=true, mutated=true
+reconnect: real=true, mutated=true
+R8 H19 logical guard model PASS; not a React or Vitest execution
+```
+7. No se ejecutaron `pnpm` ni E2E locales, no se manipuló Supabase ni Vercel, no se dispararon workflows ni mutaciones contra el repo, no se alteró el código de la PR. No reejecutar CI por docs del revisor.

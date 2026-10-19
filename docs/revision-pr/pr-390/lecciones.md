@@ -34,3 +34,8 @@
 ## Ronda 7 — 2026-10-18
 - **H19:** mutación RED de una conjunción de guardas debe aislar la **rama individual** que se afirma proteger. Offline/reconnect no mata retirar `isFetching` porque `!online` o `!synced` sigue true. Agregar invalidación ONLINE con datos sincronizados.
 - **H20:** una CI/E2E GREEN contra HEAD antiguo no acredita cambios críticos que se mergearon después en develop (ej. specs T-369); comprobar behind y versión de workflows + pruebas antes de autorizar merge. Solo requerir nueva CI por merge FUNCIONAL, nunca por docs de revisión.
+
+## Ronda 8 — 2026-10-18
+- **H19:** un test que mata la mutación aislada de `isFetching` exige un estado con `online=true` y `offersSyncedAfterReconnect=true`; se añadió invalidación de consulta con segunda página deferred. E2E y CI verificados en SHA combinado, sin inventar mutación local del revisor.
+- **H20:** frente a nuevas suites E2E mergeradas a develop, integrar branch mediante merge normal y verificar checkout SHA exacto dentro del job trusted; aquí 89 Chromium + 6 global-settings (incluye T-369), sin flaky y behind=0.
+- **Alcance:** certificar Frente I no equivale a completar historial/CC de Frente II; mantener DoD explícitamente pendiente y la issue principal abierta.
