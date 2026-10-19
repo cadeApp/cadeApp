@@ -2295,3 +2295,232 @@ describe('CC-019: área de servicio de Aguilares con los barrios periféricos', 
     expect(isWithinAguilaresBounds(-27.38, -65.58)).toBe(true);
   });
 });
+
+describe('CC-032 — get_request_cancellation_history en el contrato y el fake', () => {
+  const C3 = '20000000-0000-4000-8000-000000000003';
+  const OFFER_1 = '50000000-0000-4000-8000-000000000321';
+  const OFFER_2 = '50000000-0000-4000-8000-000000000322';
+  const T0 = '2026-10-18T20:00:00.000Z';
+
+  function setup() {
+    let clock = new Date(T0);
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => clock,
+      initialActor: { userId: COURIER_1, role: 'courier' },
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'matched',
+          acceptedOfferId: OFFER_1,
+          assignedCourierId: COURIER_1,
+          expiresAt: '2026-10-18T23:00:00.000Z',
+        },
+      ],
+      initialOffers: [
+        { offerId: OFFER_1, requestId: REQ_1, courierId: COURIER_1, amountArs: 2000, status: 'accepted' },
+      ],
+      initialCouriers: [
+        { courierId: COURIER_1, status: 'approved', available: true, displayName: 'Juan P.' },
+        { courierId: COURIER_2, status: 'approved', available: true, displayName: '  ' },
+        { courierId: C3, status: 'approved', available: true, displayName: 'Ajeno' },
+      ],
+    });
+    return {
+      fake,
+      tick(minutes: number) {
+        clock = new Date(clock.getTime() + minutes * 60_000);
+      },
+    };
+  }
+
+  /** Cadete 1 cancela, el pedido vuelve a published, se asigna al cadete 2 y también cancela. */
+  async function twoCancellations() {
+    const ctx = setup();
+    expect(
+      await ctx.fake.courier_cancel_match({ requestId: REQ_1, reason: 'Problema con el vehículo' })
+    ).toMatchObject({ ok: true, data: { status: 'published' } });
+    ctx.tick(5);
+    ctx.fake.seedOffer({ offerId: OFFER_2, requestId: REQ_1, courierId: COURIER_2, amountArs: 2100, status: 'accepted' });
+    ctx.fake.seedRequest({
+      requestId: REQ_1,
+      merchantId: MERCHANT_1,
+      status: 'matched',
+      acceptedOfferId: OFFER_2,
+      assignedCourierId: COURIER_2,
+      expiresAt: '2026-10-18T23:00:00.000Z',
+    });
+    ctx.fake.setActor({ userId: COURIER_2, role: 'courier' });
+    expect(
+      await ctx.fake.courier_cancel_match({ requestId: REQ_1, reason: 'se me rompió la moto' })
+    ).toMatchObject({ ok: true, data: { status: 'published' } });
+    return ctx;
+  }
+
+  it('es parte del contrato con los códigos del CC', () => {
+    expect(ALL_RPC_NAMES).toContain('get_request_cancellation_history');
+    expect(RPC_CONTRACTS.get_request_cancellation_history.errorCodes).toEqual([
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+    ]);
+  });
+
+  it('el comercio dueño ve las dos cancelaciones en orden desc, con categoría normalizada y sin texto libre', async () => {
+    const { fake } = await twoCancellations();
+    fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+    const result = await fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.version).toBe('1.0');
+    expect(result.data.events.map((e) => [e.actor?.id, e.category, e.categoryLabel, e.rawReason])).toEqual([
+      [COURIER_2, 'other', 'Otro motivo', null],
+      [COURIER_1, 'vehicle_breakdown', 'Problema con el vehículo', null],
+    ]);
+    expect(result.data.events[0]?.actor?.displayName).toBe('Repartidor');
+    expect(result.data.events[1]?.offerId).toBe(OFFER_1);
+    expect(result.data.pagination).toEqual({ limit: 50, hasMore: false, nextCursor: null });
+    // La solicitud reabierta no está cancelada (4-A).
+    expect(fake.getRequest(REQ_1)?.status).toBe('published');
+  });
+
+  it('cada repartidor ve solo sus propias cancelaciones; uno que no participó recibe NOT_FOUND', async () => {
+    const { fake } = await twoCancellations();
+    fake.setActor({ userId: COURIER_1, role: 'courier' });
+    const own = await fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(own.ok && own.data.events.map((e) => e.actor?.id)).toEqual([COURIER_1]);
+    expect(own.ok && own.data.events[0]?.rawReason).toBeNull();
+
+    fake.setActor({ userId: C3, role: 'courier' });
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_1 })).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('el admin ve todo con rawReason; un comercio ajeno o un pedido inexistente dan NOT_FOUND', async () => {
+    const { fake } = await twoCancellations();
+    fake.setActor({ userId: ADMIN_1, role: 'admin' });
+    const admin = await fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(admin.ok && admin.data.events.map((e) => e.rawReason)).toEqual([
+      'se me rompió la moto',
+      'Problema con el vehículo',
+    ]);
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_MISSING })).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+    });
+
+    fake.setActor({ userId: MERCHANT_2, role: 'merchant' });
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_1 })).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('valida el id y el cursor antes del rol, y exige sesión y consentimiento activo', async () => {
+    const { fake } = await twoCancellations();
+    fake.setActor({ userId: C3, role: 'courier', consentStatus: 'pending' });
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_1 })).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED_ACTOR',
+    });
+    const partialCursor = { requestId: REQ_1, cursor: { beforeId: REQ_1 } } as unknown as Parameters<
+      typeof fake.get_request_cancellation_history
+    >[0];
+    expect(await fake.get_request_cancellation_history(partialCursor)).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(await fake.get_request_cancellation_history({ requestId: 'no-uuid' })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    fake.setActor({ userId: '', role: null });
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_1 })).toEqual({
+      ok: false,
+      code: 'UNAUTHENTICATED',
+    });
+  });
+
+  it('pagina por (createdAt, id) desc sobre las filas ya filtradas por actor y acción', async () => {
+    const ctx = setup();
+    const row = (id: string, actorId: string | null, createdAt: string, action = 'courier_cancel_match') => ({
+      id,
+      requestId: REQ_1,
+      offerId: null,
+      actorId,
+      action,
+      reason: 'Tuve un imprevisto',
+      createdAt,
+    });
+    const a1 = '32000000-0000-4000-8000-0000000000a1';
+    const b2 = '32000000-0000-4000-8000-0000000000b2';
+    const a3 = '32000000-0000-4000-8000-0000000000a3';
+    const tieLow = '32000000-0000-4000-8000-0000000000c1';
+    const tieHigh = '32000000-0000-4000-8000-0000000000c2';
+    ctx.fake.seedCancellationReason(row(a1, COURIER_1, '2026-10-18T20:01:00.000Z'));
+    ctx.fake.seedCancellationReason(row(b2, COURIER_2, '2026-10-18T20:02:00.000Z'));
+    ctx.fake.seedCancellationReason(row(a3, COURIER_1, '2026-10-18T20:03:00.000Z'));
+    ctx.fake.seedCancellationReason(
+      row('32000000-0000-4000-8000-0000000000d1', MERCHANT_1, '2026-10-18T20:04:00.000Z', 'cancel_request')
+    );
+
+    ctx.fake.setActor({ userId: COURIER_1, role: 'courier' });
+    const first = await ctx.fake.get_request_cancellation_history({ requestId: REQ_1, limit: 1 });
+    expect(first.ok && first.data.events.map((e) => e.id)).toEqual([a3]);
+    expect(first.ok && first.data.pagination).toEqual({
+      limit: 1,
+      hasMore: true,
+      nextCursor: { beforeCreatedAt: '2026-10-18T20:03:00.000Z', beforeId: a3 },
+    });
+    const second = await ctx.fake.get_request_cancellation_history({
+      requestId: REQ_1,
+      limit: 1,
+      cursor: first.ok ? first.data.pagination.nextCursor : null,
+    });
+    expect(second.ok && second.data.events.map((e) => e.id)).toEqual([a1]);
+    expect(second.ok && second.data.pagination).toEqual({ limit: 1, hasMore: false, nextCursor: null });
+
+    // El comercio no ve el cancel_request; un empate exacto desempata por id desc; actor null sin perfil.
+    ctx.fake.seedCancellationReason(row(tieLow, null, '2026-10-18T20:05:00.000Z'));
+    ctx.fake.seedCancellationReason(row(tieHigh, COURIER_2, '2026-10-18T20:05:00.000Z'));
+    ctx.fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+    const merchant = await ctx.fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(merchant.ok && merchant.data.events.map((e) => e.id)).toEqual([tieHigh, tieLow, a3, b2, a1]);
+    expect(merchant.ok && merchant.data.events[1]?.actor).toBeNull();
+    expect(merchant.ok && merchant.data.events.every((e) => e.category === 'unforeseen_issue')).toBe(true);
+  });
+
+  it('clasifica por coincidencia exacta (sin subcadenas) y admite los códigos canónicos', async () => {
+    const ctx = setup();
+    const reasons: Array<[string, string]> = [
+      ['  TUVE UN IMPREVISTO ', 'unforeseen_issue'],
+      ['problema con el vehiculo', 'vehicle_breakdown'],
+      ['pickup_issue', 'pickup_issue'],
+      ['Emergencia', 'personal_emergency'],
+      ['Otro', 'other'],
+      ['Emergencia médica en casa', 'other'],
+      ['constructor', 'other'],
+    ];
+    reasons.forEach(([reason], i) =>
+      ctx.fake.seedCancellationReason({
+        id: `32000000-0000-4000-8000-0000000001${String(i).padStart(2, '0')}`,
+        requestId: REQ_1,
+        offerId: null,
+        actorId: COURIER_1,
+        action: 'courier_cancel_match',
+        reason,
+        createdAt: `2026-10-18T21:0${i}:00.000Z`,
+      })
+    );
+    ctx.fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+    const result = await ctx.fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(result.ok && [...result.data.events].reverse().map((e) => e.category)).toEqual(
+      reasons.map(([, category]) => category)
+    );
+  });
+});

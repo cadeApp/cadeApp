@@ -524,6 +524,85 @@ export const getMerchantRequestPrivateFieldsOutputSchema = z
   })
   .strict();
 
+// get_request_cancellation_history (CC-032)
+// Cancelaciones de asignación (`courier_cancel_match`) de un pedido: el comercio dueño ve todas, el repartidor solo
+// las propias y el admin todas con el texto libre. `rawReason` llega en null salvo para el admin (D3).
+export const COURIER_CANCELLATION_CATEGORIES = [
+  'unforeseen_issue',
+  'vehicle_breakdown',
+  'pickup_issue',
+  'personal_emergency',
+  'other',
+] as const;
+export const courierCancellationCategorySchema = z.enum(COURIER_CANCELLATION_CATEGORIES);
+export type CourierCancellationCategory = z.infer<typeof courierCancellationCategorySchema>;
+
+export const COURIER_CANCELLATION_CATEGORY_LABELS = {
+  unforeseen_issue: 'Tuve un imprevisto',
+  vehicle_breakdown: 'Problema con el vehículo',
+  pickup_issue: 'No puedo llegar al punto de retiro',
+  personal_emergency: 'Emergencia',
+  other: 'Otro motivo',
+} as const satisfies Record<CourierCancellationCategory, string>;
+
+const requestCancellationHistoryCursorSchema = z
+  .object({
+    beforeCreatedAt: isoTimestampSchema,
+    beforeId: uuidSchema,
+  })
+  .strict();
+
+export const getRequestCancellationHistoryInputSchema = z.object({
+  requestId: uuidSchema,
+  limit: z.number().int().min(1).max(100).optional(),
+  cursor: requestCancellationHistoryCursorSchema.nullable().optional(),
+});
+
+const requestCancellationHistoryEventSchema = z
+  .object({
+    id: uuidSchema,
+    action: z.literal('courier_cancel_match'),
+    actionLabel: z.literal('Cancelado por el repartidor'),
+    category: courierCancellationCategorySchema,
+    categoryLabel: z.string().min(1),
+    createdAt: isoTimestampSchema,
+    actor: z
+      .object({
+        id: uuidSchema,
+        role: z.literal('courier'),
+        displayName: z.string().min(1),
+      })
+      .strict()
+      .nullable(),
+    offerId: uuidSchema.nullable(),
+    rawReason: z.string().nullable(),
+  })
+  .strict()
+  .refine((event) => event.categoryLabel === COURIER_CANCELLATION_CATEGORY_LABELS[event.category], {
+    message: 'categoryLabel no corresponde a category',
+  });
+
+export const getRequestCancellationHistoryOutputSchema = z
+  .object({
+    version: z.literal('1.0'),
+    requestId: uuidSchema,
+    events: z.array(requestCancellationHistoryEventSchema),
+    pagination: z
+      .object({
+        limit: z.number().int().min(1).max(100),
+        hasMore: z.boolean(),
+        nextCursor: requestCancellationHistoryCursorSchema.nullable(),
+      })
+      .strict()
+      .refine((pagination) => pagination.hasMore === (pagination.nextCursor !== null), {
+        message: 'hasMore y nextCursor deben coincidir',
+      }),
+  })
+  .strict();
+
+export type RequestCancellationHistory = z.infer<typeof getRequestCancellationHistoryOutputSchema>;
+export type RequestCancellationHistoryEvent = RequestCancellationHistory['events'][number];
+
 export const adminDecideCourierInputSchema = z.object({
   courierId: uuidSchema,
   decision: z.enum(['approved', 'rejected']),
@@ -1488,6 +1567,17 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  get_request_cancellation_history: {
+    inputSchema: getRequestCancellationHistoryInputSchema,
+    outputSchema: getRequestCancellationHistoryOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
 } as const;
 
 export const ALL_RPC_NAMES = [
@@ -1527,6 +1617,7 @@ export const ALL_RPC_NAMES = [
   'admin_get_merchant_publication_credits',
   'admin_list_publication_plans',
   'get_my_publication_balance',
+  'get_request_cancellation_history',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 
 export type RpcName = (typeof ALL_RPC_NAMES)[number];
