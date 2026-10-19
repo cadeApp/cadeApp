@@ -311,6 +311,7 @@ export async function getRequestOffersLiveServer(
     `
     )
     .eq('request_id', parsedId.data)
+    .eq('status', 'pending')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(LIVE_PAGE_SIZE + 1);

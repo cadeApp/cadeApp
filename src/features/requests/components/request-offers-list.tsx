@@ -85,9 +85,12 @@ export function RequestOffersList({
     offers,
     hasNextPage,
     fetchNextPage,
+    isFetching,
     isFetchingNextPage,
     isError,
     refetch,
+    isOnline = true,
+    offersSyncedAfterReconnect = true,
   } = useRequestOffers(request.id, initialOffers, initialNextCursor ?? null);
   const [sortOrder, setSortOrder] = useState<OfferSortOrder>('doc_level');
   const [selectedOffer, setSelectedOffer] = useState<MerchantOfferItem | null>(null);
@@ -138,18 +141,39 @@ export function RequestOffersList({
     return sortOffersForMerchant(offers, sortOrder);
   }, [offers, sortOrder]);
 
+  const canAccept = request.status === 'published' && isOnline && offersSyncedAfterReconnect;
+  const isOfferEligible = (o: MerchantOfferItem) =>
+    o.status === 'pending' && canAccept && !isExpired && !isReconciling;
+
+  // PR390-H17: El botón y handler de Cargar más se bloquean mientras haya peticiones en vuelo,
+  // la app esté offline o la reconexión aún no haya completado la sincronización total.
+  const isLoadMoreDisabled =
+    Boolean(isFetching) ||
+    Boolean(isFetchingNextPage) ||
+    !isOnline ||
+    !offersSyncedAfterReconnect;
+
+  const handleLoadMore = () => {
+    if (isLoadMoreDisabled || !hasNextPage) return;
+    void fetchNextPage();
+  };
+
+  // PR390-H05: Una vez que el hook entrega lista actual, la fuente de verdad de elegibilidad es offers (la query del cliente).
+  // Si la oferta seleccionada desaparece de la lista actual, pasa a terminal o el pedido deja de ser aceptable, cerrar modal.
+  // No borrar acceptError aquí para comunicar error accesible aun si el modal desaparece tras refetch.
+  useEffect(() => {
+    if (!selectedOffer) return;
+    const currentOffer = offers.find((o) => o.id === selectedOffer.id);
+    if (!currentOffer || currentOffer.status !== 'pending' || !canAccept) {
+      setSelectedOffer(null);
+    }
+  }, [offers, canAccept, selectedOffer]);
+
   const handleOpenAcceptModal = (offer: MerchantOfferItem) => {
     const currentExpired = Boolean(
       request.expiresAt && new Date(request.expiresAt).getTime() <= Date.now()
     );
-    if (
-      !isAcceptableStatus ||
-      currentExpired ||
-      isReconciling ||
-      (offer.status && offer.status !== 'pending')
-    ) {
-      return;
-    }
+    if (!isOfferEligible(offer) || currentExpired || isReconciling) return;
     setAcceptError(null);
     setSelectedOffer(offer);
   };
@@ -174,18 +198,30 @@ export function RequestOffersList({
       return;
     }
 
+    if (!canAccept) return;
+
+    const currentOffer = offers.find((o) => o.id === selectedOffer.id);
+    if (!currentOffer || currentOffer.status !== 'pending') {
+      setSelectedOffer(null);
+      setAcceptError('Esta oferta ya no está disponible.');
+      return;
+    }
+
     setIsSubmitting(true);
     setAcceptError(null);
 
     try {
-      const res = await acceptOfferAction({ offerId: selectedOffer.id });
+      const res = await acceptOfferAction({ offerId: currentOffer.id });
       if (res.ok) {
         notify.success('¡Oferta aceptada! El repartidor ya va en camino.');
         setSelectedOffer(null);
-        onAcceptSuccess?.(selectedOffer.id);
+        onAcceptSuccess?.(currentOffer.id);
         router.replace(`/trips/${request.id}`);
       } else {
-        if (res.code === 'ALREADY_MATCHED') {
+        if (res.code === 'OFFER_NOT_PENDING') {
+          setAcceptError('Esta oferta ya no está disponible.');
+          void refetch();
+        } else if (res.code === 'ALREADY_MATCHED') {
           setIsReconciling(true);
           setAcceptError(
             'Esta solicitud ya fue asignada a otro repartidor o la oferta no está disponible.'
@@ -193,12 +229,14 @@ export function RequestOffersList({
           notify.error('Esta solicitud ya fue asignada a otro repartidor.');
           setSelectedOffer(null);
           router.refresh();
+          void refetch();
         } else if (res.code === 'REQUEST_EXPIRED') {
           setIsReconciling(true);
           setAcceptError('La solicitud ha expirado.');
           notify.error('La solicitud ha expirado.');
           setSelectedOffer(null);
           router.refresh();
+          void refetch();
         } else {
           setAcceptError('No se pudo aceptar la oferta. Por favor, intentá nuevamente.');
         }
@@ -465,7 +503,7 @@ export function RequestOffersList({
                   </div>
                 </div>
 
-                {isAcceptableStatus && (!offer.status || offer.status === 'pending') ? (
+                {isOfferEligible(offer) ? (
                   <Button
                     type="button"
                     variant="default"
@@ -488,8 +526,8 @@ export function RequestOffersList({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void fetchNextPage()}
-                disabled={isFetchingNextPage}
+                onClick={handleLoadMore}
+                disabled={isLoadMoreDisabled}
               >
                 {isFetchingNextPage
                   ? requestsCopy.offers.loadingMore
@@ -569,6 +607,7 @@ export function RequestOffersList({
               type="button"
               variant="default"
               isPending={isSubmitting}
+              disabled={!selectedOffer || !canAccept || isSubmitting || isReconciling}
               onClick={handleConfirmAccept}
             >
               Sí, aceptar

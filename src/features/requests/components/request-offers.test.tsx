@@ -2,8 +2,10 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { RequestOffersList } from './request-offers-list';
 import { requestsCopy } from '../copy';
+import { requestKeys } from '../query-keys';
 import type { MerchantOfferItem, MerchantRequestDetail } from '../types';
 import type { RpcOutput } from '@/domain';
 
@@ -61,10 +63,12 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     realtimeCallback = null;
+    onlineManager.setOnline(true);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    onlineManager.setOnline(true);
   });
 
   async function flushRealtimeSetup() {
@@ -100,6 +104,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       insuranceStatus: 'verified',
       docLevel: 2,
       createdAt: '2026-09-24T01:00:00.000Z',
+      status: 'pending',
     },
     {
       id: '33333333-3333-3333-3333-333333333333',
@@ -113,6 +118,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       insuranceStatus: 'none',
       docLevel: 1,
       createdAt: '2026-09-24T01:05:00.000Z',
+      status: 'pending',
     },
     {
       id: '55555555-5555-5555-5555-555555555555',
@@ -126,6 +132,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       insuranceStatus: 'rejected',
       docLevel: 0,
       createdAt: '2026-09-24T01:02:00.000Z',
+      status: 'pending',
     },
   ];
 
@@ -406,6 +413,33 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       createdAt: '2026-09-26T11:40:00.000Z',
     };
 
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const urlStr =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+          ? input.toString()
+          : '';
+      if (urlStr.includes('cursorCreatedAt')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [page2Offer],
+            nextCursor: null,
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: initialOffers,
+          nextCursor: cursor,
+        }),
+      } as Response;
+    });
+
     render(
       <RequestOffersList
         request={mockRequest}
@@ -415,20 +449,11 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
     );
 
     const loadMoreBtn = screen.getByRole('button', { name: requestsCopy.offers.loadMore });
-    expect(loadMoreBtn).toBeDefined();
-
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: [page2Offer],
-        nextCursor: null,
-      }),
-    } as Response);
-
-    await act(async () => {
-      fireEvent.click(loadMoreBtn);
+    await waitFor(() => {
+      expect(loadMoreBtn.hasAttribute('disabled')).toBe(false);
     });
+
+    fireEvent.click(loadMoreBtn);
 
     await waitFor(() => {
       expect(screen.getByText('Esteban Q.')).toBeDefined();
@@ -538,6 +563,1055 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       expect(screen.getByText('Entrega 2:')).toBeDefined();
       expect(container.textContent).toContain('Paquete Mediano');
       expect(container.textContent).toContain('Transferencia');
+    });
+  });
+
+  describe('T-365: defensa de ofertas elegibles y estados terminales en RequestOffersList', () => {
+    const nonPendingStatuses = [
+      'accepted',
+      'rejected',
+      'withdrawn',
+      'expired',
+      'cancelled',
+      undefined,
+    ] as const;
+
+    it.each(nonPendingStatuses)(
+      'impide botón Aceptar, no abre modal y no invoca action para oferta con status %s',
+      (status) => {
+        const offerWithStatus: MerchantOfferItem = {
+          ...initialOffers[0]!,
+          status: status as MerchantOfferItem['status'],
+        };
+
+        render(<RequestOffersList request={mockRequest} initialOffers={[offerWithStatus]} />);
+
+        expect(screen.queryByRole('button', { name: /aceptar/i })).toBeNull();
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+      }
+    );
+
+    it('permite botón Aceptar y abre modal para oferta con status pending válido', () => {
+      render(<RequestOffersList request={mockRequest} initialOffers={[initialOffers[0]!]} />);
+
+      const acceptButton = screen.getByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButton);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+    });
+
+    it('impide botón Aceptar si request.status no es published (ej: matched)', () => {
+      render(
+        <RequestOffersList
+          request={{ ...mockRequest, status: 'matched' }}
+          initialOffers={initialOffers}
+        />
+      );
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /aceptar/i });
+      expect(acceptButtons).toHaveLength(0);
+    });
+
+    it('PR390-H05: cierra modal y no invoca action si query actualiza a lista vacía manteniendo initialOffers inmutable', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      let fetchOffersData: MerchantOfferItem[] = [...initialOffers];
+      vi.spyOn(global, 'fetch').mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: fetchOffersData,
+          nextCursor: null,
+        }),
+      } as Response));
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      // Entregar por fetch/QueryClient la respuesta posterior { data: [], nextCursor: null }
+      fetchOffersData = [];
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: requestKeys.offers(mockRequest.id) });
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+    });
+
+    it('PR390-H05: cierra modal y no invoca action si query actualiza la oferta a estado terminal manteniendo initialOffers inmutable', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      let fetchOffersData: MerchantOfferItem[] = [...initialOffers];
+      vi.spyOn(global, 'fetch').mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: fetchOffersData,
+          nextCursor: null,
+        }),
+      } as Response));
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      // Actualizar a estado terminal permitido por el contrato de live (withdrawn)
+      fetchOffersData = [
+        {
+          ...initialOffers[0]!,
+          status: 'withdrawn',
+        },
+      ];
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: requestKeys.offers(mockRequest.id) });
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+    });
+
+    it('cierra modal y bloquea confirmación si request deja de ser published', async () => {
+      const { rerender } = render(
+        <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+      );
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      rerender(
+        <RequestOffersList
+          request={{ ...mockRequest, status: 'matched' }}
+          initialOffers={initialOffers}
+        />
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+    });
+
+    describe('PR390-H13: sincronización post-reconexión y control de elegibilidad en UI', () => {
+      it('(1) offline: no CTA, no action', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        // En offline no hay CTA disponible
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        await waitFor(() => {
+          expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+        });
+        expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+      });
+
+      it('(2) inmediatamente al volver online y ANTES de resolver fetch: sigue sin CTA, no action', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        let resolveDeferred: ((res: Response) => void) | null = null;
+        const deferredPromise = new Promise<Response>((resolve) => {
+          resolveDeferred = resolve;
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        // Configurar fetch diferido para reconexión
+        vi.spyOn(global, 'fetch').mockImplementation(() => deferredPromise);
+
+        // Volver online: onlineManager es true, pero el fetch aún no resolvió
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        // Inmediatamente tras volver online y ANTES de resolver fetch:
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+        expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+
+        // Limpiar promesa diferida
+        await act(async () => {
+          if (resolveDeferred) {
+            resolveDeferred({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [], nextCursor: null }),
+            } as Response);
+          }
+          await deferredPromise;
+        });
+      });
+
+      it('(3) post resultado data:[]: sigue ausente el CTA', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        let resolveDeferred: ((res: Response) => void) | null = null;
+        const deferredPromise = new Promise<Response>((resolve) => {
+          resolveDeferred = resolve;
+        });
+        vi.spyOn(global, 'fetch').mockImplementation(() => deferredPromise);
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        // Resolver con data vacía (todas las ofertas fueron canceladas)
+        await act(async () => {
+          if (resolveDeferred) {
+            resolveDeferred({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [], nextCursor: null }),
+            } as Response);
+          }
+          await deferredPromise;
+        });
+
+        await waitFor(() => {
+          expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+        });
+        expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+      });
+
+      it('(4) post resultado con oferta pending nueva: recién entonces reaparece CTA', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        let resolveDeferred: ((res: Response) => void) | null = null;
+        const deferredPromise = new Promise<Response>((resolve) => {
+          resolveDeferred = resolve;
+        });
+        vi.spyOn(global, 'fetch').mockImplementation(() => deferredPromise);
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+
+        const newPendingOffer: MerchantOfferItem = {
+          ...initialOffers[0]!,
+          id: '55555555-5555-4555-8555-555555555555',
+          courierName: 'Nuevo Cadete',
+          status: 'pending',
+        };
+
+        await act(async () => {
+          if (resolveDeferred) {
+            resolveDeferred({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [newPendingOffer], nextCursor: null }),
+            } as Response);
+          }
+          await deferredPromise;
+        });
+
+        await waitFor(() => {
+          expect(screen.getAllByRole('button', { name: /^aceptar$/i })).toHaveLength(1);
+          expect(screen.getByText('Nuevo Cadete')).toBeDefined();
+        });
+      });
+
+      it('(5) fetch HTTP 500 / parse inválido mantiene bloqueo, permite reintento real', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        // Mock fetch que falla con 500
+        let fetchCallCount = 0;
+        vi.spyOn(global, 'fetch').mockImplementation(async () => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            return {
+              ok: false,
+              status: 500,
+            } as Response;
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ data: [...initialOffers], nextCursor: null }),
+          } as Response;
+        });
+
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        // Debe mantener bloqueo
+        await waitFor(() => {
+          expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+        });
+
+        // Error visible y botón de reintento presente
+        const retryBtn = await screen.findByRole('button', { name: /reintentar/i });
+        expect(retryBtn).toBeDefined();
+
+        // Ejecutar reintento real
+        await act(async () => {
+          fireEvent.click(retryBtn);
+        });
+
+        // Tras reintento exitoso, el CTA reaparece
+        await waitFor(() => {
+          expect(screen.getAllByRole('button', { name: /^aceptar$/i })).toHaveLength(
+            initialOffers.length
+          );
+        });
+      });
+
+      it('(6) dos ciclos y fetch iniciado antes del corte que termina tarde, sin desbloquear', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        let resolveOldFetch: ((res: Response) => void) | null = null;
+        const oldFetchPromise = new Promise<Response>((resolve) => {
+          resolveOldFetch = resolve;
+        });
+
+        vi.spyOn(global, 'fetch').mockImplementationOnce(() => oldFetchPromise);
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        // Ciclo 1: corte offline
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        // Ciclo 2: reconexión con fetch 2 diferido
+        let resolveNewFetch: ((res: Response) => void) | null = null;
+        const newFetchPromise = new Promise<Response>((resolve) => {
+          resolveNewFetch = resolve;
+        });
+        vi.spyOn(global, 'fetch').mockImplementation(() => newFetchPromise);
+
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        // Fetch viejo (iniciado antes del corte) resuelve ahora con ofertas viejas pending
+        await act(async () => {
+          if (resolveOldFetch) {
+            resolveOldFetch({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [...initialOffers], nextCursor: null }),
+            } as Response);
+          }
+          await oldFetchPromise;
+        });
+
+        // El fetch viejo NO debe desbloquear CTA
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+        expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+
+        // El fetch nuevo resuelve
+        await act(async () => {
+          if (resolveNewFetch) {
+            resolveNewFetch({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [...initialOffers], nextCursor: null }),
+            } as Response);
+          }
+          await newFetchPromise;
+        });
+
+        // Ahora sí reaparece CTA
+        await waitFor(() => {
+          expect(screen.getAllByRole('button', { name: /^aceptar$/i })).toHaveLength(
+            initialOffers.length
+          );
+        });
+      });
+
+      it('(7) T-333 reconexión y limpieza de listener intactas', () => {
+        const subscribeSpy = vi.spyOn(onlineManager, 'subscribe');
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        const { unmount } = render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+          </QueryClientProvider>
+        );
+
+        expect(subscribeSpy).toHaveBeenCalled();
+        unmount();
+      });
+    });
+
+    describe('PR390-H16: protección de reconexión multipágina en UI (2+ páginas)', () => {
+      it('con 2 páginas cargadas, durante el refetch post-reconexión mientras página 2 está en vuelo, los botones Aceptar están bloqueados', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        const offerPage1 = initialOffers[0];
+        if (!offerPage1) throw new Error('Falta offerPage1');
+        const cursor1 = {
+          createdAt: offerPage1.createdAt,
+          id: offerPage1.id,
+        };
+        const secondInitial = initialOffers[1];
+        if (!secondInitial) throw new Error('Falta secondInitial');
+        const offerX: MerchantOfferItem = {
+          ...secondInitial,
+          id: '99999999-9999-4999-8999-999999999999',
+          courierName: 'Cadete Que Cancelo',
+          status: 'pending',
+        };
+
+        let resolvePage2: ((res: Response) => void) | null = null;
+        const page2Promise = new Promise<Response>((resolve) => {
+          resolvePage2 = resolve;
+        });
+
+        // 1. Montaje con página 1 y cursor para página 2
+        const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                data: [offerX],
+                nextCursor: null,
+              }),
+            } as Response;
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response;
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList
+              request={mockRequest}
+              initialOffers={[offerPage1]}
+              initialNextCursor={cursor1}
+            />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        // Cargar página 2 de forma obligatoria (H18)
+        const loadMoreButton = screen.getByRole('button', { name: /cargar más/i });
+        await waitFor(() => {
+          expect(loadMoreButton.hasAttribute('disabled')).toBe(false);
+        });
+        fireEvent.click(loadMoreButton);
+        await screen.findByText('Cadete Que Cancelo');
+        expect(
+          fetchSpy.mock.calls.some(([callUrl]) =>
+            String(callUrl).includes(`cursorCreatedAt=${encodeURIComponent(cursor1.createdAt)}`)
+          )
+        ).toBe(true);
+
+        // Antes del corte: hay botones Aceptar disponibles
+        expect(screen.getAllByRole('button', { name: /^aceptar$/i }).length).toBeGreaterThan(0);
+
+        // 2. Corte de red (offline)
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        // Inmediatamente sin botones Aceptar
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+
+        // 3. Configurar refetch post-reconexión:
+        // Página 1 resuelve rápido con offerPage1
+        // Página 2 diferida
+        vi.spyOn(global, 'fetch').mockImplementation((input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return page2Promise;
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response);
+        });
+
+        // 4. Reconexión
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        // Inmediatamente tras volver online y mientras página 2 está en vuelo:
+        // PR390-H16: los botones Aceptar DEBEN permanecer bloqueados
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+        expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+
+        // 5. Resolver página 2 sin la oferta cancelada
+        await act(async () => {
+          if (resolvePage2) {
+            resolvePage2({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [], nextCursor: null }),
+            } as Response);
+          }
+          await page2Promise;
+        });
+
+        // Ahora que la consulta completa asentó: reaparece CTA solo para oferta válida
+        await waitFor(() => {
+          expect(screen.getAllByRole('button', { name: /^aceptar$/i })).toHaveLength(1);
+        });
+        expect(screen.queryByText('Cadete Que Cancelo')).toBeNull();
+      });
+    });
+
+    describe('PR390-H17: protección de Cargar más durante refetch e invalidación', () => {
+      it('mientras un refetch post-reconexión está en vuelo, Cargar más está disabled y su click no dispara peticiones competidoras', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        const offerPage1 = initialOffers[0];
+        if (!offerPage1) throw new Error('Falta offerPage1');
+        const cursor1 = {
+          createdAt: offerPage1.createdAt,
+          id: offerPage1.id,
+        };
+        const secondInitial = initialOffers[1];
+        if (!secondInitial) throw new Error('Falta secondInitial');
+        const offerX: MerchantOfferItem = {
+          ...secondInitial,
+          id: '99999999-9999-4999-8999-999999999999',
+          courierName: 'Cadete Que Cancelo',
+          status: 'pending',
+        };
+        const cursor2 = {
+          createdAt: offerX.createdAt,
+          id: offerX.id,
+        };
+
+        const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                data: [offerX],
+                nextCursor: cursor2,
+              }),
+            } as Response;
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response;
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList
+              request={mockRequest}
+              initialOffers={[offerPage1]}
+              initialNextCursor={cursor1}
+            />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        // Cargar página 2 de forma obligatoria
+        const loadMoreBtnBefore = screen.getByRole('button', { name: /cargar más/i });
+        await waitFor(() => {
+          expect(loadMoreBtnBefore.hasAttribute('disabled')).toBe(false);
+        });
+        fireEvent.click(loadMoreBtnBefore);
+        await screen.findByText('Cadete Que Cancelo');
+        expect(
+          fetchSpy.mock.calls.some(([callUrl]) =>
+            String(callUrl).includes(`cursorCreatedAt=${encodeURIComponent(cursor1.createdAt)}`)
+          )
+        ).toBe(true);
+
+        expect(screen.getAllByRole('button', { name: /^aceptar$/i }).length).toBeGreaterThan(0);
+
+        // Pasar a offline
+        act(() => {
+          onlineManager.setOnline(false);
+        });
+
+        // En offline, Cargar más DEBE estar disabled
+        const loadMoreBtnOffline = screen.getByRole('button', { name: /cargar más/i });
+        expect(loadMoreBtnOffline.hasAttribute('disabled')).toBe(true);
+
+        // Configurar refetch post-reconexión diferido en página 2
+        let resolvePage2: ((res: Response) => void) | null = null;
+        const page2Promise = new Promise<Response>((resolve) => {
+          resolvePage2 = resolve;
+        });
+
+        fetchSpy.mockImplementation((input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return page2Promise;
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response);
+        });
+
+        fetchSpy.mockClear();
+
+        // Reconectar a online
+        act(() => {
+          onlineManager.setOnline(true);
+        });
+
+        // Mientras la página 2 está en vuelo (isFetching === true, offersSyncedAfterReconnect === false):
+        const loadMoreBtnInFlight = screen.getByRole('button', { name: /cargar más/i });
+        expect(loadMoreBtnInFlight.hasAttribute('disabled')).toBe(true);
+
+        // Simular intento de click en Cargar más: NO debe disparar peticiones
+        const callsCountBefore = fetchSpy.mock.calls.length;
+        fireEvent.click(loadMoreBtnInFlight);
+        expect(fetchSpy.mock.calls.length).toBe(callsCountBefore);
+
+        // Botones Aceptar permanecen bloqueados (gate false)
+        expect(screen.queryAllByRole('button', { name: /^aceptar$/i })).toHaveLength(0);
+
+        // Resolver página 2
+        await act(async () => {
+          if (resolvePage2) {
+            resolvePage2({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [], nextCursor: cursor2 }),
+            } as Response);
+          }
+          await page2Promise;
+        });
+
+        // Tras el settle exitoso: CTA de ofertas pendientes disponibles y Cargar más habilitado
+        await waitFor(() => {
+          expect(screen.getAllByRole('button', { name: /^aceptar$/i })).toHaveLength(1);
+        });
+        const loadMoreBtnSettled = screen.getByRole('button', { name: /cargar más/i });
+        expect(loadMoreBtnSettled.hasAttribute('disabled')).toBe(false);
+      });
+    });
+
+    describe('PR390-H19: invalidación online bloquea Cargar más mientras query completa refresca páginas', () => {
+      it('PR390-H19: invalidación online bloquea Cargar más mientras query completa refresca páginas', async () => {
+        const queryClient = new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+
+        const offerPage1 = initialOffers[0];
+        if (!offerPage1) throw new Error('Falta offerPage1');
+        const cursor1 = {
+          createdAt: offerPage1.createdAt,
+          id: offerPage1.id,
+        };
+        const secondInitial = initialOffers[1];
+        if (!secondInitial) throw new Error('Falta secondInitial');
+        const offerX: MerchantOfferItem = {
+          ...secondInitial,
+          id: '99999999-9999-4999-8999-999999999999',
+          courierName: 'Cadete Que Cancelo',
+          status: 'pending',
+        };
+        const cursor3 = {
+          createdAt: '2026-09-24T00:50:00.000Z',
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        };
+
+        const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                data: [offerX],
+                nextCursor: cursor3,
+              }),
+            } as Response;
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response;
+        });
+
+        render(
+          <QueryClientProvider client={queryClient}>
+            <RequestOffersList
+              request={mockRequest}
+              initialOffers={[offerPage1]}
+              initialNextCursor={cursor1}
+            />
+          </QueryClientProvider>
+        );
+
+        await flushRealtimeSetup();
+
+        // 1. Cargar página 2 de forma obligatoria; permanece online y sincronizado
+        const loadMoreBtn = screen.getByRole('button', { name: /cargar más/i });
+        await waitFor(() => {
+          expect(loadMoreBtn.hasAttribute('disabled')).toBe(false);
+        });
+        fireEvent.click(loadMoreBtn);
+        await screen.findByText('Cadete Que Cancelo');
+        expect(
+          fetchSpy.mock.calls.some(([callUrl]) =>
+            String(callUrl).includes(`cursorCreatedAt=${encodeURIComponent(cursor1.createdAt)}`)
+          )
+        ).toBe(true);
+
+        // Al terminar la carga de pág 2, como cursor3 no es nulo, Cargar más sigue presente y habilitado
+        await waitFor(() => {
+          expect(loadMoreBtn.hasAttribute('disabled')).toBe(false);
+        });
+
+        // 2. Configurar refetch online con página 2 diferida
+        let resolvePage2: ((res: Response) => void) | null = null;
+        const page2Promise = new Promise<Response>((resolve) => {
+          resolvePage2 = resolve;
+        });
+
+        fetchSpy.mockImplementation((input) => {
+          const urlStr =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : '';
+          if (urlStr.includes('cursorCreatedAt')) {
+            return page2Promise;
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [offerPage1],
+              nextCursor: cursor1,
+            }),
+          } as Response);
+        });
+
+        fetchSpy.mockClear();
+
+        // 3. Disparar invalidación online (sin tocar onlineManager ni cortar red)
+        const queryKey = requestKeys.offers(mockRequest.id);
+        void queryClient.invalidateQueries({ queryKey });
+
+        // Esperar a que la consulta esté activamente en fetching (isFetching === true)
+        await waitFor(() => {
+          const state = queryClient.getQueryState(queryKey);
+          expect(state?.fetchStatus).toBe('fetching');
+        });
+
+        // H19: Online=true y offersSyncedAfterReconnect=true.
+        // La ÚNICA guarda que bloquea Cargar más es Boolean(isFetching).
+        expect(loadMoreBtn.hasAttribute('disabled')).toBe(true);
+
+        // Simular intento de click durante la invalidación: NO debe disparar llamadas extra
+        const callsCountBefore = fetchSpy.mock.calls.length;
+        fireEvent.click(loadMoreBtn);
+        expect(fetchSpy.mock.calls.length).toBe(callsCountBefore);
+
+        // 4. Resolver página 2
+        await act(async () => {
+          if (resolvePage2) {
+            resolvePage2({
+              ok: true,
+              status: 200,
+              json: async () => ({ data: [offerX], nextCursor: cursor3 }),
+            } as Response);
+          }
+          await page2Promise;
+        });
+
+        // Tras el settle, vuelve a idle y Cargar más se rehabilita
+        await waitFor(() => {
+          const state = queryClient.getQueryState(queryKey);
+          expect(state?.fetchStatus).toBe('idle');
+          expect(loadMoreBtn.hasAttribute('disabled')).toBe(false);
+        });
+      });
+    });
+
+    it('handleConfirmAccept valida membresía en offers y no llama a acceptOfferAction si la oferta desapareció', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      let fetchOffersData: MerchantOfferItem[] = [...initialOffers];
+      vi.spyOn(global, 'fetch').mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: fetchOffersData,
+          nextCursor: null,
+        }),
+      } as Response));
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      // Desaparece la oferta de la query
+      fetchOffersData = [];
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: requestKeys.offers(mockRequest.id) });
+      });
+
+      // El modal se cierra inmediatamente porque la oferta ya no existe en offers
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+    });
+
+    it('tras OFFER_NOT_PENDING invoca refetch/fetch, la respuesta actualizada elimina la oferta y el error se anuncia al usuario', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+
+      mockAcceptOfferAction.mockResolvedValueOnce({
+        ok: false,
+        code: 'OFFER_NOT_PENDING',
+      });
+
+      // Inicialmente devuelve initialOffers; tras refetch traerá la lista sin la oferta obsoleta (Joaquín R.)
+      let fetchCount = 0;
+      const remainingOffers = [initialOffers[1]!, initialOffers[2]!];
+      const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async () => {
+        fetchCount += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: fetchCount === 1 ? initialOffers : remainingOffers,
+            nextCursor: null,
+          }),
+        } as Response;
+      });
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      await act(async () => {
+        fireEvent.click(confirmButton);
+      });
+
+      // 1. mockAcceptOfferAction fue invocado
+      expect(mockAcceptOfferAction).toHaveBeenCalledWith({
+        offerId: initialOffers[0]!.id,
+      });
+
+      // 2. refetch() invoca fetch
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalled();
+      });
+
+      // 3. La respuesta actualizada elimina la oferta obsoleta del DOM
+      await waitFor(() => {
+        expect(screen.queryByText('Joaquín R.')).toBeNull();
+      });
+
+      // 4. El modal se cierra
+      expect(screen.queryByRole('dialog')).toBeNull();
+
+      // 5. El error se anuncia al usuario de forma accesible (role="alert")
+      const alerts = screen.getAllByRole('alert');
+      const errorAlert = alerts.find((a) =>
+        a.textContent?.includes('Esta oferta ya no está disponible.')
+      );
+      expect(errorAlert).toBeDefined();
     });
   });
 

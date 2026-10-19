@@ -964,6 +964,7 @@ export async function getMerchantRequestWithOffers(
     `
       )
       .eq('request_id', requestId)
+      .eq('status', 'pending')
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(51),

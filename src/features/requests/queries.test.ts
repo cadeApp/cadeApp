@@ -1126,6 +1126,248 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       );
     });
 
+    it('T-365: getMerchantRequestWithOffers filtra por status=pending en DB antes de paginar', async () => {
+      const offersEqCalls: unknown[][] = [];
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [
+            {
+              courierId: courierUuid(1),
+              displayName: 'Carlos',
+              vehicleType: 'moto',
+              licenseStatus: 'verified',
+              insuranceStatus: 'verified',
+              docLevel: 2,
+            },
+          ],
+        },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: mockRequestRow, error: null }),
+            };
+          }
+          interface MockTypedOffersBuilder {
+            select: () => MockTypedOffersBuilder;
+            eq: (...args: [string, unknown]) => MockTypedOffersBuilder;
+            order: (col?: string, opts?: { ascending?: boolean }) => MockTypedOffersBuilder;
+            limit: (count: number) => Promise<{ data: unknown[]; error: null }>;
+          }
+          if (table === 'offers') {
+            const builder: MockTypedOffersBuilder = {
+              select: vi.fn(function (this: MockTypedOffersBuilder) {
+                return this;
+              }),
+              eq: vi.fn(function (this: MockTypedOffersBuilder, ...args: [string, unknown]) {
+                offersEqCalls.push(args);
+                return this;
+              }),
+              order: vi.fn(function (this: MockTypedOffersBuilder) {
+                return this;
+              }),
+              limit: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: validUuid,
+                    courier_id: courierUuid(1),
+                    amount_ars: 2000,
+                    eta_minutes: 15,
+                    message: null,
+                    status: 'pending',
+                    created_at: '2026-09-26T12:00:00.000Z',
+                  },
+                ],
+                error: null,
+              }),
+            };
+            return builder;
+          }
+          if (table === 'delivery_request_drops') return mockDropsTable();
+          return {};
+        }),
+        rpc: withPrivateFields(couriersRpc),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(offersEqCalls).toEqual([
+        ['request_id', validUuid],
+        ['status', 'pending'],
+      ]);
+    });
+
+    it('T-365: getMerchantRequestWithOffers filtra funcionalmente 51+ ofertas mixtas y calcula nextOffersCursor conforme solo pending', async () => {
+      // 10 ofertas no pending (cancelled, rejected, expired, withdrawn) con timestamps más recientes
+      const nonPendingOffers = Array.from({ length: 10 }, (_, i) => ({
+        id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
+        request_id: validUuid,
+        courier_id: courierUuid(100 + i),
+        amount_ars: 1500 + i * 10,
+        eta_minutes: 10,
+        message: null,
+        status: (['cancelled', 'rejected', 'expired', 'withdrawn'] as const)[i % 4] ?? 'cancelled',
+        created_at: `2026-09-26T14:00:${String(i).padStart(2, '0')}.000Z`,
+      }));
+
+      // 55 ofertas pending con timestamps no monótonos respecto al id; índices 2 y 40 empatan en fecha para tie-breaker de id DESC
+      const pendingOffers = Array.from({ length: 55 }, (_, i) => ({
+        id: `11111111-1111-1111-1111-${String(i + 1).padStart(12, '0')}`,
+        request_id: validUuid,
+        courier_id: courierUuid(i + 1),
+        amount_ars: 2000 + i * 10,
+        eta_minutes: 15,
+        message: null,
+        status: 'pending',
+        created_at:
+          i === 40
+            ? '2026-09-26T12:15:00.000Z'
+            : i === 2
+              ? '2026-09-26T12:15:00.000Z'
+              : `2026-09-26T12:${String((i * 17) % 60).padStart(2, '0')}:${String((i * 31) % 60).padStart(2, '0')}.000Z`,
+      }));
+
+      const mixedOffers = [...nonPendingOffers, ...pendingOffers];
+
+      let filteredRows = [...mixedOffers];
+      interface SortOrderSpec {
+        col: string;
+        ascending: boolean;
+      }
+      const orderSpecs: SortOrderSpec[] = [];
+
+      interface MockFilteringOffersRow {
+        id: string;
+        request_id: string;
+        courier_id: string;
+        amount_ars: number;
+        eta_minutes: number;
+        message: string | null;
+        status: string;
+        created_at: string;
+      }
+
+      interface MockFilteringOffersBuilder {
+        select: () => MockFilteringOffersBuilder;
+        eq: (col: string, val: unknown) => MockFilteringOffersBuilder;
+        order: (col?: string, opts?: { ascending?: boolean }) => MockFilteringOffersBuilder;
+        limit: (count: number) => Promise<{ data: MockFilteringOffersRow[]; error: null }>;
+      }
+
+      const filteringBuilder: MockFilteringOffersBuilder = {
+        select: vi.fn(function (this: MockFilteringOffersBuilder) {
+          return this;
+        }),
+        eq: vi.fn(function (this: MockFilteringOffersBuilder, col: string, val: unknown) {
+          filteredRows = filteredRows.filter(
+            (r) =>
+              (r as Record<string, unknown>)[col === 'request_id' ? 'request_id' : col] ===
+              (col === 'request_id' ? validUuid : val)
+          );
+          return this;
+        }),
+        order: vi.fn(function (
+          this: MockFilteringOffersBuilder,
+          col?: string,
+          opts?: { ascending?: boolean }
+        ) {
+          orderSpecs.push({
+            col: col ?? 'id',
+            ascending: opts?.ascending ?? true,
+          });
+          return this;
+        }),
+        limit: vi.fn(function (this: MockFilteringOffersBuilder, count: number) {
+          const sorted = [...filteredRows].sort((a, b) => {
+            for (const { col, ascending } of orderSpecs) {
+              const valA = (a as Record<string, unknown>)[col];
+              const valB = (b as Record<string, unknown>)[col];
+              if (valA !== valB) {
+                if (typeof valA === 'string' && typeof valB === 'string') {
+                  return ascending ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                }
+                if (typeof valA === 'number' && typeof valB === 'number') {
+                  return ascending ? valA - valB : valB - valA;
+                }
+              }
+            }
+            return 0;
+          });
+          return Promise.resolve({
+            data: sorted.slice(0, count) as MockFilteringOffersRow[],
+            error: null,
+          });
+        }),
+      };
+
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: pendingOffers.map((p, idx) => ({
+            courierId: p.courier_id,
+            displayName: `Repartidor ${idx + 1}`,
+            vehicleType: 'moto',
+            licenseStatus: 'verified',
+            insuranceStatus: 'verified',
+            docLevel: 2,
+          })),
+        },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: mockRequestRow, error: null }),
+            };
+          }
+          if (table === 'offers') return filteringBuilder;
+          if (table === 'delivery_request_drops') return mockDropsTable();
+          return {};
+        }),
+        rpc: withPrivateFields(couriersRpc),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(result).not.toBeNull();
+      expect(result?.offers).toHaveLength(50);
+      expect(result?.offers.every((o) => o.status === 'pending')).toBe(true);
+
+      const sortedExpectedPending = [...pendingOffers].sort((a, b) => {
+        if (a.created_at !== b.created_at) {
+          return b.created_at.localeCompare(a.created_at);
+        }
+        return b.id.localeCompare(a.id);
+      });
+
+      expect(result?.offers.map((o) => o.id)).toEqual(
+        sortedExpectedPending.slice(0, 50).map((o) => o.id)
+      );
+
+      // Tie-breaker de id DESC sobre ofertas con misma fecha (índices 40 y 2 comparten timestamp)
+      const tieBreakerOfferHigh = result?.offers.find((o) => o.id === pendingOffers[40]!.id);
+      const tieBreakerOfferLow = result?.offers.find((o) => o.id === pendingOffers[2]!.id);
+      expect(tieBreakerOfferHigh).toBeDefined();
+      expect(tieBreakerOfferLow).toBeDefined();
+      const idxHigh = result?.offers.indexOf(tieBreakerOfferHigh!);
+      const idxLow = result?.offers.indexOf(tieBreakerOfferLow!);
+      expect(idxHigh).toBeLessThan(idxLow!);
+
+      const expected50thPending = sortedExpectedPending[49]!;
+      expect(result?.nextOffersCursor).toEqual({
+        createdAt: expected50thPending.created_at,
+        id: expected50thPending.id,
+      });
+    });
+
     function mockMerchantDetailClient(offers: readonly unknown[], rpc: ReturnType<typeof vi.fn>) {
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: vi.fn((table: string) => {

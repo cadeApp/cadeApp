@@ -67,39 +67,75 @@ export function useRequestOffers(
 
   // T-333: generación de cada fetch, incrementada al entrar realmente al queryFn (ver latch de reconexión).
   const fetchGenerationRef = useRef(0);
+  // PR390-H16: Generación del último fetch que completó exitosamente su resolución.
+  const lastResolvedGenerationRef = useRef(0);
+
+  const [isOnline, setIsOnline] = useState(() => onlineManager.isOnline());
+  const [offersSyncedAfterReconnect, setSyncedAfterReconnect] = useState(() =>
+    onlineManager.isOnline()
+  );
+  // PR390-H13: Generación mínima requerida para autorizar la sincronización post-reconexión.
+  const syncRequiredGenerationRef = useRef(0);
+  // PR390-H16: Timestamp de reconexión para validar que dataUpdatedAt sea posterior.
+  const reconnectEpochRef = useRef(0);
+
+  useEffect(() => {
+    let wasOnline = onlineManager.isOnline();
+    const unsubscribe = onlineManager.subscribe((online) => {
+      setIsOnline(online);
+      if (!online) {
+        setSyncedAfterReconnect(false);
+        wasOnline = false;
+      } else if (!wasOnline) {
+        wasOnline = true;
+        setSyncedAfterReconnect(false);
+        // Exigir que la consulta que autorice la caché haya iniciado DESPUÉS de este momento
+        syncRequiredGenerationRef.current = fetchGenerationRef.current + 1;
+        reconnectEpochRef.current = Date.now();
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const query = useInfiniteQuery(
     {
       queryKey,
       queryFn: async ({ pageParam }): Promise<LiveOffersResponse> => {
-        fetchGenerationRef.current += 1;
+        const generation = ++fetchGenerationRef.current;
+        let response: LiveOffersResponse;
         if (options?.fetcher) {
           const res = await options.fetcher(pageParam);
           if ('data' in res && 'nextCursor' in res) {
-            return res as LiveOffersResponse;
+            response = res as LiveOffersResponse;
+          } else {
+            response = { data: [...res], nextCursor: null };
           }
-          return { data: [...res], nextCursor: null };
-        }
+        } else {
+          let endpoint = `/api/live/requests/${encodeURIComponent(requestId)}/offers`;
+          if (pageParam) {
+            const queryParams = new URLSearchParams({
+              cursorCreatedAt: pageParam.createdAt,
+              cursorId: pageParam.id,
+            });
+            endpoint += `?${queryParams.toString()}`;
+          }
 
-        let endpoint = `/api/live/requests/${encodeURIComponent(requestId)}/offers`;
-        if (pageParam) {
-          const queryParams = new URLSearchParams({
-            cursorCreatedAt: pageParam.createdAt,
-            cursorId: pageParam.id,
+          const res = await fetch(endpoint, {
+            cache: 'no-store',
           });
-          endpoint += `?${queryParams.toString()}`;
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+
+          const json: unknown = await res.json();
+          const { liveOffersResponseSchema } = await import('@/lib/live-contracts');
+          response = liveOffersResponseSchema.parse(json);
         }
 
-        const res = await fetch(endpoint, {
-          cache: 'no-store',
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-
-        const json: unknown = await res.json();
-        const { liveOffersResponseSchema } = await import('@/lib/live-contracts');
-        return liveOffersResponseSchema.parse(json);
+        lastResolvedGenerationRef.current = generation;
+        return response;
       },
       initialPageParam: null as LivePageCursor | null,
       initialData: {
@@ -187,7 +223,15 @@ export function useRequestOffers(
     };
   }, [enabled, queryClient, requestId]);
 
-  const { fetchStatus, dataUpdatedAt, errorUpdatedAt, refetch } = query;
+  const {
+    fetchStatus,
+    dataUpdatedAt,
+    errorUpdatedAt,
+    isError,
+    isRefetchError,
+    error,
+    refetch,
+  } = query;
 
   useEffect(() => {
     const pending = reconnectDuringFetchRef.current;
@@ -204,6 +248,43 @@ export function useRequestOffers(
     }
   }, [fetchStatus, dataUpdatedAt, errorUpdatedAt, refetch, queryClient, requestId]);
 
+  // PR390-H16: La sincronización post-reconexión SOLO es válida cuando toda la consulta
+  // infinita (todas sus páginas secuenciales) asentó con éxito en idle, sin errores
+  // y con timestamp posterior a la reconexión.
+  useEffect(() => {
+    if (!isOnline || !onlineManager.isOnline()) {
+      return;
+    }
+
+    if (syncRequiredGenerationRef.current === 0) {
+      return;
+    }
+
+    const hasPostReconnectGeneration =
+      lastResolvedGenerationRef.current >= syncRequiredGenerationRef.current;
+    const isSettledSuccess =
+      fetchStatus === 'idle' &&
+      !isError &&
+      !isRefetchError &&
+      !error &&
+      dataUpdatedAt >= reconnectEpochRef.current &&
+      dataUpdatedAt >= errorUpdatedAt;
+    const noPendingReconnectFetch = reconnectDuringFetchRef.current === null;
+
+    if (hasPostReconnectGeneration && isSettledSuccess && noPendingReconnectFetch) {
+      syncRequiredGenerationRef.current = 0;
+      setSyncedAfterReconnect(true);
+    }
+  }, [
+    isOnline,
+    fetchStatus,
+    isError,
+    isRefetchError,
+    error,
+    dataUpdatedAt,
+    errorUpdatedAt,
+  ]);
+
   // Invalidación en tiempo real: NO muta la caché a mano; solo invalida con debounce
   useRealtimeInvalidation({
     channelName: `offers-${requestId}`,
@@ -218,12 +299,17 @@ export function useRequestOffers(
     offers: currentOffers,
     hasNextPage: query.hasNextPage,
     fetchNextPage: query.fetchNextPage,
+    isFetching: query.isFetching,
     isFetchingNextPage: query.isFetchingNextPage,
     isLoading: query.isLoading,
     isRefetching: query.isRefetching,
     isError: query.isError,
     error: query.error,
     refetch: query.refetch,
+    isOnline,
+    offersSyncedAfterReconnect,
+    fetchStatus: query.fetchStatus,
+    dataUpdatedAt: query.dataUpdatedAt,
   };
 }
 
