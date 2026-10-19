@@ -263,3 +263,60 @@ pnpm test:db: exit 1; ECONNREFUSED 127.0.0.1:54322
 - CI de implementación: 39219529022, unit/typecheck/lint/build/audit/bundle-budget/db-tests verdes.
 - E2E funcional: 39219634821, `e2e-preview` verde sobre el despliegue de la implementación; el informe del autor registra 91 Chromium y 6 global-settings.
 - Head documental `8f2c51f`: CI general verde; `approval-policy` rojo a la espera del informe y un E2E repetido estaba en curso al redactar la ronda.
+
+---
+
+# Ronda 4 — implementación `cbf5709299522fc306b0d6dae510f03ee763f6ec`
+
+## Sincronización y alcance
+
+```bash
+git fetch origin feat/T-373-historial-cancelaciones develop
+git diff --shortstat origin/develop...cbf5709299522fc306b0d6dae510f03ee763f6ec
+git diff --name-status a230d5f9fa034beb81c21224833f7f33925f8635..cbf5709299522fc306b0d6dae510f03ee763f6ec
+```
+
+Resultado completo: 31 archivos, +1905/-16 contra `origin/develop`. Delta desde la revisión anterior: cuatro rutas
+permitidas, +87/-7; no agrega dependencias ni toca contrato, SQL, RLS o datos sensibles.
+
+## PR425-H04 · mutación independiente
+
+Mutación temporal en `src/features/trips/cancellation-history-guard.ts`:
+
+```diff
+- if (result.code === 'INTERNAL_ERROR') throw new CancellationHistoryUnavailableError();
++ if (result.code === 'INTERNAL_ERROR') return onAbsent();
+```
+
+```text
+pnpm exec vitest run src/features/trips/cancellation-history.test.tsx
+baseline: 1 archivo / 19 pruebas, exit 0
+mutante: 1 archivo, 1 failed / 18 passed, exit 1
+restaurado: 1 archivo / 19 pruebas, exit 0
+```
+
+Falló el oráculo que exige `CancellationHistoryUnavailableError` y que `onAbsent` no sea invocado. El archivo se
+restauró desde `HEAD`; `git status --short` quedó vacío antes de documentar.
+
+## Batería local
+
+```text
+pnpm typecheck: exit 0
+pnpm lint: exit 0, sin warnings ni errores
+dirigidas: 12 archivos / 256 pruebas; exit 0
+pnpm test: 148 archivos; 2890/2890 pruebas ejecutadas, pero exit 1 por timeout de 10 s en afterAll de cc007.test.ts
+pnpm exec vitest run src/server/rpc/cc007.test.ts: 1 archivo / 13 pruebas; exit 0
+pnpm test:db: exit 1; ECONNREFUSED 127.0.0.1:54322
+```
+
+El timeout ocurrió al retirar un enlace temporal en el teardown de una suite ajena. La suite aislada pasó de inmediato;
+la evidencia oficial `unit` y `db-tests` del SHA exacto está verde.
+
+## Evidencia remota
+
+- CI exacto: https://github.com/cadeApp/cadeApp/actions/runs/39258271108 — SHA `cbf57092`; unit, typecheck, lint,
+  build, audit, bundle-budget y db-tests verdes.
+- E2E: https://github.com/cadeApp/cadeApp/actions/runs/39258408318 — status `e2e-preview` publicado sobre `cbf57092`;
+  90 Chromium + 1 flaky ajeno que pasó en retry, y 6 global-settings. El caso T-373 pasó.
+- Flaky ajeno: `courier-onboarding.spec.ts:852`, `page.goto` excedió 30 s en la primera ejecución y pasó en retry.
+- Head documental al iniciar: `0810a2890b41e5ac2283bd664c82475bec2deb68`; PR abierta y Draft.

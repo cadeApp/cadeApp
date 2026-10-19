@@ -1,6 +1,6 @@
 # Lecciones de la PR #425 para `AGENTS.md` y las reglas
 
-**Fuente:** 5 hallazgos (4 verificados y 1 bloqueante abierto). Datos crudos en
+**Fuente:** 5 hallazgos, todos arreglados y verificados. Datos crudos en
 [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
@@ -20,8 +20,8 @@ No se propone modificar `AGENTS.md` por esta única PR. Las reglas existentes ya
 
 ## Qué cambiar, en orden de impacto
 
-1. Resolver PR425-H04 preservando también la causa del error del historial hasta la decisión del fallback del
-   repartidor, con RED/GREEN de página para `NOT_FOUND` e `INTERNAL_ERROR`.
+1. Mantener la separación tipada entre ausencia y falla interna hasta el consumidor que elige la UI; H02 y H04 ya
+   quedaron protegidos por mutaciones independientes.
 2. Cumplir los controles existentes: autorizar el alcance antes de usarlo y agregar oráculos de orden sensibles a
    inversión.
 3. Si el colapso de resultados tipados reaparece en otra PR, proponer una regla/control común para que queries y
