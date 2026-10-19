@@ -1211,8 +1211,12 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     const courierConfirmBtn = page.getByRole('button', { name: /sí, cancelar/i });
     await courierConfirmBtn.click();
 
-    // Esperar redirección al feed
-    await expect(page).toHaveURL(/\/courier\/feed/, { timeout: 15000 });
+    // T-373 / 5-A (decisión de Lautaro073, 2026-10-19): después de cancelar se queda en /trips/[id], que ahora muestra
+    // «Cancelaste esta asignación» con su propio historial, en vez de redirigir al feed.
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Cancelaste esta asignación' })
+    ).toBeVisible({ timeout: 15000 });
+    await expect(page).toHaveURL(new RegExp(`/trips/${courierRequestId}`));
 
     // Oráculo PostgreSQL: solicitud vuelve a published, acceptedOfferId es null
     const courierInspection = await getRequestInspectionData(stagingContext, courierRequestId);

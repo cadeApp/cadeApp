@@ -4,6 +4,8 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
 import { getMerchantRequestWithOffers } from '@/features/requests/server';
 import { RequestOffersList } from '@/features/requests';
+import { CancellationHistoryCard } from '@/features/trips';
+import { loadCancellationHistoryForRequestDetail } from '@/features/trips/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { buttonVariants } from '@/ui/button';
@@ -40,6 +42,9 @@ export default async function CanonicalMerchantRequestDetailPage({
   ) {
     redirect(`/trips/${id}`);
   }
+
+  // T-373 / PR425-H03: el historial (CC-032) se lee solo en las ramas que lo muestran; la RPC exige que sea del comercio.
+  const cancellationHistory = await loadCancellationHistoryForRequestDetail(id, request.status);
 
   if (request.status === 'cancelled' || request.status === 'expired') {
     const isCancelled = request.status === 'cancelled';
@@ -95,6 +100,11 @@ export default async function CanonicalMerchantRequestDetailPage({
             </Link>
           </CardFooter>
         </Card>
+        {cancellationHistory ? (
+          <div className="mt-4">
+            <CancellationHistoryCard requestId={id} viewer="merchant" result={cancellationHistory} />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -134,12 +144,18 @@ export default async function CanonicalMerchantRequestDetailPage({
   }
 
   return (
-    <div className="px-4 py-4">
+    <div className="space-y-4 px-4 py-4">
       <RequestOffersList
         request={result.request}
         initialOffers={result.offers}
         initialNextCursor={result.nextOffersCursor}
       />
+      {/* T-373: un pedido reabierto tras una cancelación del repartidor sigue publicado; la cronología lo explica. */}
+      {cancellationHistory ? (
+        <div className="mx-auto w-full max-w-3xl">
+          <CancellationHistoryCard requestId={id} viewer="merchant" result={cancellationHistory} />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -5,7 +5,8 @@ import { createClient } from '@/server/supabase/server';
 import { callRequestRpc } from '@/server/rpc/requests';
 import { type ActionResult, type DomainErrorCode, ok, err } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
-import type { RpcOutput } from '@/domain/rpc-contracts';
+import type { RequestCancellationHistory, RpcOutput } from '@/domain/rpc-contracts';
+import { getRequestCancellationHistoryServer } from '@/server/rpc/request-cancellation-history';
 import {
   tripActionBaseSchema,
   courierCancelTripSchema,
@@ -14,6 +15,7 @@ import {
   republishTripSchema,
   markDropDeliveredSchema,
   markDropFailedSchema,
+  loadCancellationHistoryPageSchema,
 } from './schemas';
 
 export type MarkPickedUpResult = RpcOutput<'mark_picked_up'>;
@@ -223,4 +225,20 @@ export async function markDropFailedAction(
   revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/courier/feed');
   return ok(rpcResult.data);
+}
+
+/**
+ * T-373: siguiente página del historial de cancelaciones de asignación (CC-032). Lectura sin efectos: quién puede ver
+ * qué lo decide la RPC con la sesión del usuario (comercio dueño, repartidor con eventos propios o admin).
+ */
+export async function loadCancellationHistoryPageAction(
+  input: unknown
+): Promise<ActionResult<RequestCancellationHistory, DomainErrorCode>> {
+  const parsed = loadCancellationHistoryPageSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+
+  return getRequestCancellationHistoryServer({
+    requestId: parsed.data.requestId,
+    cursor: parsed.data.cursor,
+  });
 }

@@ -7,4 +7,7 @@ export * from './trip-skeleton';
 export * from './trip-error-state';
 export * from './trip-empty-state';
 export * from './trip-route-map';
+// T-373: cronología de cancelaciones de asignación (CC-032).
+export * from './cancellation-history-card';
+export * from './courier-cancelled-assignment-view';
 

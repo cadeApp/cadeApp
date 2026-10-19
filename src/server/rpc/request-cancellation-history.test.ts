@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { getRequestCancellationHistoryRpc } from './request-cancellation-history';
+import * as serverSupabase from '@/server/supabase/server';
+import {
+  getRequestCancellationHistoryRpc,
+  getRequestCancellationHistoryServer,
+} from './request-cancellation-history';
+
+vi.mock('@/server/supabase/server', () => ({ createClient: vi.fn() }));
 
 const requestId = '00000000-0000-4000-8000-0000000032e1';
 const otherRequestId = '00000000-0000-4000-8000-0000000032e2';
@@ -149,5 +155,20 @@ describe('CC-032 — get_request_cancellation_history server boundary', () => {
     const source = readFileSync('src/server/rpc/request-cancellation-history.ts', 'utf8');
     expect(source).toContain("import 'server-only'");
     expect(source).not.toContain('supabase/admin');
+  });
+});
+
+describe('T-373 — getRequestCancellationHistoryServer', () => {
+  it('usa el cliente de sesión del request y la misma validación de la frontera', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: history, error: null });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ rpc } as never);
+
+    expect(await getRequestCancellationHistoryServer({ requestId, limit: 1, cursor })).toEqual({ ok: true, data: history });
+    expect(rpc).toHaveBeenCalledOnce();
+  });
+
+  it('si no se puede crear el cliente de sesión devuelve INTERNAL_ERROR', async () => {
+    vi.mocked(serverSupabase.createClient).mockRejectedValue(new Error('cookies'));
+    expect(await getRequestCancellationHistoryServer({ requestId })).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
   });
 });

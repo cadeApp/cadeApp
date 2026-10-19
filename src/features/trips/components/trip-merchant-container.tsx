@@ -7,6 +7,7 @@ import type { TripDetails } from '../types';
 import { TripMerchantView } from './trip-merchant-view';
 import type { TripCancelDialogProps } from './trip-cancel-dialog';
 import type { TripReplaceCourierDialogProps } from './trip-replace-courier-dialog';
+import { CancellationHistoryCard, type CancellationHistoryResult } from './cancellation-history-card';
 
 const TripCancelDialog = dynamic<TripCancelDialogProps>(
   () => import('./trip-cancel-dialog').then((mod) => mod.TripCancelDialog),
@@ -26,9 +27,11 @@ import { getDomainErrorMessage } from '@/lib/error-messages';
 
 export interface TripMerchantContainerProps {
   trip: TripDetails;
+  /** T-373: primera página del historial de cancelaciones (CC-032), cargada por la página en paralelo. */
+  cancellationHistory?: CancellationHistoryResult;
 }
 
-export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
+export function TripMerchantContainer({ trip, cancellationHistory }: TripMerchantContainerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -124,6 +127,9 @@ export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
         onCancelTrip={handleOpenCancelModal}
         onReplaceCourier={() => setReplaceOpen(true)}
       />
+      {cancellationHistory ? (
+        <CancellationHistoryCard requestId={trip.id} viewer="merchant" result={cancellationHistory} />
+      ) : null}
       <TripReplaceCourierDialog
         open={replaceOpen}
         onOpenChange={handleReplaceOpenChange}

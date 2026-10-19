@@ -1046,5 +1046,25 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
         expect(mockRouterRefresh).toHaveBeenCalled();
       });
     });
+
+    it('T-373 / 5-A: al cancelar la asignación se queda en /trips/[id] (refresh) en vez de ir al feed', async () => {
+      mockCourierCancelTripAction.mockResolvedValue({ ok: true, data: { requestId: baseTrip.id, status: 'published' } });
+
+      render(<TripCourierContainer trip={baseTrip} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /no puedo hacer este viaje/i }));
+      fireEvent.click(await screen.findByRole('radio', { name: 'Problema con el vehículo' }));
+      fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+      fireEvent.click(await screen.findByRole('button', { name: /sí, cancelar/i }));
+
+      await waitFor(() => {
+        expect(mockCourierCancelTripAction).toHaveBeenCalledExactlyOnceWith({
+          requestId: baseTrip.id,
+          reason: 'Problema con el vehículo',
+        });
+        expect(mockRouterRefresh).toHaveBeenCalled();
+      });
+      expect(mockRouterPush).not.toHaveBeenCalled();
+    });
   });
 });
