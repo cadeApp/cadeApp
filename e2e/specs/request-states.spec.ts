@@ -1142,6 +1142,217 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     const matchedInspection = await getRequestInspectionData(stagingContext, matchedRequestId);
     expect(matchedInspection.requestStatus).toBe('matched');
   });
+
+  // ---------------------------------------------------------------------------
+  // T-362: Motivos de cancelación específicos por rol en la vista de viaje
+  // ---------------------------------------------------------------------------
+  test('T-362 (§5.1): Motivos de cancelación específicos en vista de viaje (/trips/[id]) para cadete y comercio', async ({
+    page,
+    browser,
+    stagingContext,
+    loginAsCourier,
+    loginAsMerchant,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    const otherCourier = stagingContext.courierUsers?.[1];
+    if (!merchant || !courier || !otherCourier) {
+      throw new Error(
+        '[E2E Precondition Error] Se requieren merchant, courier y un segundo courier (no asignado) en stagingContext'
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // 1. Courier en matched: cancelación pre-retiro en /trips/[id]
+    // -------------------------------------------------------------------------
+    const courierSeedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    const courierRequestId = courierSeedResult.requestId;
+
+    await loginAsCourier(0, page);
+    await page.goto(`/trips/${courierRequestId}`);
+    await expect(page).toHaveURL(new RegExp(`/trips/${courierRequestId}`));
+    await expect(page.getByRole('heading', { name: /viaje en curso/i })).toBeVisible({ timeout: 10000 });
+
+    const courierCancelBtn = page.getByRole('button', { name: /no puedo hacer este viaje/i });
+    await expect(courierCancelBtn).toBeVisible({ timeout: 10000 });
+    await courierCancelBtn.click();
+
+    // Modal de cancelación de cadete:
+    // - Título: ¿Por qué cancelás este viaje?
+    // - Opciones de cadete presentes: Tuve un imprevisto, Problema con el vehículo, No puedo llegar al punto de retiro, Emergencia, Otro (H03)
+    // - Opciones de comercio ausentes: Ya no hace falta, Lo resolví de otra forma, Me equivoqué en los datos
+    await expect(page.getByText('¿Por qué cancelás este viaje?')).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Tuve un imprevisto' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Problema con el vehículo' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'No puedo llegar al punto de retiro' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Emergencia' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Otro' })).toBeVisible();
+
+    await expect(page.getByRole('radio', { name: 'Ya no hace falta' })).not.toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Lo resolví de otra forma' })).not.toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Me equivoqué en los datos' })).not.toBeVisible();
+
+    // Elegir "Problema con el vehículo" y avanzar a paso 2
+    await page.getByRole('radio', { name: 'Problema con el vehículo' }).click();
+    const courierContinueBtn = page.getByRole('button', { name: /continuar/i });
+    await expect(courierContinueBtn).toBeEnabled();
+    await courierContinueBtn.click();
+
+    // Paso 2: copy de liberación/republicación (no definitiva)
+    await expect(page.getByText('¿Confirmás que no podés hacer este viaje?')).toBeVisible();
+    await expect(page.getByText(/La solicitud volverá a publicarse/i)).toBeVisible();
+    await expect(page.getByText(/cancelación definitiva/i)).not.toBeVisible();
+
+    const courierConfirmBtn = page.getByRole('button', { name: /sí, cancelar/i });
+    await courierConfirmBtn.click();
+
+    // Esperar redirección al feed
+    await expect(page).toHaveURL(/\/courier\/feed/, { timeout: 15000 });
+
+    // Oráculo PostgreSQL: solicitud vuelve a published, acceptedOfferId es null
+    const courierInspection = await getRequestInspectionData(stagingContext, courierRequestId);
+    expect(courierInspection.requestStatus).toBe('published');
+    expect(courierInspection.acceptedOfferId).toBeNull();
+    const courierReason = courierInspection.cancellationReasons?.find(
+      (r) => r.action === 'courier_cancel_match'
+    );
+    expect(courierReason?.reason).toBe('Problema con el vehículo');
+    expect(courierReason?.actorId).toBe(courier.id);
+
+    // -------------------------------------------------------------------------
+    // 2. Merchant en matched: cancelación desde /trips/[id] y control de acceso (H01, R01, R02)
+    // -------------------------------------------------------------------------
+    const merchantSeedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    const merchantRequestId = merchantSeedResult.requestId;
+
+    // Verificar en DB que la solicitud está efectivamente en matched con acceptedOfferId no nulo (R02)
+    const initialMatchedInspection = await getRequestInspectionData(stagingContext, merchantRequestId);
+    expect(initialMatchedInspection.requestStatus).toBe('matched');
+    expect(initialMatchedInspection.acceptedOfferId).not.toBeNull();
+
+    const merchantContext = await browser.newContext();
+    try {
+      const merchantPage = await merchantContext.newPage();
+      await loginAsMerchant(merchantPage);
+      await merchantPage.goto(`/trips/${merchantRequestId}`);
+      await expect(merchantPage).toHaveURL(new RegExp(`/trips/${merchantRequestId}`));
+      await expect(merchantPage.getByRole('heading', { name: /viaje en curso/i })).toBeVisible({ timeout: 10000 });
+
+      const merchantCancelBtn = merchantPage.getByRole('button', { name: /cancelar envío/i });
+      await expect(merchantCancelBtn).toBeVisible({ timeout: 10000 });
+
+      // ANTES de cancelar, comprobar que un actor ajeno (courier no asignado) no tiene acceso al viaje en matched (R02)
+      const unauthorizedContext = await browser.newContext();
+      try {
+        const unauthorizedPage = await unauthorizedContext.newPage();
+        await loginAsCourier(1, unauthorizedPage);
+        await unauthorizedPage.goto(`/trips/${merchantRequestId}`);
+
+        // Debe mostrar estado vacío/404 sin datos ni botones del viaje en matched
+        await expect(unauthorizedPage.getByText('Viaje no encontrado')).toBeVisible({ timeout: 10000 });
+        await expect(unauthorizedPage.getByRole('heading', { name: /viaje en curso/i })).not.toBeVisible();
+        await expect(unauthorizedPage.getByRole('button', { name: /no puedo hacer este viaje/i })).not.toBeVisible();
+        await expect(unauthorizedPage.getByRole('button', { name: /cancelar envío/i })).not.toBeVisible();
+      } finally {
+        await unauthorizedContext.close();
+      }
+
+      // Continuar con el flujo de cancelación del comercio en matched
+      await merchantCancelBtn.click();
+
+      // Modal de comercio:
+      // - Opciones de comercio presentes: Ya no hace falta, Lo resolví de otra forma, Me equivoqué en los datos, Otro (H01 & H03)
+      // - Opciones de cadete ausentes
+      await expect(merchantPage.getByText('¿Por qué cancelás este viaje?')).toBeVisible();
+      await expect(merchantPage.getByRole('radio', { name: 'Ya no hace falta' })).toBeVisible();
+      await expect(merchantPage.getByRole('radio', { name: 'Lo resolví de otra forma' })).toBeVisible();
+      await expect(merchantPage.getByRole('radio', { name: 'Me equivoqué en los datos' })).toBeVisible();
+      await expect(merchantPage.getByRole('radio', { name: 'Otro' })).toBeVisible();
+
+      await expect(merchantPage.getByRole('radio', { name: 'Tuve un imprevisto' })).not.toBeVisible();
+      await expect(merchantPage.getByRole('radio', { name: 'Problema con el vehículo' })).not.toBeVisible();
+      await expect(merchantPage.getByRole('radio', { name: 'No puedo llegar al punto de retiro' })).not.toBeVisible();
+      await expect(merchantPage.getByRole('radio', { name: 'Emergencia' })).not.toBeVisible();
+
+      // Elegir "Me equivoqué en los datos" y avanzar a paso 2
+      await merchantPage.getByRole('radio', { name: 'Me equivoqué en los datos' }).click();
+      const merchantContinueBtn = merchantPage.getByRole('button', { name: /continuar/i });
+      await expect(merchantContinueBtn).toBeEnabled();
+      await merchantContinueBtn.click();
+
+      // Paso 2: confirmación definitiva con copy real del componente (R01)
+      await expect(
+        merchantPage.getByRole('alertdialog').getByRole('heading', { name: '¿Confirmás la cancelación definitiva?' })
+      ).toBeVisible();
+      await expect(
+        merchantPage.getByText('Las ofertas se van a cerrar. No se puede deshacer.')
+      ).toBeVisible();
+      await expect(merchantPage.getByText(/Motivo seleccionado:/i)).toBeVisible();
+      await expect(merchantPage.getByText('Me equivoqué en los datos')).toBeVisible();
+      await expect(merchantPage.getByText(/La solicitud volverá a publicarse/i)).not.toBeVisible();
+
+      const merchantConfirmBtn = merchantPage.getByRole('button', { name: /sí, cancelar/i });
+      await merchantConfirmBtn.click();
+
+      // Redirección a /merchant/dashboard
+      await expect(merchantPage).toHaveURL(/\/merchant\/dashboard/, { timeout: 15000 });
+    } finally {
+      await merchantContext.close();
+    }
+
+    // Oráculo PostgreSQL: solicitud en cancelled, motivo y actor_id = merchant.id (H01)
+    const merchantInspection = await getRequestInspectionData(stagingContext, merchantRequestId);
+    expect(merchantInspection.requestStatus).toBe('cancelled');
+    expect(merchantInspection.cancellationReasons?.length).toBeGreaterThanOrEqual(1);
+    const merchantReason = merchantInspection.cancellationReasons?.find(
+      (r) => r.action === 'cancel_request'
+    );
+    expect(merchantReason).toBeDefined();
+    expect(merchantReason?.reason).toBe('Me equivoqué en los datos');
+    expect(merchantReason?.actorId).toBe(merchant.id);
+
+    // -------------------------------------------------------------------------
+    // 4. Invariante in_transit: sin cancelación simple para ningún rol (H02)
+    // -------------------------------------------------------------------------
+    const inTransitSeed = await seedDeliveryRequestInState(stagingContext, {
+      status: 'in_transit',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    const inTransitRequestId = inTransitSeed.requestId;
+
+    // Courier en in_transit: afirmación positiva de vista y reporte antes de ausencia de cancelación
+    await page.goto(`/trips/${inTransitRequestId}`);
+    await expect(page).toHaveURL(new RegExp(`/trips/${inTransitRequestId}`));
+    await expect(page.getByRole('heading', { name: /viaje en curso/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /reportar un problema/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /no puedo hacer este viaje/i })).not.toBeVisible();
+
+    // Comercio en in_transit: contexto garantizado (sin if condicional) con afirmaciones positivas
+    const inTransitMerchantContext = await browser.newContext();
+    try {
+      const inTransitMerchantPage = await inTransitMerchantContext.newPage();
+      await loginAsMerchant(inTransitMerchantPage);
+      await inTransitMerchantPage.goto(`/trips/${inTransitRequestId}`);
+      await expect(inTransitMerchantPage).toHaveURL(new RegExp(`/trips/${inTransitRequestId}`));
+      await expect(inTransitMerchantPage.getByRole('heading', { name: /viaje en curso/i })).toBeVisible({ timeout: 10000 });
+      await expect(inTransitMerchantPage.getByRole('button', { name: /reportar un problema/i })).toBeVisible({ timeout: 10000 });
+      await expect(inTransitMerchantPage.getByRole('button', { name: /cancelar envío/i })).not.toBeVisible();
+    } finally {
+      await inTransitMerchantContext.close();
+    }
+  });
 });
 
 

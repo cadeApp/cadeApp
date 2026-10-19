@@ -317,7 +317,7 @@ export function TripMerchantView({
             </Button>
           )}
 
-          {onCancelTrip && (
+          {onCancelTrip && isMatched && (
             <Button
               type="button"
               variant="ghost"
