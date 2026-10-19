@@ -2,7 +2,7 @@
 
 **PR:** https://github.com/cadeApp/cadeApp/pull/431  
 **HEAD inicial del autor:** `0c50d73cdb9d676d9bb8d2afe6e502d5d3f32356`  
-**HEAD revisado:** `86a7b21aac38766c2d1798dc406dc9a08509e811`  
+**HEAD revisado:** `580a1e64ccd8ed178d3e407fee61e0750098653c`  
 **Base:** `develop` @ `1e69477dae1e50cd67c307c9a0f987366f90c98e`  
 **Fecha:** 2026-10-19
 
@@ -28,9 +28,9 @@ El diff inicial tiene **únicamente** `docs/tasks/T-375.md` (nueva ficha) y la f
 
 **Ubicación:** `docs/tasks/T-375.md`, apartados «Decisión de diseño» y «DoD».  
 **Tipo:** precisión documental, no defecto de la implementación (todavía no existe).  
-**Acción del revisor:** se añadió un guard de responsabilidad: la precondición verifica el valor base antes de habilitar restauración; los hooks se activan solo si la prueba asumió la posible mutación ANTES de intentar la escritura. Se exige un test negativo donde el almacenamiento inicia en `false` y ni `afterEach` ni `afterAll` lo cambian.
+**Acción del revisor (commits `86a7b21` y `580a1e6`):** se añadió un guard de responsabilidad: la precondición verifica el valor base antes de habilitar restauración; los hooks se activan solo si la prueba asumió la posible mutación ANTES de intentar la escritura. Se exige un test negativo donde el almacenamiento inicia en `false` y ni `afterEach` ni `afterAll` lo cambian.
 
-**Motivo:** de otro modo un `afterAll` incondicional podría encender silenciosamente un estado sucio que la ficha exige detectar, y una escritura aplicada pero fallida al responder podría eludir la recuperación. Es una prevención derivada por inspección, no una falla ya reproducida del código.
+**Motivo:** de otro modo un `afterAll` incondicional podría encender silenciosamente un estado sucio que la ficha exige detectar, y una escritura aplicada pero fallida al responder podría eludir la recuperación. Se precisó además que Playwright reinicia el worker después de un timeout: una variable de módulo nueva en el siguiente worker es un falso GREEN, por lo que el estado debe inspeccionarse en el `afterEach` del worker original o en un almacén de memoria externo al proceso trabajador. El test intencionalmente expirado sigue fallando; el GREEN es el de la aserción de recuperación y el gate completo se verifica por separado. Fuente del contrato: https://playwright.dev/docs/test-retries. Son prevenciones derivadas por inspección, no fallas ya reproducidas del código.
 
 ## NO TOCAR — falsos positivos descartados
 
@@ -53,6 +53,6 @@ La PR solamente cambia documentación. Los checks verifican estructura, lint, ti
 
 ## Metodología y límites
 
-Se compararon archivo y plan desde la conexión GitHub contra `1e69477dae1e50cd67c307c9a0f987366f90c98e`, se leyeron las reglas de revisión, comentarios, issue #430, specs y workflow; se inspeccionó el log del run 39305230026. Se comprobó que el commit `86a7b21aac38766c2d1798dc406dc9a08509e811` incorpora la precisión documental. No había clon local accesible ni conectividad Git desde el runtime: **no** se ejecutaron `git merge-tree`, `pnpm`, mutaciones ni pruebas locales; `mergeable=true` proviene de GitHub y no se presenta como resultado de `merge-tree`. La ficha del DoD se verifica por inspección y por los checks CI que habían terminado.
+Se compararon archivo y plan desde la conexión GitHub contra `1e69477dae1e50cd67c307c9a0f987366f90c98e`, se leyeron las reglas de revisión, comentarios, issue #430, specs y workflow; se inspeccionó el log del run 39305230026. Se comprobó que el commit `580a1e64ccd8ed178d3e407fee61e0750098653c` incorpora la precisión documental. No había clon local accesible ni conectividad Git desde el runtime: **no** se ejecutaron `git merge-tree`, `pnpm`, mutaciones ni pruebas locales; `mergeable=true` proviene de GitHub y no se presenta como resultado de `merge-tree`. La ficha del DoD se verifica por inspección y por los checks CI que habían terminado.
 
 No se realizó aprobación ni merge.

@@ -8,7 +8,7 @@
 | Rama | `docs/T-375-pilot-restore` → `develop` |
 | Base consultada | `1e69477dae1e50cd67c307c9a0f987366f90c98e` |
 | HEAD inicial del autor | `0c50d73cdb9d676d9bb8d2afe6e502d5d3f32356` |
-| SHA revisado tras precisión documental | `86a7b21aac38766c2d1798dc406dc9a08509e811` |
+| SHA de la ficha revalidada | `580a1e64ccd8ed178d3e407fee61e0750098653c` |
 | Tamaño | 2 archivos funcionalmente propuestos; solo documentación |
 | Resultado | SIN BLOQUEANTES por inspección de ficha; CI verificada parcialmente |
 
@@ -16,9 +16,9 @@
 
 | Ronda | SHA revisado | Bloqueantes | Informe |
 |---|---|---|---|
-| 1 | `86a7b21aac38766c2d1798dc406dc9a08509e811` | 0 | [ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `580a1e64ccd8ed178d3e407fee61e0750098653c` | 0 | [ronda-1.md](revisiones/ronda-1.md) |
 
-**Observación preventiva corregida:** el revisor explicitó en la ficha, mediante el commit `86a7b21aac38766c2d1798dc406dc9a08509e811`, que los hooks no pueden reparar un piloto que ya estaba apagado antes de empezar. El DoD ahora exige una prueba negativa en memoria. No constituye un hallazgo de código implementado: la implementación aún no existe y debe demostrar RED→GREEN en otra PR.
+**Observaciones preventivas corregidas:** el revisor explicitó en la ficha (commits `86a7b21` y `580a1e6`) que los hooks no pueden reparar un piloto que ya estaba apagado antes de empezar y que la prueba en memoria no puede usar el reinicio del worker para aparentar que se restauró el estado. La ficha revalidada en el commit `580a1e64ccd8ed178d3e407fee61e0750098653c`, ahora exige prueba negativa y comprobación real de la restauración antes de descartar el worker o con almacén externo. No constituye un hallazgo de código implementado: la implementación aún no existe y debe demostrar RED→GREEN en otra PR.
 
 **Datos estructurados:** [hallazgos.jsonl](hallazgos.jsonl) (vacío: sin defectos demostrados en esta PR). **Evidencia:** [comandos.md](evidencia/comandos.md).
 
