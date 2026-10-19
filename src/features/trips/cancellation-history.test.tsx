@@ -6,6 +6,7 @@ import type { RequestCancellationHistory, RequestCancellationHistoryEvent } from
 import { CancellationHistoryList } from './components/cancellation-history-list';
 import { CourierCancelledAssignmentView } from './components/courier-cancelled-assignment-view';
 import { CancellationHistoryCard } from './components/cancellation-history-card';
+import { CancellationHistoryUnavailableError, selectCourierCancelledAssignment } from './cancellation-history-guard';
 
 const mockLoadPage = vi.fn();
 vi.mock('./actions', () => ({
@@ -165,5 +166,48 @@ describe('T-373 / 5-A — CourierCancelledAssignmentView', () => {
     expect(screen.getByText(/No es una cancelación del pedido/)).toBeTruthy();
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Volver a pedidos disponibles' }).getAttribute('href')).toBe('/courier/feed');
+  });
+});
+
+describe('T-373 / PR425-H04 — selectCourierCancelledAssignment (repartidor sin viaje visible)', () => {
+  const ABSENT = 'ABSENT_404';
+  const onAbsent = vi.fn((): never => {
+    throw new Error(ABSENT);
+  });
+
+  it('historial con eventos propios: devuelve la cronología para «Cancelaste esta asignación»', () => {
+    const data = history([event(1)]);
+    expect(selectCourierCancelledAssignment({ ok: true, data }, onAbsent)).toBe(data);
+    expect(onAbsent).not.toHaveBeenCalled();
+  });
+
+  it.each(['NOT_FOUND', 'UNAUTHORIZED_ACTOR', 'VALIDATION_ERROR', 'UNAUTHENTICATED'] as const)(
+    '%s es ausencia: 404 fail-closed',
+    (code) => {
+      expect(() => selectCourierCancelledAssignment({ ok: false, code }, onAbsent)).toThrow(ABSENT);
+    }
+  );
+
+  it('sin eventos propios también es ausencia: 404', () => {
+    expect(() => selectCourierCancelledAssignment({ ok: true, data: history([]) }, onAbsent)).toThrow(ABSENT);
+  });
+
+  it('INTERNAL_ERROR no es ausencia: lanza un error sanitizado y nunca elige el 404', () => {
+    let thrown: unknown;
+    try {
+      selectCourierCancelledAssignment({ ok: false, code: 'INTERNAL_ERROR' }, onAbsent);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(CancellationHistoryUnavailableError);
+    expect((thrown as Error).message).toBe('CANCELLATION_HISTORY_UNAVAILABLE');
+    expect(onAbsent).not.toHaveBeenCalled();
+  });
+
+  it('viaje actual válido + historial con INTERNAL_ERROR: el detalle sigue y la tarjeta del repartidor muestra el error acotado', () => {
+    render(<CancellationHistoryCard requestId={REQUEST_ID} viewer="courier" result={{ ok: false, code: 'INTERNAL_ERROR' }} />);
+    expect(screen.getByRole('alert').textContent).toBe(
+      'No pudimos cargar el historial de asignaciones. Recargá la página para reintentar.'
+    );
   });
 });

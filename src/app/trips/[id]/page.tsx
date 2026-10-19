@@ -6,6 +6,7 @@ import {
   CourierCancelledAssignmentView,
   TripMerchantContainer,
   TripCourierContainer,
+  selectCourierCancelledAssignment,
   type CancellationHistoryResult,
 } from '@/features/trips';
 import { getRequestCancellationHistoryServer } from '@/server/rpc/request-cancellation-history';
@@ -16,14 +17,15 @@ interface TripDetailPageProps {
 }
 
 /**
- * T-373 / 5-A: un repartidor que ya no está asignado ve sus propias cancelaciones de este pedido en vez del 404. Sin
- * cancelaciones propias, la RPC responde NOT_FOUND y sigue el 404 de siempre.
+ * T-373 / 5-A: un repartidor sin viaje visible (get_trip_details ya no lo reconoce como asignado) ve sus propias
+ * cancelaciones de este pedido. Sin cancelaciones propias sigue el 404; una falla del historial va al `error.tsx`
+ * (PR425-H04), nunca al 404.
  */
-function renderCourierCancelledAssignment(requestId: string, history: CancellationHistoryResult) {
-  if (!history.ok || history.data.events.length === 0) notFound();
+function renderCourierCancelledAssignment(requestId: string, result: CancellationHistoryResult) {
+  const history = selectCourierCancelledAssignment(result, notFound);
   return (
     <div className="mx-auto w-full max-w-lg space-y-4 px-4 py-4">
-      <CourierCancelledAssignmentView requestId={requestId} history={history.data} />
+      <CourierCancelledAssignmentView requestId={requestId} history={history} />
     </div>
   );
 }
@@ -84,7 +86,9 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
 
   if (profile.role === 'courier') {
     if (trip.courierId !== user.id) {
-      return renderCourierCancelledAssignment(id, cancellationHistory);
+      // get_trip_details rechaza al repartidor no asignado (el fallback 5-A entra por `trip` null); un viaje visible
+      // de otro repartidor nunca se reemplaza por historial.
+      notFound();
     }
     return (
       <div className="mx-auto w-full max-w-lg space-y-4 px-4 py-4">
