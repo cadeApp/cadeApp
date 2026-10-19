@@ -991,6 +991,11 @@ test('staging E2E gate runs every chromium spec of the target SHA, discovered by
     'staging E2E must run serially because specs share the remote staging database'
   );
   assert.doesNotMatch(e2eJob, /continue-on-error/, 'E2E failures must fail the staging gate');
+  assert.match(
+    e2eJob,
+    /^\s+timeout-minutes: 45$/m,
+    'staging E2E needs 45 minutes for the full serial chromium suite; 20 is too tight (T-374)'
+  );
 });
 
 test('deploy-staging calls reusable E2E with the exact migrated SHA after deploy succeeds', () => {
