@@ -27,5 +27,5 @@ Datos: [hallazgos.jsonl](hallazgos.jsonl). Evidencias, limitaciones y comandos: 
 ## Siguiente paso
 El autor corrige H01 y H02 en la misma rama y prueba RED→GREEN con nuevos casos; H03 se sugiere completar.
 Por la decisión del propietario, las rondas usan Playwright local contra Preview + Supabase Develop, y la corrida completa `e2e-preview` de CI se reserva para el último push sin bloqueantes.
-`audit` sigue fallando por GHSA-587h-7wmj-h5pm tanto en esta PR como en `develop` (preexistente; gestionar por separado).
+`audit` sigue fallando por GHSA-587h-7wmj-h5pm tanto en esta PR como en `develop` (preexistente; issue [#466](https://github.com/cadeApp/cadeApp/issues/466)). PDF integral se separó en [#465](https://github.com/cadeApp/cadeApp/issues/465); aquí se exige que el copy no prometa PDF cuando la UI solo admite imágenes.
 Esta ronda NO certifica E2E, mutaciones propias ejecutadas ni test local: el entorno revisor no dispone de clon accesible ni conexión Git externa.
