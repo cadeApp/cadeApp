@@ -282,6 +282,16 @@ export interface FakeSeedIncident {
   readonly createdAt: string;
 }
 
+// CC-035: fila de `push_subscriptions` del fake (una por endpoint, como el índice único).
+export interface FakePushSubscriptionRecord {
+  readonly subscriptionId: string;
+  readonly endpoint: string;
+  userId: string;
+  p256dh: string;
+  auth: string;
+  platform: 'web' | null;
+}
+
 export interface FakeIncidentRecord {
   readonly incidentId: string;
   readonly requestId: string;
@@ -417,6 +427,7 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly getPublicationCharges: (requestId: string) => readonly FakePublicationChargeRecord[];
   readonly getOffer: (offerId: string) => FakeOfferRecord | undefined;
   readonly getCourier: (courierId: string) => FakeCourierRecord | undefined;
+  readonly getPushSubscription: (endpoint: string) => FakePushSubscriptionRecord | undefined;
   readonly getSettings: () => FakePlatformSettings;
   readonly triggerErrorCode: (
     code: DomainErrorCode
@@ -458,10 +469,12 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   get_trip_details: ['merchant', 'courier'],
   get_request_offer_couriers: ['merchant'],
   get_merchant_request_private_fields: ['merchant'],
+  register_push_subscription: ['merchant', 'courier', 'admin'],
   replace_courier_document: ['courier'],
   add_courier_optional_document: ['courier'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
+  admin_reinstate_courier: ['admin'],
   admin_verify_document: ['admin'],
   admin_set_subscription: ['admin'],
   admin_update_setting: ['admin'],
@@ -607,6 +620,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const documents = new Map<string, FakeDocumentRecord>();
   const storedCourierDocumentPaths = new Set<string>();
   const incidents = new Map<string, FakeIncidentRecord>();
+  const pushSubscriptions = new Map<string, FakePushSubscriptionRecord>();
   const cancellationReasons: FakeCancellationReasonRecord[] = [];
   let cancellationReasonSeq = 0;
   const rateLimits = new Map<string, number>();
@@ -1181,7 +1195,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       insuranceStatus: c.insuranceStatus ?? prev?.insuranceStatus ?? 'none',
       displayName: c.displayName ?? prev?.displayName ?? 'Cadete',
       phone: c.phone ?? prev?.phone ?? '3865111111',
-      vehicleType: c.vehicleType !== undefined ? c.vehicleType : (prev?.vehicleType ?? 'moto'),
+      // `null` es un valor explícito (onboarding incompleto); solo `undefined` toma el previo o el default.
+      vehicleType: c.vehicleType === undefined ? (prev?.vehicleType ?? 'moto') : c.vehicleType,
       vehiclePlate: c.vehiclePlate ?? prev?.vehiclePlate ?? 'AA123BB',
     });
   }
@@ -1318,6 +1333,15 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
     }
+    // CC-035: misma regla que app_private.is_active_operational_actor (admin, o consentimiento activo), antes de
+    // validar la entrada como la RPC.
+    if (
+      rpcName === 'register_push_subscription' &&
+      actor.role !== 'admin' &&
+      (actor.consentStatus ?? 'active') !== 'active'
+    ) {
+      return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
+    }
     if (requireAdminAal2 && actor.aal !== 'aal2') {
       return err('AAL2_REQUIRED' as RpcErrorCode<K>);
     }
@@ -1416,6 +1440,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       charges.filter((c) => c.requestId === requestId).map((c) => ({ ...c, parts: c.parts.map((p) => ({ ...p })) })),
     getOffer: (offerId) => offers.get(offerId),
     getCourier: (courierId) => couriers.get(courierId),
+    getPushSubscription: (endpoint) => pushSubscriptions.get(endpoint),
     getSettings: () => ({ ...settings }),
     triggerErrorCode: async (code) => err(code),
 
@@ -3183,6 +3208,51 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           withdrawnOffersCount,
           deactivatedAt: nowFn().toISOString(),
         });
+      }),
+
+    register_push_subscription: (rawInput) =>
+      executeRpc('register_push_subscription', rawInput, false, (input) => {
+        const existing = pushSubscriptions.get(input.endpoint);
+        const platform = input.platform ?? null;
+        if (!existing) {
+          const subscriptionId = crypto.randomUUID();
+          pushSubscriptions.set(input.endpoint, {
+            subscriptionId,
+            endpoint: input.endpoint,
+            userId: actor.userId,
+            p256dh: input.p256dh,
+            auth: input.auth,
+            platform,
+          });
+          return ok({ subscriptionId, created: true, reassigned: false });
+        }
+        const reassigned = existing.userId !== actor.userId;
+        existing.userId = actor.userId;
+        existing.p256dh = input.p256dh;
+        existing.auth = input.auth;
+        existing.platform = platform;
+        return ok({ subscriptionId: existing.subscriptionId, created: false, reassigned });
+      }),
+
+    admin_reinstate_courier: (rawInput) =>
+      executeRpc('admin_reinstate_courier', rawInput, true, (input) => {
+        if (input.reason.trim().length === 0) return err('REASON_REQUIRED');
+        const courier = couriers.get(input.courierId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'approved') {
+          return ok({
+            courierId: input.courierId,
+            previousStatus: 'approved',
+            status: 'approved',
+            idempotent: true,
+          });
+        }
+        if (courier.status === 'pending' || courier.vehicleType === null) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        const previousStatus = courier.status;
+        courier.status = 'approved';
+        return ok({ courierId: input.courierId, previousStatus, status: 'approved', idempotent: false });
       }),
 
     admin_verify_document: (rawInput) =>

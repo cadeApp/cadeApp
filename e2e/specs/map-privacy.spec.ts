@@ -38,7 +38,16 @@ export interface GoogleMapsMockController {
  */
 async function setupGoogleMapsMock(
   page: Page,
-  options: { failApi?: boolean; simulatedUnexpectedHost?: string } = {}
+  options: {
+    failApi?: boolean;
+    simulatedUnexpectedHost?: string;
+    /**
+     * T-377: biblioteca `routes`. `ok` responde una ruta por calles que pasa por un desvío entre cada par de puntos;
+     * `fail` rechaza `Route.computeRoutes`; `reject-import` rechaza la carga misma (`importLibrary('routes')`,
+     * PR453-H02). Sin la opción, `importLibrary('routes')` no trae `Route` (como antes).
+     */
+    routes?: 'ok' | 'fail' | 'reject-import';
+  } = {}
 ): Promise<GoogleMapsMockController> {
   const interceptedUrls: string[] = [];
   const unexpectedGoogleUrls: string[] = [];
@@ -276,20 +285,34 @@ async function setupGoogleMapsMock(
             this.element.className = 'gm-pin-element';
           }
 
+          function toLiteral(pt) {
+            const lat = typeof pt.lat === 'function' ? pt.lat() : pt.lat;
+            const lng = typeof pt.lng === 'function' ? pt.lng() : pt.lng;
+            return { lat: Number(lat), lng: Number(lng) };
+          }
+
           function Polyline(opts) {
             this._path = new MVCArray();
+            // T-377: la última geometría dibujada queda visible para las aserciones del E2E.
+            const recordPath = () => {
+              window.__routePolylinePath = this._path.getArray().map(toLiteral);
+            };
             if (Array.isArray(opts?.path)) {
               opts.path.forEach((pt) => this._path.push(pt));
+              recordPath();
             }
             this.setPath = function(p) {
               this._path.clear();
               if (Array.isArray(p)) {
                 p.forEach((pt) => this._path.push(pt));
               }
+              recordPath();
             };
             this.getPath = function() { return this._path; };
             this.setMap = function() {};
-            this.setOptions = function() {};
+            this.setOptions = function(o) {
+              if (o && Array.isArray(o.path)) this.setPath(o.path);
+            };
             this.addListener = function() { return { remove: function() {} }; };
           }
 
@@ -355,6 +378,30 @@ async function setupGoogleMapsMock(
             }
           };
 
+          const routesMode = ${JSON.stringify(options.routes ?? 'missing')};
+          const routesLib = {
+            Route: {
+              computeRoutes: function(request) {
+                (window.__computeRoutesCalls ||= []).push(JSON.parse(JSON.stringify(request)));
+                if (routesMode === 'fail') {
+                  return Promise.reject(new Error('REQUEST_DENIED'));
+                }
+                const stops = [request.origin]
+                  .concat((request.intermediates || []).map(function(w) { return w.location; }))
+                  .concat([request.destination])
+                  .map(toLiteral);
+                const path = [];
+                stops.forEach(function(stop, index) {
+                  path.push(stop);
+                  const next = stops[index + 1];
+                  // Desvío en ángulo recto: la geometría por calles nunca coincide con la línea recta.
+                  if (next) path.push({ lat: stop.lat, lng: next.lng });
+                });
+                return Promise.resolve({ routes: [{ path: path }], fallbackInfo: null, geocodingResults: null });
+              }
+            }
+          };
+
           const geometryLib = {
             encoding: {
               decodePath: function() { return []; }
@@ -383,6 +430,10 @@ async function setupGoogleMapsMock(
             if (name === 'maps') return Promise.resolve(mapsLib);
             if (name === 'core') return Promise.resolve(coreLib);
             if (name === 'geometry') return Promise.resolve(geometryLib);
+            if (name === 'routes' && routesMode === 'reject-import') {
+              return Promise.reject(new Error('ROUTES_LIBRARY_LOAD_FAILED'));
+            }
+            if (name === 'routes' && routesMode !== 'missing') return Promise.resolve(routesLib);
             return Promise.resolve(window.google.maps);
           };
 
@@ -696,7 +747,7 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     stagingContext,
     loginAsCourier,
   }) => {
-    await setupGoogleMapsMock(page);
+    await setupGoogleMapsMock(page, { routes: 'ok' });
 
     const merchant = stagingContext.merchantUser;
     const courier = stagingContext.courierUsers?.[0];
@@ -749,6 +800,85 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     expect(parsedUrl.searchParams.get('api')).toBe('1');
     expect(parsedUrl.searchParams.get('origin')).toBeTruthy();
     expect(parsedUrl.searchParams.get('destination')).toBeTruthy();
+
+    // 5. T-377: una sola llamada a Route.computeRoutes con el contrato de la ficha y la geometría por calles dibujada
+    const readComputeRoutesCalls = (target: Page) =>
+      target.evaluate(
+        () =>
+          (window as unknown as { __computeRoutesCalls?: Array<Record<string, unknown>> }).__computeRoutesCalls ?? []
+      );
+    const readPolylinePath = (target: Page) =>
+      target.evaluate(
+        () =>
+          (window as unknown as { __routePolylinePath?: Array<{ lat: number; lng: number }> })
+            .__routePolylinePath ?? []
+      );
+    const streetFallbackText = 'Línea recta orientativa; la ruta por calles no está disponible';
+
+    await expect.poll(async () => (await readComputeRoutesCalls(page)).length).toBe(1);
+    const [computeRoutesRequest] = await readComputeRoutesCalls(page);
+    expect(computeRoutesRequest).toMatchObject({
+      travelMode: 'DRIVING',
+      fields: ['path'],
+      optimizeWaypointOrder: false,
+      intermediates: [],
+    });
+    const origin = computeRoutesRequest?.['origin'] as { lat: number; lng: number } | undefined;
+    const destination = computeRoutesRequest?.['destination'] as { lat: number; lng: number } | undefined;
+    expect(typeof origin?.lat).toBe('number');
+    expect(typeof destination?.lat).toBe('number');
+    // El mock responde retiro → desvío → entrega: la traza tiene 3 puntos, no la recta de 2.
+    await expect.poll(async () => (await readPolylinePath(page)).length).toBe(3);
+    const streetPath = await readPolylinePath(page);
+    expect(streetPath[0]).toEqual(origin);
+    expect(streetPath[2]).toEqual(destination);
+    await expect(page.getByText(streetFallbackText)).toHaveCount(0);
+
+    // 6. T-377: con la ruta forzada a fallar, línea recta con el texto de fallback y el resto de la vista intacta
+    const failPage = await page.context().newPage();
+    try {
+      await setupGoogleMapsMock(failPage, { routes: 'fail' });
+      await failPage.goto(`/trips/${requestId}`);
+      await waitForNoSkeletons(failPage);
+
+      await expect(failPage.getByText(streetFallbackText)).toBeVisible();
+      await expect.poll(async () => (await readComputeRoutesCalls(failPage)).length).toBe(1);
+      await expect.poll(async () => (await readPolylinePath(failPage)).length).toBe(2);
+      expect(await readPolylinePath(failPage)).toEqual([origin, destination]);
+      await expect(failPage.locator('[data-testid="route-map-fallback"]')).toHaveCount(0);
+      await expect(failPage.getByRole('link', { name: /abrir en google maps/i })).toBeVisible();
+    } finally {
+      await failPage.close();
+    }
+
+    // 7. PR453-H02: si falla la carga de `routes` (no el cálculo), Maps JS sigue, recta con aviso y sin unhandledrejection
+    const rejectPage = await page.context().newPage();
+    try {
+      await rejectPage.addInitScript(() => {
+        const store = window as unknown as { __unhandledRejections?: string[] };
+        store.__unhandledRejections = [];
+        window.addEventListener('unhandledrejection', (event) => {
+          store.__unhandledRejections?.push(String(event.reason));
+        });
+      });
+      await setupGoogleMapsMock(rejectPage, { routes: 'reject-import' });
+      await rejectPage.goto(`/trips/${requestId}`);
+      await waitForNoSkeletons(rejectPage);
+
+      await expect(rejectPage.getByText(streetFallbackText)).toBeVisible();
+      await expect(rejectPage.locator('[data-testid="route-map-fallback"]')).toHaveCount(0);
+      await expect(rejectPage.locator('[data-testid="map-pin-pickup"]')).toBeVisible();
+      await expect.poll(async () => (await readPolylinePath(rejectPage)).length).toBe(2);
+      expect(await readPolylinePath(rejectPage)).toEqual([origin, destination]);
+      expect(await readComputeRoutesCalls(rejectPage)).toEqual([]);
+      await expect(rejectPage.getByRole('link', { name: /abrir en google maps/i })).toBeVisible();
+      const unhandled = await rejectPage.evaluate(
+        () => (window as unknown as { __unhandledRejections?: string[] }).__unhandledRejections ?? []
+      );
+      expect(unhandled).toEqual([]);
+    } finally {
+      await rejectPage.close();
+    }
   });
 
   // ---------------------------------------------------------------------------
