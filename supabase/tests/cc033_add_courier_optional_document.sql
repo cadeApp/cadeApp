@@ -35,6 +35,7 @@ insert into storage.buckets (id,name,public) values ('courier-docs','courier-doc
 insert into storage.objects (id,bucket_id,name,owner) values
   (gen_random_uuid(),'courier-docs','courier/00000000-0000-4000-8000-0000000033c1/license_1730000000000.jpg',pg_temp.approved()),
   (gen_random_uuid(),'courier-docs','courier/00000000-0000-4000-8000-0000000033c2/insurance_1730000000001.pdf',pg_temp.pending()),
+  (gen_random_uuid(),'courier-docs','courier/00000000-0000-4000-8000-0000000033c2/license_1730000000010.jpg',pg_temp.pending()),
   (gen_random_uuid(),'courier-docs','courier/00000000-0000-4000-8000-0000000033c3/license_1730000000002.jpg',pg_temp.incomplete()),
   (gen_random_uuid(),'courier-docs','courier/00000000-0000-4000-8000-0000000033c4/license_1730000000003.jpg',pg_temp.rejected()),
   (gen_random_uuid(),'courier-docs','courier/00000000-0000-4000-8000-0000000033c5/license_1730000000004.jpg',pg_temp.suspended()),
@@ -51,6 +52,14 @@ select ok(has_function_privilege('authenticated','public.add_courier_optional_do
 select ok(not has_function_privilege('anon','public.add_courier_optional_document(jsonb)','execute'),'anon no tiene execute');
 select ok(not has_table_privilege('authenticated','public.courier_documents','insert'),'INSERT directo permanece revocado');
 
+select pg_temp.as_postgres();
+update public.profiles set consent_status = 'reconsent_required' where id = pg_temp.approved();
+select pg_temp.act_as(pg_temp.approved());
+select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000033c1/license_1730000000000.jpg')); $$,'P0001','UNAUTHORIZED_ACTOR','consentimiento inactivo rechaza alta opcional');
+select pg_temp.as_postgres();
+select is((select count(*)::int from public.courier_documents where courier_id=pg_temp.approved()),0,'consentimiento inactivo no inserta documentos');
+select is((select count(*)::int from public.audit_log where actor_id=pg_temp.approved() and action='add_courier_optional_document'),0,'consentimiento inactivo no audita');
+update public.profiles set consent_status = 'active' where id = pg_temp.approved();
 select pg_temp.act_as(pg_temp.approved());
 select is(public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000033c1/license_1730000000000.jpg'))->>'status','submitted','approved completo crea license submitted');
 select is((select license_status::text from public.couriers where profile_id=pg_temp.approved()),'submitted','actualiza license_status');
@@ -63,6 +72,10 @@ select pg_temp.act_as(pg_temp.pending());
 select is(public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','courier/00000000-0000-4000-8000-0000000033c2/insurance_1730000000001.pdf'))->>'kind','insurance','pending completo crea insurance');
 select is((select insurance_status::text from public.couriers where profile_id=pg_temp.pending()),'submitted','actualiza insurance_status');
 select is((select doc_level from public.couriers where profile_id=pg_temp.pending()),0,'pending submitted conserva doc_level');
+select is(public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000033c2/license_1730000000010.jpg'))->>'status','submitted','pending completo crea license');
+select is((select license_status::text from public.couriers where profile_id=pg_temp.pending()),'submitted','pending actualiza license_status');
+select is((select doc_level from public.couriers where profile_id=pg_temp.pending()),0,'pending license conserva doc_level');
+select is((select count(*)::int from public.courier_documents where courier_id=pg_temp.pending() and kind='license' and is_current),1,'pending crea license vigente');
 
 select pg_temp.act_as(pg_temp.incomplete());
 select throws_matching($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000033c3/license_1730000000002.jpg')); $$,'INVALID_STATE_TRANSITION','onboarding incompleto es rechazado');
@@ -114,7 +127,7 @@ select pg_temp.act_as(pg_temp.suspended()); select throws_matching($$ select pub
 select pg_temp.act_as(pg_temp.merchant()); select throws_matching($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000033b1/license_1.jpg')); $$,'UNAUTHORIZED_ACTOR','merchant es rechazado');
 select pg_temp.as_anon(); select throws_ok($$ select public.add_courier_optional_document('{}'::jsonb); $$,'42501'::char(5),null::text,'anon no tiene execute');
 select pg_temp.as_no_subject(); select throws_matching($$ select public.add_courier_optional_document('{}'::jsonb); $$,'UNAUTHENTICATED','sin sub es UNAUTHENTICATED');
-select pg_temp.act_as(pg_temp.approved()); select throws_matching($$ insert into public.courier_documents(courier_id,kind,storage_path,status,is_current) values('00000000-0000-4000-8000-0000000033c1','insurance','courier/00000000-0000-4000-8000-0000000033c1/direct.jpg','submitted',true); $$,'42501|permission denied','INSERT directo falla 42501');
+select pg_temp.act_as(pg_temp.approved()); select throws_ok($$ insert into public.courier_documents(courier_id,kind,storage_path,status,is_current) values('00000000-0000-4000-8000-0000000033c1','insurance','courier/00000000-0000-4000-8000-0000000033c1/direct.jpg','submitted',true); $$,'42501'::char(5),null::text,'INSERT directo denegado con SQLSTATE 42501');
 
 select pg_temp.as_postgres(); delete from public.courier_documents where courier_id=pg_temp.approved() and kind='insurance';
 select pg_temp.act_as(pg_temp.approved());

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ALL_RPC_NAMES, RPC_CONTRACTS } from './index';
 import { createFakeRpcClient, type FakePlatformSettings } from './testing/rpc-fake';
 
@@ -24,6 +24,8 @@ describe('CC-033 — contrato de alta posterior de documentos opcionales', () =>
 
 describe('CC-033 — FakeRpcClient add_courier_optional_document', () => {
   function createOptionalDocumentClient(options?: {
+    readonly role?: 'courier' | 'merchant';
+    readonly consentStatus?: 'active' | 'reconsent_required';
     readonly status?: 'pending' | 'approved' | 'rejected' | 'suspended';
     readonly vehicleType?: 'moto' | null;
     readonly documents?: Parameters<ReturnType<typeof createFakeRpcClient>['seedDocument']>[0][];
@@ -31,7 +33,12 @@ describe('CC-033 — FakeRpcClient add_courier_optional_document', () => {
   }) {
     return createFakeRpcClient({
       settings: SETTINGS,
-      initialActor: { userId: COURIER_ID, role: 'courier', aal: 'aal1' },
+      initialActor: {
+        userId: COURIER_ID,
+        role: options?.role ?? 'courier',
+        consentStatus: options?.consentStatus ?? 'active',
+        aal: 'aal1',
+      },
       initialCouriers: [
         {
           courierId: COURIER_ID,
@@ -81,6 +88,45 @@ describe('CC-033 — FakeRpcClient add_courier_optional_document', () => {
     expect(client.getCourier(COURIER_ID)?.licenseStatus).toBe('submitted');
   });
 
+  it.each(['license', 'insurance'] as const)(
+    'persiste una alta %s de courier approved y conserva la idempotencia en el reintento',
+    async (kind) => {
+      const storagePath = `courier/${COURIER_ID}/${kind}_1730000000011.jpg`;
+      const documentId = '20000000-0000-4000-8000-0000000033d4';
+      const client = createOptionalDocumentClient({
+        status: 'approved',
+        vehicleType: 'moto',
+        storagePaths: [storagePath],
+      });
+      const randomUuid = vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(documentId);
+
+      try {
+        const first = await client.add_courier_optional_document({ kind, storagePath });
+        if (!first.ok) throw new Error('La primera alta de approved debe crear el documento');
+
+        expect(first.data).toMatchObject({ documentId, kind, status: 'submitted', isCurrent: true, idempotent: false });
+        expect(client.getDocument(documentId)).toMatchObject({
+          courierId: COURIER_ID,
+          kind,
+          status: 'submitted',
+          isCurrent: true,
+          storagePath,
+        });
+        expect(client.getCourier(COURIER_ID)).toMatchObject(
+          kind === 'license' ? { licenseStatus: 'submitted' } : { insuranceStatus: 'submitted' },
+        );
+
+        await expect(client.add_courier_optional_document({ kind, storagePath })).resolves.toMatchObject({
+          ok: true,
+          data: { documentId, idempotent: true },
+        });
+        expect(randomUuid).toHaveBeenCalledTimes(1);
+      } finally {
+        randomUuid.mockRestore();
+      }
+    },
+  );
+
   it.each([
     { label: 'onboarding incompleto', status: 'pending' as const, vehicleType: null, code: 'INVALID_STATE_TRANSITION' },
     { label: 'repartidor rechazado', status: 'rejected' as const, vehicleType: 'moto' as const, code: 'UNAUTHORIZED_ACTOR' },
@@ -96,9 +142,32 @@ describe('CC-033 — FakeRpcClient add_courier_optional_document', () => {
     expect(client.getCourier(COURIER_ID)?.insuranceStatus).toBe('none');
   });
 
+  it.each([
+    { label: 'merchant', role: 'merchant' as const, consentStatus: 'active' as const },
+    { label: 'courier con reconsent requerido', role: 'courier' as const, consentStatus: 'reconsent_required' as const },
+  ])('rechaza $label sin cambiar el courier ni crear un documento', async ({ role, consentStatus }) => {
+    const storagePath = `courier/${COURIER_ID}/insurance_1730000000012.jpg`;
+    const documentId = '20000000-0000-4000-8000-0000000033d5';
+    const client = createOptionalDocumentClient({ role, consentStatus, storagePaths: [storagePath] });
+    const randomUuid = vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(documentId);
+
+    try {
+      await expect(client.add_courier_optional_document({ kind: 'insurance', storagePath })).resolves.toMatchObject({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+      expect(randomUuid).not.toHaveBeenCalled();
+      expect(client.getDocument(documentId)).toBeUndefined();
+      expect(client.getCourier(COURIER_ID)?.insuranceStatus).toBe('none');
+    } finally {
+      randomUuid.mockRestore();
+    }
+  });
+
   it('valida el path, comprueba Storage y conserva los códigos observables', async () => {
     const validPath = `courier/${COURIER_ID}/insurance_1730000000002.jpg`;
-    const client = createOptionalDocumentClient();
+    const uppercasePath = `courier/${COURIER_ID}/insurance_1730000000002.PNG`;
+    const client = createOptionalDocumentClient({ storagePaths: [uppercasePath] });
 
     await expect(
       client.add_courier_optional_document({ kind: 'insurance', storagePath: `courier/other/insurance_1730000000002.jpg` }),
@@ -109,10 +178,14 @@ describe('CC-033 — FakeRpcClient add_courier_optional_document', () => {
     await expect(
       client.add_courier_optional_document({ kind: 'insurance', storagePath: `courier/${COURIER_ID}/insurance_1730000000002.exe` }),
     ).resolves.toMatchObject({ ok: false, code: 'VALIDATION_ERROR' });
+    await expect(
+      client.add_courier_optional_document({ kind: 'insurance', storagePath: uppercasePath }),
+    ).resolves.toMatchObject({ ok: false, code: 'VALIDATION_ERROR' });
     await expect(client.add_courier_optional_document({ kind: 'insurance', storagePath: validPath })).resolves.toMatchObject({
       ok: false,
       code: 'NOT_FOUND',
     });
+    expect(client.getCourier(COURIER_ID)?.insuranceStatus).toBe('none');
   });
 
   it('es idempotente con la misma clave o el mismo path submitted, sin aceptar otro path', async () => {

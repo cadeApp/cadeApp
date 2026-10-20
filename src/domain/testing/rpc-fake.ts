@@ -2973,7 +2973,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (
           !input.storagePath.startsWith(prefix) ||
           input.storagePath.includes('..') ||
-          !/^[0-9]+[.](png|jpe?g|webp|pdf)$/i.test(suffix)
+          !/^[0-9]+[.](png|jpe?g|webp|pdf)$/.test(suffix)
         ) {
           return err('VALIDATION_ERROR');
         }
