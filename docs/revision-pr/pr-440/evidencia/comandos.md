@@ -91,3 +91,63 @@ process.stdout.write('Comprobar ademas: git diff --exit-code -- src/features/tri
 6. `pnpm typecheck && pnpm lint && pnpm vitest run src/features/trips/components.test.tsx src/features/offers/courier-panel.test.tsx`; CI posterior al push verifica el conjunto completo.
 
 **Restricción:** esta batería no ejecutó nada desde el entorno del revisor. La ejecución RED/GREEN por el agy no sustituye su posterior verificación independiente.
+
+## Ronda 2 — mutaciones nuevas sobre el fix (no sustituyen a Vitest)
+
+Con el SHA `0588a5f`, se leyeron los archivos originales de cada rol y las pruebas. Se ejecutaron **en memoria** cinco cambios por rol: quitar icono, quitar bloque de 48 px, quitar foco, quitar sólo `min-w-12` y quitar sólo `h-12`. La propiedad estructural de accesibilidad queda `false` para los 10 casos con baseline `true` para ambos. Esto verifica que las aserciones nuevas protegen cada token, pero **no afirma haber corrido el script original Vitest mutado**. La evidencia de ese RED la aporta la bitácora del autor.
+
+### Script completo de comprobación estructural (Node, sin dependencias)
+
+Este script es un control independiente complementario; para ejecutar RED/GREEN real, usar el primer harness de este mismo archivo. Puede copiarse a `/tmp/pr440-source-mutants.cjs` y ejecutarse desde un checkout limpio de `0588a5f` como `node /tmp/pr440-source-mutants.cjs`.
+
+~~~js
+'use strict';
+const fs = require('node:fs');
+const root = process.cwd();
+const file = (p) => fs.readFileSync(require('node:path').join(root,p),'utf8');
+const tests = file('src/features/trips/components.test.tsx');
+const helper = tests.match(/function expectAccessibleBackArrow\(back: HTMLElement\) \{([\s\S]*?)\n\}/);
+if (!helper) throw new Error('falta helper de test');
+for (const token of ['svg.lucide-arrow-left','h-12','w-12','min-h-12','min-w-12','focus-visible:ring-2']) {
+  if (!helper[1].includes(token)) throw new Error('asercion ausente: '+token);
+}
+if ((tests.match(/expectAccessibleBackArrow\(back\);/g) || []).length !== 2) {
+  throw new Error('el helper debe ejecutarse para ambos roles');
+}
+const roles = [
+ ['merchant','src/features/trips/components/trip-merchant-view.tsx','/merchant/dashboard','Volver al panel'],
+ ['courier','src/features/trips/components/trip-courier-view.tsx','/courier/feed','Volver a solicitudes']
+];
+let red = 0;
+for (const [role,path,href,label] of roles) {
+ const source = file(path);
+ const link = (source.match(/<Link\s+href="[^"]+"[\s\S]*?<\/Link>/g) || [])
+  .find(part=>part.includes('aria-label="'+label+'"'));
+ if(!link) throw new Error('falta Link '+role);
+ const valid=(s)=>{
+   const name=s.match(/className="([^"]+)"/)?.[1] || '';
+   const tokens=name.split(/\s+/);
+   return s.includes('href="'+href+'"') && s.includes('aria-label="'+label+'"') &&
+      s.includes('<ArrowLeft ') &&
+      ['h-12','w-12','min-h-12','min-w-12','focus-visible:ring-2']
+       .every(token=>tokens.includes(token));
+ };
+ if(!valid(link)) throw new Error('CONTROL GREEN falló: '+role);
+ const changes = [
+   ['sin SVG',link.replace('<ArrowLeft className="h-5 w-5" aria-hidden="true" />','')],
+   ['sin bloque 48px',link.replace('h-12 min-h-12 w-12 min-w-12','')],
+   ['sin ring',link.replace('focus-visible:ring-2','')],
+   ['sin min-width',link.replace('min-w-12','')],
+   ['sin height',link.replace('h-12','')]
+ ];
+ for(const [name,mutant] of changes) {
+   if(mutant===link) throw new Error('instrumento sin objetivo: '+role+' '+name);
+   if(valid(mutant)) throw new Error('MUTANTE INDETECTADO: '+role+' '+name);
+   red++;
+   process.stdout.write('RED estructural esperado: '+role+' / '+name+'\n');
+ }
+ process.stdout.write('GREEN estructural original: '+role+'\n');
+}
+if(red!==10)throw new Error('conteo RED incorrecto '+red);
+process.stdout.write('10/10 mutaciones estructurales detectadas; fuente intacta\n');
+~~~

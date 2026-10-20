@@ -12,3 +12,7 @@ Reforzar los dos tests de navegación con aserciones del SVG y del área de 48 p
 
 ## Otras observaciones
 Un fallo de `next/font` en el SHA anterior no volvió a aparecer en el SHA revisado, cuyo build pasó. Registrar ambos resultados y no adjudicar causalidad sin prueba.
+
+## Ronda 2 — cierre del P08
+
+El helper `expectAccessibleBackArrow` agrega asserts sobre el SVG, cinco tokens (tamaño/foco) y se usa en ambas vistas. Se verificó independientemente con lectura y mutaciones sintéticas en memoria contra código fuente; al retirar icono, dimensiones o foco, la propiedad evaluada cambia de `true` a `false`. CI oficial confirmó el GREEN. El autor aportó RED reales con Vitest, pero no se hicieron correr por el revisor por falta de un clon/dependencias accesibles.
