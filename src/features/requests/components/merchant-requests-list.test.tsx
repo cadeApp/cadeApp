@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MerchantRequestsList } from './merchant-requests-list';
 import { MerchantHistoryView } from './merchant-history-view';
 import type { MerchantRequestSummary, MerchantMetrics } from '../types';
 import { notify } from '@/ui/notify';
 import { cancelMerchantRequestAction } from '../actions';
+import { MERCHANT_PANEL_MOUNTED_KEY } from '../hooks/use-merchant-panel-refresh';
 
 const mockRefresh = vi.fn();
 const mockPush = vi.fn();
@@ -29,8 +30,22 @@ vi.mock('../actions', () => ({
   cancelMerchantRequestAction: vi.fn(),
 }));
 
+// T-381: el panel abre un canal de Realtime; acá es un canal inerte (estas pruebas no emiten eventos).
+vi.mock('@/lib/supabase/browser', () => {
+  const channel = { on: () => channel, subscribe: () => channel };
+  return {
+    createClient: () => ({
+      auth: { getSession: async () => ({ data: { session: null } }) },
+      channel: () => channel,
+      removeChannel: () => undefined,
+    }),
+  };
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // T-381: cada test arranca como un documento nuevo; el primer montaje del panel no refresca.
+  Reflect.deleteProperty(window, MERCHANT_PANEL_MOUNTED_KEY);
 });
 
 describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
@@ -775,3 +790,83 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
   });
 });
 
+describe('T-381: el conteo de la tarjeta vuelve a coincidir al reingresar al panel', () => {
+  const metrics: MerchantMetrics = { dispatchedToday: 0, avgRateArs: 0, activeCount: 1 };
+
+  function published(offersCount: number): MerchantRequestSummary[] {
+    return [
+      {
+        id: 'req-381',
+        pickupZoneName: 'Centro',
+        dropoffZoneName: 'Barrio Norte',
+        approxDistanceKm: '2,5',
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        status: 'published',
+        expiresAt: '2099-01-01T00:00:00Z',
+        createdAt: '2026-10-20T10:00:00Z',
+        offersCount,
+        acceptedOfferId: null,
+      },
+    ];
+  }
+
+  it('entrar al detalle, que cambien las ofertas y volver por navegación interna refresca el panel: de 2 a 1, sin foco, visibilidad ni Realtime', async () => {
+    vi.useFakeTimers();
+    try {
+      const Panel = MerchantRequestsList;
+      // Más que cualquier debounce razonable del refresco: el test no depende del valor exacto.
+      const settle = 2_000;
+
+      // «Servidor»: lo que devuelve un router.refresh(). El panel recibe props del payload del router.
+      let serverRequests = published(2);
+      let applyRefresh: (next: MerchantRequestSummary[]) => void = () => undefined;
+      mockRefresh.mockImplementation(() => applyRefresh(serverRequests));
+      const focusListener = vi.fn();
+      window.addEventListener('focus', focusListener);
+
+      function App() {
+        const [route, setRoute] = React.useState<'panel' | 'detail'>('panel');
+        const [routerPayload, setRouterPayload] = React.useState(serverRequests);
+        applyRefresh = setRouterPayload;
+        return (
+          <>
+            <button type="button" onClick={() => setRoute(route === 'panel' ? 'detail' : 'panel')}>
+              navegar
+            </button>
+            {route === 'panel' ? <Panel requests={routerPayload} metrics={metrics} /> : <p>Detalle</p>}
+          </>
+        );
+      }
+
+      render(<App />);
+      expect(screen.getByText('2 ofertas recibidas')).toBeDefined();
+      await act(async () => {
+        vi.advanceTimersByTime(settle);
+      });
+      expect(mockRefresh).not.toHaveBeenCalled();
+
+      // Al detalle; mientras tanto el admin suspende a un ofertante y queda una oferta pendiente.
+      fireEvent.click(screen.getByRole('button', { name: 'navegar' }));
+      expect(screen.getByText('Detalle')).toBeDefined();
+      serverRequests = published(1);
+
+      // Vuelta al panel: el payload del router sigue diciendo 2 hasta que el panel se refresca.
+      fireEvent.click(screen.getByRole('button', { name: 'navegar' }));
+      expect(screen.getByText('2 ofertas recibidas')).toBeDefined();
+      await act(async () => {
+        vi.advanceTimersByTime(settle);
+      });
+
+      expect(screen.getByText('1 oferta recibida')).toBeDefined();
+      expect(screen.queryByText('2 ofertas recibidas')).toBeNull();
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+      expect(focusListener).not.toHaveBeenCalled();
+      window.removeEventListener('focus', focusListener);
+    } finally {
+      mockRefresh.mockReset();
+      vi.useRealTimers();
+    }
+  });
+});
