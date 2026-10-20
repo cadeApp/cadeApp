@@ -11,8 +11,25 @@ import {
   getPushSubscriptionStatus,
   PENDING_UNSUB_STORAGE_KEY,
   PUSH_STORAGE_KEY,
+  pendingUnsubStorageKey,
 } from './push';
 import { PUSH_COPY } from './push/copy';
+
+// T-382 (PR459-H05): la baja pendiente es de la cuenta logueada; la sesión del navegador se controla por test.
+const session = vi.hoisted(() => ({ userId: 'user-a' as string | null }));
+const USER_A = 'user-a';
+const USER_B = 'user-b';
+
+vi.mock('@/lib/supabase/browser', () => ({
+  createClient: () => ({
+    auth: {
+      getSession: async () => ({
+        data: { session: session.userId ? { user: { id: session.userId } } : null },
+        error: null,
+      }),
+    },
+  }),
+}));
 
 vi.mock('@/lib/env.public', () => ({
   publicEnv: {
@@ -23,6 +40,7 @@ vi.mock('@/lib/env.public', () => ({
 
 describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
   beforeEach(() => {
+    session.userId = USER_A;
     localStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -335,7 +353,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 
       const firstResult = await unsubscribeFromPush();
       expect(firstResult.ok, 'Fallo 500 de DELETE debe provocar ok: false').toBe(false);
-      expect(localStorage.getItem('cadeapp_pending_unsub_endpoint')).toBe(targetEndpoint);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(targetEndpoint);
 
       // Segundo intento: navegador ya no tiene suscripción nativa, pero reconcilia con endpoint retenido
       Object.defineProperty(globalThis.navigator, 'serviceWorker', {
@@ -364,7 +382,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
           body: JSON.stringify({ endpoint: targetEndpoint }),
         })
       );
-      expect(localStorage.getItem('cadeapp_pending_unsub_endpoint')).toBeNull();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
     });
   });
 
@@ -461,7 +479,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       const firstResult = await unsubscribeFromPush();
       expect(firstResult.ok).toBe(false);
       expect(firstResult.error).toBe('network_error');
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(SUB_ENDPOINT);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(SUB_ENDPOINT);
 
       mockServiceWorker({ getSubscription: vi.fn().mockResolvedValue(null) });
       const mockFetchRetry = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
@@ -476,7 +494,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
           body: JSON.stringify({ endpoint: SUB_ENDPOINT }),
         })
       );
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBeNull();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
     });
 
     it('PR120-H16: endpoint pendiente corrupto en localStorage no llega a fetch, se limpia y devuelve error', async () => {
@@ -878,6 +896,7 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
   }
 
   beforeEach(() => {
+    session.userId = USER_A;
     localStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -1158,7 +1177,7 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       expect(screen.queryByText(/Avisos activados/i)).toBeNull();
       expect(screen.queryByRole('button', { name: /^Desactivar avisos$/i })).toBeNull();
       expect(screen.getByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate })).toBeTruthy();
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(ENDPOINT);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
 
       // Se cierra y se vuelve a abrir «Configurar»: el navegador ya no tiene suscripción, la baja sigue pendiente.
       first.unmount();
@@ -1172,13 +1191,13 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivated)).toBeTruthy();
       expect(screen.getByRole('button', { name: /^Activar avisos$/i })).toBeTruthy();
       expect(screen.queryByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeNull();
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBeNull();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
       expect(deleteBodies(fetchMock)).toEqual([{ endpoint: ENDPOINT }, { endpoint: ENDPOINT }]);
     });
 
     it('H01: si el reintento vuelve a fallar, conserva la baja pendiente y el botón para reintentar', async () => {
       setPermission('granted');
-      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, ENDPOINT);
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
       setPushManager({ getSubscription: vi.fn().mockResolvedValue(null) });
       const fetchMock = routeFetch({
         subscriptions: () => Promise.reject(new TypeError('Failed to fetch')),
@@ -1190,13 +1209,13 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       await waitFor(() => expect(deleteBodies(fetchMock)).toEqual([{ endpoint: ENDPOINT }]));
       expect(await screen.findByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate })).toBeTruthy();
       expect(screen.getByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeTruthy();
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(ENDPOINT);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
       expect(screen.queryByText(/Avisos activados/i)).toBeNull();
     });
 
     it('H01: si la baja falla sin dejar pendiente, muestra un error recuperable y no inventa una baja pendiente', async () => {
       setPermission('granted');
-      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, 'no-es-un-endpoint');
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), 'no-es-un-endpoint');
       setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
       routeFetch({ status: () => Promise.resolve(jsonResponse({ active: true })) });
 
@@ -1350,7 +1369,8 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       const [, details] = consoleError.mock.calls[0] as [string, { code: string; name: string; message: string }];
       expect(details.code).toBe('push_service_unavailable');
       expect(details.message).toBe('boom');
-      expect(details.name).toMatch(/^AbortError/);
+      // PR459-H03 (ronda 3): un name que no es un nombre estándar exacto se reemplaza por un marcador.
+      expect(details.name).toBe('[nombre no estándar]');
     });
 
     it.each([
@@ -1359,7 +1379,7 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       ['getSubscription rechazado', () => rejectingServiceWorker('getSubscription')],
     ])('H04 (%s): con baja pendiente muestra «Reintentar baja» y el reintento hace el DELETE con el endpoint en el body', async (_case, setup) => {
       setPermission('granted');
-      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, ENDPOINT);
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
       setup();
       const fetchMock = routeFetch({ subscriptions: () => Promise.resolve(jsonResponse({ ok: true })) });
 
@@ -1372,7 +1392,7 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       expect(calls(fetchMock, 'DELETE')).toEqual([{ endpoint: ENDPOINT }]);
       expect(calls(fetchMock, 'POST')).toEqual([]);
       expect(fetchMock.mock.calls.every(([url]) => !String(url).includes(ENDPOINT))).toBe(true);
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBeNull();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
     });
 
     it.each([
@@ -1381,7 +1401,7 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       ['getSubscription rechazado, DELETE 401', () => rejectingServiceWorker('getSubscription'), () => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401))],
     ])('H04 (%s): si el reintento falla, conserva la baja pendiente y el botón', async (_case, setup, response) => {
       setPermission('granted');
-      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, ENDPOINT);
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
       setup();
       const fetchMock = routeFetch({ subscriptions: response });
 
@@ -1389,7 +1409,7 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
 
       expect(result.ok).toBe(false);
       expect(calls(fetchMock, 'DELETE')).toEqual([{ endpoint: ENDPOINT }]);
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(ENDPOINT);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
       expect(await getPushSubscriptionStatus()).toBe('pending_unsubscribe');
     });
 
@@ -1401,6 +1421,134 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       expect(await getPushSubscriptionStatus()).toBe('inactive');
       expect(await unsubscribeFromPush()).toEqual({ ok: true });
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+  describe('PR459 ronda 3: nombres de error por lista blanca y baja pendiente ligada a la cuenta', () => {
+    function renderPrompt() {
+      return render(React.createElement(PushPermissionPrompt, { embedded: true, onDismiss: vi.fn() }));
+    }
+
+    function deletes(fetchMock: ReturnType<typeof routeFetch>) {
+      return fetchMock.mock.calls
+        .filter(([url, init]) => String(url) === '/api/push/subscriptions' && init?.method === 'DELETE')
+        .map(([, init]) => JSON.parse(String(init?.body)));
+    }
+
+    it.each([
+      ['un secreto alfanumérico entero', 'BAlnumSecretToken123'],
+      ['un nombre estándar con algo pegado', 'AbortErrorSecretSuffix'],
+    ])('H03: un name que es %s no se registra; los estándar sí', async (_case, name) => {
+      setPermission('granted');
+      setPushManager({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockRejectedValue(browserError(name, 'boom')),
+      });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(await subscribeToPush()).toEqual({ ok: false, error: 'push_service_unavailable' });
+      expect(consoleText(consoleError)).not.toContain(name);
+      const [, details] = consoleError.mock.calls[0] as [string, { code: string; name: string }];
+      expect(details).toEqual(expect.objectContaining({ code: 'push_service_unavailable', name: '[nombre no estándar]' }));
+    });
+
+    it('H03: el nombre exacto NotAllowedError sigue clasificando como permiso bloqueado y se registra legible', async () => {
+      setPermission('granted');
+      setPushManager({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockRejectedValue(browserError('NotAllowedError', 'denied')),
+      });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(await subscribeToPush()).toEqual({ ok: false, error: 'permission_blocked' });
+      expect(consoleError).toHaveBeenCalledWith(
+        '[push] subscribe failed',
+        expect.objectContaining({ code: 'permission_blocked', name: 'NotAllowedError' })
+      );
+    });
+
+    it('H05: la baja pendiente de A no se le muestra a B, el DELETE de B (200 sin filas) no la borra y A la completa al volver', async () => {
+      setPermission('granted');
+      let native: ReturnType<typeof subscription> | null = subscription();
+      native.unsubscribe.mockImplementation(async () => {
+        native = null;
+        return true;
+      });
+      setPushManager({ getSubscription: vi.fn(async () => native) });
+      const deleteResponses = [
+        jsonResponse({ error: 'Database error' }, 500), // A: falla la baja en el servidor
+        jsonResponse({ ok: true }), // A al volver: se confirma
+      ];
+      const fetchMock = routeFetch({
+        status: () => Promise.resolve(jsonResponse({ active: true })),
+        subscriptions: () => Promise.resolve(deleteResponses.shift() ?? jsonResponse({ ok: true })),
+      });
+
+      // A desactiva y el servidor no confirma: queda pendiente para A.
+      const asA = renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: /^Desactivar avisos$/i }));
+      expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeTruthy();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+      asA.unmount();
+
+      // Cambia la sesión a B sin limpiar el storage: B no ve ni puede consumir la baja de A.
+      session.userId = USER_B;
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+      const asB = renderPrompt();
+      expect(await screen.findByRole('button', { name: /^Activar avisos$/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate })).toBeNull();
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+      // Aunque B llame a la baja y el servidor responda 200 (cero filas, por RLS), la baja pendiente de A queda.
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+      asB.unmount();
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }]);
+
+      // Vuelve A: ve la baja pendiente y la completa.
+      session.userId = USER_A;
+      renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate }));
+      expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivated)).toBeTruthy();
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }, { endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
+    });
+
+    it('H05: si B falla su propia baja, no pisa la baja pendiente de A', async () => {
+      setPermission('granted');
+      const OTHER = 'https://push.example.com/sub/t382-account-b';
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
+      session.userId = USER_B;
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription(OTHER)) });
+      routeFetch({ subscriptions: () => Promise.reject(new TypeError('Failed to fetch')) });
+
+      expect((await unsubscribeFromPush()).ok).toBe(false);
+
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_B))).toBe(OTHER);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+    });
+
+    it('H05: sin identidad comprobable no se atribuye ni se guarda una baja pendiente', async () => {
+      setPermission('granted');
+      session.userId = null;
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      routeFetch({ subscriptions: () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500)) });
+
+      expect((await unsubscribeFromPush()).ok).toBe(false);
+
+      expect(Object.keys(localStorage).filter((key) => key.startsWith(PENDING_UNSUB_STORAGE_KEY))).toEqual([]);
+    });
+
+    it('H05: una baja pendiente con el formato viejo (sin dueño) no se atribuye a nadie ni la borra otra cuenta', async () => {
+      setPermission('granted');
+      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, ENDPOINT);
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null) });
+      const fetchMock = routeFetch({ subscriptions: () => Promise.resolve(jsonResponse({ ok: true })) });
+
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(deletes(fetchMock)).toEqual([]);
+      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(ENDPOINT);
     });
   });
 });

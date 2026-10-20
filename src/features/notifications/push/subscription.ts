@@ -8,7 +8,27 @@ import type {
 } from './types';
 
 export const PUSH_STORAGE_KEY = 'cadeapp_push_enabled';
+/**
+ * Prefijo de la baja pendiente. T-382 (PR459-H05): cada cuenta tiene su propia clave (`<prefijo>:<userId>`), así otra
+ * sesión en el mismo navegador no la ve, no la reintenta ni la borra. La clave sin sufijo es el formato viejo, sin
+ * dueño: no se atribuye a ninguna cuenta ni se borra por la acción de otra (si está corrupta, se descarta).
+ */
 export const PENDING_UNSUB_STORAGE_KEY = 'cadeapp_pending_unsub_endpoint';
+
+export function pendingUnsubStorageKey(userId: string): string {
+  return `${PENDING_UNSUB_STORAGE_KEY}:${userId}`;
+}
+
+/** Cuenta logueada según la sesión del navegador; `null` si no se puede comprobar. */
+async function getCurrentUserId(): Promise<string | null> {
+  try {
+    const { createClient } = await import('@/lib/supabase/browser');
+    const { data } = await createClient().auth.getSession();
+    return data.session?.user.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -123,15 +143,34 @@ export function sanitizePushErrorMessage(message: string, knownSecrets: readonly
  * T-382: diagnóstico de una falla de alta: el código y el `name` y `message` de la excepción original, con el mensaje
  * sanitizado. Nunca el objeto de error, la suscripción, el cuerpo del pedido ni las claves.
  */
-/** Un `name` estándar (`AbortError`, `NotAllowedError`, `TypeError`…) se registra tal cual; cualquier otro, sanitizado. */
-const STANDARD_ERROR_NAME = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
+/**
+ * PR459-H03: solo los nombres de error estándar que aparecen en este flujo se registran tal cual; cualquier otro (aunque
+ * parezca un identificador) se reemplaza por un marcador, porque podría ser un secreto.
+ */
+const STANDARD_ERROR_NAMES: ReadonlySet<string> = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'DOMException',
+  'AbortError',
+  'NotAllowedError',
+  'NotSupportedError',
+  'NotFoundError',
+  'InvalidStateError',
+  'InvalidAccessError',
+  'SecurityError',
+  'NetworkError',
+  'TimeoutError',
+  'QuotaExceededError',
+  'UnknownError',
+]);
+const NON_STANDARD_ERROR_NAME = '[nombre no estándar]';
 
 function logSubscribeFailure(code: string, cause?: unknown, knownSecrets: readonly string[] = []) {
   const rawName = readErrorField(cause, 'name');
   const name =
-    rawName === undefined || STANDARD_ERROR_NAME.test(rawName)
-      ? rawName
-      : sanitizePushErrorMessage(rawName, knownSecrets);
+    rawName === undefined || STANDARD_ERROR_NAMES.has(rawName) ? rawName : NON_STANDARD_ERROR_NAME;
   const message = readErrorField(cause, 'message');
   console.error('[push] subscribe failed', {
     code,
@@ -260,14 +299,16 @@ export async function subscribeToPush(
   }
 }
 
-/** T-382 (PR459-H01): ¿quedó un endpoint válido esperando que el servidor confirme la baja? */
-function hasPendingUnsubscribe(): boolean {
-  if (typeof window === 'undefined') return false;
+/** T-382 (PR459-H01/H05): endpoint válido que espera la confirmación de la baja de esta cuenta, o `null`. */
+function readOwnPendingEndpoint(userId: string | null): string | null {
+  if (!userId || typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(PENDING_UNSUB_STORAGE_KEY);
-    return raw !== null && PendingUnsubEndpointSchema.safeParse(raw).success;
+    const raw = localStorage.getItem(pendingUnsubStorageKey(userId));
+    if (raw === null) return null;
+    const parsed = PendingUnsubEndpointSchema.safeParse(raw);
+    return parsed.success ? parsed.data : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -278,7 +319,8 @@ function hasPendingUnsubscribe(): boolean {
  */
 export async function getPushSubscriptionStatus(): Promise<PushSubscriptionState> {
   // PR459-H04: una baja pendiente se informa aunque el navegador no tenga (o no pueda leer) su suscripción.
-  const pending = hasPendingUnsubscribe();
+  // PR459-H05: solo la de la cuenta logueada.
+  const pending = readOwnPendingEndpoint(await getCurrentUserId()) !== null;
   if (!isPushSupported()) {
     return pending ? 'pending_unsubscribe' : 'inactive';
   }
@@ -321,7 +363,10 @@ export async function getPushSubscriptionStatus(): Promise<PushSubscriptionState
  * PR120-H05 / PR459-H04: confirma la baja en el servidor (`DELETE` con el endpoint solo en el cuerpo). Solo un 2xx
  * limpia el storage; si no, el endpoint queda pendiente para reintentar.
  */
-async function confirmUnsubscribeOnServer(endpoint: string): Promise<{ ok: boolean; error?: string }> {
+async function confirmUnsubscribeOnServer(
+  endpoint: string,
+  userId: string | null
+): Promise<{ ok: boolean; error?: string }> {
   let deleteOk = false;
   let deleteStatus = 200;
   try {
@@ -337,8 +382,9 @@ async function confirmUnsubscribeOnServer(endpoint: string): Promise<{ ok: boole
   }
 
   if (!deleteOk) {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, endpoint);
+    // PR459-H05: la baja pendiente queda a nombre de la cuenta; sin identidad comprobable no se atribuye.
+    if (userId && typeof window !== 'undefined') {
+      localStorage.setItem(pendingUnsubStorageKey(userId), endpoint);
     }
     return {
       ok: false,
@@ -348,31 +394,34 @@ async function confirmUnsubscribeOnServer(endpoint: string): Promise<{ ok: boole
 
   if (typeof window !== 'undefined') {
     localStorage.setItem(PUSH_STORAGE_KEY, 'false');
-    localStorage.removeItem(PENDING_UNSUB_STORAGE_KEY);
+    // Solo se limpia la baja pendiente propia y si es la que se acaba de confirmar.
+    if (userId && readOwnPendingEndpoint(userId) === endpoint) {
+      localStorage.removeItem(pendingUnsubStorageKey(userId));
+    }
   }
   return { ok: true };
 }
 
 export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: string }> {
-  const rawPendingEndpoint =
-    typeof window !== 'undefined'
-      ? localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)
-      : null;
-
-  let pendingEndpoint: string | null = null;
-  if (rawPendingEndpoint !== null) {
-    const parsed = PendingUnsubEndpointSchema.safeParse(rawPendingEndpoint);
-    if (!parsed.success) {
-      localStorage.removeItem(PENDING_UNSUB_STORAGE_KEY);
-      return { ok: false, error: 'invalid_pending_endpoint' };
+  // PR120-H16: el storage es una frontera no confiable. Un valor corrupto (formato viejo o de esta cuenta) se descarta.
+  const userId = await getCurrentUserId();
+  const pendingKeys = [PENDING_UNSUB_STORAGE_KEY, ...(userId ? [pendingUnsubStorageKey(userId)] : [])];
+  if (typeof window !== 'undefined') {
+    for (const key of pendingKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw !== null && !PendingUnsubEndpointSchema.safeParse(raw).success) {
+        localStorage.removeItem(key);
+        return { ok: false, error: 'invalid_pending_endpoint' };
+      }
     }
-    pendingEndpoint = parsed.data;
   }
+  // PR459-H05: solo la baja pendiente de la cuenta logueada; la de otra cuenta o la sin dueño no se tocan.
+  const pendingEndpoint = readOwnPendingEndpoint(userId);
 
   if (!isPushSupported()) {
     // PR459-H04: sin soporte nativo no hay suscripción que bajar en el navegador, pero una baja pendiente se confirma.
     if (pendingEndpoint) {
-      return confirmUnsubscribeOnServer(pendingEndpoint);
+      return confirmUnsubscribeOnServer(pendingEndpoint, userId);
     }
     if (typeof window !== 'undefined') {
       localStorage.setItem(PUSH_STORAGE_KEY, 'false');
@@ -387,7 +436,7 @@ export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: stri
   } catch {
     // PR459-H04: si el navegador no deja leer la suscripción, la baja pendiente igual se confirma en el servidor.
     if (pendingEndpoint) {
-      return confirmUnsubscribeOnServer(pendingEndpoint);
+      return confirmUnsubscribeOnServer(pendingEndpoint, userId);
     }
     return { ok: false, error: 'unsubscription_failed' };
   }
@@ -399,7 +448,6 @@ export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: stri
     if (!endpoint) {
       if (typeof window !== 'undefined') {
         localStorage.setItem(PUSH_STORAGE_KEY, 'false');
-        localStorage.removeItem(PENDING_UNSUB_STORAGE_KEY);
       }
       return { ok: true };
     }
@@ -414,7 +462,7 @@ export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: stri
     }
 
     // PR120-H05: notificar la baja al backend y confirmar el 2xx (retiene el endpoint para reintentar si falla).
-    return await confirmUnsubscribeOnServer(endpoint);
+    return await confirmUnsubscribeOnServer(endpoint, userId);
   } catch {
     return { ok: false, error: 'unsubscription_failed' };
   }
