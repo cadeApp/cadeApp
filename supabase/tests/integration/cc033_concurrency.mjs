@@ -43,13 +43,16 @@ class Session {
     throw new Error(`[CC-033][${this.label}] timeout esperando ${marker}: ${this.output}`);
   }
 
-  async init(actorId, role, aal = 'aal1') {
+  async init(actorId, role, aal = 'aal1', asPostgres = false) {
     const marker = `READY_${crypto.randomUUID()}`;
+    const actorSetup = asPostgres
+      ? ''
+      : `set local role authenticated;
+      select set_config('request.jwt.claims', ${claims(actorId, role, aal)}, true);`;
     this.send(`\\pset tuples_only on
       \\pset format unaligned
       begin;
-      set local role authenticated;
-      select set_config('request.jwt.claims', ${claims(actorId, role, aal)}, true);
+      ${actorSetup}
       select '${marker}:' || pg_backend_pid();`);
     const output = await this.waitFor(marker);
     const match = output.match(new RegExp(`${marker}:(\\d+)`));
@@ -171,7 +174,7 @@ async function mutationCheck() {
     const courierLock = new Session('mut-courier');
     const rpc = new Session('mut-rpc');
     try {
-      await courierLock.init(courierId, 'courier'); await rpc.init(courierId, 'courier');
+      await courierLock.init(courierId, 'courier', 'aal1', true); await rpc.init(courierId, 'courier');
       courierLock.send(`select 1 from public.couriers where profile_id='${courierId}' for update; select 'COURIER_LOCKED';`);
       await courierLock.waitFor('COURIER_LOCKED');
       rpc.send(`do $body$ begin begin perform public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','${pathA}')); exception when others then raise notice 'RPC_ERROR:%', SQLSTATE; end; end $body$;`);
