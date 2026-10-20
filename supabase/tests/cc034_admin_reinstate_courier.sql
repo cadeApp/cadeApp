@@ -236,9 +236,14 @@ select is(pg_temp.courier_status(pg_temp.courier_susp()), 'suspended', 'los rech
 select is(pg_temp.courier_status(pg_temp.courier_pend()), 'pending', 'pending sigue pending');
 select is(pg_temp.courier_status(pg_temp.courier_incomplete()), 'suspended', 'onboarding incompleto sigue suspended');
 select is(
-  (select count(*)::int from public.audit_log where action = 'admin_reinstate_courier'),
+  (select count(*)::int from public.audit_log
+   where action = 'admin_reinstate_courier'
+     and target_id in (
+       pg_temp.courier_susp()::text, pg_temp.courier_rej()::text, pg_temp.courier_appr()::text,
+       pg_temp.courier_pend()::text, pg_temp.courier_incomplete()::text, pg_temp.missing_id()::text
+     )),
   0,
-  'ningún rechazo escribió auditoría'
+  'ningún rechazo escribió auditoría (solo los repartidores de este test: la base puede traer filas de otras suites)'
 );
 
 -- 5. Reactivar un suspendido
@@ -363,6 +368,7 @@ select ok(
   not exists (
     select 1 from public.audit_log
     where action = 'admin_reinstate_courier'
+      and target_id in (pg_temp.courier_susp()::text, pg_temp.courier_rej()::text)
       and (after ? 'phone' or after ? 'dni' or after ? 'storage_path' or before ? 'phone')
   ),
   'auditoría sin teléfono, DNI ni rutas de documentos'
