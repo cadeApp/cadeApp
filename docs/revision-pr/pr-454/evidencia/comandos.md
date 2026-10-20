@@ -104,7 +104,7 @@ import assert from 'node:assert/strict';
 const s=fs.readFileSync('src/domain/testing/rpc-fake.ts','utf8');
 const segment=s.slice(s.indexOf("add_courier_optional_document: (rawInput)"),s.indexOf("replace_courier_document: (rawInput)"));
 assert.ok(segment.length>0,'RPC fake debe existir');
-assert.match(segment,/\!\/\^\[0-9\]\+\[\.\]\(png\|jpe\?g\|webp\|pdf\)\$\/\.test\(suffix\)/,'fake debe usar regex sin i');
+assert.ok(segment.includes('!/^[0-9]+[.](png|jpe?g|webp|pdf)$/.test(suffix)'), 'fake debe usar regex sin i');
 console.log('PASS: guard de extensión case-sensitive presente');
 JS
 pnpm exec vitest run src/domain/cc033-add-courier-optional-document.test.ts src/server/rpc/courier.test.ts
