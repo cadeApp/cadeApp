@@ -1,8 +1,9 @@
 import { publicEnv } from '@/lib/env.public';
-import { PendingUnsubEndpointSchema } from './schemas';
+import { PendingUnsubEndpointSchema, PushStatusResponseSchema } from './schemas';
 import type {
   PushOperationResult,
   PushPermissionStatus,
+  PushSubscriptionState,
   RequestPermissionOptions,
 } from './types';
 
@@ -93,6 +94,22 @@ export async function getPushSubscription(): Promise<PushSubscription | null> {
   }
 }
 
+/**
+ * T-382: diagnóstico de una falla de alta. Solo el código y el `name`/`message` de la excepción original: nunca el
+ * endpoint ni las claves, que son una URL de capacidad.
+ */
+function logSubscribeFailure(code: string, cause?: unknown) {
+  console.error('[push] subscribe failed', {
+    code,
+    ...(cause instanceof Error ? { name: cause.name, message: cause.message } : {}),
+  });
+}
+
+/** Excepción de `pushManager.subscribe`: `NotAllowedError` es el permiso bloqueado (Edge); el resto, sin servicio push. */
+function classifySubscribeException(err: unknown): 'permission_blocked' | 'push_service_unavailable' {
+  return err instanceof Error && err.name === 'NotAllowedError' ? 'permission_blocked' : 'push_service_unavailable';
+}
+
 export async function subscribeToPush(
   vapidPublicKey?: string
 ): Promise<PushOperationResult> {
@@ -121,10 +138,16 @@ export async function subscribeToPush(
       }
 
       const applicationServerKey = urlBase64ToUint8Array(key);
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: applicationServerKey as unknown as BufferSource,
-      });
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey as unknown as BufferSource,
+        });
+      } catch (err) {
+        const code = classifySubscribeException(err);
+        logSubscribeFailure(code, err);
+        return { ok: false, error: code };
+      }
     }
 
     const subJson = subscription.toJSON();
@@ -150,12 +173,12 @@ export async function subscribeToPush(
       });
 
       if (!response.ok) {
-        return {
-          ok: false,
-          error: response.status === 401 ? 'unauthorized' : 'backend_error',
-        };
+        const code = response.status === 401 ? 'unauthorized' : 'backend_error';
+        logSubscribeFailure(code);
+        return { ok: false, error: code };
       }
-    } catch {
+    } catch (err) {
+      logSubscribeFailure('network_error', err);
       return {
         ok: false,
         error: 'network_error',
@@ -180,6 +203,47 @@ export async function subscribeToPush(
       ok: false,
       error: err instanceof Error ? err.message : 'subscription_failed',
     };
+  }
+}
+
+/**
+ * T-382: estado real de los avisos en este navegador para la cuenta logueada. `active` exige permiso concedido,
+ * suscripción del navegador y confirmación del servidor; `PUSH_STORAGE_KEY` nunca alcanza. Si la consulta falla,
+ * `unknown` (nunca `active`).
+ */
+export async function getPushSubscriptionStatus(): Promise<PushSubscriptionState> {
+  if (!isPushSupported() || getNotificationPermission() !== 'granted') {
+    return 'inactive';
+  }
+
+  let endpoint: string;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      return 'inactive';
+    }
+    endpoint = subscription.endpoint;
+  } catch {
+    return 'unknown';
+  }
+
+  try {
+    const response = await fetch('/api/push/subscriptions/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint }),
+    });
+    if (!response.ok) {
+      return 'unknown';
+    }
+    const parsed = PushStatusResponseSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      return 'unknown';
+    }
+    return parsed.data.active ? 'active' : 'inactive';
+  } catch {
+    return 'unknown';
   }
 }
 

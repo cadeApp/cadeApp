@@ -1,16 +1,40 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Bell, CheckCircle2, Info, ShieldCheck, Zap } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, CheckCircle2, Info, ShieldCheck, Zap } from 'lucide-react';
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
 import { cn } from '@/ui/cn';
 import { PUSH_COPY } from '../copy';
 import {
   getNotificationPermission,
+  getPushSubscriptionStatus,
   requestNotificationPermission,
   subscribeToPush,
+  unsubscribeFromPush,
 } from '../subscription';
+import type { PushSubscriptionState } from '../types';
+
+/** T-382: un mensaje por causa de falla del alta. */
+function subscribeErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case 'push_service_unavailable':
+      return PUSH_COPY.prompt.statusPushServiceUnavailable;
+    case 'permission_blocked':
+      return PUSH_COPY.prompt.statusPermissionBlocked;
+    case 'unauthorized':
+      return PUSH_COPY.prompt.statusSessionExpired;
+    case 'network_error':
+      return PUSH_COPY.prompt.statusNetworkError;
+    case 'missing_vapid_key':
+    case 'missing_keys':
+      return PUSH_COPY.prompt.statusConfigError;
+    case 'unsupported':
+      return PUSH_COPY.prompt.statusUnsupported;
+    default:
+      return PUSH_COPY.prompt.statusSubscriptionError;
+  }
+}
 
 export interface PushPermissionPromptProps {
   onSuccess?: () => void;
@@ -30,6 +54,15 @@ export function PushPermissionPrompt({
     'idle' | 'requesting' | 'subscribing' | 'granted' | 'denied'
   >('idle');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = React.useState<string | null>(null);
+  // T-382: estado real para la cuenta logueada (permiso + suscripción del navegador + servidor).
+  const [accountState, setAccountState] = React.useState<PushSubscriptionState | 'checking'>('checking');
+  const [deactivating, setDeactivating] = React.useState(false);
+
+  const checkAccountState = React.useCallback(async () => {
+    setAccountState('checking');
+    setAccountState(await getPushSubscriptionStatus());
+  }, []);
 
   // PR120-H04: permiso `granted` del navegador no equivale a push activado; el estado final
   // `granted` solo llega después de que subscribeToPush() confirme el alta en backend.
@@ -37,7 +70,22 @@ export function PushPermissionPrompt({
     if (getNotificationPermission() === 'denied') {
       setStatus('denied');
     }
-  }, []);
+    void checkAccountState();
+  }, [checkAccountState]);
+
+  const handleDeactivate = async () => {
+    setDeactivating(true);
+    setErrorMessage(null);
+    setInfoMessage(null);
+    const result = await unsubscribeFromPush();
+    setDeactivating(false);
+    if (!result.ok) {
+      setErrorMessage(PUSH_COPY.prompt.statusDeactivateError);
+      return;
+    }
+    setAccountState('inactive');
+    setInfoMessage(PUSH_COPY.prompt.statusDeactivated);
+  };
 
   const handleDismiss = () => {
     if (onDismiss) {
@@ -50,6 +98,7 @@ export function PushPermissionPrompt({
   const handleActivate = async () => {
     setStatus('requesting');
     setErrorMessage(null);
+    setInfoMessage(null);
 
     // Si el permiso ya está concedido no se vuelve a pedir; se reconcilia directo con backend.
     const alreadyGranted = getNotificationPermission() === 'granted';
@@ -77,7 +126,7 @@ export function PushPermissionPrompt({
     const subResult = await subscribeToPush();
     if (!subResult.ok) {
       setStatus('idle');
-      setErrorMessage(PUSH_COPY.prompt.statusSubscriptionError);
+      setErrorMessage(subscribeErrorMessage(subResult.error));
       return;
     }
 
@@ -94,6 +143,7 @@ export function PushPermissionPrompt({
   };
 
   const isPending = status === 'requesting' || status === 'subscribing';
+  const isActive = accountState === 'active' && status !== 'granted';
 
   // Embebido, el layout ya aporta el landmark <main>: no se anida otro.
   const Root = embedded ? 'div' : 'main';
@@ -194,8 +244,30 @@ export function PushPermissionPrompt({
           </div>
         )}
 
+        {isActive && (
+          <div className="text-success mt-4 flex items-center gap-2 text-sm font-semibold" role="status">
+            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            <span>{PUSH_COPY.prompt.statusActive}</span>
+          </div>
+        )}
+
+        {accountState === 'unknown' && status !== 'granted' && (
+          <div className="mt-4 flex flex-col items-center gap-2 text-center text-sm text-muted-foreground" role="status">
+            <span>{PUSH_COPY.prompt.statusCheckFailed}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => void checkAccountState()}>
+              {PUSH_COPY.prompt.btnRetry}
+            </Button>
+          </div>
+        )}
+
+        {infoMessage && (
+          <div className="mt-4 text-center text-sm text-muted-foreground" role="status">
+            <span>{infoMessage}</span>
+          </div>
+        )}
+
         {errorMessage && (
-          <div className="mt-4 text-center text-sm text-destructive">
+          <div className="mt-4 text-center text-sm text-destructive" role="alert">
             <span>{errorMessage}</span>
           </div>
         )}
@@ -203,20 +275,35 @@ export function PushPermissionPrompt({
 
       {/* Acciones ancladas al pie con área táctil >= 48px */}
       <footer className="sticky bottom-0 z-20 flex w-full flex-col gap-2.5 border-t border-border/30 bg-background/95 p-4 backdrop-blur-sm">
-        <Button
-          type="button"
-          size="default"
-          isPending={isPending}
-          pendingText={PUSH_COPY.prompt.btnActivating}
-          disabled={status === 'granted'}
-          onClick={handleActivate}
-          className="w-full gap-2 font-display text-base font-bold"
-        >
-          <Bell className="h-5 w-5" aria-hidden="true" />
-          <span>
-            {status === 'granted' ? PUSH_COPY.prompt.btnActivated : PUSH_COPY.prompt.btnActivate}
-          </span>
-        </Button>
+        {isActive ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="default"
+            isPending={deactivating}
+            pendingText={PUSH_COPY.prompt.btnDeactivating}
+            onClick={handleDeactivate}
+            className="w-full gap-2 font-display text-base font-bold"
+          >
+            <BellOff className="h-5 w-5" aria-hidden="true" />
+            <span>{PUSH_COPY.prompt.btnDeactivate}</span>
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="default"
+            isPending={isPending}
+            pendingText={PUSH_COPY.prompt.btnActivating}
+            disabled={status === 'granted'}
+            onClick={handleActivate}
+            className="w-full gap-2 font-display text-base font-bold"
+          >
+            <Bell className="h-5 w-5" aria-hidden="true" />
+            <span>
+              {status === 'granted' ? PUSH_COPY.prompt.btnActivated : PUSH_COPY.prompt.btnActivate}
+            </span>
+          </Button>
+        )}
 
         <Button
           type="button"

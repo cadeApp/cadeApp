@@ -182,7 +182,6 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
   const [localProfile, setLocalProfile] = React.useState<CourierProfileData | null>(profile);
   const [avatarImageError, setAvatarImageError] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [isPhoneDialogOpen, setIsPhoneDialogOpen] = React.useState(false);
   const [phoneInputValue, setPhoneInputValue] = React.useState('');
   const [phoneError, setPhoneError] = React.useState<string | null>(null);
@@ -727,34 +726,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
 
       {/* Ajustes y Opciones */}
       <Card className="divide-y divide-border/60 text-sm">
-        {/* Notificaciones con área táctil >= 48x48px */}
-        <div className="flex items-center justify-between p-3.5">
-          <div className="flex items-center gap-2.5">
-            <Bell className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-            <span className="font-medium text-foreground">Notificaciones</span>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={notificationsEnabled}
-            aria-label="Alternar notificaciones"
-            onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-            className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span
-              className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
-                notificationsEnabled ? 'bg-primary-dark' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow-sm transition duration-200 ease-in-out ${
-                  notificationsEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </span>
-          </button>
-        </div>
-
+        {/* T-382: sin switch local de notificaciones; la entrada única es «Notificaciones y avisos → Configurar». */}
         {/* Documentos legales publicados (T-311), con targets >= 48px */}
         {[
           { href: '/legal/terms', label: 'Términos para repartidores' },
