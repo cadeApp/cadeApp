@@ -967,6 +967,10 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     // 1. Iniciar sesión Playwright como el comercio dueño ANTES de sembrar solicitudes vencidas
     // (para que la redirección post-login a /merchant/dashboard no reconcilie prematuramente las fixtures de prueba)
     await loginAsMerchant(page);
+    // T-381: el panel se refresca ante cambios de ofertas (Realtime) y ese refresco reconcilia las vencidas. Se sale del
+    // panel antes de sembrar para que la precondición «todavía published» siga en pie hasta el paso 4.
+    await page.waitForURL(/\/merchant\/dashboard/);
+    await page.goto('about:blank');
 
     // 2. Precondición A: solicitud published con expires_at en el pasado (10 minutos atrás) y oferta pendiente
     const pastExpiresAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
