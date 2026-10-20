@@ -23,6 +23,12 @@ const settings: PlatformSettingsSnapshot = {
   pilotTermsVersion: '1.1',
   subscriptionGraceDays: 3,
   maxDropsPerRequest: 5,
+  publicationDropsPerCredit: 2,
+  carryoverBasePct: 5,
+  carryoverStepPct: 5,
+  carryoverCapPct: 35,
+  launchDiscountPct: 0,
+  looseCreditReferencePriceArs: null,
 };
 
 function inputFor(label: RegExp): HTMLInputElement {
@@ -155,4 +161,60 @@ describe('T-123: PlatformSettingsForm (A04)', () => {
       expect(refresh).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('T-369 / CC-029: parámetros de créditos, arrastre y descuento', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('muestra los valores actuales y el precio de referencia vacío cuando no está cargado', () => {
+    render(<PlatformSettingsForm settings={settings} />);
+    expect(screen.getByRole('heading', { name: 'Créditos de publicación' })).toBeTruthy();
+    expect(inputFor(/entregas incluidas por crédito/i).value).toBe('2');
+    expect(inputFor(/arrastre inicial/i).value).toBe('5');
+    expect(inputFor(/aumento del arrastre/i).value).toBe('5');
+    expect(inputFor(/tope del arrastre/i).value).toBe('35');
+    expect(inputFor(/descuento de lanzamiento/i).value).toBe('0');
+    const price = inputFor(/precio de referencia del crédito suelto/i);
+    expect(price.value).toBe('');
+    expect(price.placeholder).toBe('Sin cargar');
+  });
+
+  it('guarda cada clave con su valor numérico y valida el rango antes de enviar', async () => {
+    vi.mocked(updatePlatformSettingAction).mockResolvedValue({
+      ok: true,
+      data: { key: 'launch_discount_pct', value: 0 },
+    });
+    render(<PlatformSettingsForm settings={settings} />);
+
+    fireEvent.change(inputFor(/descuento de lanzamiento/i), { target: { value: '101' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar descuento de lanzamiento/i }));
+    expect(await screen.findByText('Ingresá un porcentaje entero entre 0 y 100.')).toBeTruthy();
+    expect(updatePlatformSettingAction).not.toHaveBeenCalled();
+
+    fireEvent.change(inputFor(/descuento de lanzamiento/i), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar descuento de lanzamiento/i }));
+    await waitFor(() =>
+      expect(updatePlatformSettingAction).toHaveBeenCalledWith({ key: 'launch_discount_pct', value: 0 })
+    );
+
+    fireEvent.change(inputFor(/precio de referencia del crédito suelto/i), { target: { value: '900' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar precio de referencia del crédito suelto/i }));
+    await waitFor(() =>
+      expect(updatePlatformSettingAction).toHaveBeenCalledWith({
+        key: 'loose_credit_reference_price_ars',
+        value: 900,
+      })
+    );
+  });
+
+  it('el rechazo de la RPC (base por encima del tope) queda visible en la fila', async () => {
+    vi.mocked(updatePlatformSettingAction).mockResolvedValue({ ok: false, code: 'INVALID_SETTING_VALUE' });
+    render(<PlatformSettingsForm settings={settings} />);
+    fireEvent.change(inputFor(/arrastre inicial/i), { target: { value: '40' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar arrastre inicial/i }));
+    expect(await screen.findByText('El valor ingresado no es válido para este parámetro.')).toBeTruthy();
+    expect(updatePlatformSettingAction).toHaveBeenCalledWith({ key: 'carryover_base_pct', value: 40 });
+  });
 });

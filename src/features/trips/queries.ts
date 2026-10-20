@@ -2,7 +2,21 @@ import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
 import { getTripDetailsServer } from '@/server/rpc/trips';
+import { getRequestCancellationHistoryServer } from '@/server/rpc/request-cancellation-history';
+import type { DeliveryRequestStatus, RequestCancellationHistory, RpcErrorCode, ActionResult } from '@/domain';
 import type { TripDetails } from './types';
+
+/**
+ * T-373 / PR425-H02: el detalle del viaje no se pudo leer por una falla (no por ausencia ni falta de permiso). Se
+ * lanza para que llegue al `error.tsx` de la ruta y nunca se confunda con «Cancelaste esta asignación». El mensaje es
+ * fijo: no lleva ids ni datos de la RPC.
+ */
+export class TripDetailsUnavailableError extends Error {
+  constructor() {
+    super('TRIP_DETAILS_UNAVAILABLE');
+    this.name = 'TripDetailsUnavailableError';
+  }
+}
 
 /**
  * Adaptador T-115 / T-117 sobre la frontera autoritativa de CC-008.
@@ -13,7 +27,11 @@ import type { TripDetails } from './types';
  */
 export async function getTripDetails(requestId: string): Promise<TripDetails | null> {
   const result = await getTripDetailsServer({ requestId });
-  if (!result.ok) return null;
+  if (!result.ok) {
+    // Ausencia esperada (pedido inexistente, ajeno, en otro estado o id inválido): null. Una falla, no.
+    if (result.code === 'INTERNAL_ERROR') throw new TripDetailsUnavailableError();
+    return null;
+  }
 
   const trip = result.data;
   const supabase = await createClient();
@@ -291,4 +309,24 @@ export async function getActiveTripsForCourier(): Promise<{
     courierId: user.id,
     trips: uniqueTrips,
   };
+}
+
+/** T-373: estados del pedido en los que `/merchant/requests/[id]` muestra el historial (los demás no lo renderizan). */
+export const STATUSES_WITH_CANCELLATION_HISTORY: readonly DeliveryRequestStatus[] = ['published', 'cancelled', 'expired'];
+
+type CancellationHistoryLoad = (input: {
+  requestId: string;
+}) => Promise<ActionResult<RequestCancellationHistory, RpcErrorCode<'get_request_cancellation_history'>>>;
+
+/**
+ * T-373 / PR425-H03: lee el historial solo si la rama del detalle lo va a mostrar. `draft` no lo usa, y
+ * `matched`/`in_transit`/`delivered` redirigen a `/trips/[id]`, que lo lee de nuevo. En esos casos no se llama a la RPC.
+ */
+export async function loadCancellationHistoryForRequestDetail(
+  requestId: string,
+  status: DeliveryRequestStatus,
+  load: CancellationHistoryLoad = getRequestCancellationHistoryServer
+) {
+  if (!STATUSES_WITH_CANCELLATION_HISTORY.includes(status)) return null;
+  return load({ requestId });
 }

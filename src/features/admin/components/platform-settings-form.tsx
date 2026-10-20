@@ -11,13 +11,15 @@ import { Input } from '@/ui/input';
 import { notify } from '@/ui/notify';
 import { cn } from '@/ui/cn';
 import { getDomainErrorMessage } from '@/lib/error-messages';
-import type { PlatformSettingKey } from '@/domain';
 import { updatePlatformSettingAction } from '../actions';
 import { ADMIN_COPY } from '../copy';
 import {
+  dropsPerCreditFormSchema,
   graceDaysFormSchema,
   maxDropsFormSchema,
   minOfferFormSchema,
+  percentFormSchema,
+  referencePriceFormSchema,
   requestTtlFormSchema,
   termsVersionFormSchema,
   type UpdatePlatformSettingInput,
@@ -25,6 +27,15 @@ import {
 import type { PlatformSettingsSnapshot } from '../types';
 
 const COPY = ADMIN_COPY.settings;
+
+// Claves que edita este formulario, incluidas las de créditos de CC-029 (T-369).
+type SettingsFormKey = keyof typeof COPY.fields;
+
+/** Claves con el símbolo de moneda antes del valor. */
+const CURRENCY_PREFIX_KEYS: ReadonlySet<SettingsFormKey> = new Set([
+  'min_offer_ars',
+  'loose_credit_reference_price_ars',
+]);
 
 interface ValueFormInput {
   value: string;
@@ -64,7 +75,8 @@ export interface PlatformSettingsFormProps {
 }
 
 /**
- * A04: los cinco parámetros de `platform_settings`, cada uno con su propio guardado auditado.
+ * A04: parámetros de `platform_settings`, cada uno con su propio guardado auditado. CC-029 suma los de créditos,
+ * arrastre y descuento; los rangos los vuelve a validar `admin_update_setting`.
  */
 export function PlatformSettingsForm({ settings }: PlatformSettingsFormProps) {
   return (
@@ -105,12 +117,60 @@ export function PlatformSettingsForm({ settings }: PlatformSettingsFormProps) {
         initialValue={String(settings.maxDropsPerRequest)}
         toInput={(value) => ({ key: 'max_drops_per_request', value: Number(value) })}
       />
+
+      <section aria-labelledby="settings-credits-title" className="space-y-4 pt-2">
+        <div>
+          <h2 id="settings-credits-title" className="text-lg font-bold text-foreground">
+            {COPY.creditsSectionTitle}
+          </h2>
+          <p className="text-sm text-muted-foreground">{COPY.creditsSectionDescription}</p>
+        </div>
+        <ValueSettingRow
+          settingKey="publication_drops_per_credit"
+          schema={dropsPerCreditFormSchema}
+          initialValue={String(settings.publicationDropsPerCredit)}
+          toInput={(value) => ({ key: 'publication_drops_per_credit', value: Number(value) })}
+        />
+        <ValueSettingRow
+          settingKey="carryover_base_pct"
+          schema={percentFormSchema}
+          initialValue={String(settings.carryoverBasePct)}
+          toInput={(value) => ({ key: 'carryover_base_pct', value: Number(value) })}
+        />
+        <ValueSettingRow
+          settingKey="carryover_step_pct"
+          schema={percentFormSchema}
+          initialValue={String(settings.carryoverStepPct)}
+          toInput={(value) => ({ key: 'carryover_step_pct', value: Number(value) })}
+        />
+        <ValueSettingRow
+          settingKey="carryover_cap_pct"
+          schema={percentFormSchema}
+          initialValue={String(settings.carryoverCapPct)}
+          toInput={(value) => ({ key: 'carryover_cap_pct', value: Number(value) })}
+        />
+        <ValueSettingRow
+          settingKey="launch_discount_pct"
+          schema={percentFormSchema}
+          initialValue={String(settings.launchDiscountPct)}
+          toInput={(value) => ({ key: 'launch_discount_pct', value: Number(value) })}
+        />
+        <ValueSettingRow
+          settingKey="loose_credit_reference_price_ars"
+          schema={referencePriceFormSchema}
+          initialValue={
+            settings.looseCreditReferencePriceArs === null ? '' : String(settings.looseCreditReferencePriceArs)
+          }
+          placeholder={settings.looseCreditReferencePriceArs === null ? COPY.unsetValue : undefined}
+          toInput={(value) => ({ key: 'loose_credit_reference_price_ars', value: Number(value) })}
+        />
+      </section>
     </div>
   );
 }
 
 interface SettingRowShellProps {
-  readonly settingKey: PlatformSettingKey;
+  readonly settingKey: SettingsFormKey;
   readonly controlId: string;
   readonly labelAsText?: boolean;
   readonly error: string | null;
@@ -166,13 +226,14 @@ function SettingRowShell({
 }
 
 interface ValueSettingRowProps {
-  readonly settingKey: Exclude<PlatformSettingKey, 'pilot_active'>;
+  readonly settingKey: Exclude<SettingsFormKey, 'pilot_active'>;
   readonly schema: ValueFormSchema;
   readonly initialValue: string;
+  readonly placeholder?: string;
   readonly toInput: (value: string) => UpdatePlatformSettingInput;
 }
 
-function ValueSettingRow({ settingKey, schema, initialValue, toInput }: ValueSettingRowProps) {
+function ValueSettingRow({ settingKey, schema, initialValue, placeholder, toInput }: ValueSettingRowProps) {
   const saveSetting = useSaveSetting();
   const [serverError, setServerError] = React.useState<string | null>(null);
   const controlId = `setting-${settingKey}`;
@@ -202,7 +263,7 @@ function ValueSettingRow({ settingKey, schema, initialValue, toInput }: ValueSet
       onSubmit={onSubmit}
     >
       <div className="flex items-center gap-2">
-        {field.unit && settingKey === 'min_offer_ars' ? (
+        {field.unit && CURRENCY_PREFIX_KEYS.has(settingKey) ? (
           <span className="text-sm font-semibold text-muted-foreground" aria-hidden="true">
             {field.unit}
           </span>
@@ -214,10 +275,11 @@ function ValueSettingRow({ settingKey, schema, initialValue, toInput }: ValueSet
           autoComplete="off"
           aria-describedby={describedBy}
           aria-invalid={Boolean(validationError)}
+          placeholder={placeholder}
           className={cn('w-32', isText ? 'text-left' : 'text-right tabular-nums')}
           {...form.register('value')}
         />
-        {field.unit && settingKey !== 'min_offer_ars' ? (
+        {field.unit && !CURRENCY_PREFIX_KEYS.has(settingKey) ? (
           <span className="text-sm text-muted-foreground" aria-hidden="true">
             {field.unit}
           </span>

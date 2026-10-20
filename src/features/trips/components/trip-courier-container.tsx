@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { TripDetails } from '../types';
 import { TripCourierView } from './trip-courier-view';
 import type { TripCancelDialogProps } from './trip-cancel-dialog';
+import { CancellationHistoryCard, type CancellationHistoryResult } from './cancellation-history-card';
 
 const TripCancelDialog = dynamic<TripCancelDialogProps>(
   () => import('./trip-cancel-dialog').then((mod) => mod.TripCancelDialog),
@@ -22,9 +23,11 @@ import { notify } from '@/ui/notify';
 
 export interface TripCourierContainerProps {
   trip: TripDetails;
+  /** T-373: primera página del historial (CC-032). Solo se ve si el repartidor tiene cancelaciones propias. */
+  cancellationHistory?: CancellationHistoryResult;
 }
 
-export function TripCourierContainer({ trip }: TripCourierContainerProps) {
+export function TripCourierContainer({ trip, cancellationHistory }: TripCourierContainerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -76,6 +79,7 @@ export function TripCourierContainer({ trip }: TripCourierContainerProps) {
   };
 
   const handleOpenCancelModal = () => {
+    if (trip.status !== 'matched') return;
     setCancelModalOpen(true);
   };
 
@@ -89,7 +93,8 @@ export function TripCourierContainer({ trip }: TripCourierContainerProps) {
       if (res.ok) {
         notify.success('Viaje cancelado.');
         setCancelModalOpen(false);
-        router.push('/courier/feed');
+        // T-373 / 5-A: se queda en /trips/[id], que ahora muestra «Cancelaste esta asignación» con su historial.
+        router.refresh();
       } else {
         notify.error('No se pudo cancelar el viaje.');
       }
@@ -106,11 +111,15 @@ export function TripCourierContainer({ trip }: TripCourierContainerProps) {
         onMarkDropFailed={handleMarkDropFailed}
         isAdvancing={isPending}
       />
+      {cancellationHistory ? (
+        <CancellationHistoryCard requestId={trip.id} viewer="courier" result={cancellationHistory} />
+      ) : null}
       <TripCancelDialog
         open={cancelModalOpen}
         onOpenChange={setCancelModalOpen}
         onConfirm={handleConfirmCancel}
         isPending={isPending}
+        actor="courier"
       />
     </>
   );

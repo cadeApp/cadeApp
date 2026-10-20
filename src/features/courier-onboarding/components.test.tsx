@@ -8,20 +8,41 @@ import { StepIndicator } from './components/step-indicator';
 import { IdentityForm } from './components/identity-form';
 import { VehicleForm } from './components/vehicle-form';
 import { DocumentUploadCard } from './components/document-upload-card';
+import { DocumentReplacementCard } from './components/document-replacement-card';
 import { StatusView } from './components/status-view';
 import {
   CourierProfileView,
   combineDniDocumentStatus,
   getDocumentStatusPresentation,
   type DocumentReviewStatus,
+  type CourierReviewStatus,
 } from './components/courier-profile-view';
 import * as actionsModule from './actions';
 import { vehiclePlateSchema } from './schemas';
+import { COURIER_ONBOARDING_COPY } from './copy';
 import * as uploadManager from './upload-manager';
 import { compressImage } from '@/lib/image-compression';
 
-const { mockUploadCourierDocument } = vi.hoisted(() => ({
+const {
+  mockUploadCourierDocument,
+  mockGetUser,
+  mockRouterRefresh,
+  mockRouterPush,
+  mockRouterReplace,
+} = vi.hoisted(() => ({
   mockUploadCourierDocument: vi.fn(),
+  mockGetUser: vi.fn(),
+  mockRouterRefresh: vi.fn(),
+  mockRouterPush: vi.fn(),
+  mockRouterReplace: vi.fn(),
+}));
+
+vi.mock('@/lib/supabase/browser', () => ({
+  createClient: () => ({
+    auth: {
+      getUser: mockGetUser,
+    },
+  }),
 }));
 
 vi.mock('@/lib/image-compression', () => ({
@@ -38,9 +59,9 @@ vi.mock('./upload-manager', async (importOriginal) => {
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    refresh: vi.fn(),
+    push: mockRouterPush,
+    replace: mockRouterReplace,
+    refresh: mockRouterRefresh,
   }),
 }));
 
@@ -250,6 +271,157 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       await waitFor(() => {
         expect(mockAction).toHaveBeenCalledTimes(1);
         expect(onSuccess).toHaveBeenCalled();
+      });
+    });
+
+    describe('VehicleForm en modo edición (T-357 / Issue #344)', () => {
+      it('no renderiza StepIndicator ni el contador de pasos ("Paso 3 de 4")', () => {
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        expect(screen.queryByText('Paso 3 de 4')).toBeNull();
+        expect(screen.queryByText('Datos')).toBeNull();
+        expect(screen.queryByText('Identidad')).toBeNull();
+        expect(screen.queryByText('Listo')).toBeNull();
+      });
+
+      it('no muestra tarjetas documentales en edición de moto', () => {
+        render(<VehicleForm courierId="test-courier" isEditing initialVehicleType="moto" initialVehiclePlate="AB 123 CD" />);
+        expect(screen.queryByText(COURIER_ONBOARDING_COPY.licenseTitle)).toBeNull();
+        expect(screen.queryByText(COURIER_ONBOARDING_COPY.insuranceTitle)).toBeNull();
+      });
+
+      it('no renderiza checkboxes de consentimientos legales obligatorios en edición', () => {
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        expect(screen.queryByRole('checkbox')).toBeNull();
+        expect(screen.queryByText(/Términos para repartidores/i)).toBeNull();
+        expect(screen.queryByText(/Política de privacidad/i)).toBeNull();
+        expect(screen.queryByText(/Condiciones para repartidores/i)).toBeNull();
+      });
+
+      it('precarga vehículo y patente iniciales y botón de guardar', () => {
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        const plateInput = screen.getByLabelText(/Patente del vehículo/i) as HTMLInputElement;
+        expect(plateInput.value).toBe('AB 123 CD');
+        expect(screen.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i })).toBeDefined();
+      });
+
+      it('al enviar en modo edición invoca updateCourierVehicleAction y no courierOnboardingAction', async () => {
+        const mockOnboardingAction = vi.spyOn(actionsModule, 'courierOnboardingAction');
+        const mockUpdateAction = vi.spyOn(actionsModule, 'updateCourierVehicleAction').mockResolvedValue({
+          ok: true,
+          data: { redirectTo: '/courier/profile' },
+        });
+        const onSuccess = vi.fn();
+
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+            onSuccess={onSuccess}
+          />
+        );
+
+        const submitBtn = screen.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+        expect((submitBtn as HTMLButtonElement).disabled).toBe(false);
+        fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+          expect(mockUpdateAction).toHaveBeenCalledTimes(1);
+          expect(mockUpdateAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+              vehicleType: 'moto',
+              vehiclePlate: 'AB 123 CD',
+            })
+          );
+          expect(mockOnboardingAction).not.toHaveBeenCalled();
+          expect(onSuccess).toHaveBeenCalled();
+        });
+      });
+
+      it('permite cambiar a bici o pie ocultando patente y enviando sin patente', async () => {
+        const mockUpdateAction = vi.spyOn(actionsModule, 'updateCourierVehicleAction').mockResolvedValue({
+          ok: true,
+          data: { redirectTo: '/courier/profile' },
+        });
+
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        const bikeText = screen.getByText('Bici');
+        fireEvent.click(bikeText);
+
+        await waitFor(() => {
+          expect(screen.queryByLabelText(/Patente del vehículo/i)).toBeNull();
+        });
+
+        const submitBtn = screen.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+        expect((submitBtn as HTMLButtonElement).disabled).toBe(false);
+        fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+          expect(mockUpdateAction).toHaveBeenCalledTimes(1);
+          expect(mockUpdateAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+              vehicleType: 'bike',
+              vehiclePlate: null,
+            })
+          );
+        });
+      });
+
+      it('muestra error diferenciado de validación ante fallo de la acción', async () => {
+        vi.spyOn(actionsModule, 'updateCourierVehicleAction').mockResolvedValue({
+          ok: false,
+          code: 'VALIDATION_ERROR',
+        });
+
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        const submitBtn = screen.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+        fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toBeDefined();
+          expect(screen.getByText(/verificá los datos|patente es obligatoria|inválida/i)).toBeDefined();
+        });
       });
     });
   });
@@ -566,6 +738,112 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       }
     });
 
+    describe('T-367: Visualización de avatar autorizado del repartidor en su perfil', () => {
+      it('renderiza la foto del avatar con alt accesible y estilos definidos cuando avatarUrl está disponible', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'verified',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: 'https://test-storage.local/courier-docs/courier/carlos/avatar_123.jpg?token=valid',
+            }}
+          />
+        );
+
+        const img = screen.getByRole('img', { name: 'Foto de perfil de Carlos Gómez' });
+        expect(img).toBeDefined();
+        expect(img.getAttribute('src')).toBe(
+          'https://test-storage.local/courier-docs/courier/carlos/avatar_123.jpg?token=valid'
+        );
+        expect(img.className).toContain('object-cover');
+      });
+
+      it('muestra el ícono genérico User si avatarUrl es null o undefined', () => {
+        const { container } = render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: null,
+            }}
+          />
+        );
+
+        expect(screen.queryByRole('img', { name: /foto de perfil/i })).toBeNull();
+        expect(screen.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeDefined();
+        const svg = container.querySelector('svg.lucide-user');
+        expect(svg).not.toBeNull();
+      });
+
+      it('hace fallback al ícono User si la imagen de avatarUrl dispara error de carga (onError)', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: 'https://test-storage.local/courier-docs/courier/carlos/expired.jpg',
+            }}
+          />
+        );
+
+        const img = screen.getByRole('img', { name: 'Foto de perfil de Carlos Gómez' });
+        expect(img).toBeDefined();
+
+        fireEvent.error(img);
+
+        expect(screen.queryByRole('img', { name: 'Foto de perfil de Carlos Gómez' })).toBeNull();
+        expect(screen.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeDefined();
+      });
+
+      it('invariante de seguridad: jamás renderiza DNI o selfie como avatar si no hay avatarUrl', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              displayName: 'Carlos Gómez',
+              email: 'carlos@test.com',
+              vehicleType: 'moto',
+              plate: 'AB 123 CD',
+              dniStatus: 'verified',
+              selfieStatus: 'verified',
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              courierStatus: 'approved',
+              onboardingComplete: true,
+              avatarUrl: null,
+            }}
+          />
+        );
+
+        expect(screen.queryByRole('img', { name: /foto de perfil/i })).toBeNull();
+        expect(screen.queryByRole('img', { name: /selfie/i })).toBeNull();
+        expect(screen.queryByRole('img', { name: /dni/i })).toBeNull();
+      });
+    });
+
     describe('T-334: repartidor recién registrado sin onboarding enviado', () => {
       const freshCourier = {
         displayName: 'Repartidor Nuevo',
@@ -604,6 +882,152 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         expect(screen.getByText('En revisión administrativa')).toBeDefined();
         expect(screen.queryByText('Completá tu registro')).toBeNull();
         expect(screen.queryByRole('link', { name: /continuar registro/i })).toBeNull();
+      });
+    });
+
+    describe('T-355: Datos personales y edición de teléfono en CourierProfileView', () => {
+      const baseCourier = {
+        courierId: 'courier-123',
+        displayName: 'Lautaro Repartidor',
+        email: 'lautaro@cadeapp.test',
+        phone: '3865123456',
+        hasDniOnFile: true,
+        vehicleType: 'moto',
+        plate: 'A 123 BCD',
+        dniStatus: 'verified' as DocumentReviewStatus,
+        selfieStatus: 'verified' as DocumentReviewStatus,
+        licenseStatus: 'none' as DocumentReviewStatus,
+        insuranceStatus: 'none' as DocumentReviewStatus,
+        courierStatus: 'approved' as CourierReviewStatus,
+        onboardingComplete: true,
+      };
+
+      it('renderiza la sección Datos personales con nombre, email, DNI y teléfono formateado', () => {
+        render(<CourierProfileView profile={baseCourier} />);
+
+        // Tarjeta Datos personales visible
+        const personalCard = screen.getByText('Datos personales').closest('.space-y-4');
+        if (!personalCard) throw new Error('No se encontró la tarjeta Datos personales');
+        expect(personalCard).toBeDefined();
+
+        // Nombre solo lectura
+        expect(within(personalCard as HTMLElement).getByText('Lautaro Repartidor')).toBeDefined();
+        // Email solo lectura
+        expect(within(personalCard as HTMLElement).getByText('lautaro@cadeapp.test')).toBeDefined();
+        // DNI o identificación de legajo
+        expect(within(personalCard as HTMLElement).getByText(/Documento de identidad|DNI/i)).toBeDefined();
+        // Teléfono formateado
+        expect(within(personalCard as HTMLElement).getByText('3865 12-3456')).toBeDefined();
+
+        // Botón exclusivo "Editar teléfono" disponible
+        expect(within(personalCard as HTMLElement).getByRole('button', { name: /editar teléfono/i })).toBeDefined();
+
+        // Ningún input editable visible en la tarjeta principal
+        const inputs = screen.queryAllByRole('textbox');
+        expect(inputs).toHaveLength(0);
+
+        // Sin botones de edición para nombre, email ni DNI
+        expect(within(personalCard as HTMLElement).queryByRole('button', { name: /editar nombre/i })).toBeNull();
+        expect(within(personalCard as HTMLElement).queryByRole('button', { name: /editar email/i })).toBeNull();
+        expect(within(personalCard as HTMLElement).queryByRole('button', { name: /editar dni/i })).toBeNull();
+      });
+
+      it('muestra «Sin teléfono registrado» cuando phone es null y permite abrir edición', () => {
+        render(<CourierProfileView profile={{ ...baseCourier, phone: null }} />);
+
+        expect(screen.getByText('Sin teléfono registrado')).toBeDefined();
+        const editBtn = screen.getByRole('button', { name: /editar teléfono/i });
+        expect(editBtn).toBeDefined();
+        fireEvent.click(editBtn);
+
+        // Abre diálogo con input de teléfono vacío
+        const dialog = screen.getByRole('dialog');
+        const phoneInput = within(dialog).getByLabelText(/teléfono de contacto/i);
+        expect(phoneInput).toBeDefined();
+        expect((phoneInput as HTMLInputElement).value).toBe('');
+      });
+
+      it('precarga el teléfono actual en el diálogo de edición y valida formato en submit', async () => {
+        render(<CourierProfileView profile={baseCourier} />);
+
+        const editBtn = screen.getByRole('button', { name: /editar teléfono/i });
+        fireEvent.click(editBtn);
+
+        // Input precargado con el teléfono actual
+        const dialog = screen.getByRole('dialog');
+        const phoneInput = within(dialog).getByLabelText(/teléfono de contacto/i) as HTMLInputElement;
+        expect(phoneInput.value).toBe('3865123456');
+
+        // Modifica a un teléfono inválido
+        fireEvent.change(phoneInput, { target: { value: '12345' } });
+        const saveBtn = within(dialog).getByRole('button', { name: /guardar|confirmar/i });
+        fireEvent.click(saveBtn);
+
+        // Muestra error de validación y no llama a la acción
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toBeDefined();
+          expect(screen.getByRole('alert').textContent).toMatch(/10 dígitos nacionales|número argentino válido/i);
+        });
+      });
+
+      it('al guardar exitosamente actualiza la UI, muestra confirmación y llama a router.refresh()', async () => {
+        const spyAction = vi.spyOn(actionsModule, 'updateCourierPhoneAction').mockResolvedValueOnce({
+          ok: true,
+          data: { phone: '3865999888', redirectTo: '/courier/profile' },
+        });
+
+        render(<CourierProfileView profile={baseCourier} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /editar teléfono/i }));
+
+        const dialog = screen.getByRole('dialog');
+        const phoneInput = within(dialog).getByLabelText(/teléfono de contacto/i) as HTMLInputElement;
+        fireEvent.change(phoneInput, { target: { value: '3865999888' } });
+
+        const saveBtn = within(dialog).getByRole('button', { name: /guardar|confirmar/i });
+        fireEvent.click(saveBtn);
+
+        await waitFor(() => {
+          expect(spyAction).toHaveBeenCalledWith({ phone: '3865999888' });
+        });
+
+        // UI refleja el nuevo teléfono formateado
+        await waitFor(() => {
+          expect(screen.getByText('3865 99-9888')).toBeDefined();
+        });
+
+        expect(mockRouterRefresh).toHaveBeenCalled();
+        spyAction.mockRestore();
+      });
+
+      it('al ocurrir un error de red/servidor conserva el valor anterior sin borrar el dato previo', async () => {
+        const spyAction = vi.spyOn(actionsModule, 'updateCourierPhoneAction').mockResolvedValueOnce({
+          ok: false,
+          code: 'INTERNAL_ERROR',
+        });
+
+        render(<CourierProfileView profile={baseCourier} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /editar teléfono/i }));
+
+        const dialog = screen.getByRole('dialog');
+        const phoneInput = within(dialog).getByLabelText(/teléfono de contacto/i) as HTMLInputElement;
+        fireEvent.change(phoneInput, { target: { value: '3865999888' } });
+
+        const saveBtn = within(dialog).getByRole('button', { name: /guardar|confirmar/i });
+        fireEvent.click(saveBtn);
+
+        await waitFor(() => {
+          expect(within(dialog).getByRole('alert')).toBeDefined();
+        });
+
+        // Cancelar o cerrar diálogo
+        const cancelBtn = within(dialog).getByRole('button', { name: /cancelar|volver/i });
+        fireEvent.click(cancelBtn);
+
+        // El teléfono previo original se preserva intacto
+        expect(screen.getByText('3865 12-3456')).toBeDefined();
+        spyAction.mockRestore();
       });
     });
   });
@@ -1214,6 +1638,848 @@ describe('T-354 — Unificación de copy «Selfie con el DNI» y accesibilidad',
       />
     );
     expect(screen.getByText('Selfie con el DNI')).toBeDefined();
+  });
+});
+
+describe('T-356 · CC-025: Recarga de documentos del repartidor rechazados por admin', () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'courier-session-123' } },
+      error: null,
+    });
+  });
+
+  it('(a) actor sin sesión: DocumentReplacementCard muestra error al fallar la sesión y no autoaprueba', async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: null },
+      error: new Error('Session not found'),
+    });
+
+    render(
+      <DocumentReplacementCard
+        kind="license"
+        title="Licencia de conducir"
+        initialStatus="rejected"
+        rejectionCode="illegible"
+      />
+    );
+
+    expect(screen.getByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toBeDefined();
+
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'licencia.png', { type: 'image/png' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+      expect(screen.getByText(/No se pudo identificar la sesión del repartidor/i)).toBeDefined();
+    });
+
+    // Invariante de seguridad: jamás avanza a "En revisión manual" ni autoaprueba
+    expect(screen.queryByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeNull();
+  });
+
+  it('(b) rechazo solo de licencia: CourierProfileView muestra control de reemplazo para licencia y no para DNI verificado', () => {
+    render(
+      <CourierProfileView
+        profile={{
+          courierId: 'courier-123',
+          displayName: 'Juan Repartidor',
+          email: 'juan@test.com',
+          vehicleType: 'moto',
+          plate: 'AB 123 CD',
+          dniStatus: 'verified',
+          selfieStatus: 'submitted',
+          licenseStatus: 'rejected',
+          licenseRejectionMessage: 'La imagen de la licencia no es legible.',
+          insuranceStatus: 'none',
+          courierStatus: 'approved',
+          onboardingComplete: true,
+        }}
+      />
+    );
+
+    // DNI y selfie no admiten reemplazo
+    expect(screen.getByText('Validado por admin')).toBeDefined();
+    expect(screen.getByText('En revisión')).toBeDefined();
+
+    // Licencia muestra "Rechazado / requiere corrección", el motivo seguro y el botón de reemplazo
+    expect(screen.getAllByText(COURIER_ONBOARDING_COPY.rejectedBadge).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('La imagen de la licencia no es legible.')).toBeDefined();
+    const replaceButtons = screen.getAllByText('Reemplazar');
+    expect(replaceButtons.length).toBe(1);
+  });
+
+  it('(b2) rechazo de solo DNI frente manteniendo dorso verificado: reemplaza individualmente frente sin mutar dorso', () => {
+    render(
+      <CourierProfileView
+        profile={{
+          courierId: 'courier-123',
+          displayName: 'Juan Repartidor',
+          email: 'juan@test.com',
+          vehicleType: 'bike',
+          plate: null,
+          dniStatus: 'rejected',
+          dniFrontStatus: 'rejected',
+          dniFrontRejectionMessage: 'El frente del DNI está cortado.',
+          dniBackStatus: 'verified',
+          selfieStatus: 'verified',
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          courierStatus: 'pending',
+          onboardingComplete: true,
+        }}
+      />
+    );
+
+    // Dorso y Selfie siguen verificados
+    expect(screen.getAllByText('Validado por admin').length).toBeGreaterThanOrEqual(2);
+
+    // Frente muestra tarjeta de reemplazo con su motivo
+    expect(screen.getByText('El frente del DNI está cortado.')).toBeDefined();
+    const replaceButtons = screen.getAllByText('Reemplazar');
+    expect(replaceButtons.length).toBe(1);
+  });
+
+  it('(c) submitted y verified sin botón ni control de reemplazo', () => {
+    render(
+      <CourierProfileView
+        profile={{
+          courierId: 'courier-123',
+          displayName: 'Juan Repartidor',
+          email: 'juan@test.com',
+          vehicleType: 'moto',
+          plate: 'AB 123 CD',
+          dniStatus: 'verified',
+          selfieStatus: 'submitted',
+          licenseStatus: 'verified',
+          insuranceStatus: 'submitted',
+          courierStatus: 'pending',
+          onboardingComplete: true,
+        }}
+      />
+    );
+
+    expect(screen.queryByText('Reemplazar')).toBeNull();
+    expect(screen.queryByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toBeNull();
+  });
+
+  it('(d) mensaje público del catálogo y nota interna centinela que jamás llega a props/DOM', () => {
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="selfie"
+        title="Selfie con el DNI"
+        initialStatus="rejected"
+        rejectionCode="expired"
+      />
+    );
+
+    // Muestra el mensaje seguro del catálogo
+    expect(screen.getByText('Documento vencido o no vigente.')).toBeDefined();
+
+    // Jamás se renderiza texto interno ni notas privadas de auditoría
+    expect(screen.queryByText(/INTERNAL_NOTE_SENTINEL/i)).toBeNull();
+    expect(screen.queryByText(/audit_log/i)).toBeNull();
+  });
+
+  it('(e) flujo exitoso: usuario selecciona archivo -> comprime -> sube a Storage -> llama action -> pasa a «En revisión manual»', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    const mockReplaceAction = vi
+      .spyOn(actionsModule, 'replaceCourierDocumentAction')
+      .mockResolvedValue({
+        ok: true,
+        data: {
+          kind: 'license',
+          idempotent: false,
+          documentId: 'd0000000-0000-0000-0000-000000000002',
+          replacedDocumentId: 'd0000000-0000-0000-0000-000000000001',
+          status: 'submitted',
+          isCurrent: true,
+        },
+      });
+
+    const onReplaced = vi.fn();
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="license"
+        title="Licencia de conducir"
+        initialStatus="rejected"
+        rejectionCode="illegible"
+        onReplaced={onReplaced}
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'nueva_licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      // Verifica compresión
+      expect(compressImage).toHaveBeenCalledWith(testFile);
+
+      // Verifica subida a Storage con timestamp del intento estable
+      expect(mockUploadCourierDocument).toHaveBeenCalledWith(
+        expect.objectContaining({
+          courierId: 'courier-123',
+          kind: 'license',
+          file: testFile,
+        })
+      );
+
+      // Verifica invocación de la acción de servidor
+      expect(mockReplaceAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'license',
+          storagePath: 'courier/courier-123/license_1700000000000.jpg',
+        })
+      );
+
+      // Pasa a estado "En revisión manual" tras confirmación en DB
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined();
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
+      expect(onReplaced).toHaveBeenCalledWith({ kind: 'license', status: 'submitted' });
+    });
+  });
+
+  it('(f) fallo de Storage permite reintentar sin autoaprobar ni pasar a «En revisión manual»', async () => {
+    mockUploadCourierDocument.mockRejectedValueOnce(
+      new Error('Error de conexión al subir a Storage')
+    );
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="insurance"
+        title="Seguro de accidentes"
+        initialStatus="rejected"
+        rejectionCode="incomplete"
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar seguro de accidentes/i);
+    const testFile = new File(['content'], 'poliza.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+      expect(screen.getByText(/Error de conexión al subir a Storage/i)).toBeDefined();
+    });
+
+    // Invariante: no pasa a En revisión manual
+    expect(screen.queryByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeNull();
+    expect(screen.getAllByText(COURIER_ONBOARDING_COPY.rejectedBadge).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('(f2) error de RPC en DB mantiene estado en error con mensaje seguro y no inventa éxito', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/dni_front_1700000000000.png',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: false,
+      code: 'INVALID_STATE_TRANSITION',
+    });
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="dni_front"
+        title="DNI frente"
+        initialStatus="rejected"
+        rejectionCode="wrong_type"
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar dni frente/i);
+    const testFile = new File(['content'], 'dni_nuevo.png', { type: 'image/png' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+      expect(screen.getByText(/El documento ya no está en estado rechazado/i)).toBeDefined();
+    });
+
+    // Invariante: no anuncia éxito
+    expect(screen.queryByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeNull();
+  });
+
+  it('(g) segundo intento / reintento exitoso tras fallo temporal', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/dni_back_1700000000000.png',
+    });
+
+    const mockReplaceAction = vi
+      .spyOn(actionsModule, 'replaceCourierDocumentAction')
+      .mockResolvedValueOnce({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          kind: 'dni_back',
+          idempotent: false,
+          documentId: 'd0000000-0000-0000-0000-000000000005',
+          replacedDocumentId: 'd0000000-0000-0000-0000-000000000006',
+          status: 'submitted',
+          isCurrent: true,
+        },
+      });
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="dni_back"
+        title="DNI dorso"
+        initialStatus="rejected"
+        rejectionCode="expired"
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar dni dorso/i);
+    const testFile = new File(['content'], 'dorso_nuevo.png', { type: 'image/png' });
+
+    // Intento 1: falla RPC
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeNull();
+
+    // Intento 2: reintento exitoso
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined();
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
+    });
+    expect(mockReplaceAction).toHaveBeenCalledTimes(2);
+  });
+
+  it('(h) PR358-R01: Reintento con el mismo archivo tras fallo de RPC reutiliza idempotencyKey y storagePath y NO vuelve a subir a Storage', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_stable_1700000000000.jpg',
+    });
+
+    const mockReplaceAction = vi
+      .spyOn(actionsModule, 'replaceCourierDocumentAction')
+      .mockResolvedValueOnce({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          kind: 'license',
+          idempotent: false,
+          documentId: 'd0000000-0000-0000-0000-000000000010',
+          replacedDocumentId: 'd0000000-0000-0000-0000-000000000009',
+          status: 'submitted',
+          isCurrent: true,
+        },
+      });
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="license"
+        title="Licencia de conducir"
+        initialStatus="rejected"
+        rejectionCode="illegible"
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['same-content'], 'licencia_identica.jpg', {
+      type: 'image/jpeg',
+      lastModified: 1700000000000,
+    });
+
+    // Intento 1: sube y luego RPC falla
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    });
+    expect(mockUploadCourierDocument).toHaveBeenCalledTimes(1);
+    expect(mockReplaceAction).toHaveBeenCalledTimes(1);
+
+    const firstCall = mockReplaceAction.mock.calls[0];
+    if (!firstCall) throw new Error('Expected at least 1 call to mockReplaceAction');
+    const firstAttemptPayload = firstCall[0] as {
+      kind: string;
+      storagePath: string;
+      idempotencyKey?: string;
+    };
+    expect(firstAttemptPayload.idempotencyKey).toBeDefined();
+
+    // Intento 2: reintento con el MISMO archivo (mismo fingerprint)
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined();
+    });
+
+    // Invariante PR358-R01: NO se vuelve a llamar a uploadCourierDocument (conserva un solo upload)
+    expect(mockUploadCourierDocument).toHaveBeenCalledTimes(1);
+    expect(mockReplaceAction).toHaveBeenCalledTimes(2);
+
+    const secondCall = mockReplaceAction.mock.calls[1];
+    if (!secondCall) throw new Error('Expected at least 2 calls to mockReplaceAction');
+    const secondAttemptPayload = secondCall[0] as {
+      kind: string;
+      storagePath: string;
+      idempotencyKey?: string;
+    };
+    // Invariante PR358-R01: se preservan exactamente la misma clave de idempotencia y storagePath
+    expect(secondAttemptPayload.idempotencyKey).toBe(firstAttemptPayload.idempotencyKey);
+    expect(secondAttemptPayload.storagePath).toBe(firstAttemptPayload.storagePath);
+  });
+
+  it('(i) PR358-R01: Selección de un archivo diferente genera nuevo intento lógico, nueva idempotencyKey y sube a Storage', async () => {
+    mockUploadCourierDocument
+      .mockResolvedValueOnce({
+        storagePath: 'courier/courier-123/license_file1_1700000000000.jpg',
+      })
+      .mockResolvedValueOnce({
+        storagePath: 'courier/courier-123/license_file2_1700000000001.jpg',
+      });
+
+    const mockReplaceAction = vi
+      .spyOn(actionsModule, 'replaceCourierDocumentAction')
+      .mockResolvedValueOnce({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          kind: 'license',
+          idempotent: false,
+          documentId: 'd0000000-0000-0000-0000-000000000012',
+          replacedDocumentId: 'd0000000-0000-0000-0000-000000000011',
+          status: 'submitted',
+          isCurrent: true,
+        },
+      });
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="license"
+        title="Licencia de conducir"
+        initialStatus="rejected"
+        rejectionCode="illegible"
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const fileA = new File(['content-A'], 'licencia_A.jpg', {
+      type: 'image/jpeg',
+      lastModified: 1700000000000,
+    });
+    const fileB = new File(['content-B-distinto'], 'licencia_B.jpg', {
+      type: 'image/jpeg',
+      lastModified: 1700000001000,
+    });
+
+    // Intento 1 con fileA: falla
+    fireEvent.change(fileInput, { target: { files: [fileA] } });
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    });
+
+    const firstCall = mockReplaceAction.mock.calls[0];
+    if (!firstCall) throw new Error('Expected at least 1 call to mockReplaceAction');
+    const firstPayload = firstCall[0] as {
+      storagePath: string;
+      idempotencyKey?: string;
+    };
+
+    // Intento 2 con fileB (archivo distinto): debe realizar nueva subida y nueva clave
+    fireEvent.change(fileInput, { target: { files: [fileB] } });
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined();
+    });
+
+    expect(mockUploadCourierDocument).toHaveBeenCalledTimes(2);
+    expect(mockReplaceAction).toHaveBeenCalledTimes(2);
+
+    const secondCall = mockReplaceAction.mock.calls[1];
+    if (!secondCall) throw new Error('Expected at least 2 calls to mockReplaceAction');
+    const secondPayload = secondCall[0] as {
+      storagePath: string;
+      idempotencyKey?: string;
+    };
+    expect(secondPayload.idempotencyKey).not.toBe(firstPayload.idempotencyKey);
+    expect(secondPayload.storagePath).not.toBe(firstPayload.storagePath);
+  });
+
+  it('(j) PR358-R01: Estado autoritativo: si RPC retorna status verified, se renderiza «Validado por admin» con badge verified y callback verified', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_verified_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000020',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000019',
+        status: 'verified',
+        isCurrent: true,
+      },
+    });
+
+    const onReplaced = vi.fn();
+
+    render(
+      <DocumentReplacementCard
+        courierId="courier-123"
+        kind="license"
+        title="Licencia de conducir"
+        initialStatus="rejected"
+        rejectionCode="illegible"
+        onReplaced={onReplaced}
+      />
+    );
+
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Validado por admin')).toBeDefined();
+      expect(screen.getByText('Documento validado exitosamente.')).toBeDefined();
+    });
+
+    expect(onReplaced).toHaveBeenCalledWith({ kind: 'license', status: 'verified' });
+  });
+
+  it('(k) PR358-R02: StatusView actualiza el checklist del padre tras reemplazo exitoso sin mutar otros kinds y llama router.refresh()', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000030',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000029',
+        status: 'submitted',
+        isCurrent: true,
+      },
+    });
+
+    render(
+      <StatusView
+        courierId="courier-123"
+        documents={[
+          {
+            kind: 'dni_front',
+            status: 'rejected',
+            rejectionCode: 'wrong_type',
+          },
+          {
+            kind: 'dni_back',
+            status: 'verified',
+          },
+          {
+            kind: 'selfie',
+            status: 'verified',
+          },
+          {
+            kind: 'avatar',
+            status: 'verified',
+          },
+          {
+            kind: 'license',
+            status: 'rejected',
+            rejectionCode: 'illegible',
+          },
+        ]}
+      />
+    );
+
+    // Inicialmente: DNI frente y dorso está Rechazado, y Licencia de conducir está Rechazado
+    const initialRejectedBadges = screen.getAllByText(COURIER_ONBOARDING_COPY.rejectedBadge);
+    expect(initialRejectedBadges.length).toBeGreaterThanOrEqual(2);
+
+    // Reemplazamos la licencia
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'nueva_licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      // La tarjeta de reemplazo muestra éxito
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
+    });
+
+    // Invariante PR358-R02: router.refresh() fue llamado
+    expect(mockRouterRefresh).toHaveBeenCalled();
+
+    // Invariante PR358-R02: En el checklist del padre, Licencia pasó a "Listo"
+    const listoBadges = screen.getAllByText('Listo');
+    expect(listoBadges.length).toBeGreaterThanOrEqual(1);
+
+    // Invariante PR358-R02: DNI frente y dorso NO mutó y sigue observado/rechazado
+    expect(screen.getByText('DNI frente y dorso')).toBeDefined();
+  });
+
+  it('(l) PR358-R02: CourierProfileView actualiza badges exteriores a «En revisión» tras reemplazo exitoso sin mutar otros kinds y llama router.refresh()', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000040',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000039',
+        status: 'submitted',
+        isCurrent: true,
+      },
+    });
+
+    render(
+      <CourierProfileView
+        profile={{
+          courierId: 'courier-123',
+          displayName: 'Juan Repartidor',
+          email: 'juan@test.com',
+          vehicleType: 'moto',
+          plate: 'AB 123 CD',
+          dniStatus: 'verified',
+          selfieStatus: 'submitted',
+          licenseStatus: 'rejected',
+          licenseRejectionMessage: 'La imagen de la licencia no es legible.',
+          insuranceStatus: 'none',
+          courierStatus: 'approved',
+          onboardingComplete: true,
+        }}
+      />
+    );
+
+    // Inicialmente: DNI está verificado, Selfie en revisión, Licencia observada
+    expect(screen.getByText('Validado por admin')).toBeDefined();
+    expect(screen.getByText('En revisión')).toBeDefined();
+    expect(screen.getAllByText(COURIER_ONBOARDING_COPY.rejectedBadge).length).toBeGreaterThanOrEqual(1);
+
+    // Reemplazamos la licencia
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'nueva_licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
+    });
+
+    // Invariante PR358-R02: router.refresh() fue llamado
+    expect(mockRouterRefresh).toHaveBeenCalled();
+
+    // Invariante PR358-R02: El badge exterior de Licencia ahora figura como "En revisión" (hay 2 badges de "En revisión": selfie y licencia)
+    const enRevisionBadges = screen.getAllByText('En revisión');
+    expect(enRevisionBadges.length).toBeGreaterThanOrEqual(2);
+
+    // Invariante PR358-R02: DNI continúa inalterado como "Validado por admin"
+    expect(screen.getByText('Validado por admin')).toBeDefined();
+  });
+
+  it('(m) PR358-H03: si globalThis.crypto.randomUUID no está disponible o lanza error, muestra error seguro en UI y frena sin comprimir, subir ni invocar RPC', async () => {
+    const mockReplaceAction = vi.spyOn(actionsModule, 'replaceCourierDocumentAction');
+    const originalRandomUUID = globalThis.crypto.randomUUID;
+
+    try {
+      // Simular ausencia de crypto.randomUUID
+      // @ts-expect-error simular entorno sin randomUUID
+      globalThis.crypto.randomUUID = undefined;
+
+      render(
+        <DocumentReplacementCard
+          courierId="courier-123"
+          kind="license"
+          title="Licencia de conducir"
+          initialStatus="rejected"
+          rejectionCode="illegible"
+        />
+      );
+
+      const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+      const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+      fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('No se pudo generar un identificador seguro para la operación')
+        ).toBeDefined();
+      });
+
+      expect(compressImage).not.toHaveBeenCalled();
+      expect(mockUploadCourierDocument).not.toHaveBeenCalled();
+      expect(mockReplaceAction).not.toHaveBeenCalled();
+    } finally {
+      globalThis.crypto.randomUUID = originalRandomUUID;
+    }
+  });
+
+  it('(m2) PR358-H03: si globalThis.crypto.randomUUID lanza una excepción, muestra error seguro y frena sin side-effects', async () => {
+    const mockReplaceAction = vi.spyOn(actionsModule, 'replaceCourierDocumentAction');
+    const originalRandomUUID = globalThis.crypto.randomUUID;
+
+    try {
+      globalThis.crypto.randomUUID = vi.fn().mockImplementation(() => {
+        throw new Error('Entropy pool exhausted');
+      });
+
+      render(
+        <DocumentReplacementCard
+          courierId="courier-123"
+          kind="license"
+          title="Licencia de conducir"
+          initialStatus="rejected"
+          rejectionCode="illegible"
+        />
+      );
+
+      const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+      const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+      fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('No se pudo generar un identificador seguro para la operación')
+        ).toBeDefined();
+      });
+
+      expect(compressImage).not.toHaveBeenCalled();
+      expect(mockUploadCourierDocument).not.toHaveBeenCalled();
+      expect(mockReplaceAction).not.toHaveBeenCalled();
+    } finally {
+      globalThis.crypto.randomUUID = originalRandomUUID;
+    }
+  });
+
+  it('(n) PR358-H04: StatusView muestra «Seguimiento de documentos corregidos» cuando todos los rechazados fueron resueltos', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000050',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000049',
+        status: 'submitted',
+        isCurrent: true,
+      },
+    });
+
+    render(
+      <StatusView
+        courierId="courier-123"
+        documents={[
+          {
+            kind: 'license',
+            status: 'rejected',
+            rejectionCode: 'illegible',
+          },
+        ]}
+      />
+    );
+
+    // Inicialmente con rechazado pendiente: muestra "Documentos que requieren corrección"
+    expect(screen.getByText('Documentos que requieren corrección')).toBeDefined();
+    expect(screen.queryByText('Seguimiento de documentos corregidos')).toBeNull();
+
+    // Reemplazamos la licencia
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      // Tras resolverse el único rechazado, el encabezado cambia a "Seguimiento de documentos corregidos"
+      expect(screen.getByText('Seguimiento de documentos corregidos')).toBeDefined();
+      expect(screen.queryByText('Documentos que requieren corrección')).toBeNull();
+    });
+  });
+
+  it('(o) PR358-H04: StatusView mantiene «Documentos que requieren corrección» cuando el estado es mixto (al menos un rechazado pendiente)', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000051',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000050',
+        status: 'submitted',
+        isCurrent: true,
+      },
+    });
+
+    render(
+      <StatusView
+        courierId="courier-123"
+        documents={[
+          {
+            kind: 'license',
+            status: 'rejected',
+            rejectionCode: 'illegible',
+          },
+          {
+            kind: 'insurance',
+            status: 'rejected',
+            rejectionCode: 'expired',
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('Documentos que requieren corrección')).toBeDefined();
+
+    // Reemplazamos solo la licencia (el seguro continúa rechazado)
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
+    });
+
+    // Mantiene "Documentos que requieren corrección" porque aún queda seguro rechazado
+    expect(screen.getByText('Documentos que requieren corrección')).toBeDefined();
+    expect(screen.queryByText('Seguimiento de documentos corregidos')).toBeNull();
+  });
+
+  it('(p) PR358-H04: StatusView no renderiza la sección de documentos cuando no hay rechazados iniciales ni actuales', () => {
+    render(
+      <StatusView
+        courierId="courier-123"
+        documents={[
+          { kind: 'dni_front', status: 'verified' },
+          { kind: 'dni_back', status: 'verified' },
+          { kind: 'selfie', status: 'submitted' },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText('Documentos que requieren corrección')).toBeNull();
+    expect(screen.queryByText('Seguimiento de documentos corregidos')).toBeNull();
   });
 });
 

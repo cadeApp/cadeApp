@@ -37,7 +37,16 @@ type AdminRpcName =
   | 'admin_set_subscription'
   | 'admin_update_setting'
   | 'admin_resolve_incident'
-  | 'admin_list_incidents';
+  | 'admin_list_incidents'
+  | PublicationCreditsRpcName;
+
+/** CC-029 (T-369): RPC admin de créditos de publicación y planes. */
+type PublicationCreditsRpcName =
+  | 'admin_upsert_publication_plan'
+  | 'admin_grant_publication_credits'
+  | 'admin_register_plan_period'
+  | 'admin_get_merchant_publication_credits'
+  | 'admin_list_publication_plans';
 
 function isAllowedAdminRpcError<K extends AdminRpcName>(
   rpcName: K,
@@ -194,11 +203,12 @@ export async function adminVerifyDocumentRpc(
     return err('VALIDATION_ERROR');
   }
 
-  const { documentId, decision, reason } = parsedInput.data;
+  const { documentId, decision, reason, rejectionCode } = parsedInput.data;
   const { data, error } = await client.rpc('admin_verify_document', {
     p_document_id: documentId,
     p_decision: decision,
     p_reason: reason ?? null,
+    p_rejection_code: rejectionCode ?? null,
   });
 
   if (error) {
@@ -402,4 +412,117 @@ export async function adminListIncidentsRpc(
   }
 
   return ok(parsedOutput.data);
+}
+
+type AdminRpcResult<K extends AdminRpcName> = ActionResult<RpcOutput<K>, RpcErrorCode<K> | 'INTERNAL_ERROR'>;
+
+/** Ejecuta una RPC admin de créditos ya validada: mapea el error al contrato y valida la salida. */
+async function callPublicationCreditsRpc<K extends PublicationCreditsRpcName>(
+  client: SupabaseRpcCaller,
+  rpcName: K,
+  args: Record<string, unknown>,
+): Promise<AdminRpcResult<K>> {
+  const { data, error } = await client.rpc(rpcName, args);
+  if (error) {
+    return err(mapAdminRpcError(rpcName, error));
+  }
+  const parsedOutput = RPC_CONTRACTS[rpcName].outputSchema.safeParse(data);
+  if (!parsedOutput.success) {
+    return err('INTERNAL_ERROR');
+  }
+  return ok(parsedOutput.data as RpcOutput<K>);
+}
+
+/**
+ * CC-029: `public.admin_upsert_publication_plan(...)`. Crea o edita el catálogo; `kind` y el cupo no cambian si el plan
+ * ya tiene períodos (`PLAN_IN_USE`).
+ */
+export async function adminUpsertPublicationPlanRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<AdminRpcResult<'admin_upsert_publication_plan'>> {
+  const parsed = RPC_CONTRACTS.admin_upsert_publication_plan.inputSchema.safeParse(rawInput);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+  const input = parsed.data;
+  return callPublicationCreditsRpc(client, 'admin_upsert_publication_plan', {
+    p_plan_id: input.planId,
+    p_code: input.code,
+    p_name: input.name,
+    p_kind: input.kind,
+    p_monthly_credits: input.monthlyCredits,
+    p_reference_price_ars: input.referencePriceArs,
+    p_active: input.active,
+    p_sort: input.sort,
+  });
+}
+
+/**
+ * CC-029: `public.admin_grant_publication_credits(...)`. Registra créditos sueltos de una compra confirmada fuera de la
+ * app o de un ajuste. `operationKey` hace idempotente el reintento de la misma operación.
+ */
+export async function adminGrantPublicationCreditsRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<AdminRpcResult<'admin_grant_publication_credits'>> {
+  const parsed = RPC_CONTRACTS.admin_grant_publication_credits.inputSchema.safeParse(rawInput);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+  const input = parsed.data;
+  return callPublicationCreditsRpc(client, 'admin_grant_publication_credits', {
+    p_merchant_id: input.merchantId,
+    p_credits: input.credits,
+    p_source: input.source,
+    p_operation_key: input.operationKey,
+    p_note: input.note ?? null,
+  });
+}
+
+/** CC-029: `public.admin_register_plan_period(...)`. Alta o renovación de un período de plan, idempotente por clave. */
+export async function adminRegisterPlanPeriodRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<AdminRpcResult<'admin_register_plan_period'>> {
+  const parsed = RPC_CONTRACTS.admin_register_plan_period.inputSchema.safeParse(rawInput);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+  const input = parsed.data;
+  return callPublicationCreditsRpc(client, 'admin_register_plan_period', {
+    p_merchant_id: input.merchantId,
+    p_plan_id: input.planId,
+    p_is_purchase: input.isPurchase,
+    p_operation_key: input.operationKey,
+    p_note: input.note ?? null,
+  });
+}
+
+/** CC-029: `public.admin_get_merchant_publication_credits(...)`. Saldo y libro paginado (máximo 50, cursor por id). */
+export async function adminGetMerchantPublicationCreditsRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<AdminRpcResult<'admin_get_merchant_publication_credits'>> {
+  const parsed = RPC_CONTRACTS.admin_get_merchant_publication_credits.inputSchema.safeParse(rawInput);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+  const input = parsed.data;
+  return callPublicationCreditsRpc(client, 'admin_get_merchant_publication_credits', {
+    p_merchant_id: input.merchantId,
+    p_limit: input.limit ?? 50,
+    p_before_id: input.beforeId ?? null,
+  });
+}
+
+/**
+ * CC-029 addendum D01-B: `public.admin_list_publication_plans(...)`. Catálogo para el admin AAL2 (lo verifica la RPC),
+ * de a 50 como máximo, ordenado por (sort, id) y con cursor de la última fila. Siempre con el cliente de sesión.
+ */
+export async function adminListPublicationPlansRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<AdminRpcResult<'admin_list_publication_plans'>> {
+  const parsed = RPC_CONTRACTS.admin_list_publication_plans.inputSchema.safeParse(rawInput);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+  const input = parsed.data;
+  return callPublicationCreditsRpc(client, 'admin_list_publication_plans', {
+    p_limit: input.limit ?? 50,
+    p_after_sort: input.afterSort ?? null,
+    p_after_id: input.afterId ?? null,
+    p_active_only: input.activeOnly ?? false,
+  });
 }

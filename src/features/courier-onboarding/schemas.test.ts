@@ -5,6 +5,8 @@ import {
   dniSchema,
   vehiclePlateSchema,
   courierOnboardingSchema,
+  courierUpdateVehicleSchema,
+  courierUpdatePhoneSchema,
 } from './schemas';
 
 describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () => {
@@ -185,4 +187,132 @@ describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () =
       }
     );
   });
+
+  describe('T-357: Validación de actualización de vehículo (courierUpdateVehicleSchema)', () => {
+    it('acepta moto con patente Mercosur o nacional válida y la formatea a mayúsculas', () => {
+      const res = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto',
+        vehiclePlate: 'ab 123 cd',
+      });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.vehicleType).toBe('moto');
+        expect(res.data.vehiclePlate).toBe('AB 123 CD');
+      }
+    });
+
+    it('acepta auto con patente tradicional argentina (ej: ela 666) y la formatea a mayúsculas', () => {
+      const res = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'car',
+        vehiclePlate: 'ela 666',
+      });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.vehicleType).toBe('car');
+        expect(res.data.vehiclePlate).toBe('ELA 666');
+      }
+    });
+
+    it('rechaza moto o auto sin patente o con patente vacía', () => {
+      const withoutPlate = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto',
+      });
+      expect(withoutPlate.success).toBe(false);
+
+      const emptyPlate = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'car',
+        vehiclePlate: '   ',
+      });
+      expect(emptyPlate.success).toBe(false);
+    });
+
+    it('rechaza moto o auto con formato de patente inválido', () => {
+      const res = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto',
+        vehiclePlate: 'INVALIDA',
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('acepta walk y bike sin patente y normaliza patente residual a null', () => {
+      const walkRes = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'walk',
+      });
+      expect(walkRes.success).toBe(true);
+      if (walkRes.success) {
+        expect(walkRes.data.vehiclePlate).toBeNull();
+      }
+
+      const bikeWithPlate = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'bike',
+        vehiclePlate: 'AB 123 CD',
+      });
+      expect(bikeWithPlate.success).toBe(true);
+      if (bikeWithPlate.success) {
+        expect(bikeWithPlate.data.vehiclePlate).toBeNull();
+      }
+    });
+
+    it('rechaza documentos extras y campos desconocidos en edición (2-A)', () => {
+      const docs = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto', vehiclePlate: 'AB 123 CD',
+        documents: { license: 'courier/docs/license.jpg' },
+      });
+      expect(docs.success).toBe(false);
+      expect(courierUpdateVehicleSchema.safeParse({ vehicleType: 'bike', status: 'approved' }).success).toBe(false);
+    });
+  });
+
+  describe('T-355: courierUpdatePhoneSchema para edición de teléfono de repartidor', () => {
+    it('acepta y normaliza números argentinos válidos a 10 dígitos', () => {
+      const cases = [
+        { input: '3865123456', expected: '3865123456' },
+        { input: '+5493865123456', expected: '3865123456' },
+        { input: '+54 9 3865 123456', expected: '3865123456' },
+        { input: '(03865) 15-123456', expected: '3865123456' },
+        { input: '0381 15 4123456', expected: '3814123456' },
+      ];
+      for (const { input, expected } of cases) {
+        const res = courierUpdatePhoneSchema.safeParse({ phone: input });
+        expect(res.success).toBe(true);
+        if (res.success) {
+          expect(res.data.phone).toBe(expected);
+        }
+      }
+    });
+
+    it('rechaza teléfonos con letras, símbolos no permitidos o longitud incorrecta', () => {
+      const invalid = [
+        '3865123456abc',
+        'palabra',
+        '12345',
+        '000000000000000000000000000000000',
+        '',
+        '   ',
+        '<script>alert(1)</script>',
+      ];
+      for (const phone of invalid) {
+        const res = courierUpdatePhoneSchema.safeParse({ phone });
+        expect(res.success).toBe(false);
+      }
+    });
+
+    it('rechaza payloads con campos extra no autorizados (allowlist estricta)', () => {
+      const forbidden = [
+        { phone: '3865123456', role: 'admin' },
+        { phone: '3865123456', email: 'test@example.com' },
+        { phone: '3865123456', dni: '12345678' },
+        { phone: '3865123456', status: 'approved' },
+        { phone: '3865123456', vehicleType: 'moto' },
+        { phone: '3865123456', displayName: 'Nombre Cambiado' },
+        { phone: '3865123456', profile_id: 'otro-uuid' },
+      ];
+      for (const payload of forbidden) {
+        const res = courierUpdatePhoneSchema.safeParse(payload);
+        expect(res.success).toBe(false);
+      }
+    });
+  });
 });
+
+

@@ -5,6 +5,7 @@ export * from './queries';
 export {
   parseAdminApplicantsSearchParams,
   parseAdminMerchantsSearchParams,
+  parseMerchantCreditsParams,
   parseAdminAuditSearchParams,
 } from './schemas';
 

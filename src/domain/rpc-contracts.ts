@@ -5,6 +5,7 @@ import {
   aguilaresLngSchema,
   courierDocumentKindSchema,
   deliveryRequestStatusSchema,
+  documentRejectionCodeSchema,
   documentReviewStatusSchema,
   incidentDecisionSchema,
   incidentDescriptionHasContact,
@@ -523,6 +524,85 @@ export const getMerchantRequestPrivateFieldsOutputSchema = z
   })
   .strict();
 
+// get_request_cancellation_history (CC-032)
+// Cancelaciones de asignación (`courier_cancel_match`) de un pedido: el comercio dueño ve todas, el repartidor solo
+// las propias y el admin todas con el texto libre. `rawReason` llega en null salvo para el admin (D3).
+export const COURIER_CANCELLATION_CATEGORIES = [
+  'unforeseen_issue',
+  'vehicle_breakdown',
+  'pickup_issue',
+  'personal_emergency',
+  'other',
+] as const;
+export const courierCancellationCategorySchema = z.enum(COURIER_CANCELLATION_CATEGORIES);
+export type CourierCancellationCategory = z.infer<typeof courierCancellationCategorySchema>;
+
+export const COURIER_CANCELLATION_CATEGORY_LABELS = {
+  unforeseen_issue: 'Tuve un imprevisto',
+  vehicle_breakdown: 'Problema con el vehículo',
+  pickup_issue: 'No puedo llegar al punto de retiro',
+  personal_emergency: 'Emergencia',
+  other: 'Otro motivo',
+} as const satisfies Record<CourierCancellationCategory, string>;
+
+const requestCancellationHistoryCursorSchema = z
+  .object({
+    beforeCreatedAt: isoTimestampSchema,
+    beforeId: uuidSchema,
+  })
+  .strict();
+
+export const getRequestCancellationHistoryInputSchema = z.object({
+  requestId: uuidSchema,
+  limit: z.number().int().min(1).max(100).optional(),
+  cursor: requestCancellationHistoryCursorSchema.nullable().optional(),
+});
+
+const requestCancellationHistoryEventSchema = z
+  .object({
+    id: uuidSchema,
+    action: z.literal('courier_cancel_match'),
+    actionLabel: z.literal('Cancelado por el repartidor'),
+    category: courierCancellationCategorySchema,
+    categoryLabel: z.string().min(1),
+    createdAt: isoTimestampSchema,
+    actor: z
+      .object({
+        id: uuidSchema,
+        role: z.literal('courier'),
+        displayName: z.string().min(1),
+      })
+      .strict()
+      .nullable(),
+    offerId: uuidSchema.nullable(),
+    rawReason: z.string().nullable(),
+  })
+  .strict()
+  .refine((event) => event.categoryLabel === COURIER_CANCELLATION_CATEGORY_LABELS[event.category], {
+    message: 'categoryLabel no corresponde a category',
+  });
+
+export const getRequestCancellationHistoryOutputSchema = z
+  .object({
+    version: z.literal('1.0'),
+    requestId: uuidSchema,
+    events: z.array(requestCancellationHistoryEventSchema),
+    pagination: z
+      .object({
+        limit: z.number().int().min(1).max(100),
+        hasMore: z.boolean(),
+        nextCursor: requestCancellationHistoryCursorSchema.nullable(),
+      })
+      .strict()
+      .refine((pagination) => pagination.hasMore === (pagination.nextCursor !== null), {
+        message: 'hasMore y nextCursor deben coincidir',
+      }),
+  })
+  .strict();
+
+export type RequestCancellationHistory = z.infer<typeof getRequestCancellationHistoryOutputSchema>;
+export type RequestCancellationHistoryEvent = RequestCancellationHistory['events'][number];
+
 export const adminDecideCourierInputSchema = z.object({
   courierId: uuidSchema,
   decision: z.enum(['approved', 'rejected']),
@@ -551,13 +631,30 @@ export const adminVerifyDocumentInputSchema = z.object({
   documentId: uuidSchema,
   decision: z.enum(['verified', 'rejected']),
   reason: z.string().trim().max(500).nullable().optional(),
+  rejectionCode: documentRejectionCodeSchema.nullable().optional(),
 });
 export const adminVerifyDocumentOutputSchema = z.object({
   documentId: uuidSchema,
   courierId: uuidSchema,
   kind: courierDocumentKindSchema,
   status: documentReviewStatusSchema,
+  rejectionCode: documentRejectionCodeSchema.nullable().optional(),
   docLevel: z.number().int().min(0).max(2),
+});
+
+// CC-025: replace_courier_document
+export const replaceCourierDocumentInputSchema = z.object({
+  kind: courierDocumentKindSchema,
+  storagePath: z.string().trim().min(1).max(500),
+  idempotencyKey: uuidSchema.optional(),
+});
+export const replaceCourierDocumentOutputSchema = z.object({
+  documentId: uuidSchema,
+  kind: courierDocumentKindSchema,
+  status: documentReviewStatusSchema,
+  replacedDocumentId: uuidSchema.nullable(),
+  isCurrent: z.boolean(),
+  idempotent: z.boolean(),
 });
 
 // 17. admin_set_subscription
@@ -598,6 +695,31 @@ export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
   z.object({
     key: z.literal('max_drops_per_request'),
     value: z.number().int().min(1),
+  }),
+  // CC-029 (T-369)
+  z.object({
+    key: z.literal('publication_drops_per_credit'),
+    value: z.number().int().min(1).max(1000),
+  }),
+  z.object({
+    key: z.literal('carryover_base_pct'),
+    value: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    key: z.literal('carryover_step_pct'),
+    value: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    key: z.literal('carryover_cap_pct'),
+    value: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    key: z.literal('launch_discount_pct'),
+    value: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    key: z.literal('loose_credit_reference_price_ars'),
+    value: z.number().int().min(0).max(100_000_000),
   }),
 ]);
 export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
@@ -689,6 +811,169 @@ export const updateMyMerchantProfileOutputSchema = z.object({
 
 export type UpdateMyMerchantProfileOutput = z.infer<typeof updateMyMerchantProfileOutputSchema>;
 
+// CC-029 (T-369): créditos de publicación y planes post-piloto
+export const publicationPlanKindSchema = z.enum(['quota', 'unlimited']);
+export const publicationLotKindSchema = z.enum(['loose', 'plan', 'carryover']);
+export const publicationLotSourceSchema = z.enum(['purchase', 'adjustment', 'plan', 'carryover', 'refund_conversion']);
+export const publicationModeSchema = z.enum(['pilot', 'legacy_paid', 'unlimited', 'credits']);
+export const publicationMovementKindSchema = z.enum(['grant', 'reserve', 'consume', 'unconsume', 'release', 'convert']);
+const publicationNoteSchema = z.string().trim().max(500).nullable().optional();
+const launchDiscountPctSchema = z.number().int().min(0).max(100).nullable();
+
+export const publicationPeriodSummarySchema = z.object({
+  periodId: uuidSchema,
+  planId: uuidSchema,
+  planName: z.string().min(1),
+  planKind: publicationPlanKindSchema,
+  monthlyCredits: z.number().int().positive().nullable(),
+  startsAt: isoTimestampSchema,
+  endsAt: isoTimestampSchema,
+  streak: z.number().int().min(1),
+  carryoverPct: z.number().int().min(0).max(100),
+});
+export const publicationLotSummarySchema = z.object({
+  lotId: uuidSchema,
+  kind: publicationLotKindSchema,
+  source: publicationLotSourceSchema,
+  granted: z.number().int().positive(),
+  available: z.number().int().nonnegative(),
+  startsAt: isoTimestampSchema.nullable(),
+  expiresAt: isoTimestampSchema.nullable(),
+  usable: z.boolean(),
+});
+export const publicationBalanceSchema = z.object({
+  merchantId: uuidSchema,
+  mode: publicationModeSchema,
+  canPublish: z.boolean(),
+  subscriptionStatus: merchantSubscriptionStatusSchema,
+  legacyPaidUntil: civilDateSchema.nullable(),
+  available: z.number().int().nonnegative(),
+  reserved: z.number().int().nonnegative(),
+  scheduled: z.number().int().nonnegative(),
+  currentPeriod: publicationPeriodSummarySchema.nullable(),
+  nextPeriod: publicationPeriodSummarySchema.nullable(),
+  lots: z.array(publicationLotSummarySchema),
+});
+export type PublicationBalance = z.infer<typeof publicationBalanceSchema>;
+
+export const adminUpsertPublicationPlanInputSchema = z
+  .object({
+    planId: uuidSchema.nullable(),
+    code: z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,39}$/),
+    name: z.string().trim().min(2).max(80),
+    kind: publicationPlanKindSchema,
+    monthlyCredits: z.number().int().min(1).max(100_000).nullable(),
+    referencePriceArs: z.number().int().min(0).max(100_000_000).nullable(),
+    active: z.boolean(),
+    sort: z.number().int().min(0).max(1000),
+  })
+  .refine((data) => (data.kind === 'quota') === (data.monthlyCredits !== null), {
+    message: 'Un plan con cupo lleva créditos mensuales; uno ilimitado, no.',
+    path: ['monthlyCredits'],
+  });
+export const adminUpsertPublicationPlanOutputSchema = z.object({
+  planId: uuidSchema,
+  code: z.string().min(1),
+  name: z.string().min(1),
+  kind: publicationPlanKindSchema,
+  monthlyCredits: z.number().int().positive().nullable(),
+  referencePriceArs: z.number().int().nonnegative().nullable(),
+  active: z.boolean(),
+  sort: z.number().int().nonnegative(),
+});
+
+export const adminGrantPublicationCreditsInputSchema = z.object({
+  merchantId: uuidSchema,
+  credits: z.number().int().min(1).max(10_000),
+  source: z.enum(['purchase', 'adjustment']),
+  operationKey: uuidSchema,
+  note: publicationNoteSchema,
+});
+export const adminGrantPublicationCreditsOutputSchema = z.object({
+  lotId: uuidSchema,
+  merchantId: uuidSchema,
+  credits: z.number().int().positive(),
+  source: z.enum(['purchase', 'adjustment']),
+  launchDiscountPct: launchDiscountPctSchema,
+  idempotent: z.boolean(),
+});
+
+export const adminRegisterPlanPeriodInputSchema = z.object({
+  merchantId: uuidSchema,
+  planId: uuidSchema,
+  isPurchase: z.boolean(),
+  operationKey: uuidSchema,
+  note: publicationNoteSchema,
+});
+export const adminRegisterPlanPeriodOutputSchema = z.object({
+  periodId: uuidSchema,
+  merchantId: uuidSchema,
+  planId: uuidSchema,
+  startsAt: isoTimestampSchema,
+  endsAt: isoTimestampSchema,
+  streak: z.number().int().min(1),
+  carryoverPct: z.number().int().min(0).max(100),
+  launchDiscountPct: launchDiscountPctSchema,
+  idempotent: z.boolean(),
+});
+
+export const adminGetMerchantPublicationCreditsInputSchema = z.object({
+  merchantId: uuidSchema,
+  limit: z.number().int().min(1).max(50).optional(),
+  beforeId: z.number().int().positive().nullable().optional(),
+});
+export const publicationMovementSchema = z.object({
+  id: z.number().int().positive(),
+  kind: publicationMovementKindSchema,
+  amount: z.number().int().nonnegative(),
+  lotId: uuidSchema.nullable(),
+  chargeId: uuidSchema.nullable(),
+  requestId: uuidSchema.nullable(),
+  actorId: uuidSchema.nullable(),
+  reason: z.string().nullable(),
+  createdAt: isoTimestampSchema,
+});
+export const adminGetMerchantPublicationCreditsOutputSchema = z.object({
+  balance: publicationBalanceSchema,
+  movements: z.array(publicationMovementSchema),
+  nextCursor: z.number().int().positive().nullable(),
+});
+
+// CC-029 addendum D01-B (PR #402): listado del catálogo para el admin AAL2, paginado por (sort, id).
+export const publicationPlanListItemSchema = z.object({
+  id: uuidSchema,
+  code: z.string().min(1),
+  name: z.string().min(1),
+  kind: publicationPlanKindSchema,
+  monthlyCredits: z.number().int().positive().nullable(),
+  referencePriceArs: z.number().int().nonnegative().nullable(),
+  active: z.boolean(),
+  sort: z.number().int().nonnegative(),
+});
+export type PublicationPlanListItem = z.infer<typeof publicationPlanListItemSchema>;
+export const publicationPlansCursorSchema = z.object({
+  sort: z.number().int(),
+  id: uuidSchema,
+});
+export const adminListPublicationPlansInputSchema = z
+  .object({
+    limit: z.number().int().min(1).max(50).optional(),
+    afterSort: z.number().int().nullable().optional(),
+    afterId: uuidSchema.nullable().optional(),
+    activeOnly: z.boolean().optional(),
+  })
+  .refine((data) => (data.afterSort == null) === (data.afterId == null), {
+    message: 'El cursor lleva sort e id juntos.',
+    path: ['afterId'],
+  });
+export const adminListPublicationPlansOutputSchema = z.object({
+  items: z.array(publicationPlanListItemSchema).max(50),
+  nextCursor: publicationPlansCursorSchema.nullable(),
+});
+
+export const getMyPublicationBalanceInputSchema = z.object({}).strict();
+export const getMyPublicationBalanceOutputSchema = publicationBalanceSchema;
+
 export const RPC_CONTRACTS = {
   update_my_merchant_profile: {
     inputSchema: updateMyMerchantProfileInputSchema,
@@ -720,6 +1005,7 @@ export const RPC_CONTRACTS = {
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
       'SUBSCRIPTION_INACTIVE',
+      'PUBLICATION_CREDITS_EXHAUSTED',
       'MISSING_REQUIRED_FIELDS',
       'OUT_OF_BOUNDS_AGUILARES',
       'INVALID_ZONE',
@@ -753,7 +1039,10 @@ export const RPC_CONTRACTS = {
    *      - `cancel_request` administrativo sobre `in_transit` sin incidente registrado (CC-015): `INVALID_STATE_TRANSITION`
    *      - `report_no_show` sin oferta `accepted` válida: `INVALID_STATE_TRANSITION`
    *      - `report_incident` en `delivered` con `delivered_at is null` o `now() > delivered_at + 24h`: `INCIDENT_WINDOW_EXPIRED`
-   *   6. Suscripción y gracia del comercio en `publish_request`, `republish_request` y `report_no_show(republish=true)` (`SUBSCRIPTION_INACTIVE`)
+   *   6. Suscripción y gracia del comercio en `publish_request`, `republish_request` y `report_no_show(republish=true)` (`SUBSCRIPTION_INACTIVE`).
+   *      CC-029: con `pilot_active = false` solo `cancelled` da `SUBSCRIPTION_INACTIVE`; `publish_request` y `republish_request`
+   *      reservan el costo híbrido (legacy_paid → ilimitado → créditos) y sin derecho fallan con `PUBLICATION_CREDITS_EXHAUSTED`
+   *      (después de validar contacto y zonas, antes del tope por ventana).
    *   7. Contacto, zonas activas y bordes de Aguilares en `publish_request` (`MISSING_REQUIRED_FIELDS` → `INVALID_ZONE` → `OUT_OF_BOUNDS_AGUILARES`)
    *   8. Tope por ventana de 1 min en `publish_request`/`republish_request` y `report_incident` (`RATE_LIMITED`)
    */
@@ -765,6 +1054,7 @@ export const RPC_CONTRACTS = {
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
       'SUBSCRIPTION_INACTIVE',
+      'PUBLICATION_CREDITS_EXHAUSTED',
       'MISSING_REQUIRED_FIELDS',
       'OUT_OF_BOUNDS_AGUILARES',
       'INVALID_ZONE',
@@ -1005,6 +1295,7 @@ export const RPC_CONTRACTS = {
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
       'SUBSCRIPTION_INACTIVE',
+      'PUBLICATION_CREDITS_EXHAUSTED',
       'REASON_REQUIRED',
       'INVALID_STATE_TRANSITION',
       'RATE_LIMITED',
@@ -1140,6 +1431,17 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  replace_courier_document: {
+    inputSchema: replaceCourierDocumentInputSchema,
+    outputSchema: replaceCourierDocumentOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_set_subscription: {
     inputSchema: adminSetSubscriptionInputSchema,
     outputSchema: adminSetSubscriptionOutputSchema,
@@ -1149,6 +1451,7 @@ export const RPC_CONTRACTS = {
       'AAL2_REQUIRED',
       'NOT_FOUND',
       'VALIDATION_ERROR',
+      'INVALID_STATE_TRANSITION',
     ] as const satisfies readonly DomainErrorCode[],
   },
   admin_update_setting: {
@@ -1191,6 +1494,90 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  // CC-029 (T-369). Precedencia de las RPC admin: UNAUTHENTICATED → UNAUTHORIZED_ACTOR → AAL2_REQUIRED →
+  // VALIDATION_ERROR → NOT_FOUND → IDEMPOTENCY_CONFLICT / PLAN_INACTIVE / PLAN_IN_USE.
+  admin_upsert_publication_plan: {
+    inputSchema: adminUpsertPublicationPlanInputSchema,
+    outputSchema: adminUpsertPublicationPlanOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'PLAN_IN_USE',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_grant_publication_credits: {
+    inputSchema: adminGrantPublicationCreditsInputSchema,
+    outputSchema: adminGrantPublicationCreditsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'IDEMPOTENCY_CONFLICT',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_register_plan_period: {
+    inputSchema: adminRegisterPlanPeriodInputSchema,
+    outputSchema: adminRegisterPlanPeriodOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'IDEMPOTENCY_CONFLICT',
+      'PLAN_INACTIVE',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_get_merchant_publication_credits: {
+    inputSchema: adminGetMerchantPublicationCreditsInputSchema,
+    outputSchema: adminGetMerchantPublicationCreditsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_list_publication_plans: {
+    inputSchema: adminListPublicationPlansInputSchema,
+    outputSchema: adminListPublicationPlansOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  get_my_publication_balance: {
+    inputSchema: getMyPublicationBalanceInputSchema,
+    outputSchema: getMyPublicationBalanceOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  get_request_cancellation_history: {
+    inputSchema: getRequestCancellationHistoryInputSchema,
+    outputSchema: getRequestCancellationHistoryOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
 } as const;
 
 export const ALL_RPC_NAMES = [
@@ -1219,10 +1606,18 @@ export const ALL_RPC_NAMES = [
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_verify_document',
+  'replace_courier_document',
   'admin_set_subscription',
   'admin_update_setting',
   'admin_resolve_incident',
   'admin_list_incidents',
+  'admin_upsert_publication_plan',
+  'admin_grant_publication_credits',
+  'admin_register_plan_period',
+  'admin_get_merchant_publication_credits',
+  'admin_list_publication_plans',
+  'get_my_publication_balance',
+  'get_request_cancellation_history',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 
 export type RpcName = (typeof ALL_RPC_NAMES)[number];

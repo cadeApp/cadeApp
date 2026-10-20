@@ -9,6 +9,9 @@ import {
   getAuditLog,
   getPlatformSettings,
   getRecentSettingChanges,
+  getPublicationPlans,
+  getAdminMerchantPublicationCredits,
+  parsePublicationPlansParams,
 } from './queries';
 
 vi.mock('@/server/supabase/server', () => ({
@@ -350,6 +353,94 @@ describe('Admin Queries (T-122 DoD)', () => {
       }
     });
 
+    it('CC-025 / T-356: getApplicantDetail proyecta isCurrent, rejectionCode y ordena vigentes primero', async () => {
+      const mockSupabase = {
+        from: vi.fn((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: {
+                      profile_id: 'courier-history',
+                      status: 'pending',
+                      vehicle_type: 'moto',
+                      vehicle_plate: 'AB 123 CD',
+                      dni_hmac: 'a1b2c3d4e5f6',
+                      doc_level: 1,
+                      license_status: 'submitted',
+                      insurance_status: 'none',
+                      decided_at: null,
+                      decided_by: null,
+                      deactivated_at: null,
+                      profiles: {
+                        display_name: 'Carlos Revisor',
+                        phone: '3865999999',
+                        created_at: '2026-10-10T10:00:00Z',
+                      },
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  order: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: 'doc-old',
+                        kind: 'license',
+                        storage_path: 'courier-history/license_1.webp',
+                        status: 'rejected',
+                        uploaded_at: '2026-10-10T10:05:00Z',
+                        is_current: false,
+                        rejection_code: 'IMAGE_BLURRY',
+                      },
+                      {
+                        id: 'doc-new',
+                        kind: 'license',
+                        storage_path: 'courier-history/license_2.webp',
+                        status: 'submitted',
+                        uploaded_at: '2026-10-11T12:00:00Z',
+                        is_current: true,
+                        rejection_code: null,
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return {};
+        }),
+      };
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const detail = await getApplicantDetail('courier-history');
+      expect(detail).not.toBeNull();
+      expect(detail?.documents).toHaveLength(2);
+
+      // El vigente va primero
+      expect(detail?.documents[0]?.id).toBe('doc-new');
+      expect(detail?.documents[0]?.isCurrent).toBe(true);
+      expect(detail?.documents[0]?.status).toBe('submitted');
+      expect(detail?.documents[0]?.rejectionCode).toBeNull();
+
+      // El histórico va segundo
+      expect(detail?.documents[1]?.id).toBe('doc-old');
+      expect(detail?.documents[1]?.isCurrent).toBe(false);
+      expect(detail?.documents[1]?.status).toBe('rejected');
+      expect(detail?.documents[1]?.rejectionCode).toBe('IMAGE_BLURRY');
+    });
+
     it('retorna null si el repartidor no existe', async () => {
       const mockSupabase = {
         from: vi.fn((table: string) => {
@@ -675,6 +766,12 @@ describe('T-123: getPlatformSettings (A04)', () => {
     { key: 'pilot_terms_version', value: '1.1' },
     { key: 'subscription_grace_days', value: 3 },
     { key: 'max_drops_per_request', value: 5 },
+    // CC-029 (T-369): la migración inserta estas cinco; el precio de referencia queda sin fila hasta que se cargue.
+    { key: 'publication_drops_per_credit', value: 2 },
+    { key: 'carryover_base_pct', value: 5 },
+    { key: 'carryover_step_pct', value: 5 },
+    { key: 'carryover_cap_pct', value: 35 },
+    { key: 'launch_discount_pct', value: 0 },
   ];
 
   it('devuelve los valores vigentes de platform_settings, no constantes', async () => {
@@ -686,8 +783,29 @@ describe('T-123: getPlatformSettings (A04)', () => {
       pilotTermsVersion: '1.1',
       subscriptionGraceDays: 3,
       maxDropsPerRequest: 5,
+      publicationDropsPerCredit: 2,
+      carryoverBasePct: 5,
+      carryoverStepPct: 5,
+      carryoverCapPct: 35,
+      launchDiscountPct: 0,
+      looseCreditReferencePriceArs: null,
     });
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('T-369: lee el precio de referencia cuando está cargado y falla si falta un parámetro de créditos', async () => {
+    mockClient({
+      platform_settings: {
+        data: [...rows, { key: 'loose_credit_reference_price_ars', value: 900 }],
+        error: null,
+      },
+    });
+    await expect(getPlatformSettings()).resolves.toMatchObject({ looseCreditReferencePriceArs: 900 });
+
+    mockClient({
+      platform_settings: { data: rows.filter((row) => row.key !== 'carryover_cap_pct'), error: null },
+    });
+    await expect(getPlatformSettings()).rejects.toThrow(/carryover_cap_pct/);
   });
 
   it('si falta el piso no inventa 1000: falla', async () => {
@@ -961,3 +1079,107 @@ describe('T-321: Desambiguación de embeds PostgREST con foreign keys canónicas
   });
 });
 
+describe('T-369 / CC-029: catálogo de planes y créditos del comercio', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const PLAN_ITEMS = [
+    { id: 'f0000000-0000-4000-8000-000000000001', code: 'plan-40', name: 'Plan 40', kind: 'quota', monthlyCredits: 40, referencePriceArs: 20000, active: true, sort: 1 },
+    { id: 'f0000000-0000-4000-8000-000000000002', code: 'ilimitado', name: 'Ilimitado', kind: 'unlimited', monthlyCredits: null, referencePriceArs: null, active: false, sort: 1 },
+  ];
+
+  function mockAdminSession(role: string | null, aal: 'aal1' | 'aal2') {
+    const rpc = vi.fn();
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: role ? { id: 'admin-1' } : null }, error: null }),
+        mfa: {
+          getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({ data: { currentLevel: aal }, error: null }),
+        },
+      },
+      from: vi.fn(),
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    return rpc;
+  }
+
+  it('PR402-H04: el catálogo se pide a admin_list_publication_plans con la sesión, nunca con service role', async () => {
+    const rpc = mockAdminSession('admin', 'aal2');
+    rpc.mockResolvedValue({ data: { items: PLAN_ITEMS, nextCursor: null }, error: null });
+    await expect(getPublicationPlans()).resolves.toEqual({ ok: true, data: { items: PLAN_ITEMS, nextCursor: null } });
+    expect(rpc).toHaveBeenCalledWith('admin_list_publication_plans', {
+      p_limit: 50,
+      p_after_sort: null,
+      p_after_id: null,
+      p_active_only: false,
+    });
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('PR402-H04: los rechazos de autorización de la RPC llegan tal cual a la página', async () => {
+    for (const code of ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'AAL2_REQUIRED'] as const) {
+      const rpc = mockAdminSession('admin', 'aal1');
+      rpc.mockResolvedValue({ data: null, error: { message: code, code: 'P0001' } });
+      await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code });
+    }
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('PR402-H03: pasa el cursor (sort, id) y el filtro, y devuelve el cursor siguiente', async () => {
+    const rpc = mockAdminSession('admin', 'aal2');
+    const next = { sort: 1, id: PLAN_ITEMS[0]?.id };
+    rpc.mockResolvedValue({ data: { items: [PLAN_ITEMS[0]], nextCursor: next }, error: null });
+    const result = await getPublicationPlans({
+      activeOnly: true,
+      after: { sort: 0, id: 'f0000000-0000-4000-8000-000000000099' },
+    });
+    expect(result).toEqual({ ok: true, data: { items: [PLAN_ITEMS[0]], nextCursor: next } });
+    expect(rpc).toHaveBeenCalledWith('admin_list_publication_plans', {
+      p_limit: 50,
+      p_after_sort: 0,
+      p_after_id: 'f0000000-0000-4000-8000-000000000099',
+      p_active_only: true,
+    });
+  });
+
+  it('una respuesta fuera del contrato o un error de base no se muestran como catálogo', async () => {
+    const rpc = mockAdminSession('admin', 'aal2');
+    rpc.mockResolvedValueOnce({ data: { items: [{ ...PLAN_ITEMS[0], kind: 'gold' }], nextCursor: null }, error: null });
+    await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    rpc.mockResolvedValueOnce({ data: { items: PLAN_ITEMS, nextCursor: { sort: 1 } }, error: null });
+    await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom', code: 'XX000' } });
+    await expect(getPublicationPlans()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+
+  it('PR402-H03: la URL del catálogo solo arma un cursor completo y válido', () => {
+    const id = 'f0000000-0000-4000-8000-000000000050';
+    expect(parsePublicationPlansParams({ afterSort: '3', afterId: id, active: '1' })).toEqual({
+      activeOnly: true,
+      after: { sort: 3, id },
+    });
+    expect(parsePublicationPlansParams({})).toEqual({ activeOnly: false, after: null });
+    for (const raw of [{ afterSort: '3' }, { afterId: id }, { afterSort: 'x', afterId: id }, { afterSort: '3', afterId: 'nope' }, { afterSort: '-1', afterId: id }]) {
+      expect(parsePublicationPlansParams(raw).after).toBeNull();
+    }
+    expect(parsePublicationPlansParams({ afterSort: ['4', '9'], afterId: [id], active: ['0'] })).toEqual({
+      activeOnly: false,
+      after: { sort: 4, id },
+    });
+  });
+
+  it('el saldo del comercio se pide por RPC con la sesión, de a 50 y con el cursor recibido', async () => {
+    const rpc = mockAdminSession('admin', 'aal2');
+    rpc.mockResolvedValue({ data: null, error: { message: 'AAL2_REQUIRED', code: 'P0001' } });
+    await expect(
+      getAdminMerchantPublicationCredits({ merchantId: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33', beforeId: 12 })
+    ).resolves.toEqual({ ok: false, code: 'AAL2_REQUIRED' });
+    expect(rpc).toHaveBeenCalledWith('admin_get_merchant_publication_credits', {
+      p_merchant_id: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
+      p_limit: 50,
+      p_before_id: 12,
+    });
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+});

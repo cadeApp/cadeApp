@@ -12,7 +12,7 @@ import {
   buildWhatsAppUrl,
 } from '@/lib/whatsapp';
 import { formatArs } from '@/lib/format';
-import { formatVehicleType } from '../format';
+import { formatVehicleType, formatRecipientPaymentMethod } from '../format';
 import {
   AlertTriangle,
   ArrowRight,
@@ -29,6 +29,8 @@ export interface TripMerchantViewProps {
   onReportNoShow?: () => void;
   isReportingNoShow?: boolean;
   onCancelTrip?: () => void;
+  /** D-C2b: abre el diálogo de «sacar al repartidor» (solo con la solicitud asignada). */
+  onReplaceCourier?: () => void;
 }
 
 export function TripMerchantView({
@@ -36,6 +38,7 @@ export function TripMerchantView({
   onReportNoShow,
   isReportingNoShow = false,
   onCancelTrip,
+  onReplaceCourier,
 }: TripMerchantViewProps) {
   const isMatched = trip.status === 'matched';
   const isInTransit = trip.status === 'in_transit';
@@ -79,6 +82,8 @@ export function TripMerchantView({
             dropoffLng: trip.dropoffLng,
           },
         ];
+
+  const singleDrop = dropsList.length === 1 ? dropsList[0] : null;
 
   return (
     <div className="mx-auto max-w-[390px] space-y-4 p-4 pb-24">
@@ -165,6 +170,15 @@ export function TripMerchantView({
             </span>
           </div>
 
+          {singleDrop && (
+            <p className="text-sm text-muted-foreground">
+              Medio de pago:{' '}
+              <strong className="text-foreground">
+                {formatRecipientPaymentMethod(singleDrop.recipientPaymentMethod)}
+              </strong>
+            </p>
+          )}
+
           <div className="flex gap-2 pt-1">
             {courierWaUrl ? (
               <a
@@ -237,6 +251,14 @@ export function TripMerchantView({
                   Destinatario: <strong className="text-foreground">{drop.recipientName}</strong> ·{' '}
                   {drop.dropoffZoneName}
                 </p>
+                {dropsList.length > 1 && (
+                  <p className="text-sm text-muted-foreground">
+                    Medio de pago:{' '}
+                    <strong className="text-foreground">
+                      {formatRecipientPaymentMethod(drop.recipientPaymentMethod)}
+                    </strong>
+                  </p>
+                )}
               </div>
               <div className="rounded-lg border border-border/50 bg-background/80 p-2.5 text-sm italic text-muted-foreground">
                 &quot;{dropCustomerMsg}&quot;
@@ -283,7 +305,19 @@ export function TripMerchantView({
             </Button>
           )}
 
-          {onCancelTrip && (
+          {onReplaceCourier && isMatched && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isReportingNoShow}
+              onClick={onReplaceCourier}
+              className="min-h-[48px] w-full"
+            >
+              Cambiar de repartidor
+            </Button>
+          )}
+
+          {onCancelTrip && isMatched && (
             <Button
               type="button"
               variant="ghost"

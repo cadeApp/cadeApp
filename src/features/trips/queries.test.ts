@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as tripsRpc from '@/server/rpc/trips';
 import * as serverSupabase from '@/server/supabase/server';
-import { getTripDetails, getActiveTripsForCourier } from './queries';
+import {
+  getTripDetails,
+  getActiveTripsForCourier,
+  loadCancellationHistoryForRequestDetail,
+} from './queries';
 
 vi.mock('@/server/rpc/trips', () => ({
   getTripDetailsServer: vi.fn(),
@@ -715,4 +719,115 @@ describe('T-360 — getActiveTripsForCourier', () => {
       ['amountArs', 'dropoffZoneName', 'dropsCount', 'id', 'matchedAt', 'pickupZoneName', 'status'].sort()
     );
   });
+});
+
+describe('T-373 / PR425-H02 — getTripDetails distingue ausencia esperada de falla', () => {
+  const requestId = '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d';
+  // Lo que /trips/[id] lee en paralelo: el repartidor tiene una cancelación propia previa en este pedido.
+  const ownHistory = Promise.resolve({
+    ok: true as const,
+    data: {
+      version: '1.0' as const,
+      requestId,
+      events: [{ id: '3a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d' }],
+      pagination: { limit: 50, hasMore: false, nextCursor: null },
+    },
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['NOT_FOUND', 'UNAUTHORIZED_ACTOR', 'VALIDATION_ERROR', 'INVALID_STATE_TRANSITION', 'UNAUTHENTICATED'] as const)(
+    '%s es ausencia esperada: devuelve null (habilita el 404 o la vista de cancelación)',
+    async (code) => {
+      vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue({ ok: false, code });
+      await expect(getTripDetails(requestId)).resolves.toBeNull();
+    }
+  );
+
+  it('INTERNAL_ERROR no es ausencia: lanza y no consulta coordenadas', async () => {
+    vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+    await expect(getTripDetails(requestId)).rejects.toThrow('TRIP_DETAILS_UNAVAILABLE');
+    expect(serverSupabase.createClient).not.toHaveBeenCalled();
+  });
+
+  it('con historial propio en paralelo (como /trips/[id]), una falla del detalle rechaza en vez de dar un null que mostraría «Cancelaste esta asignación»', async () => {
+    vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+    await expect(Promise.all([getTripDetails(requestId), ownHistory])).rejects.toThrow('TRIP_DETAILS_UNAVAILABLE');
+  });
+
+  it('rematch: si existe el viaje actual se devuelve el detalle aunque haya historial previo', async () => {
+    const current = {
+      requestId,
+      code: 'REQ-1A2B3C4D',
+      status: 'matched' as const,
+      merchantId: '00000000-0000-4000-8000-0000000008b1',
+      merchantName: 'Kiosco Centro',
+      merchantPhone: null,
+      courierId: '00000000-0000-4000-8000-0000000008c1',
+      courierName: 'Carlos Benítez',
+      courierPhone: null,
+      vehicleType: 'moto' as const,
+      vehiclePlate: null,
+      avatarUrl: null,
+      amountArs: 1800,
+      pickupAddress: 'San Martín 450',
+      pickupZoneName: 'Centro',
+      dropoffAddress: 'Belgrano 1220',
+      dropoffZoneName: 'Barrio Sur',
+      deliveryNotes: null,
+      recipientName: 'Laura Gómez',
+      recipientPhone: '3865123456',
+      recipientPaymentMethod: 'cash' as const,
+      needsChange: false,
+      cashChangeAmount: null,
+      createdAt: '2026-09-24T10:00:00.000Z',
+      matchedAt: '2026-09-24T10:05:00.000Z',
+      pickedUpAt: null,
+      deliveredAt: null,
+      dropsCount: 1,
+      drops: [],
+    };
+    vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue({ ok: true, data: current } as never);
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      from: vi.fn().mockImplementation(() => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      })),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    const [trip] = await Promise.all([getTripDetails(requestId), ownHistory]);
+    expect(trip?.id).toBe(requestId);
+    expect(trip?.courierId).toBe('00000000-0000-4000-8000-0000000008c1');
+  });
+});
+
+describe('T-373 / PR425-H03 — loadCancellationHistoryForRequestDetail', () => {
+  const requestId = '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d';
+  const page = {
+    ok: true as const,
+    data: {
+      version: '1.0' as const,
+      requestId,
+      events: [],
+      pagination: { limit: 50, hasMore: false, nextCursor: null },
+    },
+  };
+
+  it.each(['published', 'cancelled', 'expired'] as const)('%s muestra el historial: llama a la RPC una vez', async (status) => {
+    const load = vi.fn().mockResolvedValue(page);
+    await expect(loadCancellationHistoryForRequestDetail(requestId, status, load)).resolves.toEqual(page);
+    expect(load).toHaveBeenCalledExactlyOnceWith({ requestId });
+  });
+
+  it.each(['draft', 'matched', 'in_transit', 'delivered'] as const)(
+    '%s no muestra el historial (o redirige a /trips): no llama a la RPC',
+    async (status) => {
+      const load = vi.fn().mockResolvedValue(page);
+      await expect(loadCancellationHistoryForRequestDetail(requestId, status, load)).resolves.toBeNull();
+      expect(load).not.toHaveBeenCalled();
+    }
+  );
 });

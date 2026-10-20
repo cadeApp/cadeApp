@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import {
+  adminGrantPublicationCreditsInputSchema,
+  adminRegisterPlanPeriodInputSchema,
   adminSetSubscriptionInputSchema,
   adminUpdateSettingInputSchema,
+  adminUpsertPublicationPlanInputSchema,
   civilDateSchema,
 } from '@/domain';
 
@@ -119,6 +122,17 @@ export function parseAdminMerchantsSearchParams(raw: { cursor?: unknown }): {
   return cursor === undefined ? {} : { cursor };
 }
 
+/** CC-029: `/admin/merchants/[merchantId]/credits?before=<id>` (cursor del libro) y el id del comercio. */
+export function parseMerchantCreditsParams(raw: { merchantId?: unknown; before?: unknown }): {
+  merchantId?: string;
+  beforeId: number | null;
+} {
+  return {
+    merchantId: parseParam(uuidParamSchema, raw.merchantId),
+    beforeId: parseParam(auditCursorParamSchema, raw.before) ?? null,
+  };
+}
+
 export function parseAdminAuditSearchParams(raw: {
   cursor?: unknown;
   actor?: unknown;
@@ -176,6 +190,77 @@ export const maxDropsFormSchema = z.object({
 export const termsVersionFormSchema = z.object({
   value: z.string().trim().min(1, 'Ingresá la versión de los términos.'),
 });
+
+// CC-029 (T-369): parámetros de créditos, arrastre y descuento (mismos rangos que `admin_update_setting`).
+const boundedIntegerTextSchema = (min: number, max: number, message: string) =>
+  integerTextSchema(min, message).refine((value) => Number(value) <= max, message);
+
+export const dropsPerCreditFormSchema = z.object({
+  value: boundedIntegerTextSchema(1, 1000, 'Ingresá una cantidad entera de entregas entre 1 y 1000.'),
+});
+export const percentFormSchema = z.object({
+  value: boundedIntegerTextSchema(0, 100, 'Ingresá un porcentaje entero entre 0 y 100.'),
+});
+export const referencePriceFormSchema = z.object({
+  value: boundedIntegerTextSchema(0, 100_000_000, 'Ingresá un monto entero en pesos (0 o más).'),
+});
+
+// CC-029: formularios de créditos y planes. El servidor vuelve a validar con el contrato de la RPC.
+export const PUBLICATION_GRANT_SOURCES = ['purchase', 'adjustment'] as const;
+export type PublicationGrantSource = (typeof PUBLICATION_GRANT_SOURCES)[number];
+
+const noteFormSchema = z.string().trim().max(500, 'La nota puede tener hasta 500 caracteres.');
+
+export const grantCreditsFormSchema = z.object({
+  credits: boundedIntegerTextSchema(1, 10_000, 'Ingresá una cantidad entera de créditos entre 1 y 10.000.'),
+  source: z.enum(PUBLICATION_GRANT_SOURCES),
+  note: noteFormSchema,
+});
+export type GrantCreditsFormInput = z.infer<typeof grantCreditsFormSchema>;
+
+export const registerPeriodFormSchema = z.object({
+  planId: z.string().uuid('Elegí un plan del catálogo.'),
+  isPurchase: z.boolean(),
+  note: noteFormSchema,
+});
+export type RegisterPeriodFormInput = z.infer<typeof registerPeriodFormSchema>;
+
+export const publicationPlanFormSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9_-]{1,39}$/, 'Usá de 2 a 40 letras minúsculas, números, guiones o guiones bajos.'),
+    name: z.string().trim().min(2, 'Ingresá un nombre de al menos 2 caracteres.').max(80, 'Hasta 80 caracteres.'),
+    kind: z.enum(['quota', 'unlimited']),
+    monthlyCredits: z.string().trim(),
+    referencePriceArs: z.string().trim(),
+    active: z.boolean(),
+    sort: boundedIntegerTextSchema(0, 1000, 'Ingresá un orden entero entre 0 y 1000.'),
+  })
+  .superRefine((data, ctx) => {
+    const credits = Number(data.monthlyCredits);
+    if (data.kind === 'quota' && !(/^\d+$/.test(data.monthlyCredits) && credits >= 1 && credits <= 100_000)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['monthlyCredits'],
+        message: 'Un plan con cupo lleva entre 1 y 100.000 créditos por mes.',
+      });
+    }
+    const price = Number(data.referencePriceArs);
+    if (data.referencePriceArs !== '' && !(/^\d+$/.test(data.referencePriceArs) && price <= 100_000_000)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['referencePriceArs'],
+        message: 'Ingresá un precio entero en pesos o dejalo vacío.',
+      });
+    }
+  });
+export type PublicationPlanFormInput = z.infer<typeof publicationPlanFormSchema>;
+
+export const upsertPublicationPlanSchema = adminUpsertPublicationPlanInputSchema;
+export const grantPublicationCreditsSchema = adminGrantPublicationCreditsInputSchema;
+export const registerPlanPeriodSchema = adminRegisterPlanPeriodInputSchema;
 
 export type AdminMfaInput = z.infer<typeof adminMfaSchema>;
 export type ViewCourierDocumentInput = z.infer<typeof viewCourierDocumentSchema>;

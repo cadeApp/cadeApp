@@ -295,3 +295,155 @@ describe('PR77-H07: Integración con Supabase Storage (bucket courier-docs y RLS
     expect(mockUpload).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PR358-H06: Selección canónica de extensión por MIME efectivo del archivo', () => {
+  const timestamp = 1700000000000;
+  const courierId = 'courier-uuid-123';
+
+  it('asigna extensión .jpg para archivos JPEG independientemente de extensiones engañosas (.jfif, .jpe, .tiff, .png)', () => {
+    // foto.jfif + image/jpeg -> jpg
+    const fileJfif = new File(['content'], 'foto.jfif', { type: 'image/jpeg' });
+    expect(getDocumentExtension(fileJfif)).toBe('jpg');
+    const pathJfif = buildCourierStoragePath(courierId, 'license', fileJfif, timestamp);
+    expect(pathJfif).toBe(`courier/${courierId}/license_${timestamp}.jpg`);
+    expect(pathJfif.endsWith(`license_${timestamp}.jpg`)).toBe(true);
+
+    // foto.jpe + image/jpeg -> jpg
+    const fileJpe = new File(['content'], 'foto.jpe', { type: 'image/jpeg' });
+    expect(getDocumentExtension(fileJpe)).toBe('jpg');
+    expect(buildCourierStoragePath(courierId, 'license', fileJpe, timestamp)).toBe(
+      `courier/${courierId}/license_${timestamp}.jpg`
+    );
+
+    // foto.tiff + image/jpeg -> jpg (extensión engañosa, MIME validado post-compresión)
+    const fileTiff = new File(['content'], 'foto.tiff', { type: 'image/jpeg' });
+    expect(getDocumentExtension(fileTiff)).toBe('jpg');
+    expect(buildCourierStoragePath(courierId, 'license', fileTiff, timestamp)).toBe(
+      `courier/${courierId}/license_${timestamp}.jpg`
+    );
+
+    // foto.png con MIME image/jpeg (archivo comprimido que conserva nombre original) -> jpg, no png
+    const filePngAsJpeg = new File(['content'], 'foto.png', { type: 'image/jpeg' });
+    expect(getDocumentExtension(filePngAsJpeg)).toBe('jpg');
+    expect(buildCourierStoragePath(courierId, 'license', filePngAsJpeg, timestamp)).toBe(
+      `courier/${courierId}/license_${timestamp}.jpg`
+    );
+  });
+
+  it('asigna extensiones canónicas para image/png, image/webp y application/pdf respetando el MIME', () => {
+    // foto.PNG + image/png -> png
+    const filePng = new File(['content'], 'foto.PNG', { type: 'image/png' });
+    expect(getDocumentExtension(filePng)).toBe('png');
+    expect(buildCourierStoragePath(courierId, 'dni_front', filePng, timestamp)).toBe(
+      `courier/${courierId}/dni_front_${timestamp}.png`
+    );
+
+    // foto.webp + image/webp -> webp
+    const fileWebp = new File(['content'], 'foto.webp', { type: 'image/webp' });
+    expect(getDocumentExtension(fileWebp)).toBe('webp');
+    expect(buildCourierStoragePath(courierId, 'selfie', fileWebp, timestamp)).toBe(
+      `courier/${courierId}/selfie_${timestamp}.webp`
+    );
+
+    // poliza.pdf + application/pdf -> pdf
+    const filePdf = new File(['content'], 'poliza.pdf', { type: 'application/pdf' });
+    expect(getDocumentExtension(filePdf)).toBe('pdf');
+    expect(buildCourierStoragePath(courierId, 'insurance', filePdf, timestamp)).toBe(
+      `courier/${courierId}/insurance_${timestamp}.pdf`
+    );
+  });
+
+  it('lanza error antes de Storage ante tipo desconocido o vacío incluso con nombre .jpg (0 subidas)', async () => {
+    const mockUpload = vi.fn();
+    const mockClient: StorageClientLike = {
+      storage: {
+        from: vi.fn().mockReturnValue({ upload: mockUpload }),
+      },
+    };
+
+    // Tipo desconocido
+    const fileInvalidMime = new File(['content'], 'documento.jpg', {
+      type: 'application/octet-stream',
+    });
+    expect(() => getDocumentExtension(fileInvalidMime)).toThrow(
+      'Tipo de archivo no soportado para documentos'
+    );
+
+    await expect(
+      uploadCourierDocument({
+        courierId,
+        kind: 'license',
+        file: fileInvalidMime,
+        supabase: mockClient,
+        timestamp,
+      })
+    ).rejects.toThrow('Tipo de archivo no soportado para documentos');
+
+    // Tipo vacío
+    const fileEmptyMime = new File(['content'], 'foto.jpg', { type: '' });
+    expect(() => getDocumentExtension(fileEmptyMime)).toThrow(
+      'Tipo de archivo no soportado para documentos'
+    );
+
+    await expect(
+      uploadCourierDocument({
+        courierId,
+        kind: 'license',
+        file: fileEmptyMime,
+        supabase: mockClient,
+        timestamp,
+      })
+    ).rejects.toThrow('Tipo de archivo no soportado para documentos');
+
+    // Storage contabiliza 0 subidas
+    expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it('uploadCourierDocument con fake Storage realista: archivo JPEG .jfif genera path canónico .jpg compatible con CC-025', async () => {
+    const mockUpload = vi.fn().mockImplementation((path: string) => {
+      return Promise.resolve({
+        data: { path },
+        error: null,
+      });
+    });
+
+    const mockClient: StorageClientLike = {
+      storage: {
+        from: vi.fn().mockReturnValue({ upload: mockUpload }),
+      },
+    };
+
+    const file = new File(['fake-jpeg-bytes'], 'documento.jfif', { type: 'image/jpeg' });
+
+    const result = await uploadCourierDocument({
+      courierId,
+      kind: 'license',
+      file,
+      supabase: mockClient,
+      timestamp,
+    });
+
+    // 1. Storage upload recibió path canónico terminado en .jpg
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+    const firstCall = mockUpload.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    if (!firstCall) {
+      throw new Error('mockUpload no fue llamado');
+    }
+    const [calledPath, calledFile, calledOptions] = firstCall;
+
+    expect(calledPath).toBe(`courier/${courierId}/license_${timestamp}.jpg`);
+    expect(calledPath.endsWith('.jpg')).toBe(true);
+    expect(calledFile).toBe(file);
+    expect(calledOptions).toEqual({
+      contentType: 'image/jpeg',
+      upsert: false,
+    });
+
+    // 2. El storagePath devuelto coincide exactamente con la expresión de CC-025
+    expect(result.storagePath).toBe(`courier/${courierId}/license_${timestamp}.jpg`);
+    const cc025Pattern =
+      /^courier\/[a-zA-Z0-9_-]+\/(dni_front|dni_back|selfie|avatar|license|insurance)_[0-9]+\.(png|jpe?g|webp|pdf)$/;
+    expect(result.storagePath).toMatch(cc025Pattern);
+  });
+});

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { vehicleTypeSchema } from '@/domain/schemas';
+import { extractValidArgentineTenDigits, isValidArgentinePhone } from '@/lib/whatsapp';
 
 export const DNI_REGEX = /^(\d{7,8}|\d{1,2}\.\d{3}\.\d{3})$/;
 
@@ -78,6 +79,61 @@ export const courierOnboardingSchema = z
   }));
 
 export type CourierOnboardingInput = z.infer<typeof courierOnboardingSchema>;
+
+export const courierUpdateVehicleDocumentsSchema = z.object({
+  license: z.string().min(1).optional(),
+  insurance: z.string().min(1).optional(),
+});
+
+export const courierUpdateVehicleSchema = z
+  .object({
+    vehicleType: vehicleTypeSchema,
+    vehiclePlate: z.string().trim().optional().nullable(),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.vehicleType === 'moto' || data.vehicleType === 'car') {
+      if (!data.vehiclePlate || data.vehiclePlate.trim().length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'La patente es obligatoria para motos y autos',
+          path: ['vehiclePlate'],
+        });
+      } else if (!ARGENTINA_PLATE_REGEX.test(data.vehiclePlate.trim())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Formato de patente argentina inválido (ej: AB 123 CD, A 123 BCD o ABC 123)',
+          path: ['vehiclePlate'],
+        });
+      }
+    }
+  })
+  .transform((data) => ({
+    ...data,
+    vehiclePlate:
+      data.vehicleType === 'moto' || data.vehicleType === 'car'
+        ? (data.vehiclePlate?.trim() ? data.vehiclePlate.trim().toUpperCase() : null)
+        : null,
+  }));
+
+export type CourierUpdateVehicleInput = z.infer<typeof courierUpdateVehicleSchema>;
+ 
+export const courierUpdatePhoneSchema = z
+  .object({
+    phone: z
+      .string({ required_error: 'El teléfono de contacto es obligatorio' })
+      .trim()
+      .min(1, 'El teléfono de contacto es obligatorio')
+      .max(30, 'El teléfono es demasiado largo')
+      .refine((val) => isValidArgentinePhone(val), {
+        message: 'El teléfono debe ser un número argentino válido (10 dígitos nacionales)',
+      })
+      .transform((val) => extractValidArgentineTenDigits(val)),
+  })
+  .strict();
+
+export type CourierUpdatePhoneInput = z.infer<typeof courierUpdatePhoneSchema>;
+
 
 import type { Database } from '@/types/database.types';
 

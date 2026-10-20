@@ -2,12 +2,15 @@ import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Card } from '@/ui/card';
-import { Badge } from '@/ui/badge';
 import { Button, buttonVariants } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
 import { cn } from '@/ui/cn';
-import { Store, MapPin, Phone, MessageCircle, Info, CheckCircle2, LogOut } from 'lucide-react';
-import { getMerchantAccountProfile, getSubscriptionDisplay } from '@/features/merchants/server';
+import { Store, MapPin, Phone, MessageCircle, Info, LogOut } from 'lucide-react';
+import {
+  PublicationBalanceSection,
+  getMerchantAccountProfile,
+  getMyPublicationBalance,
+} from '@/features/merchants/server';
 import { logoutAction } from '@/features/auth/server';
 import { buildWhatsAppUrl } from '@/lib/whatsapp';
 import { z } from 'zod';
@@ -39,7 +42,10 @@ function getSupportWhatsAppHref(rawPhone: string | undefined): string | null {
 }
 
 export default async function MerchantPlanPage() {
-  const profile = await getMerchantAccountProfile();
+  const [profile, balance] = await Promise.all([
+    getMerchantAccountProfile(),
+    getMyPublicationBalance(),
+  ]);
 
   async function handleLogout() {
     'use server';
@@ -86,7 +92,6 @@ export default async function MerchantPlanPage() {
     );
   }
 
-  const subscription = getSubscriptionDisplay(profile.subscriptionStatus, profile.paidUntil);
   const supportWhatsAppHref = getSupportWhatsAppHref(process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER);
 
   return (
@@ -152,55 +157,10 @@ export default async function MerchantPlanPage() {
         </div>
       </Card>
 
-      {/* Sección 2: Mi plan (C08) */}
-      <div className="space-y-3 pt-1">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Mi plan</h2>
-          <Badge
-            variant={subscription.badgeVariant}
-            className="px-2.5 py-0.5 text-sm font-semibold"
-          >
-            {subscription.badgeLabel}
-          </Badge>
-        </div>
+      {/* Sección 2: Mi plan (C08, CC-029): saldo y plan reales de get_my_publication_balance */}
+      <PublicationBalanceSection result={balance} />
 
-        <Card className="space-y-4 border-primary/20 bg-card p-5 shadow-sm sm:p-6">
-          <div className="space-y-1">
-            <h3 className="font-display text-xl font-bold text-foreground">
-              {subscription.headline}
-            </h3>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              {subscription.description}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 border-y border-border/60 py-3">
-            <div>
-              <p className="text-sm text-muted-foreground">Envíos permitidos</p>
-              <p className="font-display text-base font-bold text-foreground">Ilimitados</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Vigencia registrada</p>
-              <p className="font-display text-sm font-bold text-primary-dark">
-                {subscription.untilLabel}
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2 rounded-lg bg-muted/60 p-3.5 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2 font-medium text-foreground">
-              <CheckCircle2 className="h-4 w-4 text-primary-dark" aria-hidden="true" />
-              <span>Condiciones del servicio:</span>
-            </div>
-            <ul className="list-inside list-disc space-y-1 pl-1 text-sm">
-              <li>Publicaciones de entregas ilimitadas</li>
-              <li>Ofertas de repartidores en tiempo real</li>
-              <li>Contacto directo por WhatsApp para coordinar</li>
-              <li>Uso gratuito durante la etapa inicial del piloto</li>
-            </ul>
-          </div>
-        </Card>
-
+      <div className="space-y-3">
         {/* Tarjeta: Después del período inicial */}
         <Card className="space-y-3 p-5 sm:p-6">
           <div className="space-y-1">

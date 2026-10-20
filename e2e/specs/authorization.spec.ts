@@ -1,3 +1,4 @@
+import type { BrowserContext } from '@playwright/test';
 import {
   test,
   expect,
@@ -297,4 +298,108 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
       redirectTo: '/courier/feed',
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // T-355: Repartidor actualiza exclusivamente su teléfono y verifica persistencia
+  // ---------------------------------------------------------------------------
+  test('T-355: Repartidor actualiza exclusivamente su teléfono desde /courier/profile con persistencia tras recargar', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+    browser,
+    baseURL,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] No courier user seeded in stagingContext');
+    }
+
+    const admin = createAdminClient();
+    const { data: initialProfile, error: initialProfileError } = await admin
+      .from('profiles')
+      .select('phone, role, display_name')
+      .eq('id', courier.id)
+      .single();
+
+    expect(initialProfileError).toBeNull();
+    expect(initialProfile).not.toBeNull();
+    if (!initialProfile) throw new Error('No se pudo leer el perfil inicial');
+    const previousPhone = initialProfile.phone;
+
+    let secondContext: BrowserContext | null = null;
+
+    try {
+      // 1. Iniciar sesión y navegar a Mi perfil
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+
+      // 2. Comprobar que Datos personales se muestra con campos bloqueados
+      await expect(page.getByText('Datos personales')).toBeVisible();
+      await expect(page.getByText(/Nombre y apellido/i)).toBeVisible();
+      await expect(page.getByText(/Correo electrónico/i)).toBeVisible();
+      await expect(page.getByText(/Documento de identidad/i)).toBeVisible();
+
+      // Ningún input de edición activo en la pantalla principal
+      const mainInputs = await page.getByRole('textbox').count();
+      expect(mainInputs).toBe(0);
+
+      // 3. Abrir modal de edición de teléfono
+      const editPhoneBtn = page.getByRole('button', { name: /editar teléfono/i });
+      await expect(editPhoneBtn).toBeVisible();
+      await editPhoneBtn.click();
+
+      // 4. Modal visible con input precargado (H04)
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      const phoneInput = dialog.getByLabel(/teléfono de contacto/i);
+      await expect(phoneInput).toBeVisible();
+      await expect(phoneInput).toHaveValue(previousPhone ?? '');
+
+      // 5. Ingresar nuevo teléfono nacional
+      const newPhone = '3865991122';
+      await phoneInput.fill(newPhone);
+      await dialog.getByRole('button', { name: /guardar teléfono/i }).click();
+
+      // 6. Confirmación y reflejo inmediato en pantalla
+      await expect(dialog).not.toBeVisible();
+      await expect(page.getByText('3865 99-1122')).toBeVisible();
+
+      // 7. Persistencia al recargar
+      await page.reload();
+      await waitForNoSkeletons(page);
+      await expect(page.getByText('3865 99-1122')).toBeVisible();
+
+      // Verificar persistencia en una segunda sesión independiente (H04)
+      secondContext = await browser.newContext({ baseURL });
+      const secondPage = await secondContext.newPage();
+      await loginAsCourier(0, secondPage);
+      await secondPage.goto('/courier/profile');
+      await waitForNoSkeletons(secondPage);
+      await expect(secondPage.getByText('3865 99-1122')).toBeVisible();
+
+      // 8. Verificación en base de datos: solo mutó phone, identidad intacta
+      const { data: updatedProfile, error: updatedProfileError } = await admin
+        .from('profiles')
+        .select('phone, role, display_name')
+        .eq('id', courier.id)
+        .single();
+
+      expect(updatedProfileError).toBeNull();
+      expect(updatedProfile?.phone).toBe(newPhone);
+      expect(updatedProfile?.role).toBe('courier');
+      expect(updatedProfile?.display_name).toBe(initialProfile.display_name);
+    } finally {
+      if (secondContext) {
+        await secondContext.close();
+      }
+      // Restauración del estado original con comprobación de error (H08)
+      const { error: restoreError } = await admin
+        .from('profiles')
+        .update({ phone: previousPhone })
+        .eq('id', courier.id);
+      expect(restoreError).toBeNull();
+    }
+  });
 });
+

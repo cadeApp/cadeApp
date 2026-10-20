@@ -280,7 +280,7 @@ async function testDistinctPathsConcurrency() {
 }
 
 async function testCoexistenceDirectInsert() {
-  console.log('[CC-025-B0] Test 3: Convivencia con inserciones directas / legacy (H01)...');
+  console.log('[CC-025-B0] Test 3: Cierre global de inserciones directas por REST tras Fase C (H01)...');
   const courierId = createCourierFixture();
   const payload = makePayload(courierId, 'b0');
 
@@ -293,11 +293,11 @@ async function testCoexistenceDirectInsert() {
     commit;
   `);
 
-  // 2. Intento de reintento directo con misma ruta colisiona con UNIQUE(storage_path)
+  // 2. Intento de reintento directo con misma ruta es rechazado por RLS/privilegios (42501) o UNIQUE (23505)
   const directConflict = spawnSync(
     'docker',
     [
-      'exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-c',
+      'exec', '-i', dbContainer, 'psql', '-X', '-v', 'VERBOSITY=verbose', '-U', 'postgres', '-d', 'postgres', '-c',
       `
         begin;
         set local role authenticated;
@@ -311,17 +311,19 @@ async function testCoexistenceDirectInsert() {
   );
 
   assert(
-    directConflict.stderr.includes('23505') || directConflict.stderr.toLowerCase().includes('unique'),
-    'Inserción directa con misma ruta debe colisionar con 23505'
+    directConflict.stderr.includes('42501') ||
+      directConflict.stderr.includes('permission denied') ||
+      directConflict.stderr.includes('violates row-level security') ||
+      directConflict.stderr.includes('23505') ||
+      directConflict.stderr.toLowerCase().includes('unique'),
+    `Inserción directa con misma ruta debe ser rechazada por RLS (42501) o UNIQUE (23505): ${directConflict.stderr}`
   );
 
-  // 3. H01: Convivencia real y bypass de REST con ruta alternativa bajo RLS de Fase A
-  // La Fase A solo posee UNIQUE(storage_path) y no el índice único parcial de Fase C.
-  // Un cliente REST con storage_path alternativo ingresa a la DB sin pasar por el lock de la RPC.
+  // 3. H01 tras Fase C: un cliente REST con storage_path alternativo ahora es BLOQUEADO por RLS (42501) e índice único parcial
   const altInsert = spawnSync(
     'docker',
     [
-      'exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-c',
+      'exec', '-i', dbContainer, 'psql', '-X', '-v', 'VERBOSITY=verbose', '-U', 'postgres', '-d', 'postgres', '-c',
       `
         begin;
         set local role authenticated;
@@ -334,36 +336,35 @@ async function testCoexistenceDirectInsert() {
     { encoding: 'utf8' }
   );
 
-  assert.equal(altInsert.status, 0, `Inserción directa con ruta alternativa debe permitirse bajo RLS Fase A: ${altInsert.stderr}`);
+  assert(
+    altInsert.stderr.includes('42501') ||
+      altInsert.stderr.includes('permission denied') ||
+      altInsert.stderr.includes('violates row-level security') ||
+      altInsert.stderr.includes('23505'),
+    `Inserción directa con ruta alternativa debe ser bloqueada en Fase C (42501/23505): ${altInsert.stderr}`
+  );
 
   const dniFrontCount = parseInt(
     runSql(`select count(*) from public.courier_documents where courier_id = '${courierId}' and kind = 'dni_front'`),
     10
   );
-  assert.equal(dniFrontCount, 2, `Se esperan 2 filas de dni_front tras el bypass REST con ruta alternativa, obtenido ${dniFrontCount}`);
+  assert.equal(dniFrontCount, 1, `Se espera exactamente 1 fila vigente de dni_front tras el bloqueo en Fase C, obtenido ${dniFrontCount}`);
 
-  // 4. Invocación subsecuente de la RPC detecta la ambigüedad generada por REST y rechaza con INTERNAL_ERROR
-  const rpcAmbiguityCheck = spawnSync(
-    'docker',
-    [
-      'exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-c',
-      `
-        begin;
-        set local role authenticated;
-        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
-        select public.submit_courier_onboarding_documents('${payload}'::jsonb);
-        commit;
-      `
-    ],
-    { encoding: 'utf8' }
-  );
+  // 4. Invocación subsecuente idempotente de la RPC B0 continúa funcionando limpiamente tras el bloqueo del intento REST
+  const rpcIdempotentCheck = runSql(`
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+    select public.submit_courier_onboarding_documents('${payload}'::jsonb);
+    commit;
+  `);
 
   assert(
-    rpcAmbiguityCheck.stderr.includes('INTERNAL_ERROR'),
-    `La RPC debe detectar la ambigüedad y fallar con INTERNAL_ERROR: ${rpcAmbiguityCheck.stderr}`
+    rpcIdempotentCheck.includes('"reused_count": 4') || rpcIdempotentCheck.includes('"reused_count":4'),
+    `La invocación subsecuente de la RPC B0 debe reutilizar los 4 documentos idempotentemente: ${rpcIdempotentCheck}`
   );
 
-  console.log('  -> OK: Convivencia y límites de B0 comprobados: REST colisiona en 23505 para misma ruta; ruta distinta entra bajo Fase A y RPC rechaza con INTERNAL_ERROR');
+  console.log('  -> OK: Fase C cierra globalmente el bypass REST con ruta alternativa (42501) y preserva la idempotencia de la RPC B0');
 }
 
 async function testConsentRevocationWhileWaitingForLock() {
@@ -435,8 +436,49 @@ async function runMutationCheck() {
     runSql(mutatedSql);
     console.log('  -> Mutación aplicada: "for update" removido de couriers lock');
 
-    // 2. Demostrar RED con oráculo estricto: dos sesiones concurrentes con paths distintos leen en vacío simultáneamente
-    // y ambas insertan sus lotes, generando duplicados de kinds (count = 8)
+    // 2a. Demostrar RED bajo Fase C (con courier_documents_unique_current activo):
+    // Sin "for update" sobre couriers, dos peticiones idempotentes concurrentes con el MISMO payload
+    // entran ambas a la rama INSERT porque ninguna ve las filas uncommitted de la otra al hacer SELECT ... FOR UPDATE,
+    // provocando que la segunda estalle con SQLSTATE 23505 en lugar de retornar reused_count = 4.
+    const courierIdIdemRed = createCourierFixture();
+    const payloadSame = makePayload(courierIdIdemRed, 'mut_same');
+
+    const s1Idem = new PsqlSession('MUT_IDEM_S1');
+    const s2Idem = new PsqlSession('MUT_IDEM_S2');
+
+    try {
+      s1Idem.send(`
+        begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierIdIdemRed}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        select public.submit_courier_onboarding_documents('${payloadSame}'::jsonb);
+        select 'S1_IDEM_INSERTED';
+      `);
+      await s1Idem.waitFor('S1_IDEM_INSERTED');
+
+      s2Idem.send(`
+        begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierIdIdemRed}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        select public.submit_courier_onboarding_documents('${payloadSame}'::jsonb);
+        select 'S2_IDEM_DONE';
+        commit;
+      `);
+
+      await waitForBlockedSession('submit_courier_onboarding_documents');
+      s1Idem.send('commit;');
+      await s1Idem.waitFor('COMMIT');
+
+      // En vez de reusar las 4 filas idempotentemente, S2 falla con duplicate key (23505)
+      await s2Idem.waitFor('duplicate key value violates unique constraint');
+      console.log('  -> RED 1 confirmado (bajo Fase C): sin "for update" en couriers, el reintento concurrente idempotente estalla con 23505 en vez de retornar reused_count = 4');
+    } finally {
+      await s1Idem.close();
+      await s2Idem.close();
+    }
+
+    // 2b. Demostrar RED de cardinalidad (count = 8) cuando tampoco existe el índice único parcial:
+    runSql('drop index if exists public.courier_documents_unique_current;');
     const courierIdRed = createCourierFixture();
     const payloadA = makePayload(courierIdRed, 'mut_a');
     const payloadB = makePayload(courierIdRed, 'mut_b');
@@ -445,7 +487,6 @@ async function runMutationCheck() {
     const s2 = new PsqlSession('MUT_S2');
 
     try {
-      // S1 ejecuta la RPC pero no hace commit todavía
       s1.send(`
         begin;
         set local role authenticated;
@@ -455,9 +496,6 @@ async function runMutationCheck() {
       `);
       await s1.waitFor('S1_MUT_INSERTED');
 
-      // S2 ejecuta la RPC concurrente con payloadB.
-      // Como no hay "for update", S2 no se bloquea, no ve los cambios de S1 (uncommitted en Read Committed)
-      // y también inserta sus 4 documentos
       s2.send(`
         begin;
         set local role authenticated;
@@ -468,24 +506,28 @@ async function runMutationCheck() {
       `);
       await s2.waitFor('S2_MUT_INSERTED');
 
-      // S1 hace commit
       s1.send('commit;');
       await s1.waitFor('COMMIT');
 
-      // Verificar el estado de la base de datos: count = 8 (violación del invariante de unicidad por ausencia de serialización)
       const countRed = parseInt(runSql(`select count(*) from public.courier_documents where courier_id = '${courierIdRed}'`), 10);
       assert.equal(countRed, 8, `RED esperado: sin "for update", ambas sesiones debieron insertar generando 8 filas, obtenido ${countRed}`);
-      console.log(`  -> RED confirmado con oráculo estricto: sin "for update", se insertaron ${countRed} documentos (duplicados creados en DB)`);
+      console.log(`  -> RED 2 confirmado con oráculo estricto: sin "for update", se insertaron ${countRed} documentos (duplicados creados en DB)`);
     } finally {
       await s1.close();
       await s2.close();
+      runSql(`
+        delete from public.courier_documents where courier_id = '${courierIdRed}';
+        create unique index if not exists courier_documents_unique_current
+          on public.courier_documents (courier_id, kind)
+          where (is_current = true);
+      `);
     }
 
     // 3. Restaurar migración original (GREEN)
     runSql(originalSql);
     console.log('  -> Restauración GREEN: RPC reinstalada con lock for update');
 
-    // 4. Verificar GREEN con la misma interleaving: S2 debe bloquearse y fallar con VALIDATION_ERROR
+    // 4. Verificar GREEN con la misma interleaving: S2 debe bloquearse y fallar con VALIDATION_ERROR (paths distintos) y triunfar con reused_count=4 (paths iguales)
     const courierIdGreen = createCourierFixture();
     const payloadGreenA = makePayload(courierIdGreen, 'green_a');
     const payloadGreenB = makePayload(courierIdGreen, 'green_b');
@@ -532,6 +574,11 @@ async function runMutationCheck() {
     }
   } finally {
     // Garantizar restauración
+    runSql(`
+      create unique index if not exists courier_documents_unique_current
+        on public.courier_documents (courier_id, kind)
+        where (is_current = true);
+    `);
     runSql(originalSql);
   }
 }

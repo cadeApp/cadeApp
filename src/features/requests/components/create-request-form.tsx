@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   type FieldErrors,
@@ -598,6 +599,8 @@ export function CreateRequestForm({
 
   const [fixedPriceInput, setFixedPriceInput] = React.useState('');
   const [serverError, setServerError] = React.useState<string | null>(null);
+  // CC-029: el saldo lo decide la RPC; la UI solo traduce el rechazo y ofrece consultar créditos o planes.
+  const [creditsExhausted, setCreditsExhausted] = React.useState(false);
 
   // Formulario gobernado por react-hook-form + zodResolver
   const {
@@ -720,6 +723,7 @@ export function CreateRequestForm({
 
   const onSubmit = async (data: CreateDeliveryRequestOutput) => {
     setServerError(null);
+    setCreditsExhausted(false);
 
     const canonical = JSON.stringify(data);
 
@@ -749,6 +753,7 @@ export function CreateRequestForm({
       if (!result.ok) {
         const msg = getDomainErrorMessage(result.code);
         setServerError(msg);
+        setCreditsExhausted(result.code === 'PUBLICATION_CREDITS_EXHAUSTED');
         notify.error(msg);
         return;
       }
@@ -770,6 +775,7 @@ export function CreateRequestForm({
   const handleRetryOriginal = async () => {
     if (!lastAttemptRef.current) return;
     setServerError(null);
+    setCreditsExhausted(false);
     setIsSubmittingOriginal(true);
     try {
       const result = await createDeliveryRequestAction({
@@ -780,6 +786,7 @@ export function CreateRequestForm({
       if (!result.ok) {
         const msg = getDomainErrorMessage(result.code);
         setServerError(msg);
+        setCreditsExhausted(result.code === 'PUBLICATION_CREDITS_EXHAUSTED');
         notify.error(msg);
         return;
       }
@@ -822,7 +829,19 @@ export function CreateRequestForm({
           className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive"
         >
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-          <span>{serverError}</span>
+          <div className="space-y-2">
+            <span>{serverError}</span>
+            {creditsExhausted ? (
+              <p>
+                <Link
+                  href="/merchant/plan"
+                  className="inline-flex min-h-12 items-center font-semibold text-foreground underline underline-offset-4"
+                >
+                  {copy.viewCreditsLink}
+                </Link>
+              </p>
+            ) : null}
+          </div>
         </div>
       )}
 

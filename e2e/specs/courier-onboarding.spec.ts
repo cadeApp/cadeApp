@@ -5,6 +5,7 @@ import {
   elevateAdminToAal2,
   createAuthenticatedClient,
   generateTotp,
+  seedDeliveryRequestInState,
   type UserCredentials,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
@@ -14,7 +15,7 @@ import { evaluateRouteGuard } from '@/features/auth/guards';
 import { ADMIN_COPY } from '@/features/admin/copy';
 import { COURIER_ONBOARDING_COPY } from '@/features/courier-onboarding/copy';
 import { COURIER_DOCS_BUCKET } from '@/features/courier-onboarding/upload-manager';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 
 // Buffer PNG real 2x2 válido para pruebas de subida (H11)
 const DUMMY_2X2_PNG = Buffer.from(
@@ -67,7 +68,9 @@ async function resetCourierToPendingOnboarding(courierId: string): Promise<void>
 /**
  * Enrola y verifica un factor TOTP para el admin conservando el secret para uso en el navegador (H04).
  */
-async function enrollAdminTotpFactor(admin: UserCredentials): Promise<{ secret: string }> {
+async function enrollAdminTotpFactor(
+  admin: UserCredentials
+): Promise<{ secret: string; client: Awaited<ReturnType<typeof createAuthenticatedClient>> }> {
   const adminClient = await createAuthenticatedClient(admin);
   const { data: factors, error: listErr } = await adminClient.auth.mfa.listFactors();
   if (listErr) {
@@ -97,7 +100,7 @@ async function enrollAdminTotpFactor(admin: UserCredentials): Promise<{ secret: 
     throw new Error(`[E2E MFA Error] Falló verificación inicial de factor: ${verifyErr.message}`);
   }
 
-  return { secret };
+  return { secret, client: adminClient };
 }
 
 /**
@@ -109,6 +112,34 @@ function requireDniHmacSecret(): string {
     throw new Error('[E2E Precondition Error] DNI_HMAC_SECRET es obligatorio para T-302');
   }
   return secret;
+}
+
+/**
+ * T-372: DNI de 8 dígitos para el caso de deduplicación, derivado de la corrida y del azar, que solo se usa si su
+ * HMAC no está registrado en `couriers`. Evita depender de un DNI fijo que otra corrida dejó en Supabase Develop;
+ * no borra ni modifica repartidores ajenos.
+ */
+async function pickAvailableDni(
+  dbAdmin: ReturnType<typeof createAdminClient>,
+  hmacSecret: string,
+  testRunId: string
+): Promise<{ dni: string; dniHmac: string }> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const digest = createHash('sha256')
+      .update(`${testRunId}:${attempt}:${randomBytes(8).toString('hex')}`)
+      .digest();
+    const dni = String(20_000_000 + (digest.readUInt32BE(0) % 70_000_000));
+    const dniHmac = createHmac('sha256', hmacSecret).update(dni).digest('hex');
+    const { count, error } = await dbAdmin
+      .from('couriers')
+      .select('profile_id', { count: 'exact', head: true })
+      .eq('dni_hmac', dniHmac);
+    if (error) {
+      throw new Error(`[E2E Seed Error] No se pudo verificar la disponibilidad del DNI: ${error.message}`);
+    }
+    if (count === 0) return { dni, dniHmac };
+  }
+  throw new Error('[E2E Seed Error] No se encontró un DNI libre en 10 intentos');
 }
 
 test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado', () => {
@@ -231,6 +262,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     // 1. Simular registro previo de DNI para courier 1 calculando dni_hmac
     const hmacSecret = requireDniHmacSecret();
     const dniHmac = createHmac('sha256', hmacSecret).update(testDni).digest('hex');
+
+    // Limpiar dni_hmac huérfano si quedó de una corrida previa en Develop
+    await dbAdmin
+      .from('couriers')
+      .update({ dni_hmac: null })
+      .eq('dni_hmac', dniHmac)
+      .neq('profile_id', courier1.id);
 
     const { error: seedDniErr } = await dbAdmin
       .from('couriers')
@@ -537,12 +575,14 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
     }
 
-    // 1. Asignar DNI fijo a courier 1 en base de datos
-    const existingDni = '35999888';
+    // 1. Asignar a courier 1 un DNI libre y propio de la corrida (T-372)
     const hmacSecret = requireDniHmacSecret();
-    const existingHmac = createHmac('sha256', hmacSecret).update(existingDni).digest('hex');
-
     const dbAdmin = createAdminClient();
+    const { dni: existingDni, dniHmac: existingHmac } = await pickAvailableDni(
+      dbAdmin,
+      hmacSecret,
+      stagingContext.testRunId
+    );
     const { error: seedErr } = await dbAdmin
       .from('couriers')
       .update({ dni_hmac: existingHmac, status: 'approved' })
@@ -804,5 +844,820 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       sessionStorage.getItem('cadeapp_onboarding_dni')
     );
     expect(savedDni).toBe('38123456');
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-356 / CC-025: Recarga de documento rechazado con motivo seguro de catálogo público
+  // ---------------------------------------------------------------------------
+  test('T-356 / CC-025: Recarga de documento rechazado con motivo seguro y actualización a En revisión sin mutar aprobados', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+
+    try {
+      // 1. Precondición en DB: repartidor con onboarding completo y moto
+      await resetCourierToPendingOnboarding(courier.id);
+      const uniqueDni = `39${Math.floor(100000 + Math.random() * 900000)}`;
+      const secret = process.env.DNI_HMAC_SECRET ?? 'development_dni_hmac_secret_cadeapp';
+      const dniHmac = createHmac('sha256', secret).update(uniqueDni).digest('hex');
+
+      await dbAdmin
+        .from('couriers')
+        .update({
+          status: 'pending',
+          vehicle_type: 'moto',
+          vehicle_plate: 'AB 123 CD',
+          dni_hmac: dniHmac,
+          license_status: 'submitted',
+          insurance_status: 'none',
+        })
+        .eq('profile_id', courier.id);
+
+      // Subir documentos base con license en 'submitted' (PR358-R03: rechazo real mediante admin_verify_document)
+      const dummyPng = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      for (const kind of ['dni_front', 'dni_back', 'selfie', 'license'] as const) {
+        await dbAdmin.storage
+          .from(COURIER_DOCS_BUCKET)
+          .upload(`courier/${courier.id}/${kind}_base.png`, dummyPng, {
+            contentType: 'image/png',
+            upsert: true,
+          });
+      }
+
+      const { data: insertedDocs, error: insertErr } = await dbAdmin
+        .from('courier_documents')
+        .insert([
+          {
+            courier_id: courier.id,
+            kind: 'dni_front',
+            storage_path: `courier/${courier.id}/dni_front_base.png`,
+            status: 'verified',
+            is_current: true,
+          },
+          {
+            courier_id: courier.id,
+            kind: 'dni_back',
+            storage_path: `courier/${courier.id}/dni_back_base.png`,
+            status: 'verified',
+            is_current: true,
+          },
+          {
+            courier_id: courier.id,
+            kind: 'selfie',
+            storage_path: `courier/${courier.id}/selfie_base.png`,
+            status: 'verified',
+            is_current: true,
+          },
+          {
+            courier_id: courier.id,
+            kind: 'license',
+            storage_path: `courier/${courier.id}/license_base.png`,
+            status: 'submitted',
+            is_current: true,
+            rejection_code: null,
+          },
+        ])
+        .select('id, kind');
+
+      if (insertErr || !insertedDocs) {
+        throw new Error(`[E2E Error] Falló inserción de documentos base: ${insertErr?.message}`);
+      }
+
+      const licenseDoc = insertedDocs.find((d) => d.kind === 'license');
+      if (!licenseDoc) {
+        throw new Error('[E2E Error] No se encontró el documento de licencia insertado');
+      }
+
+      // 2. PR358-R03: Rechazar la licencia mediante la RPC real admin_verify_document con AAL2 y nota centinela privada
+      const admin = await seedAdminUser(stagingContext);
+      const { secret: totpSecret, client: adminClient } = await enrollAdminTotpFactor(admin);
+
+      const sentinelPrivateNote = `PRIVATE_SENTINEL_NOTE_${stagingContext.testRunId}`;
+      const { data: rejectData, error: rejectError } = await adminClient.rpc(
+        'admin_verify_document',
+        {
+          p_document_id: licenseDoc.id,
+          p_decision: 'rejected',
+          p_reason: sentinelPrivateNote,
+          p_rejection_code: 'illegible',
+        }
+      );
+
+      expect(rejectError).toBeNull();
+      expect(rejectData).toMatchObject({
+        documentId: licenseDoc.id,
+        status: 'rejected',
+        rejectionCode: 'illegible',
+      });
+
+      // 3. Iniciar sesión como repartidor y navegar a /courier/profile
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+
+      // 4. Verificar estado UI:
+      // DNI y Selfie figuran como validados
+      await expect(page.getByText('Validado por admin').first()).toBeVisible();
+
+      // Licencia figura como «Rechazado / requiere corrección» y muestra el motivo seguro del catálogo
+      await expect(page.getByText('Rechazado / requiere corrección').first()).toBeVisible();
+      await expect(page.getByText('Documento borroso, ilegible o cortado.')).toBeVisible();
+
+      // Invariante PR358-R03: la nota interna centinela jamás se filtra en el DOM del cliente
+      const pageHtml = await page.content();
+      expect(pageHtml).not.toContain(sentinelPrivateNote);
+
+      // Solo la licencia ofrece el botón/acción «Reemplazar»
+      const replaceLicenseInput = page.locator('#file-input-license');
+      await expect(replaceLicenseInput).toBeAttached();
+
+      // 5. Subir nuevo archivo para la licencia
+      await replaceLicenseInput.setInputFiles({
+        name: 'licencia_corregida.png',
+        mimeType: 'image/png',
+        buffer: DUMMY_2X2_PNG,
+      });
+
+      // La tarjeta transiciona a «En revisión manual» con mensaje de éxito confirmado
+      const successBadge = page
+        .locator('[data-slot="document-replacement-card"][data-kind="license"]')
+        .getByText(COURIER_ONBOARDING_COPY.underReviewBadge);
+      await expect(successBadge).toBeVisible({ timeout: 20000 });
+
+      const successMsg = page.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess);
+      await expect(successMsg).toBeVisible();
+
+      // 6. PR358-R03: Inspección administrativa en el navegador de la nueva versión submitted y versión histórica
+      await page.context().clearCookies();
+      await page.evaluate(() => {
+        window.localStorage.clear();
+        window.sessionStorage.clear();
+      });
+
+      await page.goto(`/login?redirectTo=%2Fadmin%2Fapplicants%2F${courier.id}`);
+      await waitForNoSkeletons(page);
+
+      const emailInput = page.getByLabel(/^email$/i);
+      const passwordInput = page.getByLabel(/^contraseña$/i);
+      const loginSubmitBtn = page.getByRole('button', {
+        name: /iniciar sesión|ingresar|continuar/i,
+      });
+      await waitForFormHydration(loginSubmitBtn);
+      await emailInput.fill(admin.email);
+      await passwordInput.fill(admin.password);
+      await loginSubmitBtn.click();
+
+      // Doble factor TOTP en navegador
+      await page.waitForURL((url) => url.pathname.includes('/login/mfa'), { timeout: 15000 });
+      await waitForNoSkeletons(page);
+
+      const totpInput = page.locator('#totp-code');
+      await expect(totpInput).toBeVisible();
+      const totpCode = generateTotp(totpSecret);
+      await totpInput.fill(totpCode);
+
+      const verifyMfaBtn = page.getByRole('button', {
+        name: new RegExp(ADMIN_COPY.mfa.verifyButton, 'i'),
+      });
+      await expect(verifyMfaBtn).toBeVisible();
+      await verifyMfaBtn.click();
+
+      await page.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+      await waitForNoSkeletons(page);
+
+      await page.goto(`/admin/applicants/${courier.id}`);
+      await waitForNoSkeletons(page);
+
+      // Verificación en consola de administración:
+      // A) Pestaña histórica marcada como (Histórico) y botones deshabilitados
+      const historicalTab = page.getByRole('tab', { name: /Licencia de Conducir.*Histórico/i });
+      await expect(historicalTab).toBeVisible();
+
+      // B) Pestaña vigente sin (Histórico)
+      const currentTab = page
+        .getByRole('tab', { name: /Licencia de Conducir/i })
+        .filter({ hasNotText: '(Histórico)' });
+      await expect(currentTab).toBeVisible();
+
+      // Al seleccionar la pestaña histórica:
+      await historicalTab.click();
+      await page.getByRole('button', { name: /Cargar documento seguro/i }).click();
+      await expect(page.getByText('Documento histórico (no admite revisión).')).toBeVisible();
+
+      const rejectDocBtn = page.getByRole('button', {
+        name: new RegExp(ADMIN_COPY.detail.rejectDocument, 'i'),
+      });
+      const verifyDocBtn = page.getByRole('button', {
+        name: new RegExp(ADMIN_COPY.detail.verifyDocument, 'i'),
+      });
+      await expect(rejectDocBtn).toBeDisabled();
+      await expect(verifyDocBtn).toBeDisabled();
+
+      // Al seleccionar la versión vigente:
+      await currentTab.click();
+      await page.getByRole('button', { name: /Cargar documento seguro/i }).click();
+      await expect(page.getByText('Documento histórico (no admite revisión).')).not.toBeVisible();
+      await expect(page.getByText(ADMIN_COPY.detail.viewer.validityQuestion)).toBeVisible();
+      await expect(rejectDocBtn).toBeEnabled();
+      await expect(verifyDocBtn).toBeEnabled();
+
+      // 7. Verificación estricta en base de datos:
+      const { data: licenseRows } = await dbAdmin
+        .from('courier_documents')
+        .select('id, kind, status, is_current, storage_path, rejection_code')
+        .eq('courier_id', courier.id)
+        .eq('kind', 'license')
+        .order('uploaded_at', { ascending: false });
+
+      expect(licenseRows).toHaveLength(2);
+      // El documento nuevo es el vigente en estado submitted
+      expect(licenseRows?.[0]?.is_current).toBe(true);
+      expect(licenseRows?.[0]?.status).toBe('submitted');
+      expect(licenseRows?.[0]?.rejection_code).toBeNull();
+      expect(licenseRows?.[0]?.storage_path).toMatch(
+        new RegExp(`^courier/${courier.id}/license_\\d+\\.jpg$`)
+      );
+
+      // El documento anterior pasó a histórico (is_current = false) conservando estado rejected
+      expect(licenseRows?.[1]?.is_current).toBe(false);
+      expect(licenseRows?.[1]?.status).toBe('rejected');
+      expect(licenseRows?.[1]?.rejection_code).toBe('illegible');
+
+      // Los otros documentos continúan vigentes e inalterados
+      const { data: otherRows } = await dbAdmin
+        .from('courier_documents')
+        .select('kind, status, is_current')
+        .eq('courier_id', courier.id)
+        .in('kind', ['dni_front', 'dni_back', 'selfie']);
+
+      expect(otherRows).toHaveLength(3);
+      for (const row of otherRows ?? []) {
+        expect(row.status).toBe('verified');
+        expect(row.is_current).toBe(true);
+      }
+    } finally {
+      // Limpieza de datos en DB y Storage
+      await resetCourierToPendingOnboarding(courier.id);
+      const { data: files } = await dbAdmin.storage
+        .from(COURIER_DOCS_BUCKET)
+        .list(`courier/${courier.id}`);
+      if (files && files.length > 0) {
+        await dbAdmin.storage
+          .from(COURIER_DOCS_BUCKET)
+          .remove(files.map((f) => `courier/${courier.id}/${f.name}`));
+      }
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-357: Actualización de vehículo desde el perfil del repartidor (Issue #344)
+  // ---------------------------------------------------------------------------
+  test('T-357: Flujo completo de actualización de vehículo desde perfil (moto -> car con ELA 666 -> bike -> walk) sin reonboarding ni documentos extras', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+
+    // Snapshot inicial de courier_documents para verificar que no sufre inserciones/modificaciones
+    const { data: initialDocs, error: docsError } = await dbAdmin
+      .from('courier_documents')
+      .select('kind, storage_path, status')
+      .eq('courier_id', courier.id);
+    expect(docsError).toBeNull();
+
+    // Precondición: courier con vehículo moto existente y habilitado (DoD 1: seed comprueba error:null y 1 fila)
+    const { data: seeded, error: seedError } = await dbAdmin
+      .from('couriers')
+      .update({
+        vehicle_type: 'moto',
+        vehicle_plate: 'AB 123 CD',
+        status: 'approved',
+      })
+      .eq('profile_id', courier.id)
+      .select('profile_id');
+    expect(seedError).toBeNull();
+    expect(seeded).toHaveLength(1);
+
+    // 1. Iniciar sesión como repartidor y navegar al perfil
+    await loginAsCourier(0, page);
+    await page.goto('/courier/profile');
+    await waitForNoSkeletons(page);
+
+    // 2. Verificar que se muestra Motocicleta con su patente Mercosur inicial y el enlace «Actualizar»
+    await expect(page.getByText('Motocicleta')).toBeVisible();
+    await expect(page.getByText(/Patente: AB 123 CD/i)).toBeVisible();
+
+    const updateLink = page.getByRole('link', { name: /Actualizar/i });
+    await expect(updateLink).toBeVisible();
+    await updateLink.click();
+
+    // 3. Verifica llegada a la pantalla de edición: sin stepper de onboarding, sin checkboxes ni subida documental
+    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+
+    await expect(page.getByRole('heading', { name: /Actualizar vehículo/i })).toBeVisible();
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.stepCounter2)).not.toBeVisible();
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.optionalDocsTitle)).not.toBeVisible();
+
+    // 4. Validación de patente inválida: ingresar patente con formato incorrecto
+    const carOption = page.locator('label:has(input[value="car"])');
+    await carOption.click();
+
+    const plateInput = page.getByLabel(/Patente del vehículo/i);
+    await expect(plateInput).toBeVisible();
+    await plateInput.fill('PATENTE_INVALIDA');
+    await plateInput.blur();
+
+    const plateError = page.locator('#plate-error');
+    await expect(plateError).toBeVisible();
+    await expect(plateError).toHaveText(/Formato de patente inválido/i);
+
+    const saveButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+    await expect(saveButton).toBeDisabled();
+
+    // 5. Corregir con patente argentina tradicional (formato ELA 666)
+    await plateInput.fill('ELA 666');
+    await plateInput.blur();
+    await expect(plateError).not.toBeVisible();
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+
+    // 6. Verifica redirección al perfil y persistencia de Automóvil + ELA 666 tras reload
+    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+
+    await expect(page.getByText('Automóvil')).toBeVisible();
+    await expect(page.getByText(/Patente: ELA 666/i)).toBeVisible();
+    await page.reload();
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('Automóvil')).toBeVisible();
+    await expect(page.getByText(/Patente: ELA 666/i)).toBeVisible();
+
+    const { data: carPersisted, error: carPersistError } = await dbAdmin
+      .from('couriers')
+      .select('vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier.id)
+      .single();
+    expect(carPersistError).toBeNull();
+    expect(carPersisted).toMatchObject({
+      vehicle_type: 'car',
+      vehicle_plate: 'ELA 666',
+      status: 'approved',
+    });
+
+    // 7. Modificar a Bicicleta: desaparece campo patente y se normaliza a null
+    await page.getByRole('link', { name: /Actualizar/i }).click();
+    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+
+    const bikeOption = page.locator('label:has(input[value="bike"])');
+    await bikeOption.click();
+    await expect(page.getByLabel(/Patente del vehículo/i)).not.toBeVisible();
+
+    const saveBikeButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+    await expect(saveBikeButton).toBeEnabled();
+    await saveBikeButton.click();
+
+    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('Bicicleta')).toBeVisible();
+    await page.reload();
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('Bicicleta')).toBeVisible();
+
+    const { data: bikePersisted, error: bikePersistError } = await dbAdmin
+      .from('couriers')
+      .select('vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier.id)
+      .single();
+    expect(bikePersistError).toBeNull();
+    expect(bikePersisted).toMatchObject({
+      vehicle_type: 'bike',
+      vehicle_plate: null,
+      status: 'approved',
+    });
+
+    // 8. Modificar a A pie: sin patente y persiste walk
+    await page.getByRole('link', { name: /Actualizar/i }).click();
+    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+
+    const walkOption = page.locator('label:has(input[value="walk"])');
+    await walkOption.click();
+    await expect(page.getByLabel(/Patente del vehículo/i)).not.toBeVisible();
+
+    const saveWalkButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+    await expect(saveWalkButton).toBeEnabled();
+    await saveWalkButton.click();
+
+    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('A pie')).toBeVisible();
+    await page.reload();
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('A pie')).toBeVisible();
+
+    const { data: walkPersisted, error: walkPersistError } = await dbAdmin
+      .from('couriers')
+      .select('vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier.id)
+      .single();
+    expect(walkPersistError).toBeNull();
+    expect(walkPersisted).toMatchObject({
+      vehicle_type: 'walk',
+      vehicle_plate: null,
+      status: 'approved',
+    });
+
+    // 9. Verificar que courier_documents no fue alterado durante las 3 actualizaciones
+    const { data: finalDocs, error: finalDocsError } = await dbAdmin
+      .from('courier_documents')
+      .select('kind, storage_path, status')
+      .eq('courier_id', courier.id);
+    expect(finalDocsError).toBeNull();
+    expect(finalDocs).toEqual(initialDocs);
+  });
+
+  test('T-357: E2E negativo: postulante con alta incompleta nunca ve edición con ?mode=edit y mantiene precondición con aislamiento entre actores', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier2 = stagingContext.courierUsers?.[1];
+    if (!courier2) {
+      throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+
+    // Precondición: postulante con onboarding incompleto (vehicle_type nulo)
+    await resetCourierToPendingOnboarding(courier2.id);
+
+    // 1. Iniciar sesión como courier 2
+    await loginAsCourier(1, page);
+
+    // 2. Navegar directamente con query param malicioso ?mode=edit
+    await page.goto('/courier/onboarding/vehicle?mode=edit');
+    await waitForNoSkeletons(page);
+
+    // 3. Verificar que se presenta la pantalla de alta (onboarding), no la de edición
+    await expect(
+      page.getByRole('heading', { name: COURIER_ONBOARDING_COPY.vehicleHeadline })
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Actualizar vehículo/i })).not.toBeVisible();
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.stepCounter2)).toBeVisible();
+
+    // Los consentimientos legales obligatorios deben estar presentes y desmarcados
+    const checkboxes = page.getByRole('checkbox');
+    await expect(checkboxes).toHaveCount(3);
+
+    // 4. Base de datos permanece con vehicle_type nulo y status pending (0 escrituras)
+    const { data: courierRow, error: fetchError } = await dbAdmin
+      .from('couriers')
+      .select('vehicle_type, status')
+      .eq('profile_id', courier2.id)
+      .single();
+    expect(fetchError).toBeNull();
+    expect(courierRow?.vehicle_type).toBeNull();
+    expect(courierRow?.status).toBe('pending');
+
+    // 5. Control de actor ajeno: Courier 0 (actor A) intenta modificar directamente el registro de Courier 1 (actor B)
+    const courier1 = stagingContext.courierUsers?.[0];
+    if (!courier1) {
+      throw new Error('[E2E Error] Se requiere courier1 en stagingContext');
+    }
+    const courier1Client = await createAuthenticatedClient(courier1);
+
+    const { data: bBefore, error: bBeforeErr } = await dbAdmin
+      .from('couriers')
+      .select('profile_id, vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier2.id)
+      .single();
+    expect(bBeforeErr).toBeNull();
+
+    // Actor A autenticado intenta escribir sobre el perfil de B con su sesión de Supabase
+    const { data: attackRows } = await courier1Client
+      .from('couriers')
+      .update({ vehicle_type: 'car', vehicle_plate: 'ATAQUE123' })
+      .eq('profile_id', courier2.id)
+      .select();
+
+    // RLS (couriers_update_self) impide mutar filas ajenas; retorna 0 filas modificadas
+    expect(attackRows ?? []).toHaveLength(0);
+
+    const { data: bAfter, error: bAfterErr } = await dbAdmin
+      .from('couriers')
+      .select('profile_id, vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier2.id)
+      .single();
+    expect(bAfterErr).toBeNull();
+    expect(bAfter).toEqual(bBefore);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-357: Vista de viaje en vivo para el comercio dueño (Issue #344 / DoD H04)
+  // ---------------------------------------------------------------------------
+  test('T-357: Vista de viaje refleja en vivo actualización de vehículo y patente para el comercio dueño con recarga y cleanup', async ({
+    page,
+    browser,
+    stagingContext,
+    loginAsCourier,
+    loginAsMerchant,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Error] Se requieren merchant y courier en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+
+    // Precondición: courier con vehículo moto inicial (DoD 1: seed comprueba error:null y 1 fila)
+    const { data: initialSeed, error: initialSeedError } = await dbAdmin
+      .from('couriers')
+      .update({
+        vehicle_type: 'moto',
+        vehicle_plate: 'AB 123 CD',
+        status: 'approved',
+      })
+      .eq('profile_id', courier.id)
+      .select('profile_id');
+    expect(initialSeedError).toBeNull();
+    expect(initialSeed).toHaveLength(1);
+
+    // Sembrar solicitud en estado matched vinculando al merchant y al courier de fixture
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    const requestId = seedResult.requestId;
+
+    const merchantClient = await createAuthenticatedClient(merchant);
+
+    // Snapshot previo de lectura RPC get_trip_details (proyecta moto y patente AB 123 CD)
+    const { data: initialTripRpc, error: initialRpcError } = await merchantClient.rpc('get_trip_details', {
+      p_request_id: requestId,
+    });
+    expect(initialRpcError).toBeNull();
+    const initialTrip = initialTripRpc as { vehicleType: string; vehiclePlate: string | null };
+    expect(initialTrip.vehicleType).toBe('moto');
+    expect(initialTrip.vehiclePlate).toBe('AB 123 CD');
+
+    // Sesión aislada de navegador para el comercio dueño
+    const merchantContext = await browser.newContext();
+    try {
+      const merchantBrowserPage = await merchantContext.newPage();
+      await loginAsMerchant(merchantBrowserPage);
+
+      // 1. Comercio abre /trips/{requestId} y comprueba bloque «Repartidor asignado» con Moto y patente inicial
+      await merchantBrowserPage.goto(`/trips/${requestId}`);
+      await waitForNoSkeletons(merchantBrowserPage);
+      await expect(merchantBrowserPage.getByRole('heading', { name: 'Repartidor asignado' })).toBeVisible();
+      await expect(merchantBrowserPage.getByText('Moto')).toBeVisible();
+      await expect(merchantBrowserPage.getByText(/Patente:.*AB 123 CD/i)).toBeVisible();
+
+      // 2. Repartidor autenticado cambia movilidad a Auto (car) con patente tradicional ELA 666 desde su perfil
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+      await page.getByRole('link', { name: /Actualizar/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      await page.locator('label:has(input[value="car"])').click();
+      const plateInput = page.getByLabel(/Patente del vehículo/i);
+      await plateInput.fill('ELA 666');
+      await plateInput.blur();
+      await page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      // 3. En la sesión del comercio dueño, recargar el viaje y comprobar que muestra Auto y ELA 666
+      await merchantBrowserPage.reload();
+      await waitForNoSkeletons(merchantBrowserPage);
+      await expect(merchantBrowserPage.getByText('Auto')).toBeVisible();
+      await expect(merchantBrowserPage.getByText(/Patente:.*ELA 666/i)).toBeVisible();
+
+      // Contrastar con la RPC get_trip_details autorizada
+      const { data: updatedCarRpc, error: carRpcError } = await merchantClient.rpc('get_trip_details', {
+        p_request_id: requestId,
+      });
+      expect(carRpcError).toBeNull();
+      const updatedCar = updatedCarRpc as { vehicleType: string; vehiclePlate: string | null };
+      expect(updatedCar.vehicleType).toBe('car');
+      expect(updatedCar.vehiclePlate).toBe('ELA 666');
+
+      // 4. Repartidor cambia a Bicicleta (bike): desaparece la patente
+      await page.getByRole('link', { name: /Actualizar/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      await page.locator('label:has(input[value="bike"])').click();
+      await page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      // 5. En la sesión del comercio dueño, recargar el viaje: se refleja Bicicleta y la patente desaparece
+      await merchantBrowserPage.reload();
+      await waitForNoSkeletons(merchantBrowserPage);
+      await expect(merchantBrowserPage.getByText('Bicicleta')).toBeVisible();
+      await expect(merchantBrowserPage.getByText(/Patente:/i)).not.toBeVisible();
+
+      // Contrastar con RPC get_trip_details
+      const { data: updatedBikeRpc, error: bikeRpcError } = await merchantClient.rpc('get_trip_details', {
+        p_request_id: requestId,
+      });
+      expect(bikeRpcError).toBeNull();
+      const updatedBike = updatedBikeRpc as { vehicleType: string; vehiclePlate: string | null };
+      expect(updatedBike.vehicleType).toBe('bike');
+      expect(updatedBike.vehiclePlate).toBeNull();
+    } finally {
+      await merchantContext.close();
+      // Cleanup: restaurar estado asumido por la fixture global del courier
+      await dbAdmin
+        .from('couriers')
+        .update({
+          vehicle_type: 'moto',
+          vehicle_plate: 'AB 123 CD',
+          status: 'approved',
+        })
+        .eq('profile_id', courier.id);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-367: Avatar autorizado en /courier/profile
+  // ---------------------------------------------------------------------------
+  test('T-367: Cadete habilitado con avatar verificado ve su foto real en /courier/profile, con fallback si no está verificado', async ({
+    page,
+    browser,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere courier en stagingContext');
+    }
+    const courier1 = stagingContext.courierUsers?.[1];
+    if (!courier1) {
+      throw new Error('[E2E Error] Se requiere segundo courier para aislamiento');
+    }
+    const dbAdmin = createAdminClient();
+
+    // 1. Subir archivo real de prueba a courier-docs con nombre canónico avatar_<timestamp>.png
+    const storagePath = `courier/${courier.id}/avatar_${Date.now()}.png`;
+    const { error: uploadError } = await dbAdmin.storage
+      .from(COURIER_DOCS_BUCKET)
+      .upload(storagePath, DUMMY_2X2_PNG, {
+        contentType: 'image/png',
+        upsert: true,
+      });
+    expect(uploadError).toBeNull();
+
+    try {
+      // 2. Insertar documento kind='avatar' con status='verified' e is_current=true
+      await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id).eq('kind', 'avatar');
+      const { error: docInsertError } = await dbAdmin.from('courier_documents').insert({
+        courier_id: courier.id,
+        kind: 'avatar',
+        status: 'verified',
+        storage_path: storagePath,
+        is_current: true,
+      });
+      expect(docInsertError).toBeNull();
+
+      // Asegurar que el courier está aprobado
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier.id);
+
+      // 3. Iniciar sesión y navegar a /courier/profile
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+
+      // 4. Verificar que se renderiza la imagen del avatar con alt accesible y que decodificó exitosamente
+      const avatarImg = page.locator('img[alt^="Foto de perfil de"]');
+      await expect(avatarImg).toBeVisible();
+      const src = await avatarImg.getAttribute('src');
+      expect(src).toContain(storagePath);
+      expect(src).toContain('token=');
+      await expect(avatarImg).toHaveJSProperty('complete', true);
+      await expect
+        .poll(async () => {
+          return await avatarImg.evaluate((img: HTMLImageElement) => img.naturalWidth);
+        })
+        .toBeGreaterThan(0);
+
+      // 5. Aislamiento estricto entre usuarios: segundo courier de stagingContext
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier1.id);
+
+      // Cliente autenticado de courier 1 NO puede generar URL firmada para el objeto de courier 0 por RLS
+      const courier1Client = await createAuthenticatedClient(courier1);
+      const { data: crossSigned, error: crossSignedError } = await courier1Client.storage
+        .from(COURIER_DOCS_BUCKET)
+        .createSignedUrl(storagePath, 300);
+
+      expect(crossSigned?.signedUrl == null || crossSignedError != null).toBe(true);
+
+      // En la sesión de courier 1 (en contexto aislado), se muestra fallback y nunca la foto ajena
+      const otherContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
+      try {
+        const otherPage = await otherContext.newPage();
+        await loginAsCourier(1, otherPage);
+        await otherPage.goto('/courier/profile');
+        await waitForNoSkeletons(otherPage);
+        await expect(otherPage.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
+        await expect(otherPage.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
+      } finally {
+        await otherContext.close();
+      }
+
+      // 6. Volver a courier 0 (conserva su sesión en page) y verificar fallback cuando el avatar es rechazado
+      await dbAdmin
+        .from('courier_documents')
+        .update({ status: 'rejected' })
+        .eq('courier_id', courier.id)
+        .eq('kind', 'avatar');
+
+      await page.reload();
+      await waitForNoSkeletons(page);
+      await expect(page.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
+      await expect(page.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
+
+      // 7. Resiliencia ante error de Storage (archivo faltante no rompe el perfil)
+      const missingPath = `courier/${courier.id}/avatar_${Date.now() + 5000}.png`;
+      await dbAdmin
+        .from('courier_documents')
+        .update({ status: 'verified', storage_path: missingPath })
+        .eq('courier_id', courier.id)
+        .eq('kind', 'avatar');
+
+      await page.reload();
+      await waitForNoSkeletons(page);
+      // Fallback no bloqueante activo ante error de recurso
+      await expect(page.getByRole('img', { name: /^Foto de perfil de / })).toHaveCount(0);
+      await expect(page.getByRole('img', { name: 'Avatar de perfil no disponible' })).toBeVisible();
+
+      // 8. Recarga con URL renovada y archivo válido recupera visualización
+      await dbAdmin
+        .from('courier_documents')
+        .update({ status: 'verified', storage_path: storagePath })
+        .eq('courier_id', courier.id)
+        .eq('kind', 'avatar');
+
+      await page.reload();
+      await waitForNoSkeletons(page);
+      const renewedImg = page.locator('img[alt^="Foto de perfil de"]');
+      await expect(renewedImg).toBeVisible();
+      await expect(renewedImg).toHaveJSProperty('complete', true);
+      await expect
+        .poll(async () => {
+          return await renewedImg.evaluate((img: HTMLImageElement) => img.naturalWidth);
+        })
+        .toBeGreaterThan(0);
+    } finally {
+      // Cleanup de fixture en bucket y base sin afectar cuentas existentes
+      await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove([storagePath]);
+      await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id).eq('kind', 'avatar');
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier.id);
+    }
   });
 });

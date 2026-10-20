@@ -335,7 +335,7 @@ export function TripCourierView({
         </CardContent>
       </Card>
 
-      {!isDelivered && onCancelTrip && (
+      {isMatched && onCancelTrip && (
         <div className="pt-1">
           <Button
             type="button"

@@ -83,4 +83,30 @@ export const COURIER_ONBOARDING_COPY = {
   checklistSubtitle: 'Revisión manual por el equipo administrativo de cadeApp',
   btnGoToFeed: 'Ir al panel de repartidor',
   btnSignOut: 'Cerrar sesión',
+
+  // CC-025 / T-356 - Reemplazo de documentos rechazados
+  rejectedBadge: 'Rechazado / requiere corrección',
+  rejectedStatus: 'Rechazado / requiere corrección',
+  btnReplace: 'Reemplazar',
+  replacingDocument: 'Reemplazando...',
+  documentReplacedSuccess: 'Documento enviado para nueva revisión.',
 } as const;
+
+export const DOCUMENT_REJECTION_REASONS: Record<import('@/domain/schemas').DocumentRejectionCode, string> = {
+  illegible: 'Documento borroso, ilegible o cortado.',
+  expired: 'Documento vencido o no vigente.',
+  data_mismatch: 'Los datos no coinciden con la identidad declarada.',
+  wrong_type: 'El archivo no corresponde al tipo de documento solicitado.',
+  incomplete: 'Documento incompleto (falta frente o dorso).',
+  other_safe: 'Requiere nueva carga para verificación administrativa.',
+};
+
+export const DEFAULT_REJECTION_MESSAGE = 'Requiere nueva carga para verificación administrativa.';
+
+export function getSafeRejectionMessage(code: string | null | undefined): string {
+  if (code && code in DOCUMENT_REJECTION_REASONS) {
+    return DOCUMENT_REJECTION_REASONS[code as import('@/domain/schemas').DocumentRejectionCode];
+  }
+  return DEFAULT_REJECTION_MESSAGE;
+}
+

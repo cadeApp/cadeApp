@@ -33,6 +33,12 @@ export const DOMAIN_ERROR_CODES = [
   'INVALID_SETTING_KEY',
   'INVALID_SETTING_VALUE',
 
+  // Créditos de publicación y planes post-piloto (CC-029, T-369)
+  'PUBLICATION_CREDITS_EXHAUSTED',
+  'PLAN_INACTIVE',
+  'PLAN_IN_USE',
+  'IDEMPOTENCY_CONFLICT',
+
   // Errores transversales / infraestructura
   'VALIDATION_ERROR',
   'NOT_FOUND',

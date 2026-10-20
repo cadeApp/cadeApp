@@ -891,6 +891,245 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         ],
       ]);
     });
+
+    it('T-365: filtra por status=pending inmediatamente tras request_id y antes de order/limit', async () => {
+      const reqBuilder = {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { id: validUuid, merchant_id: mockUser.id },
+              error: null,
+            }),
+          }),
+        }),
+      };
+      const offersBuilder = createMockQueryBuilder([makeOfferRow(1, validUuid)]);
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return reqBuilder;
+        if (table === 'offers') return offersBuilder;
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: mockFrom,
+        rpc: makeCouriersRpc(validUuid, [1]),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await getRequestOffersLiveServer(validUuid);
+
+      expect(offersBuilder._calls.eq).toEqual([
+        ['request_id', validUuid],
+        ['status', 'pending'],
+      ]);
+    });
+
+    it('T-365: filtra funcionalmente 51+ ofertas mixtas y calcula nextCursor conforme solo pending', async () => {
+      const reqBuilder = {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { id: validUuid, merchant_id: mockUser.id },
+              error: null,
+            }),
+          }),
+        }),
+      };
+
+      // 10 ofertas no pending (cancelled, rejected, expired, withdrawn) con timestamps más recientes
+      const nonPendingOffers = Array.from({ length: 10 }, (_, i) => ({
+        id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
+        request_id: validUuid,
+        courier_id: `10000000-0000-0000-0000-${String(100 + i + 1).padStart(12, '0')}`,
+        amount_ars: 1500 + i * 10,
+        eta_minutes: 10,
+        message: null,
+        status: (['cancelled', 'rejected', 'expired', 'withdrawn'] as const)[i % 4] ?? 'cancelled',
+        created_at: `2026-09-26T14:00:${String(i).padStart(2, '0')}.000Z`,
+      }));
+
+      // 55 ofertas pending con timestamps no monótonos respecto al id; índices 2 y 40 empatan en fecha para tie-breaker de id DESC
+      const pendingOffers = Array.from({ length: 55 }, (_, i) => ({
+        id: `11111111-1111-1111-1111-${String(i + 1).padStart(12, '0')}`,
+        request_id: validUuid,
+        courier_id: `10000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
+        amount_ars: 2000 + i * 10,
+        eta_minutes: 15,
+        message: null,
+        status: 'pending',
+        created_at:
+          i === 40
+            ? '2026-09-26T12:15:00.000Z'
+            : i === 2
+              ? '2026-09-26T12:15:00.000Z'
+              : `2026-09-26T12:${String((i * 17) % 60).padStart(2, '0')}:${String((i * 31) % 60).padStart(2, '0')}.000Z`,
+      }));
+
+      const mixedOffers = [...nonPendingOffers, ...pendingOffers];
+
+      interface MockLiveOffersRow {
+        id: string;
+        request_id: string;
+        courier_id: string;
+        amount_ars: number;
+        eta_minutes: number;
+        message: string | null;
+        status: string;
+        created_at: string;
+      }
+
+      interface SortOrderSpec {
+        col: string;
+        ascending: boolean;
+      }
+
+      interface MockLiveOffersBuilder {
+        select: () => MockLiveOffersBuilder;
+        eq: (col: string, val: unknown) => MockLiveOffersBuilder;
+        order: (col?: string, opts?: { ascending?: boolean }) => MockLiveOffersBuilder;
+        or: (filterStr: string) => MockLiveOffersBuilder;
+        limit: (count: number) => MockLiveOffersBuilder;
+        then: (
+          resolve: (value: { data: MockLiveOffersRow[]; error: null }) => unknown
+        ) => Promise<unknown>;
+      }
+
+      function createFilteringOffersBuilder(): MockLiveOffersBuilder {
+        let rows = [...mixedOffers];
+        const orderSpecs: SortOrderSpec[] = [];
+        const orFilters: string[] = [];
+        let limitCount = 51;
+
+        const b: MockLiveOffersBuilder = {
+          select: vi.fn(() => b),
+          eq: vi.fn((col: string, val: unknown) => {
+            rows = rows.filter(
+              (r) =>
+                (r as Record<string, unknown>)[col === 'request_id' ? 'request_id' : col] ===
+                (col === 'request_id' ? validUuid : val)
+            );
+            return b;
+          }),
+          order: vi.fn((col?: string, opts?: { ascending?: boolean }) => {
+            orderSpecs.push({
+              col: col ?? 'id',
+              ascending: opts?.ascending ?? true,
+            });
+            return b;
+          }),
+          or: vi.fn((filterStr: string) => {
+            orFilters.push(filterStr);
+            return b;
+          }),
+          limit: vi.fn((count: number) => {
+            limitCount = count;
+            return b;
+          }),
+          then: (resolve) => {
+            for (const orExpr of orFilters) {
+              const match = orExpr.match(
+                /^created_at\.lt\.([^,]+),and\(created_at\.eq\.[^,]+,id\.lt\.([^)]+)\)$/
+              );
+              if (match && match[1] && match[2]) {
+                const cursorCreatedAt = match[1];
+                const cursorId = match[2];
+                rows = rows.filter(
+                  (r) =>
+                    r.created_at < cursorCreatedAt ||
+                    (r.created_at === cursorCreatedAt && r.id < cursorId)
+                );
+              }
+            }
+
+            const sorted = [...rows].sort((a, bRow) => {
+              for (const { col, ascending } of orderSpecs) {
+                const valA = a[col as keyof MockLiveOffersRow];
+                const valB = bRow[col as keyof MockLiveOffersRow];
+                if (valA !== valB) {
+                  if (typeof valA === 'string' && typeof valB === 'string') {
+                    return ascending ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                  }
+                  if (typeof valA === 'number' && typeof valB === 'number') {
+                    return ascending ? valA - valB : valB - valA;
+                  }
+                }
+              }
+              return 0;
+            });
+
+            return Promise.resolve({
+              data: sorted.slice(0, limitCount),
+              error: null,
+            }).then(resolve);
+          },
+        };
+        return b;
+      }
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return reqBuilder;
+        if (table === 'offers') return createFilteringOffersBuilder();
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: mockFrom,
+        rpc: makeCouriersRpc(
+          validUuid,
+          Array.from({ length: 55 }, (_, i) => i + 1)
+        ),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const sortedExpectedPending = [...pendingOffers].sort((a, b) => {
+        if (a.created_at !== b.created_at) {
+          return b.created_at.localeCompare(a.created_at);
+        }
+        return b.id.localeCompare(a.id);
+      });
+
+      // Página 1: primeras 50 ofertas pending en orden DESC compuesto
+      const result1 = await getRequestOffersLiveServer(validUuid);
+      expect(result1.ok).toBe(true);
+      if (!result1.ok) throw new Error('Query live de ofertas falló en página 1');
+
+      expect(result1.data.data).toHaveLength(50);
+      expect(result1.data.data.every((o) => o.status === 'pending')).toBe(true);
+      expect(result1.data.data.map((o) => o.id)).toEqual(
+        sortedExpectedPending.slice(0, 50).map((o) => o.id)
+      );
+
+      // Tie-breaker de id DESC sobre ofertas con misma fecha (índices 40 y 2 comparten timestamp)
+      const tieBreakerOfferHigh = result1.data.data.find((o) => o.id === pendingOffers[40]!.id);
+      const tieBreakerOfferLow = result1.data.data.find((o) => o.id === pendingOffers[2]!.id);
+      expect(tieBreakerOfferHigh).toBeDefined();
+      expect(tieBreakerOfferLow).toBeDefined();
+      const idxHigh = result1.data.data.indexOf(tieBreakerOfferHigh!);
+      const idxLow = result1.data.data.indexOf(tieBreakerOfferLow!);
+      expect(idxHigh).toBeLessThan(idxLow!);
+
+      const expected50thPending = sortedExpectedPending[49]!;
+      expect(result1.data.nextCursor).toEqual({
+        createdAt: expected50thPending.created_at,
+        id: expected50thPending.id,
+      });
+
+      // Página 2: paginación con cursor que consume las 5 ofertas pending restantes
+      const result2 = await getRequestOffersLiveServer(validUuid, result1.data.nextCursor);
+      expect(result2.ok).toBe(true);
+      if (!result2.ok) throw new Error('Query live de ofertas falló en página 2');
+
+      expect(result2.data.data).toHaveLength(5);
+      expect(result2.data.data.every((o) => o.status === 'pending')).toBe(true);
+      expect(result2.data.data.map((o) => o.id)).toEqual(
+        sortedExpectedPending.slice(50, 55).map((o) => o.id)
+      );
+      expect(result2.data.nextCursor).toBeNull();
+    });
   });
 
   describe('3.2 getRequestOffersLiveServer — proyección de repartidores (CC-016)', () => {

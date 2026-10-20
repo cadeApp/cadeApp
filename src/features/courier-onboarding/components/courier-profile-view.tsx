@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -15,19 +16,35 @@ import {
   CheckCircle2,
   Clock,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
 import { Card } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { Button, buttonVariants } from '@/ui/button';
+import { Input } from '@/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/ui/dialog';
+import { notify } from '@/ui/notify';
+import { formatPhone } from '@/lib/format';
+import { isValidArgentinePhone } from '@/lib/whatsapp';
 import { BrandLogo } from '@/ui/brand-logo';
 import { cn } from '@/ui/cn';
 import { logoutAction } from '@/features/auth';
+import { updateCourierPhoneAction } from '../actions';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import {
   type DocumentReviewStatus,
   type CourierReviewStatus,
   combineDniDocumentStatus,
 } from '../schemas';
+import type { CourierDocumentKind } from '../upload-manager';
+import { DocumentReplacementCard } from './document-replacement-card';
 
 export {
   type DocumentReviewStatus,
@@ -35,18 +52,38 @@ export {
   combineDniDocumentStatus,
 };
 
+export interface DocumentItemData {
+  readonly kind: CourierDocumentKind;
+  readonly status: DocumentReviewStatus;
+  readonly rejectionCode?: string | null;
+  readonly rejectionMessage?: string | null;
+}
+
 export interface CourierProfileData {
+  readonly courierId?: string;
   readonly displayName: string;
   readonly email: string;
+  readonly phone?: string | null;
+  readonly hasDniOnFile?: boolean;
   readonly vehicleType: string | null;
   readonly plate: string | null;
   readonly dniStatus: DocumentReviewStatus;
+  readonly dniFrontStatus?: DocumentReviewStatus;
+  readonly dniFrontRejectionMessage?: string | null;
+  readonly dniBackStatus?: DocumentReviewStatus;
+  readonly dniBackRejectionMessage?: string | null;
   readonly selfieStatus: DocumentReviewStatus;
+  readonly selfieRejectionMessage?: string | null;
   readonly licenseStatus: DocumentReviewStatus;
+  readonly licenseRejectionMessage?: string | null;
   readonly insuranceStatus: DocumentReviewStatus;
+  readonly insuranceRejectionMessage?: string | null;
   readonly courierStatus: CourierReviewStatus;
+  readonly avatarUrl?: string | null;
+  readonly avatarStatus?: DocumentReviewStatus;
   /** T-334: `false` si el repartidor nunca envió el onboarding (`couriers.vehicle_type` nulo). */
   readonly onboardingComplete: boolean;
+  readonly documents?: readonly DocumentItemData[];
 }
 
 export function getDocumentStatusPresentation(status: DocumentReviewStatus) {
@@ -121,6 +158,14 @@ function getCourierStatusBadge(status: CourierReviewStatus) {
 }
 
 function getDocStatusBadge(status: DocumentReviewStatus) {
+  if (status === 'rejected') {
+    return (
+      <Badge variant="destructive" className="text-sm">
+        <span>{COURIER_ONBOARDING_COPY.rejectedBadge}</span>
+        <span className="sr-only"> (Observado)</span>
+      </Badge>
+    );
+  }
   const presentation = getDocumentStatusPresentation(status);
   return (
     <Badge
@@ -134,8 +179,103 @@ function getDocStatusBadge(status: DocumentReviewStatus) {
 
 export function CourierProfileView({ profile }: { profile: CourierProfileData | null }) {
   const router = useRouter();
+  const [localProfile, setLocalProfile] = React.useState<CourierProfileData | null>(profile);
+  const [avatarImageError, setAvatarImageError] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+  const [isPhoneDialogOpen, setIsPhoneDialogOpen] = React.useState(false);
+  const [phoneInputValue, setPhoneInputValue] = React.useState('');
+  const [phoneError, setPhoneError] = React.useState<string | null>(null);
+  const [isSavingPhone, setIsSavingPhone] = React.useState(false);
+
+  const handleOpenPhoneDialog = React.useCallback(() => {
+    setPhoneInputValue(localProfile?.phone ?? profile?.phone ?? '');
+    setPhoneError(null);
+    setIsPhoneDialogOpen(true);
+  }, [localProfile?.phone, profile?.phone]);
+
+  const handleSavePhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPhoneError(null);
+
+    if (!isValidArgentinePhone(phoneInputValue)) {
+      setPhoneError('Ingresá un número argentino válido (10 dígitos nacionales sin 0 ni 15)');
+      return;
+    }
+
+    setIsSavingPhone(true);
+    try {
+      const res = await updateCourierPhoneAction({ phone: phoneInputValue });
+      if (!res.ok) {
+        if (res.code === 'VALIDATION_ERROR') {
+          setPhoneError('Número de teléfono inválido o formato no permitido');
+        } else {
+          setPhoneError('Ocurrió un error al guardar el teléfono. Por favor, intentá nuevamente.');
+        }
+        return;
+      }
+
+      setLocalProfile((prev) => (prev ? { ...prev, phone: res.data.phone } : prev));
+      setIsPhoneDialogOpen(false);
+      notify.success('Teléfono actualizado correctamente');
+      router.refresh();
+    } catch {
+      setPhoneError('Error de conexión al actualizar el teléfono. Conservamos tu dato anterior.');
+    } finally {
+      setIsSavingPhone(false);
+    }
+  };
+
+  React.useEffect(() => {
+    setLocalProfile(profile);
+    setAvatarImageError(false);
+  }, [profile]);
+
+  const initialRejectedDocsRef = React.useRef({
+    dniFront: (profile?.dniFrontStatus ?? profile?.dniStatus) === 'rejected',
+    dniBack: (profile?.dniBackStatus ?? profile?.dniStatus) === 'rejected',
+    selfie: profile?.selfieStatus === 'rejected',
+    license: profile?.licenseStatus === 'rejected',
+    insurance: profile?.insuranceStatus === 'rejected',
+  });
+
+  const handleDocumentReplaced = React.useCallback(
+    ({ kind, status }: { kind: CourierDocumentKind; status: DocumentReviewStatus }) => {
+      setLocalProfile((prev) => {
+        if (!prev) return prev;
+        if (kind === 'license') {
+          return { ...prev, licenseStatus: status };
+        }
+        if (kind === 'insurance') {
+          return { ...prev, insuranceStatus: status };
+        }
+        if (kind === 'selfie') {
+          return { ...prev, selfieStatus: status };
+        }
+        if (kind === 'dni_front') {
+          const nextFront = status;
+          const nextBack = prev.dniBackStatus ?? prev.dniStatus;
+          return {
+            ...prev,
+            dniFrontStatus: nextFront,
+            dniStatus: combineDniDocumentStatus(nextFront, nextBack),
+          };
+        }
+        if (kind === 'dni_back') {
+          const nextFront = prev.dniFrontStatus ?? prev.dniStatus;
+          const nextBack = status;
+          return {
+            ...prev,
+            dniBackStatus: nextBack,
+            dniStatus: combineDniDocumentStatus(nextFront, nextBack),
+          };
+        }
+        return prev;
+      });
+      router.refresh();
+    },
+    [router]
+  );
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -147,7 +287,9 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
     }
   };
 
-  if (!profile) {
+  const activeProfile = localProfile ?? profile;
+
+  if (!activeProfile) {
     return (
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
         <div>
@@ -202,12 +344,12 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
     );
   }
 
-  const vehicle = getVehicleInfo(profile.vehicleType);
+  const vehicle = getVehicleInfo(activeProfile.vehicleType);
   const isMotorVehicle =
-    profile.vehicleType === 'moto' ||
-    profile.vehicleType === 'motorcycle' ||
-    profile.vehicleType === 'auto' ||
-    profile.vehicleType === 'car';
+    activeProfile.vehicleType === 'moto' ||
+    activeProfile.vehicleType === 'motorcycle' ||
+    activeProfile.vehicleType === 'auto' ||
+    activeProfile.vehicleType === 'car';
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
@@ -222,27 +364,39 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
 
       {/* Tarjeta de identidad principal */}
       <Card className="flex items-center gap-4 p-4 sm:p-5">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary-dark">
-          <User className="h-7 w-7" aria-hidden="true" />
+        <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/15 text-primary-dark">
+          {activeProfile.avatarUrl && !avatarImageError ? (
+            <Image
+              src={activeProfile.avatarUrl}
+              alt={`Foto de perfil de ${activeProfile.displayName}`}
+              width={56}
+              height={56}
+              unoptimized
+              className="h-full w-full object-cover"
+              onError={() => setAvatarImageError(true)}
+            />
+          ) : (
+            <User className="h-7 w-7" role="img" aria-label="Avatar de perfil no disponible" />
+          )}
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate font-display text-lg font-bold text-foreground">
-              {profile.displayName}
+              {activeProfile.displayName}
             </h2>
-            {profile.onboardingComplete ? (
-              getCourierStatusBadge(profile.courierStatus)
+            {activeProfile.onboardingComplete ? (
+              getCourierStatusBadge(activeProfile.courierStatus)
             ) : (
               <Badge variant="outline" className="text-sm">
                 Completá tu registro
               </Badge>
             )}
           </div>
-          <p className="truncate text-sm text-muted-foreground">{profile.email}</p>
+          <p className="truncate text-sm text-muted-foreground">{activeProfile.email}</p>
         </div>
       </Card>
 
-      {!profile.onboardingComplete && (
+      {!activeProfile.onboardingComplete && (
         <Card role="status" className="space-y-3 p-4 sm:p-5">
           <div className="space-y-1">
             <h2 className="font-display text-base font-bold text-foreground">
@@ -261,6 +415,89 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
         </Card>
       )}
 
+      {/* Datos personales (T-355) */}
+      <Card className="space-y-4 p-4 sm:p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">
+            Datos personales
+          </h2>
+          <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+            <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+            Solo lectura
+          </span>
+        </div>
+
+        <div className="divide-y divide-border/60 text-sm">
+          {/* Nombre */}
+          <div className="py-2.5 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium text-muted-foreground">Nombre y apellido</span>
+              <p className="font-medium text-foreground">{activeProfile.displayName}</p>
+            </div>
+            <Badge variant="outline" className="text-sm text-muted-foreground">
+              Bloqueado
+            </Badge>
+          </div>
+
+          {/* Email */}
+          <div className="py-2.5 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium text-muted-foreground">Correo electrónico</span>
+              <p className="font-medium text-foreground">{activeProfile.email}</p>
+            </div>
+            <Badge variant="outline" className="text-sm text-muted-foreground">
+              Bloqueado
+            </Badge>
+          </div>
+
+          {/* DNI */}
+          <div className="py-2.5 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium text-muted-foreground">Documento de identidad (DNI)</span>
+              <p className="font-medium text-foreground">
+                {activeProfile.hasDniOnFile
+                  ? 'Registrado en legajo'
+                  : activeProfile.dniStatus === 'verified'
+                    ? 'Documento verificado'
+                    : activeProfile.dniStatus === 'submitted'
+                      ? 'Documento en revisión'
+                      : 'Pendiente de carga'}
+              </p>
+            </div>
+            <Badge variant="outline" className="text-sm text-muted-foreground">
+              {activeProfile.dniStatus === 'verified' ? 'Acreditado' : 'Legajo'}
+            </Badge>
+          </div>
+
+          {/* Teléfono */}
+          <div className="pt-2.5 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium text-muted-foreground">Teléfono de contacto</span>
+              <p className="font-medium text-foreground">
+                {activeProfile.phone
+                  ? (() => {
+                      try {
+                        return formatPhone(activeProfile.phone);
+                      } catch {
+                        return activeProfile.phone;
+                      }
+                    })()
+                  : 'Sin teléfono registrado'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleOpenPhoneDialog}
+              className="font-medium text-primary-dark"
+            >
+              Editar teléfono
+            </Button>
+          </div>
+        </div>
+      </Card>
+
       {/* Vehículo registrado */}
       <Card className="space-y-3 p-4 sm:p-5">
         <div className="flex items-center justify-between">
@@ -268,7 +505,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
             Mi vehículo
           </h2>
           <Link
-            href="/courier/onboarding/vehicle"
+            href="/courier/onboarding/vehicle?mode=edit"
             className="inline-flex min-h-12 items-center px-2 text-sm font-semibold text-primary-dark underline hover:text-foreground"
           >
             Actualizar
@@ -284,7 +521,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
               <p className="font-display text-base font-bold text-foreground">{vehicle.label}</p>
               {isMotorVehicle && (
                 <p className="text-sm text-muted-foreground">
-                  {profile.plate ? `Patente: ${profile.plate}` : 'Sin patente declarada'}
+                  {activeProfile.plate ? `Patente: ${activeProfile.plate}` : 'Sin patente declarada'}
                 </p>
               )}
             </div>
@@ -302,21 +539,110 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
         </div>
 
         <div className="divide-y divide-border/60 text-sm">
-          <div className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-2">
-              {profile.dniStatus === 'verified' ? (
-                <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
-              ) : (
-                <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          {/* DNI: Si frente o dorso tiene estado individual o está rechazado, se separan */}
+          {activeProfile.dniFrontStatus !== undefined || activeProfile.dniBackStatus !== undefined ? (
+            <>
+              <div className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-2">
+                  {(activeProfile.dniFrontStatus ?? activeProfile.dniStatus) === 'verified' ? (
+                    <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <span className="font-medium text-foreground">
+                    {COURIER_ONBOARDING_COPY.dniFrontTitle}
+                  </span>
+                </div>
+                {getDocStatusBadge(activeProfile.dniFrontStatus ?? activeProfile.dniStatus)}
+              </div>
+              {((activeProfile.dniFrontStatus ?? activeProfile.dniStatus) === 'rejected' ||
+                initialRejectedDocsRef.current.dniFront) && (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    courierId={activeProfile.courierId}
+                    kind="dni_front"
+                    title={COURIER_ONBOARDING_COPY.dniFrontTitle}
+                    initialStatus={profile?.dniFrontStatus ?? profile?.dniStatus ?? 'rejected'}
+                    rejectionMessage={activeProfile.dniFrontRejectionMessage}
+                    onReplaced={handleDocumentReplaced}
+                  />
+                </div>
               )}
-              <span className="font-medium text-foreground">DNI (frente y dorso)</span>
+
+              <div className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-2">
+                  {(activeProfile.dniBackStatus ?? activeProfile.dniStatus) === 'verified' ? (
+                    <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <span className="font-medium text-foreground">
+                    {COURIER_ONBOARDING_COPY.dniBackTitle}
+                  </span>
+                </div>
+                {getDocStatusBadge(activeProfile.dniBackStatus ?? activeProfile.dniStatus)}
+              </div>
+              {((activeProfile.dniBackStatus ?? activeProfile.dniStatus) === 'rejected' ||
+                initialRejectedDocsRef.current.dniBack) && (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    courierId={activeProfile.courierId}
+                    kind="dni_back"
+                    title={COURIER_ONBOARDING_COPY.dniBackTitle}
+                    initialStatus={profile?.dniBackStatus ?? profile?.dniStatus ?? 'rejected'}
+                    rejectionMessage={activeProfile.dniBackRejectionMessage}
+                    onReplaced={handleDocumentReplaced}
+                  />
+                </div>
+              )}
+            </>
+          ) : activeProfile.dniStatus === 'rejected' || initialRejectedDocsRef.current.dniFront || initialRejectedDocsRef.current.dniBack ? (
+            <div className="py-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {activeProfile.dniStatus === 'verified' ? (
+                    <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <span className="font-medium text-foreground">DNI (frente y dorso)</span>
+                </div>
+                {getDocStatusBadge(activeProfile.dniStatus)}
+              </div>
+              <DocumentReplacementCard
+                courierId={activeProfile.courierId}
+                kind="dni_front"
+                title={COURIER_ONBOARDING_COPY.dniFrontTitle}
+                initialStatus={profile?.dniFrontStatus ?? profile?.dniStatus ?? 'rejected'}
+                rejectionMessage={activeProfile.dniFrontRejectionMessage}
+                onReplaced={handleDocumentReplaced}
+              />
+              <DocumentReplacementCard
+                courierId={activeProfile.courierId}
+                kind="dni_back"
+                title={COURIER_ONBOARDING_COPY.dniBackTitle}
+                initialStatus={profile?.dniBackStatus ?? profile?.dniStatus ?? 'rejected'}
+                rejectionMessage={activeProfile.dniBackRejectionMessage}
+                onReplaced={handleDocumentReplaced}
+              />
             </div>
-            {getDocStatusBadge(profile.dniStatus)}
-          </div>
+          ) : (
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-2">
+                {activeProfile.dniStatus === 'verified' ? (
+                  <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                )}
+                <span className="font-medium text-foreground">DNI (frente y dorso)</span>
+              </div>
+              {getDocStatusBadge(activeProfile.dniStatus)}
+            </div>
+          )}
 
           <div className="flex items-center justify-between py-3">
             <div className="flex items-center gap-2">
-              {profile.selfieStatus === 'verified' ? (
+              {activeProfile.selfieStatus === 'verified' ? (
                 <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
               ) : (
                 <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -325,8 +651,20 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                 {COURIER_ONBOARDING_COPY.selfieTitle}
               </span>
             </div>
-            {getDocStatusBadge(profile.selfieStatus)}
+            {getDocStatusBadge(activeProfile.selfieStatus)}
           </div>
+          {(activeProfile.selfieStatus === 'rejected' || initialRejectedDocsRef.current.selfie) && (
+            <div className="py-3">
+              <DocumentReplacementCard
+                courierId={activeProfile.courierId}
+                kind="selfie"
+                title={COURIER_ONBOARDING_COPY.selfieTitle}
+                initialStatus={profile?.selfieStatus ?? 'rejected'}
+                rejectionMessage={activeProfile.selfieRejectionMessage}
+                onReplaced={handleDocumentReplaced}
+              />
+            </div>
+          )}
 
           {isMotorVehicle && (
             <>
@@ -335,16 +673,40 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                   <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                   <span className="font-medium text-foreground">Licencia de conducir</span>
                 </div>
-                {getDocStatusBadge(profile.licenseStatus)}
+                {getDocStatusBadge(activeProfile.licenseStatus)}
               </div>
+              {(activeProfile.licenseStatus === 'rejected' || initialRejectedDocsRef.current.license) && (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    courierId={activeProfile.courierId}
+                    kind="license"
+                    title="Licencia de conducir"
+                    initialStatus={profile?.licenseStatus ?? 'rejected'}
+                    rejectionMessage={activeProfile.licenseRejectionMessage}
+                    onReplaced={handleDocumentReplaced}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                   <span className="font-medium text-foreground">Seguro de accidentes</span>
                 </div>
-                {getDocStatusBadge(profile.insuranceStatus)}
+                {getDocStatusBadge(activeProfile.insuranceStatus)}
               </div>
+              {(activeProfile.insuranceStatus === 'rejected' || initialRejectedDocsRef.current.insurance) && (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    courierId={activeProfile.courierId}
+                    kind="insurance"
+                    title="Seguro de accidentes"
+                    initialStatus={profile?.insuranceStatus ?? 'rejected'}
+                    rejectionMessage={activeProfile.insuranceRejectionMessage}
+                    onReplaced={handleDocumentReplaced}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>
@@ -423,6 +785,57 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
           {isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
         </Button>
       </div>
+
+      {/* Diálogo para editar teléfono (T-355) */}
+      <Dialog open={isPhoneDialogOpen} onOpenChange={setIsPhoneDialogOpen}>
+        <DialogContent preventCloseOnEscape={isSavingPhone}>
+          <DialogHeader>
+            <DialogTitle>Editar teléfono de contacto</DialogTitle>
+            <DialogDescription>
+              Ingresá tu número celular de 10 dígitos nacionales (código de área sin 0 ni 15, ej: 3865 123456).
+              Solo se actualizará tu teléfono de contacto.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSavePhone} className="space-y-4">
+            <div>
+              <label htmlFor="courier-phone-input" className="block text-sm font-medium text-foreground">
+                Teléfono de contacto
+              </label>
+              <Input
+                id="courier-phone-input"
+                type="tel"
+                value={phoneInputValue}
+                onChange={(e) => {
+                  setPhoneInputValue(e.target.value);
+                  if (phoneError) setPhoneError(null);
+                }}
+                placeholder="3865 123456"
+                disabled={isSavingPhone}
+                className="mt-1"
+                autoFocus
+              />
+              {phoneError && (
+                <p role="alert" className="mt-1 text-sm font-medium text-destructive">
+                  {phoneError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSavingPhone}
+                onClick={() => setIsPhoneDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" variant="default" isPending={isSavingPhone}>
+                Guardar teléfono
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
