@@ -1,4 +1,6 @@
-import { test, expect } from '../fixtures';
+import { randomBytes, randomUUID } from 'node:crypto';
+import type { Page } from '@playwright/test';
+import { test, expect, createAuthenticatedClient, type UserCredentials } from '../fixtures';
 
 test.describe('PR295-H11: Activación de Push bajo User Activation nativo en navegador real', () => {
   test('al hacer clic en «Activar avisos» en /courier/profile/notifications, Notification.requestPermission se ejecuta bajo navigator.userActivation.isActive = true', async ({
@@ -60,5 +62,104 @@ test.describe('PR295-H11: Activación de Push bajo User Activation nativo en nav
     // 7. La UI maneja la respuesta denegada de forma no bloqueante con el copy real (PUSH_COPY.prompt.statusDenied)
     await expect(page.getByText(/Avisos bloqueados en el navegador/i)).toBeVisible();
     await expect(page.getByText(/Avisos activados con éxito/i)).not.toBeVisible();
+  });
+});
+
+// T-383 (CC-035): el endpoint push es del navegador, no de la cuenta. El push service real no existe en Chromium
+// headless de CI, así que se reemplaza solo `PushManager.getSubscription` por una suscripción fija del navegador;
+// permiso, service worker, ruta `POST /api/push/subscriptions`, RPC y RLS son los de producción.
+interface FakeBrowserSubscription {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+async function installBrowserPushSubscription(page: Page, sub: FakeBrowserSubscription) {
+  await page.context().grantPermissions(['notifications']);
+  await page.addInitScript((fake: FakeBrowserSubscription) => {
+    const subscription = {
+      endpoint: fake.endpoint,
+      expirationTime: null,
+      options: { userVisibleOnly: true, applicationServerKey: null },
+      getKey: () => null,
+      toJSON: () => ({
+        endpoint: fake.endpoint,
+        expirationTime: null,
+        keys: { p256dh: fake.p256dh, auth: fake.auth },
+      }),
+      unsubscribe: async () => true,
+    };
+    // `grantPermissions` no fija `Notification.permission` en Chromium headless: se fija el permiso concedido.
+    Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true });
+    PushManager.prototype.getSubscription = async () => subscription as unknown as PushSubscription;
+  }, sub);
+}
+
+async function activatePushAndWaitForBackend(page: Page) {
+  await page.goto('/courier/profile/notifications');
+  const activateButton = page.getByRole('button', { name: /Activar avisos/i });
+  await expect(activateButton).toBeVisible();
+  const responsePromise = page.waitForResponse(
+    (res) => new URL(res.url()).pathname === '/api/push/subscriptions' && res.request().method() === 'POST'
+  );
+  await activateButton.click();
+  return responsePromise;
+}
+
+async function endpointOwnersVisibleTo(credentials: UserCredentials, endpoint: string) {
+  const client = await createAuthenticatedClient(credentials);
+  const { data, error } = await client
+    .from('push_subscriptions')
+    .select('user_id')
+    .eq('endpoint', endpoint);
+  expect(error).toBeNull();
+  return (data ?? []).map((row) => row.user_id);
+}
+
+test.describe('T-383: suscripción push en un navegador que quedó suscripto con otra cuenta', () => {
+  test('la cuenta A se suscribe, la sesión cambia a B sin logout y B activa los avisos: el endpoint queda de B', async ({
+    page,
+    loginAsCourier,
+    stagingContext,
+  }) => {
+    const courierA = stagingContext.courierUsers?.[0];
+    const courierB = stagingContext.courierUsers?.[1];
+    if (!courierA || !courierB) {
+      throw new Error('[E2E Error] Se necesitan dos repartidores sembrados');
+    }
+
+    const browserSubscription: FakeBrowserSubscription = {
+      endpoint: `https://push.e2e.invalid/t383/${randomUUID()}`,
+      p256dh: randomBytes(65).toString('base64url'),
+      auth: randomBytes(16).toString('base64url'),
+    };
+    await installBrowserPushSubscription(page, browserSubscription);
+
+    // 1. Cuenta A activa los avisos: el endpoint del navegador queda a su nombre.
+    await loginAsCourier(0, page);
+    // El login termina al salir de /login; se espera que aterrice en el feed antes de navegar a «Configurar».
+    await page.waitForURL(/\/courier\/feed/);
+    const responseA = await activatePushAndWaitForBackend(page);
+    expect(responseA.status()).toBe(200);
+    expect(await endpointOwnersVisibleTo(courierA, browserSubscription.endpoint)).toEqual([courierA.id]);
+    // Tras el alta confirmada, el prompt vuelve a la pantalla anterior; se espera esa navegación para que no se
+    // cruce con el cambio de sesión.
+    await page.waitForURL((url) => url.pathname !== '/courier/profile/notifications');
+
+    // 2. La sesión de A se pierde sin logout (no corre el borrado de suscripciones) y entra B en el mismo contexto.
+    await page.context().clearCookies();
+    await loginAsCourier(1, page);
+    await page.waitForURL(/\/courier\/feed/);
+
+    // 3. B activa los avisos con el mismo endpoint del navegador: 200, sin exponer la cuenta anterior.
+    const responseB = await activatePushAndWaitForBackend(page);
+    expect(responseB.status()).toBe(200);
+    const bodyB = await responseB.text();
+    expect(JSON.parse(bodyB)).toEqual({ ok: true });
+    expect(bodyB).not.toContain(courierA.id);
+
+    // 4. El endpoint pasó a B; A ya no lo ve.
+    expect(await endpointOwnersVisibleTo(courierB, browserSubscription.endpoint)).toEqual([courierB.id]);
+    expect(await endpointOwnersVisibleTo(courierA, browserSubscription.endpoint)).toEqual([]);
   });
 });

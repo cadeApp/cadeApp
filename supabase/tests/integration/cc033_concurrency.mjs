@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const dbContainer = process.env.DB_CONTAINER;
 if (!dbContainer) throw new Error('[CC-033] DB_CONTAINER es obligatorio.');
-const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20261020065319_cc033_add_courier_optional_document.sql');
+const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20261020190000_cc033_add_courier_optional_document.sql');
 
 function runSql(sql) {
   const result = spawnSync('docker', ['exec', '-i', dbContainer, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres', '-t', '-A', '-c', sql], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
