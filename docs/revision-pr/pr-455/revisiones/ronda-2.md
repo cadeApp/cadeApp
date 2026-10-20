@@ -50,7 +50,7 @@ Se añadió snapshot `ctid::text` del repartidor `courier_susp` **antes** de la 
 - Comparación `develop` a `208fbf7` indica `ahead 6, behind 0`, merge-base `03dec5b074e634d6f3895c282e58f7d7e6eb4456`. Metadata PR `mergeable=true`; no `git merge-tree` local por ausencia de clon/red.
 - CC-034 fue mergeado en `develop` con anterioridad; T-385 no cambia UI ni Server Actions de T-380.
 - No hay evidencias de adulteración de test: el único cambio negativo de SQL está aislado en #456 cerrada, la PR real conserva la función SQL original.
-- Bitácora actualizada; el cuerpo de la PR todavía dice «49 aserciones» aunque pgTAP pasó a 50. Corrección editorial opcional, no bloqueante, no requiere commit ni repetir checks de código.
+- Bitácora actualizada. Se corrigió directamente en el cuerpo de la PR el conteo editorial «49 aserciones» → «50 aserciones»; no se tocaron los archivos de código ni se alteró el comportamiento de los checks.
 
 ## 4. Checks y límites
 
