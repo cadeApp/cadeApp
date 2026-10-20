@@ -15,7 +15,6 @@ declare
   v_expected_prefix text;
   v_storage_suffix text;
   v_idempotency_key_text text;
-  v_idempotency_key uuid;
   v_courier_rec record;
   v_existing_id uuid;
   v_existing_status public.document_review_status;
@@ -78,8 +77,6 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  v_idempotency_key := v_idempotency_key_text::uuid;
-
   -- Orden de locks de CC-025/CC-033: couriers, profiles, courier_documents.
   select profile_id, status, vehicle_type into v_courier_rec
   from public.couriers
@@ -107,13 +104,13 @@ begin
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
   end if;
 
-  if v_idempotency_key is not null then
+  if v_idempotency_key_text is not null then
     select id, status, storage_path, is_current
     into v_existing_id, v_existing_status, v_existing_path, v_existing_current
     from public.courier_documents
     where courier_id = v_actor_id
       and kind = v_kind
-      and idempotency_key = v_idempotency_key;
+      and idempotency_key = v_idempotency_key_text;
 
     if found then
       if v_existing_path <> v_storage_path then
@@ -178,7 +175,7 @@ begin
     'submitted',
     true,
     null,
-    v_idempotency_key,
+    v_idempotency_key_text,
     null,
     null
   )
@@ -202,7 +199,7 @@ begin
       'kind', v_kind,
       'status', 'submitted',
       'is_current', true,
-      'idempotency_key', v_idempotency_key
+      'idempotency_key', v_idempotency_key_text
     )
   );
 
