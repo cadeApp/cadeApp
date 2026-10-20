@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
 import {
+  deliveryRequestStatusSchema,
   packageTypeSchema,
   recipientPaymentMethodSchema,
   type PackageType,
@@ -59,12 +60,14 @@ interface RawOfferWithRequest {
   decided_at: string | null;
   delivery_requests:
     | {
+        status?: string | null;
         expires_at: string | null;
         approx_distance_m: number | null;
         pickup_zone: { name: string } | { name: string }[] | null;
         dropoff_zone: { name: string } | { name: string }[] | null;
       }
     | {
+        status?: string | null;
         expires_at: string | null;
         approx_distance_m: number | null;
         pickup_zone: { name: string } | { name: string }[] | null;
@@ -324,6 +327,11 @@ export async function getPlatformMinOfferArs(): Promise<number> {
   return 1000;
 }
 
+function parseRequestStatus(value: unknown): CourierOfferItem['requestStatus'] {
+  const parsed = deliveryRequestStatusSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 /**
  * Consulta de ofertas enviadas por el repartidor autenticado (R06).
  */
@@ -351,6 +359,7 @@ export async function getMyOffers(): Promise<CourierOfferItem[]> {
       created_at,
       decided_at,
       delivery_requests!offers_request_id_fkey (
+        status,
         expires_at,
         approx_distance_m,
         pickup_zone:zones!pickup_zone_id(name),
@@ -392,6 +401,8 @@ export async function getMyOffers(): Promise<CourierOfferItem[]> {
       etaMinutes: off.eta_minutes,
       message: off.message,
       status: off.status as CourierOfferItem['status'],
+      // T-379: la RLS solo deja leer la solicitud al repartidor que puede verla; si no, queda null.
+      requestStatus: parseRequestStatus(req?.status),
       createdAt: off.created_at,
       decidedAt: off.decided_at,
       requestExpiresAt: req?.expires_at ?? null,

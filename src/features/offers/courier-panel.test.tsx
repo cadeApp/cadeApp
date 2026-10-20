@@ -297,6 +297,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       etaMinutes: 15,
       message: null,
       status: 'accepted',
+      requestStatus: 'matched',
       createdAt: '2026-09-23T10:00:00Z',
       decidedAt: '2026-09-23T10:05:00Z',
       requestExpiresAt: null,

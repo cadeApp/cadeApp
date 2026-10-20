@@ -708,6 +708,19 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       await courierTripPage.confirmDeliveryButton.click();
       await waitForNoSkeletons(courierBrowserPage);
       await expect(courierTripPage.deliveredStatus).toBeVisible();
+
+      // T-379: el viaje entregado se titula «Viaje finalizado», sale de «Aceptadas» y queda en «Otras» como «Entregado».
+      await expect(courierBrowserPage.getByRole('heading', { level: 1, name: 'Viaje finalizado' })).toBeVisible();
+      await courierBrowserPage.goto('/courier/offers');
+      await waitForNoSkeletons(courierBrowserPage);
+      // Los repartidores de la fixture son de esta corrida: su única oferta aceptada es la de este viaje.
+      await expect(courierBrowserPage.getByRole('button', { name: 'Aceptadas (0)' })).toBeVisible();
+      await courierBrowserPage.getByRole('button', { name: /^Otras \(/ }).click();
+      const deliveredTripLink = courierBrowserPage.locator(`a[href="/trips/${targetRequestId}"]`);
+      await expect(deliveredTripLink).toHaveText('Ver viaje');
+      await expect(
+        courierBrowserPage.getByRole('listitem').filter({ has: deliveredTripLink }).getByText('Entregado', { exact: true })
+      ).toBeVisible();
     } finally {
       await courierContext.close();
     }
