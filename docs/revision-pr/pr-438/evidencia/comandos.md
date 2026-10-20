@@ -59,3 +59,31 @@ node docs/revision-pr/analizar.mjs verificacion
 
 La PR original declaró `verify-fichas` 7/7 y `diff --check` limpio; esta revisión **no** los ejecutó localmente. Los últimos dos comandos se destinan a verificación posterior del informe y estructura. No ejecutar `pnpm test:db`, `e2e-preview` manual, levantar Supabase, usar credenciales ni exigir CI GREEN nuevo solo por cambios del informe.
 
+
+## Ronda 2 — guard reproducido contra contenido remoto del nuevo SHA
+
+**HEAD revisado:** `1a24494cdc9c2fac0e85fe550f040849a57b2fa4`. Referencia vieja para contraste: `e6e6769109dfef5926dea90dc44bd1100c9163ab`.
+
+El script completo y copiable sigue intacto en la sección de ronda 1, supra. El revisor recuperó por GitHub ambas versiones de `docs/tasks/T-377.md` y aplicó **sin modificar las expresiones** los cinco predicados JS del harness al texto de cada SHA. Salida:
+
+~~~text
+SHA e6e6769109dfef5926dea90dc44bd1100c9163ab
+FAIL H01/T-363 explicit no partial
+FAIL H02/path response field mask
+FAIL H02/preserve ordered stops
+FAIL H03/sku and intermediate cost boundary
+FAIL H03/no unconditional free pilot promise
+
+SHA 1a24494cdc9c2fac0e85fe550f040849a57b2fa4
+PASS H01/T-363 explicit no partial
+PASS H02/path response field mask
+PASS H02/preserve ordered stops
+PASS H03/sku and intermediate cost boundary
+PASS H03/no unconditional free pilot promise
+~~~
+
+**Chequeo semántico independiente adicional, no textual tautológico**: 15/15 PASS al leer contenido remoto: 3 fallbacks excluyentes; componente bajo provider, último destino, orden de intermedios, recálculo, distancia servidor, máximo 10 intermedios y texto C06; costo no garantizado; 3 elementos correspondientes del cuerpo de la PR; y preservación de la ronda previa en `hallazgos.jsonl`.
+
+GitHub compare entre `ace07ff` y `1a24494`: solo `docs/tasks/T-377.md`, +36/-11. GitHub compare del PR completo: todos los archivos son documentales. GitHub confirmó `mergeable=true`. El autor declaró `verify-fichas` 7/7 y `diff --check` limpio, **no ejecutados por el revisor**. CI general en curso y e2e-preview pendiente al observarse; fuera del alcance requerido de esta PR de ficha.
+
+**Reproducibilidad local:** utilizar el bloque de `/tmp/pr438-doc-guard.mjs` arriba con `git show e6e6769:docs/tasks/T-377.md > docs/tasks/T-377.md` en un **directorio temporal separado** para RED, luego con contenido del SHA `1a24494` para GREEN. **No modificar la working tree del autor ni escribir encima de su ficha**. Alternativamente ejecutar el guard en worktrees efímeros limpios para cada SHA. Nunca fabricar un test para producir GREEN. Esta ronda ejecutó los predicados sobre texto devuelto por la API, no el `node` local.

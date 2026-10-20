@@ -10,3 +10,7 @@ Esta ronda revisa una **ficha documental**, no código de implementación. No se
 
 Sin modificación sugerida de `AGENTS.md` en esta ronda por no alcanzar evidencia inter-PR para una nueva regla general.
 
+
+## Ronda 2 — resultado de las correcciones
+
+H01–H03 se corrigieron sin tocar código ni pruebas existentes y sin que el autor escribiera `docs/revision-pr/**`. El guard de 5 condiciones pasó de FAIL a PASS de manera verificable, pero la inspección adicional fue indispensable porque un test de presencia de textos no puede probar semántica completa. La decisión A evitó degradar T-363. No se abrieron lecciones AG nuevas ni se tocó `AGENTS.md`.
