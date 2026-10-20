@@ -3117,7 +3117,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
         const previousStatus = courier.status;
         courier.status = 'approved';
-        courier.available = false;
         return ok({ courierId: input.courierId, previousStatus, status: 'approved', idempotent: false });
       }),
 

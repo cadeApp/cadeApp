@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(49);
+select plan(50);
 
 -- CC-034 (T-385): admin_reinstate_courier reactiva un suspendido o reconsidera un rechazado.
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -300,6 +300,9 @@ select is(
 );
 
 -- 6. Reintento sobre el ya aprobado: idempotente, sin update ni auditoría
+-- El ctid cambia con cualquier UPDATE físico, aunque no modifique valores: detecta un update inocuo.
+create table pg_temp.reinstate_before_retry as
+select ctid::text as tuple_id from public.couriers where profile_id = pg_temp.courier_susp();
 select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
 select is(
   public.admin_reinstate_courier(pg_temp.courier_susp(), 'Doble clic'),
@@ -308,6 +311,11 @@ select is(
 );
 select pg_temp.reset_actor();
 select is(pg_temp.reinstate_audits(pg_temp.courier_susp()), 1, 'el reintento no duplica la auditoría');
+select is(
+  (select ctid::text from public.couriers where profile_id = pg_temp.courier_susp()),
+  (select tuple_id from pg_temp.reinstate_before_retry),
+  'approved idempotente no hizo UPDATE físico de couriers'
+);
 
 -- 7. Reconsiderar un rechazado
 select pg_temp.act_as(pg_temp.admin_a(), 'aal2');

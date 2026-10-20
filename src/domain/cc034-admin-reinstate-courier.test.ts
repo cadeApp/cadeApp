@@ -110,6 +110,28 @@ describe('CC-034 — admin_reinstate_courier', () => {
     expect(client.getCourier(REJECTED_ID)).toMatchObject({ status: 'approved', available: false });
   });
 
+  it('fake: conserva available tal como estaba (CC-034 no toca la disponibilidad)', async () => {
+    const availableRejectedId = '20000000-0000-4000-8000-0000000034c6';
+    const client = createFakeRpcClient({
+      settings: SETTINGS,
+      initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
+      initialCouriers: [
+        { courierId: availableRejectedId, status: 'rejected', available: true, vehicleType: 'bike' },
+      ],
+    });
+    expect(client.getCourier(availableRejectedId)?.available).toBe(true);
+
+    const result = await client.admin_reinstate_courier({
+      courierId: availableRejectedId,
+      reason: 'Documentación revisada de nuevo',
+    });
+    expect(result).toEqual({
+      ok: true,
+      data: { courierId: availableRejectedId, previousStatus: 'rejected', status: 'approved', idempotent: false },
+    });
+    expect(client.getCourier(availableRejectedId)?.available).toBe(true);
+  });
+
   it('fake: sobre un aprobado devuelve idempotent true con previousStatus approved', async () => {
     const client = fake();
     const result = await client.admin_reinstate_courier({ courierId: APPROVED_ID, reason: 'Reintento' });
