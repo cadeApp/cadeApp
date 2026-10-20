@@ -11,3 +11,10 @@ No se asignan números AG nuevos: los problemas observados ya encajan en reglas 
 **Advertencia de proceso:** esta PR fue revisada mientras era Draft explícitamente incompleto. Los hallazgos registran ese estado, no un cierre funcional; los cambios del agy solo se consideran arreglados tras una nueva ronda independiente. No se fingieron mutaciones locales ni ejecución de Docker.
 
 No proponer reglas nuevas para AGENTS.md solo por esta PR.
+
+## Ronda 2
+
+- **P11 / AG-59:** mantener case sensitivity igual en SQL y fake. Aquí CI verde y 90,63 % branch coverage no detectan la bandera `/i`. Agregar mutación dirigida `.PNG`.
+- **P08 / AG-37:** enumerar clase completa: actores con consentimiento inactivo, combinatoria kind/estado elegible y código SQLSTATE exacto. No reemplazar por porcentaje de coverage.
+- **Proceso H07:** el commit 46114f51 del agy de implementación solo quitó tres espacios al final de la ronda 1. Comparados los blobs, no cambió ninguna afirmación. La carpeta pertenece al revisor: futuros arreglos no deben tocarla.
+- No se asignan AG nuevos ni se declara mutación independiente RED/GREEN donde solo hay logs CI del autor.

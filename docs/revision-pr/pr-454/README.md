@@ -1,35 +1,26 @@
-# PR #454 — T-384 · CC-033 alta posterior de documentos opcionales
+# PR #454 — T-384 / CC-033 · Revisión independiente
 
 | Campo | Dato |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/454 |
-| Tarea | T-384 (Fase 3), CC-033 |
-| Autor | @Lautaro073 |
+| Tarea | T-384 · CC-033 |
 | Rama | `feat/T-384-cc033-optional-document` → `develop` |
-| Base revisada | `03dec5b074e634d6f3895c282e58f7d7e6eb4456` |
-| HEAD revisado | `cc87a902e30c5c2f452e80edb34ca78dac396ab3` |
-| Tamaño | 9 archivos, +571 / -12 líneas |
-| Estado | **Draft, CON BLOQUEANTES (6)**; no aprobar ni mergear |
+| Base de ronda 2 | `fee28dbdf2cf358aa8d36198d81b3cb04f81e61b` |
+| HEAD revisado en ronda 2 | `cb32fdce9986ed133db68def0d1a2017122b90a7` |
+| Estado | **Draft · CON BLOQUEANTES (3) · NO MERGEAR** |
 
 ## Rondas
+
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `cc87a902e30c5c2f452e80edb34ca78dac396ab3` | 6 bloqueantes, 0 mejoras | [ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `cc87a902e30c5c2f452e80edb34ca78dac396ab3` | 6 bloqueantes | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `cb32fdce9986ed133db68def0d1a2017122b90a7` | 3 bloqueantes (H01, H03, H04), 1 observación de proceso | [ronda-2.md](revisiones/ronda-2.md) |
 
-## Estado por hallazgo
-| ID | Título | Sev. | Estado |
-|---|---|---|---|
-| H01 | pgTAP solo comprueba la existencia de la RPC | alto | abierto |
-| H02 | Falta la suite de concurrencia y su integración a CI | alto | abierto |
-| H03 | La validación SQL permite valores no canónicos y no devuelve el error de contrato | medio | abierto |
-| H04 | El fake carece de matriz funcional y unit falla por cobertura | alto | abierto |
-| H05 | El test del wrapper no verifica qué RPC ni qué payload se envía | medio | abierto |
-| H06 | database.types.ts fue editado manualmente y aún no hay prueba de drift | alto | abierto |
+## Estado actualizado
 
-Datos: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia y comandos: [evidencia/comandos.md](evidencia/comandos.md)
+- **Pendientes:** H01 (falta matriz pgTAP de consentimiento/pendiente licencia y SQLSTATE), H03 (fake admite `.PNG`), H04 (fake carece de escenarios observables exigidos).
+- **Resueltos según inspección + CI:** H02 (4 carreras y mutación de locks), H05 (wrapper/argumentos), H06 (drift de tipos generado).
+- **Observación de proceso:** H07 (autor del código tocó espacios finales del informe independiente previo, sin cambiar el contenido).
+- **Decisiones 🔵 pendientes:** ninguna; CC-033 ya está aprobado.
 
-## Qué falta
-Completar pgTAP, concurrencia multisesión con mutación real, validar parámetros SQL nulos y formato, ampliar pruebas de fake/wrapper sin adulterar assertions, restituir cobertura y confirmar drift de tipos por CI. Revisión nueva del SHA que publique el agy. No hay decisiones 🔵 nuevas: CC-033 aprobado ya resuelve los comportamientos de producto.
-
-## Limitaciones
-Se inspeccionaron los archivos publicados mediante GitHub y el CI del SHA. No fue posible clonar GitHub desde el entorno de revisión (DNS), por lo que no hubo ejecución local de Vitest, git merge-tree ni mutaciones de PostgreSQL. No se informa ninguna reproducción runtime no ejecutada.
+Detalle reproducible: [hallazgos.jsonl](hallazgos.jsonl), [evidencia/comandos.md](evidencia/comandos.md), [lecciones.md](lecciones.md). No se ejecutó PostgreSQL local ni se alteraron tests para pasarlos en verde.
