@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ApplicantDetailView } from './applicant-detail-view';
 import { ApplicantsQueue } from './applicants-queue';
 import {
@@ -510,12 +510,15 @@ describe('T-380: reactivar o reconsiderar con reinstateCourierAction (CC-034)', 
     if (!form) throw new Error('el botón de confirmar tiene que estar dentro del formulario');
     fireEvent.submit(form);
     await waitFor(() => expect(reinstateCourierAction).toHaveBeenCalledTimes(1));
-    fireEvent.submit(form);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // El segundo envío se entrega dentro de act: la validación y el handler terminan antes de afirmar.
+    await act(async () => {
+      fireEvent.submit(form);
+    });
     expect(reinstateCourierAction).toHaveBeenCalledTimes(1);
 
     resolveAction({ ok: true, data: { success: true, idempotent: false } });
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(reinstateCourierAction).toHaveBeenCalledTimes(1);
   });
 
   it('idempotent: true (ya estaba aprobado) se trata como éxito', async () => {
