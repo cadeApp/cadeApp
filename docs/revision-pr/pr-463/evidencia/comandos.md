@@ -94,3 +94,62 @@ En `use-merchant-panel-refresh.test.tsx`:
 4. Escribir comandos y salidas reales resumidas en bitácora, con commit y SHA remoto.
 
 Para la ronda final: `git fetch origin && git merge-tree --write-tree origin/develop HEAD`; `pnpm typecheck && pnpm lint && pnpm test`; CI oficial con `e2e-preview` según decisión de Lautaro073. Sin ejecutar Supabase o Docker local.
+
+## Ronda 2 — 2026-10-20 — SHA `00b3f6d5f020154515f3cc9ea360f251880d992e`
+
+`compare_commits(e1b6db6...00b3f6d5)`: exactly 2 files (test del hook + bitácora), 1 commit, sin tocar `docs/revision-pr/**` por el autor. `develop` estable `cf2fbe13...`; PR `mergeable=true`. No fue posible ejecutar `git merge-tree` local por falta de clon: el contenedor local no puede resolver `github.com` y no tiene `react` ni `vitest` instalados.
+
+### I01 — evidencia de autor, no ejecución independiente
+
+Comentario en PR #463: https://github.com/cadeApp/cadeApp/pull/463#issuecomment-6301044969
+
+- Mutación del hook: eliminar `document.addEventListener('visibilitychange', onVisibilityChange);` temporalmente en memoria.
+- Test viejo: `Test Files 2 passed (2) · Tests 27 passed (27)`.
+- Test nuevo con I01: `Test Files 1 failed | 1 passed (2) · Tests 1 failed | 26 passed (27)`; error `expected "vi.fn()" to be called 2 times, but got 1 times`.
+- Restituido: `Test Files 2 passed (2) · Tests 27 passed (27)`.
+
+**No se ejecutó este rojo con Vitest por el revisor.**
+
+### I02 — sondeo estructural independiente, ejecución real sobre blobs de GitHub
+
+Se leyeron ambos archivos del SHA revisado con `fetch_file` y se ejecutó este checker JavaScript dentro del entorno de revisión (la siguiente es una reproducción autocontenida; insertar los blobs exactos del SHA revisado como `source` y `testSource`):
+
+```js
+const body = testSource.slice(
+  testSource.indexOf("it('foco y visibilidad visible"),
+  testSource.indexOf("it('un cambio de offers por Realtime")
+);
+const start = body.indexOf('// La pestaña vuelve a ser visible');
+const end = body.indexOf('// Ráfaga de los tres');
+const isolated = body.slice(start,end);
+const checks = [
+  isolated.includes("document.dispatchEvent(new Event('visibilitychange'))"),
+  !isolated.includes('window.dispatchEvent'),
+  !isolated.includes('realtime.state.handler'),
+  isolated.includes('vi.advanceTimersByTime(debounce - 1)'),
+  isolated.includes('vi.advanceTimersByTime(1)'),
+  isolated.includes('expect(refresh).toHaveBeenCalledTimes(2)'),
+  body.slice(end).includes('expect(refresh).toHaveBeenCalledTimes(3)')
+];
+const listener = "document.addEventListener('visibilitychange', onVisibilityChange);";
+const probe = (code) => checks.every(Boolean) &&
+  code.includes(listener) && code.includes("if (document.visibilityState === 'visible')");
+const baselineGreen = probe(source);
+const mutatedRed = !probe(source.replace(listener, ''));
+if (!baselineGreen || !mutatedRed) throw new Error('Sonda no detectó mutación');
+```
+
+Salida efectiva: `baselinePass=true`, `mutationI02.structurallyDetected=true`, `mutationI02.contractPass=false`. **El checker verifica estructura, NO que la prueba de Vitest se ponga roja ante la mutación**. Su valor es comprobar el aislamiento nuevo y la identidad del SHA; no exagerar su alcance.
+
+### CI oficial comprobado por revisor
+
+SHA exacto `00b3f6d5f020154515f3cc9ea360f251880d992e`; run `39494319626`, job `unit` `118875895826`. Del log GitHub:
+```
+✓ src/features/requests/components/merchant-requests-list.test.tsx (23 tests)
+✓ src/features/requests/hooks/use-merchant-panel-refresh.test.tsx (4 tests)
+Test Files 153 passed (153)
+Tests 2994 passed (2994)
+```
+Otros checks al redactar: `lint`, `typecheck`, `build`, `audit`, `bundle-budget` success; `db-tests` en progreso, `approval-policy` failure antes del nuevo informe; `e2e-preview` oficial pendiente de gate final. No se consultaron secretos ni se ejecutaron comandos en Supabase remoto.
+
+Validación post-commit: `node docs/revision-pr/analizar.mjs verificacion` — si el script existente está disponible en un checkout; no afirmar su ejecución en este entorno.
