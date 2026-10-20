@@ -89,6 +89,8 @@ async function installBrowserPushSubscription(page: Page, sub: FakeBrowserSubscr
       }),
       unsubscribe: async () => true,
     };
+    // `grantPermissions` no fija `Notification.permission` en Chromium headless: se fija el permiso concedido.
+    Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true });
     PushManager.prototype.getSubscription = async () => subscription as unknown as PushSubscription;
   }, sub);
 }
@@ -135,6 +137,8 @@ test.describe('T-383: suscripción push en un navegador que quedó suscripto con
 
     // 1. Cuenta A activa los avisos: el endpoint del navegador queda a su nombre.
     await loginAsCourier(0, page);
+    // El login termina al salir de /login; se espera que aterrice en el feed antes de navegar a «Configurar».
+    await page.waitForURL(/\/courier\/feed/);
     const responseA = await activatePushAndWaitForBackend(page);
     expect(responseA.status()).toBe(200);
     expect(await endpointOwnersVisibleTo(courierA, browserSubscription.endpoint)).toEqual([courierA.id]);
@@ -145,6 +149,7 @@ test.describe('T-383: suscripción push en un navegador que quedó suscripto con
     // 2. La sesión de A se pierde sin logout (no corre el borrado de suscripciones) y entra B en el mismo contexto.
     await page.context().clearCookies();
     await loginAsCourier(1, page);
+    await page.waitForURL(/\/courier\/feed/);
 
     // 3. B activa los avisos con el mismo endpoint del navegador: 200, sin exponer la cuenta anterior.
     const responseB = await activatePushAndWaitForBackend(page);
