@@ -103,6 +103,8 @@ export const COURIER_ONBOARDING_COPY = {
     unauthorized: 'Tu cuenta no puede cargar documentos en este momento.',
     notFound: 'No encontramos el archivo subido. Volvé a seleccionarlo para reintentar.',
     generic: 'No pudimos enviar el documento. Volvé a intentar en unos momentos.',
+    pdfTooLarge: 'El PDF supera los 10 MB. Elegí un archivo más liviano.',
+    unsupportedType: 'Ese formato no se admite. Subí una foto (JPG, PNG o WEBP) o un PDF.',
   },
 } as const;
 

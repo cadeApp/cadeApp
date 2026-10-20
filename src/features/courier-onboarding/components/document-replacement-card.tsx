@@ -26,6 +26,10 @@ export interface DocumentReplacementCardProps {
   mode?: 'replace' | 'add';
 }
 
+/** T-376 (PR464-H01): el alta admite fotos y PDF (como el bucket y CC-033); el PDF se sube sin comprimir. */
+const ADD_ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
+const PDF_MAX_BYTES = 10 * 1024 * 1024;
+
 /** T-376: un mensaje por causa de falla del alta de un documento opcional. */
 function addErrorMessage(code: DomainErrorCode): string {
   switch (code) {
@@ -82,6 +86,20 @@ export function DocumentReplacementCard({
     setErrorMessage(null);
     setSuccessMessage(null);
     setSelectedFileName(file.name);
+
+    const isPdf = file.type === 'application/pdf';
+    if (mode === 'add') {
+      if (!(ADD_ACCEPTED_TYPES as readonly string[]).includes(file.type)) {
+        setUploadStatus('error');
+        setErrorMessage(COURIER_ONBOARDING_COPY.optionalDocumentErrors.unsupportedType);
+        return;
+      }
+      if (isPdf && file.size > PDF_MAX_BYTES) {
+        setUploadStatus('error');
+        setErrorMessage(COURIER_ONBOARDING_COPY.optionalDocumentErrors.pdfTooLarge);
+        return;
+      }
+    }
     // Identificador único del archivo seleccionado (nombre, tamaño, tipo y última modificación)
     const fingerprint = `${file.name}-${file.size}-${file.type}-${file.lastModified}`;
     const previousAttempt = pendingAttemptRef.current;
@@ -140,9 +158,12 @@ export function DocumentReplacementCard({
 
       // 2. Subida a Supabase Storage SOLO si no fue confirmada previamente para este intento (PR358-R01)
       if (!attempt.uploadConfirmed) {
-        setIsCompressing(true);
-        const compressed = await compressImage(file);
-        setIsCompressing(false);
+        let compressed: File = file;
+        if (!(mode === 'add' && isPdf)) {
+          setIsCompressing(true);
+          compressed = await compressImage(file);
+          setIsCompressing(false);
+        }
 
         const { storagePath } = await uploadCourierDocument({
           courierId: resolvedCourierId,
@@ -176,6 +197,11 @@ export function DocumentReplacementCard({
       }
 
       if (!result.ok) {
+        // PR464-H02: NOT_FOUND = el objeto no está en Storage; el próximo intento tiene que volver a subirlo con otro
+        // path y otra clave. Con errores inciertos (red, INTERNAL_ERROR) se conserva el intento para no duplicar.
+        if (mode === 'add' && result.code === 'NOT_FOUND') {
+          pendingAttemptRef.current = null;
+        }
         setUploadStatus('error');
         setErrorMessage(
           mode === 'add'
@@ -279,6 +305,7 @@ export function DocumentReplacementCard({
 
         <DocumentUploadCard
           kind={kind}
+          accept={ADD_ACCEPTED_TYPES.join(',')}
           title={COURIER_ONBOARDING_COPY.optionalDocumentAddTitle(title)}
           subtitle={COURIER_ONBOARDING_COPY.optionalDocumentSubtitle}
           status={uploadStatus}

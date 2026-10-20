@@ -2623,3 +2623,100 @@ describe('T-376 · CC-033: alta desde el perfil de la licencia o el seguro no ca
     expect(screen.queryByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeNull();
   });
 });
+
+describe('T-376 · PR464 ronda 1: PDF y reintento tras NOT_FOUND en el alta', () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'courier-376' } }, error: null });
+  });
+
+  function renderAdd() {
+    return render(
+      <DocumentReplacementCard mode="add" courierId="courier-376" kind="insurance" title="Seguro de accidentes" initialStatus="none" />
+    );
+  }
+
+  function okResult(documentId: string) {
+    return {
+      ok: true as const,
+      data: { documentId, kind: 'insurance' as const, status: 'submitted' as const, isCurrent: true, idempotent: false },
+    };
+  }
+
+  const input = () => screen.getByLabelText(/^Subir seguro de accidentes$/i) as HTMLInputElement;
+
+  it('H01: el alta acepta PDF (y el reemplazo sigue solo con imágenes)', () => {
+    const view = renderAdd();
+    expect(input().accept.split(',')).toContain('application/pdf');
+    view.unmount();
+    render(
+      <DocumentReplacementCard courierId="courier-376" kind="insurance" title="Seguro de accidentes" initialStatus="rejected" />
+    );
+    expect((screen.getByLabelText(/Reemplazar seguro de accidentes/i) as HTMLInputElement).accept).toBe(
+      'image/jpeg,image/png,image/webp'
+    );
+  });
+
+  it('H01: un PDF se sube tal cual, sin pasar por la compresión de imágenes, y queda en revisión', async () => {
+    mockUploadCourierDocument.mockResolvedValue({ storagePath: 'courier/courier-376/insurance_1730000000100.pdf' });
+    const addAction = vi
+      .spyOn(actionsModule, 'addCourierOptionalDocumentAction')
+      .mockResolvedValue(okResult('d0000000-0000-4000-8000-000000000400'));
+    const pdf = new File(['%PDF-1.4 seguro'], 'seguro.pdf', { type: 'application/pdf' });
+
+    renderAdd();
+    fireEvent.change(input(), { target: { files: [pdf] } });
+
+    await waitFor(() => expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined());
+    expect(compressImage).not.toHaveBeenCalled();
+    expect(mockUploadCourierDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ courierId: 'courier-376', kind: 'insurance', file: pdf })
+    );
+    expect(addAction).toHaveBeenCalledWith(
+      expect.objectContaining({ storagePath: 'courier/courier-376/insurance_1730000000100.pdf' })
+    );
+  });
+
+  it.each([
+    ['un PDF de más de 10 MB', () => {
+      const big = new File(['%PDF'], 'seguro.pdf', { type: 'application/pdf' });
+      Object.defineProperty(big, 'size', { value: 10 * 1024 * 1024 + 1 });
+      return big;
+    }, 'pdfTooLarge'],
+    ['un formato no admitido', () => new File(['texto'], 'seguro.txt', { type: 'text/plain' }), 'unsupportedType'],
+  ] as const)('H01: %s no se sube y muestra su mensaje', async (_case, makeFile, key) => {
+    const addAction = vi.spyOn(actionsModule, 'addCourierOptionalDocumentAction');
+
+    renderAdd();
+    fireEvent.change(input(), { target: { files: [makeFile()] } });
+
+    expect((await screen.findByText(COURIER_ONBOARDING_COPY.optionalDocumentErrors[key])).getAttribute('role')).toBe('alert');
+    expect(mockUploadCourierDocument).not.toHaveBeenCalled();
+    expect(compressImage).not.toHaveBeenCalled();
+    expect(addAction).not.toHaveBeenCalled();
+  });
+
+  it('H02: tras NOT_FOUND, volver a elegir el mismo archivo lo sube de nuevo con otro intento y lo completa', async () => {
+    mockUploadCourierDocument
+      .mockResolvedValueOnce({ storagePath: 'courier/courier-376/insurance_1730000000201.jpg' })
+      .mockResolvedValueOnce({ storagePath: 'courier/courier-376/insurance_1730000000202.jpg' });
+    const addAction = vi
+      .spyOn(actionsModule, 'addCourierOptionalDocumentAction')
+      .mockResolvedValueOnce({ ok: false, code: 'NOT_FOUND' })
+      .mockResolvedValueOnce(okResult('d0000000-0000-4000-8000-000000000402'));
+    const file = new File(['seguro'], 'seguro.jpg', { type: 'image/jpeg', lastModified: 7 });
+
+    renderAdd();
+    fireEvent.change(input(), { target: { files: [file] } });
+    await screen.findByText(COURIER_ONBOARDING_COPY.optionalDocumentErrors.notFound);
+
+    fireEvent.change(input(), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined());
+
+    expect(mockUploadCourierDocument).toHaveBeenCalledTimes(2);
+    const [first, second] = addAction.mock.calls.map(([arg]) => arg as { storagePath: string; idempotencyKey: string });
+    expect(second?.storagePath).toBe('courier/courier-376/insurance_1730000000202.jpg');
+    expect(second?.idempotencyKey).not.toBe(first?.idempotencyKey);
+  });
+});

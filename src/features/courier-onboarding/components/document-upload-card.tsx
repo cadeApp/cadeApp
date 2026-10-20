@@ -20,6 +20,8 @@ export interface DocumentUploadCardProps {
   icon?: LucideIcon;
   /** Texto personalizado para la acción en estado idle (por defecto 'Subir'). */
   actionLabel?: string;
+  /** Tipos aceptados por el selector (por defecto, solo imágenes). T-376: el alta de licencia o seguro suma PDF. */
+  accept?: string;
   onFileSelected: (file: File) => void;
 }
 
@@ -37,6 +39,7 @@ export function DocumentUploadCard({
   fileName,
   icon: IdleIcon = Camera,
   actionLabel,
+  accept = 'image/jpeg,image/png,image/webp',
   onFileSelected,
 }: DocumentUploadCardProps) {
   const inputId = `file-input-${kind}`;
@@ -127,7 +130,7 @@ export function DocumentUploadCard({
         id={inputId}
         type="file"
         aria-label={title}
-        accept="image/jpeg,image/png,image/webp"
+        accept={accept}
         className="sr-only"
         aria-describedby={statusId}
         onChange={(e) => {
