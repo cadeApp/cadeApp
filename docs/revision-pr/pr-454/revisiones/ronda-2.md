@@ -1,9 +1,9 @@
 # Revisión independiente — PR #454 / T-384 — Ronda 2
 
-**Fecha:** 2026-10-20  
-**SHA revisado:** `cb32fdce9986ed133db68def0d1a2017122b90a7` · **base:** `develop@fee28dbdf2cf358aa8d36198d81b3cb04f81e61b`  
-**Rama:** `feat/T-384-cc033-optional-document` · **PR:** Draft.  
-**Resultado:** **CON BLOQUEANTES (3)** (H01, H03, H04) · **MEJORA de proceso:** H07.  
+**Fecha:** 2026-10-20
+**SHA revisado:** `cb32fdce9986ed133db68def0d1a2017122b90a7` · **base:** `develop@fee28dbdf2cf358aa8d36198d81b3cb04f81e61b`
+**Rama:** `feat/T-384-cc033-optional-document` · **PR:** Draft.
+**Resultado:** **CON BLOQUEANTES (3)** (H01, H03, H04) · **MEJORA de proceso:** H07.
 **Decisiones 🔵:** ninguna: CC-033 mergeado ya define el comportamiento.
 
 ## Alcance y sincronización
