@@ -30,7 +30,7 @@
 `src/domain/testing/rpc-fake.ts`, en `add_courier_optional_document`: reemplazar `/^[0-9]+[.](png|jpe?g|webp|pdf)$/i` por la misma regex **sin** `i`. El SQL utiliza `!~` y CC-033 exige minúsculas; el fake debe devolver `VALIDATION_ERROR` para `insurance_1730000000005.PNG` aunque la ruta exista en la semilla de Storage. El test de fake debe demostrar rojo con `/i` y verde sin `/i`.
 
 ### H04 — Completar matriz de fake con efectos observables
-`src/domain/cc033-add-courier-optional-document.test.ts`: agregar actor `merchant`, actor `courier` con `consentStatus: 'inactive'`, éxito `approved` para ambos `kind` y afirmaciones por `getDocument(documentId)` de existencia, `status=submitted`, `isCurrent=true` y path canónico. En rechazos, comprobar que ni estado ni documento cambian. La cobertura numérica no sustituye la cobertura contractual.
+`src/domain/cc033-add-courier-optional-document.test.ts`: agregar actor `merchant`, actor `courier` con `consentStatus: 'reconsent_required'`, éxito `approved` para ambos `kind` y afirmaciones por `getDocument(documentId)` de existencia, `status=submitted`, `isCurrent=true` y path canónico. En rechazos, comprobar que ni estado ni documento cambian. La cobertura numérica no sustituye la cobertura contractual.
 
 ## Observación no bloqueante H07 — Propiedad del informe
 
