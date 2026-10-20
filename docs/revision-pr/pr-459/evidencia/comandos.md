@@ -165,3 +165,74 @@ console.log('S6: cuenta B limpia pending local con 200 aunque la fila de A siga 
 - En esta sesión `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` devolvió DNS `Could not resolve host: github.com`. No hubo worktree, `pnpm`, `git merge-tree` ni pruebas contra Supabase/Vercel. Al no haber clon, `node docs/revision-pr/analizar.mjs verificacion` no se pudo ejecutar aquí.
 - CI HEAD `fb3379bc`: unit/typecheck/lint/build/audit/bundle-budget success; approval-policy failure; db-tests cancelado y e2e-preview no final. `develop` avanzó 15 commits respecto a la base histórica del PR, `mergeable_state=unstable` en lectura REST; sincronizar y revalidar antes de declarar lista.
 - Tests funcionales requeridos para cerrar: H03 inyección de `Error.name` que sea **todo un token** (no solo etiquetas), mutar whitelist; H05 fixture A→B→A en mismo origen, primer DELETE fallido, B no limpia el pending de A, A reintenta con misma sesión, DB sin fila A, mutate quitar chequeo de identidad y exigir RED. Guardar salidas por comando en bitácora, no presentarlas como comprobadas antes.
+
+## Ronda 4 — sondas independientes S7/S8 de pérdida de recuperación y carrera de sesión
+
+**Examinado:** `da930eff32283c09d81b33c7f13c88451dd569a3`. **IMPORTANTÍSIMO:** las sondas se ejecutaron en Node como **modelo explícito de transiciones del código fuente**; no importan TypeScript de la aplicación ni invocan las rutas/DB. No se presentan como verificación funcional independiente. Intento de clon: `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` → `Could not resolve host: github.com`.
+
+**Salida realmente obtenida:**
+
+```text
+S7 unknown identity should retain native on DELETE failure: RED (expected assertion failure)
+S7 hypothetical early guard: GREEN in contract model
+S8 A pending must survive a B-authenticated 200/zero-row DELETE: RED (expected assertion failure)
+S8 hypothetical session re-check: GREEN in contract model
+```
+
+**Harness completo reproducible**, ejecutar `node /tmp/pr459-r4-proof.cjs` (guardar este bloque allí):
+
+```javascript
+const assert = require('node:assert/strict');
+const prefix = 'cadeapp_pending_unsub_endpoint';
+const endpoint = 'https://push.example.invalid/e';
+const key = id => prefix + ':' + id;
+// Modelo del flujo de subscription.ts, NO ejecuta funciones de producción.
+async function simulate({initialUser, requestUser, responseOK, pending=false, guarded=false}) {
+  let native = !pending;
+  const userId = initialUser;
+  const storage = new Map(pending && userId ? [[key(userId),endpoint]] : []);
+  let sent = false;
+  if (guarded && native && !userId)
+    return {native,stored:storage.size,sent,ok:false};
+  const target = native ? endpoint : storage.get(key(userId)) ?? null;
+  if (!target) return {native,stored:storage.size,sent,ok:true};
+  if (native) native = false;
+  sent = true;
+  let dbRowOwner = 'A';
+  if (responseOK && requestUser===dbRowOwner) dbRowOwner=null;
+  if (!responseOK) {
+    if(userId) storage.set(key(userId),target);
+    return {native,stored:storage.size,sent,ok:false,dbRowOwner};
+  }
+  if (guarded && requestUser!==userId)
+    return {native,stored:storage.size,sent,ok:false,dbRowOwner};
+  if (userId && storage.get(key(userId))===target)storage.delete(key(userId));
+  return {native,stored:storage.size,sent,ok:true,dbRowOwner};
+}
+async function expectFailure(label,fn) {
+  try { await fn(); throw new Error('Did not fail: '+label); }
+  catch(e) {
+    if(e.message.startsWith('Did not fail'))throw e;
+    console.log(label+': RED (expected assertion failure)');
+  }
+}
+(async()=>{
+  await expectFailure('S7 unknown identity should retain native on DELETE failure',async()=>{
+    const x=await simulate({initialUser:null,requestUser:null,responseOK:false});
+    assert.equal(x.native,true);
+  });
+  const g=await simulate({initialUser:null,requestUser:null,responseOK:false,guarded:true});
+  assert.deepEqual({native:g.native,sent:g.sent,ok:g.ok},{native:true,sent:false,ok:false});
+  console.log('S7 hypothetical early guard: GREEN in contract model');
+  await expectFailure('S8 A pending must survive a B-authenticated 200/zero-row DELETE',async()=>{
+    const x=await simulate({initialUser:'A',requestUser:'B',responseOK:true,pending:true});
+    assert.equal(x.stored,1);
+  });
+  const fixed=await simulate({initialUser:'A',requestUser:'B',responseOK:true,pending:true,guarded:true});
+  assert.equal(fixed.stored,1);
+  assert.equal(fixed.dbRowOwner,'A');
+  console.log('S8 hypothetical session re-check: GREEN in contract model');
+})().catch(e=>{console.error(e);process.exitCode=1});
+```
+
+**Autor:** bitácora `39360343` documenta M18–M20 RED/GREEN, 188 focalizados y 3059 generales, typecheck/lint, E2E real con usuarios A/B del Preview `da930eff` GREEN `8+2`, y RED en deploy previo. Inspeccionado el código E2E, no reproducido por revisor. R4 S7/S8 son **mutaciones propias de modelo**, no tests de aplicación ni GREEN de reparación.

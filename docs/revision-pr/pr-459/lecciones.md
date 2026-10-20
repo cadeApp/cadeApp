@@ -29,3 +29,11 @@ H02: `pushManager.subscribe()` está cubierto; `serviceWorker.ready` y `pushMana
 - **H03 / P08:** un regex con aspecto de whitelist no es una whitelist semántica; toda forma válida de dato sensible que pueda coincidir con el regex también se considerará «nombre estándar» y quedará visible. Testear nombres íntegramente iguales a tokens, no solo etiquetas con espacios. Propuesta de control: nombres permitidos por igualdad exacta.
 - **H05 / P06:** localStorage pertenece al origen, no a una cuenta. Cualquier estado diferido que implique cambios sobre datos de una identidad debe persistir identidad de origen y revalidar sesión antes de ejecutar, especialmente si la API devuelve éxito con cero filas afectadas. La integración A→B→A es distinta de alta entre cuentas con estado normal.
 - No numerar AG nueva ni editar `AGENTS.md` sin revisar recurrencia y máximo de todas las ramas.
+
+## Ronda 4 — Identidad y efectos asíncronos (P06)
+
+**H05 residual:** separar las claves por cuenta cubre A→B→A **entre** operaciones, no un cambio de sesión **durante** un fetch pendiente. Volver a validar identidad al aplicar efectos locales posteriores a `await`. La respuesta 200 del DELETE no da prueba de que haya borrado filas.
+
+**H06 nuevo:** si no se puede conocer la cuenta que origina una operación cuya fase remota podría fallar, no ejecutar antes una fase irreversible que destruiría el único dato de recuperación. La prueba «no guardar pending sin dueño» no protege que la suscripción nativa siga disponible.
+
+No crear AG global ni modificar `AGENTS.md` sin comprobar el catálogo de otras ramas y la recurrencia del patrón.
