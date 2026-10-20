@@ -38,6 +38,8 @@ begin
 
   -- Reintento o doble clic: ya está aprobado. Sin update ni auditoría.
   if v_courier_status = 'approved' then
+    -- REVIEW ONLY / NEVER MERGE: mutación PR455-H02 (update físico inocuo en la ruta idempotente).
+    update public.couriers set available = available where profile_id = p_courier_id;
     return jsonb_build_object(
       'courierId', p_courier_id,
       'previousStatus', 'approved',
