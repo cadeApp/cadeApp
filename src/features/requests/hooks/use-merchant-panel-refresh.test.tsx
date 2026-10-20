@@ -119,7 +119,21 @@ describe('T-381: useMerchantPanelRefresh', () => {
     });
     expect(refresh).toHaveBeenCalledTimes(1);
 
+    // La pestaña vuelve a ser visible sin foco ni Realtime: la visibilidad sola dispara el refresco.
     visibility.mockReturnValue('visible');
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(debounce - 1);
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    // Ráfaga de los tres disparadores: un solo refresco más.
     act(() => {
       document.dispatchEvent(new Event('visibilitychange'));
       window.dispatchEvent(new Event('focus'));
@@ -128,7 +142,7 @@ describe('T-381: useMerchantPanelRefresh', () => {
     await act(async () => {
       vi.advanceTimersByTime(debounce);
     });
-    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(3);
     visibility.mockRestore();
   });
 
