@@ -66,6 +66,14 @@ function asHtmlElement(el: Element | null | undefined): HTMLElement {
   return el;
 }
 
+function expectAccessibleBackArrow(back: HTMLElement) {
+  expect(back.querySelector('svg.lucide-arrow-left')).not.toBeNull();
+  const tokens = back.className.split(/\s+/);
+  for (const token of ['h-12', 'w-12', 'min-h-12', 'min-w-12', 'focus-visible:ring-2']) {
+    expect(tokens).toContain(token);
+  }
+}
+
 describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   const baseTrip: TripDetails = {
     id: 'req-uuid-1',
@@ -170,6 +178,13 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   // C06: Vista de Viaje del Comercio
   // =========================================================================
   describe('C06: TripMerchantView', () => {
+    it('T-378: tiene una flecha para volver al panel del comercio', () => {
+      render(<TripMerchantView trip={baseTrip} />);
+      const back = screen.getByRole('link', { name: 'Volver al panel' });
+      expect(back.getAttribute('href')).toBe('/merchant/dashboard');
+      expectAccessibleBackArrow(back);
+    });
+
     it('muestra el stepper con estados: Asignada, Retirado y Entregado', () => {
       render(<TripMerchantView trip={baseTrip} />);
 
@@ -563,6 +578,13 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   // R07: Vista de Viaje del Repartidor
   // =========================================================================
   describe('R07: TripCourierView', () => {
+    it('T-378: tiene una flecha para volver a las solicitudes del repartidor', () => {
+      render(<TripCourierView trip={baseTrip} />);
+      const back = screen.getByRole('link', { name: 'Volver a solicitudes' });
+      expect(back.getAttribute('href')).toBe('/courier/feed');
+      expectAccessibleBackArrow(back);
+    });
+
     it('muestra contacto real del comercio con WhatsApp de coordinación', () => {
       render(<TripCourierView trip={baseTrip} />);
 
