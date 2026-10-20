@@ -108,7 +108,7 @@ export function CourierFeed({
     return (
       <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col items-center justify-center p-4 text-center">
         <Card className="w-full p-6 sm:p-8">
-          <div className="bg-danger/10 text-danger mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
+          <div className="bg-destructive/10 text-destructive mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
             <AlertCircle className="h-8 w-8" />
           </div>
           <h2 className="mb-2 font-display text-xl font-bold text-foreground">

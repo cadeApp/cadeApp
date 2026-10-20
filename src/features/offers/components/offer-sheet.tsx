@@ -252,7 +252,7 @@ export function OfferSheet({
 
               {/* Error del servidor */}
               {serverError && (
-                <p role="alert" className="text-danger mt-1.5 text-sm font-semibold transition-all">
+                <p role="alert" className="text-destructive mt-1.5 text-sm font-semibold transition-all">
                   {serverError}
                 </p>
               )}
@@ -281,12 +281,13 @@ export function OfferSheet({
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={amountStr}
+                  aria-invalid={serverError ? true : undefined}
                   onChange={(e) => {
                     setAmountStr(e.target.value.replace(/\D/g, ''));
                     setServerError(null);
                   }}
                   className={`min-h-12 pl-8 font-display text-lg font-bold ${
-                    serverError ? 'border-danger focus-visible:ring-danger' : ''
+                    serverError ? 'border-destructive focus-visible:ring-destructive' : ''
                   }`}
                   placeholder={OFFERS_COPY.amountPlaceholder}
                 />
@@ -303,7 +304,7 @@ export function OfferSheet({
 
               {/* Error del servidor al ofertar bajo el piso */}
               {serverError && (
-                <p role="alert" className="text-danger mt-1.5 text-sm font-semibold transition-all">
+                <p role="alert" className="text-destructive mt-1.5 text-sm font-semibold transition-all">
                   {serverError}
                 </p>
               )}

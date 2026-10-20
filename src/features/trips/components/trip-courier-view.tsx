@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import type { TripDetails } from '../types';
 import { TripRouteMap } from './trip-route-map';
 import { Button } from '@/ui/button';
@@ -15,6 +16,7 @@ import {
 import { formatRecipientPaymentMethod } from '../format';
 import {
   AlertCircle,
+  ArrowLeft,
   CheckCircle2,
   DollarSign,
   MapPin,
@@ -74,8 +76,15 @@ export function TripCourierView({
 
   return (
     <div className="mx-auto max-w-[390px] space-y-4 p-4 pb-32">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-2">
+        <Link
+          href="/courier/feed"
+          aria-label="Volver a solicitudes"
+          className="inline-flex h-12 min-h-12 w-12 min-w-12 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        </Link>
+        <div className="min-w-0 flex-1">
           <span className="font-mono text-sm uppercase tracking-wider text-muted-foreground">
             {trip.code}
           </span>
