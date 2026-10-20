@@ -367,6 +367,18 @@ async function confirmUnsubscribeOnServer(
   endpoint: string,
   userId: string | null
 ): Promise<{ ok: boolean; error?: string }> {
+  const keepPendingForOwner = () => {
+    if (userId && typeof window !== 'undefined') {
+      localStorage.setItem(pendingUnsubStorageKey(userId), endpoint);
+    }
+  };
+
+  // PR459-H05: si la sesión ya no es la de quien inició la baja, no se envía (el servidor la aplicaría a otra cuenta).
+  if ((await getCurrentUserId()) !== userId) {
+    keepPendingForOwner();
+    return { ok: false, error: 'identity_changed' };
+  }
+
   let deleteOk = false;
   let deleteStatus = 200;
   try {
@@ -383,13 +395,18 @@ async function confirmUnsubscribeOnServer(
 
   if (!deleteOk) {
     // PR459-H05: la baja pendiente queda a nombre de la cuenta; sin identidad comprobable no se atribuye.
-    if (userId && typeof window !== 'undefined') {
-      localStorage.setItem(pendingUnsubStorageKey(userId), endpoint);
-    }
+    keepPendingForOwner();
     return {
       ok: false,
       error: deleteStatus === 500 ? 'backend_error' : 'network_error',
     };
+  }
+
+  // PR459-H05: si la sesión cambió con el DELETE en vuelo, el 2xx pudo ser de otra cuenta (cero filas por RLS): no
+  // confirma la baja de quien la inició, que conserva su pendiente para reintentar.
+  if ((await getCurrentUserId()) !== userId) {
+    keepPendingForOwner();
+    return { ok: false, error: 'identity_changed' };
   }
 
   if (typeof window !== 'undefined') {
@@ -450,6 +467,11 @@ export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: stri
         localStorage.setItem(PUSH_STORAGE_KEY, 'false');
       }
       return { ok: true };
+    }
+
+    // PR459-H06: sin identidad comprobable no se baja nada: la baja no se podría atribuir ni reintentar.
+    if (!userId) {
+      return { ok: false, error: 'unauthorized' };
     }
 
     // Si hay suscripción nativa, darla de baja en el navegador

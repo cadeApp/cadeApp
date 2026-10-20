@@ -1551,4 +1551,83 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(ENDPOINT);
     });
   });
+  describe('PR459 ronda 4: identidad durante el DELETE y sin identidad', () => {
+    function deletes(fetchMock: ReturnType<typeof routeFetch>) {
+      return fetchMock.mock.calls
+        .filter(([url, init]) => String(url) === '/api/push/subscriptions' && init?.method === 'DELETE')
+        .map(([, init]) => JSON.parse(String(init?.body)));
+    }
+
+    it('H05: si la sesión cambia a B con el DELETE en vuelo, el 200 (sin filas para B) no borra la baja pendiente de A; A la confirma al volver', async () => {
+      setPermission('granted');
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null) });
+      let releaseDelete: (response: Response) => void = () => undefined;
+      const deleteResponses: Array<() => Promise<Response>> = [
+        () =>
+          new Promise<Response>((resolve) => {
+            releaseDelete = resolve;
+          }),
+        () => Promise.resolve(jsonResponse({ ok: true })),
+      ];
+      const fetchMock = routeFetch({ subscriptions: () => (deleteResponses.shift() ?? (() => Promise.resolve(jsonResponse({ ok: true }))))() });
+
+      const retry = unsubscribeFromPush();
+      await waitFor(() => expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }]));
+      session.userId = USER_B;
+      releaseDelete(jsonResponse({ ok: true }));
+
+      const result = await retry;
+      expect(result.ok).toBe(false);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_B))).toBeNull();
+
+      session.userId = USER_A;
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }, { endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
+    });
+
+    it.each([
+      ['500', () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500))],
+      ['401', () => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401))],
+    ])('H06: sin identidad comprobable no desuscribe ni hace DELETE (el servidor respondería %s); error recuperable', async (_case, response) => {
+      setPermission('granted');
+      session.userId = null;
+      const native = subscription();
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(native) });
+      const fetchMock = routeFetch({ subscriptions: response });
+
+      expect(await unsubscribeFromPush()).toEqual({ ok: false, error: 'unauthorized' });
+
+      expect(native.unsubscribe).not.toHaveBeenCalled();
+      expect(deletes(fetchMock)).toEqual([]);
+      expect(Object.keys(localStorage).filter((key) => key.startsWith(PENDING_UNSUB_STORAGE_KEY))).toEqual([]);
+    });
+
+    it('H06: con identidad A y DELETE 500 queda la baja pendiente de A; con la sesión de A de vuelta, el 200 la confirma', async () => {
+      setPermission('granted');
+      let native: ReturnType<typeof subscription> | null = subscription();
+      native.unsubscribe.mockImplementation(async () => {
+        native = null;
+        return true;
+      });
+      setPushManager({ getSubscription: vi.fn(async () => native) });
+      const responses = [jsonResponse({ error: 'Database error' }, 500), jsonResponse({ ok: true })];
+      const fetchMock = routeFetch({ subscriptions: () => Promise.resolve(responses.shift() ?? jsonResponse({ ok: true })) });
+
+      expect((await unsubscribeFromPush()).ok).toBe(false);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+
+      session.userId = null;
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+
+      session.userId = USER_A;
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }, { endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
+    });
+  });
 });
