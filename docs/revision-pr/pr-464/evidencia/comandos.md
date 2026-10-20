@@ -26,3 +26,17 @@ Para cada mutación: conservar texto original en variable de memoria, modificar 
 ## Seguimientos creados
 - #465: soporte PDF integral, incluido visor auditado.
 - #466: actualización de dependencia para resolver advisory preexistente de Vite.
+
+## Ronda 2 — SHA de código `39aed042565c649827c917cd8a1816d5f80aba8a`, bitácora `16163488`
+
+- Revisión por GitHub API del diff de R1 a SHA funcional: `src/features/courier-onboarding/{copy.ts,components/document-replacement-card.tsx,components.test.tsx}` y `e2e/specs/courier-onboarding.spec.ts`; sin cambios fuera de ficha. De funcional a último HEAD solo `docs/tasks/log/T-376.md`.
+- H01 código: subtitle solo fotos; `ADD_ACCEPTED_TYPES = ['image/jpeg','image/png','image/webp']`; guarda antes de `compressImage`; test PDF y texto sin subir.
+- H02 código: en rama `!result.ok`, si `mode==='add' && result.code==='NOT_FOUND'`, `pendingAttemptRef.current=null`; test selecciona dos veces mismo `File`, simula dos paths y distinta idempotencyKey.
+- H03 E2E: login admin/MFA, navegación a detalle, pestaña seguro, carga visor, botón verificar, polling de status `verified`, auditoría `view_courier_document` filtrada por `target_id`, insignia comercio.
+- CI `unit` job 118951031248 en SHA 39aed042: `Test Files 153 passed (153)`, `Tests 3037 passed (3037)`, workflows 79/79, ADR 6/6.
+- CI `db-tests` job 118951030741: `toomanyrequests: Data limit exceeded` repetido al intentar descargar imagen, luego cancelado. No equivale a DB passing.
+- `approval-policy` job 118950893961: `Falta el informe completo de revisar-pr sin bloqueantes.`; su código base busca exactamente el informe en la sección `### Informe de revisión de agy` del **BODY del PR**, no del comentario. Se añadió la sección al body antes del commit documental de R2, para próxima evaluación.
+- Mutaciones M8–M10 y E2E 1 passed (56.8s), 1 passed (45.3s): **declara el autor** en bitácora. No reproducidos por esta revisión. `verificado_en_sha=null` en hallazgos estructurados.
+- **Restricción:** consola del revisor sin red DNS a github.com ni checkout, por lo que no fue posible correr comandos ni mutaciones propias. No se inventa script ejecutado. Los casos recomendados de la ronda 1 permanecen reproducibles en checkout real.
+
+**Gate para la última pasada:** `pnpm typecheck && pnpm lint && pnpm test`; validar desde GH Actions unit/DB/audit/build/bundle y `e2e-preview` del SHA final, sin ejecutar workflows desde revisión. No requerir nueva corrida solo por edición documental, pero verificar el CI final acordado.

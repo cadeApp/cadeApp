@@ -17,3 +17,10 @@
 ## Dependencias de UX detectadas
 - `CC-033` admite PDF, pero el visor admin usa `<img>`; habilitar solamente el selector degradaría la experiencia. Issue #465 para un flujo completo; T-376 debe alinear el copy a las imágenes admitidas.
 - La vulnerabilidad Vite audit preexistente se abrió por separado como #466.
+
+## Ronda 2: contraste de correcciones
+
+- El autor siguió la distinción acordada: no habilitó PDF parcialmente; lo dejó en #465. La guarda MIME anticipada es defensa adicional razonable.
+- El arreglo `NOT_FOUND` conserva la idempotencia de red mientras fuerza una nueva subida si la RPC confirma ausencia. M8–M10 fueron ejecutadas por el autor, NO por esta revisión.
+- La ampliación E2E usa UI de administrador y audita `view_courier_document`, cerrando el agujero de cobertura de H03 por inspección.
+- Sin acceso local al clon no se asigna `verificado_en_sha`; el log del CI valida unit, pero no equivale a que el revisor haya mutado/reproducido los escenarios.
