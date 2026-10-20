@@ -31,6 +31,8 @@ function subscribeErrorMessage(code: string | undefined): string {
       return PUSH_COPY.prompt.statusConfigError;
     case 'unsupported':
       return PUSH_COPY.prompt.statusUnsupported;
+    case 'subscription_failed':
+      return PUSH_COPY.prompt.statusGenericError;
     default:
       return PUSH_COPY.prompt.statusSubscriptionError;
   }
@@ -59,9 +61,16 @@ export function PushPermissionPrompt({
   const [accountState, setAccountState] = React.useState<PushSubscriptionState | 'checking'>('checking');
   const [deactivating, setDeactivating] = React.useState(false);
 
+  // Solo la consulta más reciente pinta el estado: una respuesta vieja no vuelve a mostrar «activados».
+  const stateRequestRef = React.useRef(0);
   const checkAccountState = React.useCallback(async () => {
+    const request = ++stateRequestRef.current;
     setAccountState('checking');
-    setAccountState(await getPushSubscriptionStatus());
+    const next = await getPushSubscriptionStatus();
+    if (request === stateRequestRef.current) {
+      setAccountState(next);
+    }
+    return next;
   }, []);
 
   // PR120-H04: permiso `granted` del navegador no equivale a push activado; el estado final
@@ -73,18 +82,28 @@ export function PushPermissionPrompt({
     void checkAccountState();
   }, [checkAccountState]);
 
+  /**
+   * Baja (o reintento de una baja pendiente). Si falla, se reconcilia con el estado real: con un endpoint pendiente se
+   * muestra «baja pendiente» con reintento; si no quedó pendiente, un error recuperable. Nunca «activados» por inercia.
+   */
   const handleDeactivate = async () => {
+    stateRequestRef.current += 1;
     setDeactivating(true);
     setErrorMessage(null);
     setInfoMessage(null);
     const result = await unsubscribeFromPush();
-    setDeactivating(false);
-    if (!result.ok) {
-      setErrorMessage(PUSH_COPY.prompt.statusDeactivateError);
+    if (result.ok) {
+      stateRequestRef.current += 1;
+      setDeactivating(false);
+      setAccountState('inactive');
+      setInfoMessage(PUSH_COPY.prompt.statusDeactivated);
       return;
     }
-    setAccountState('inactive');
-    setInfoMessage(PUSH_COPY.prompt.statusDeactivated);
+    const reconciled = await checkAccountState();
+    setDeactivating(false);
+    if (reconciled !== 'pending_unsubscribe') {
+      setErrorMessage(PUSH_COPY.prompt.statusDeactivateError);
+    }
   };
 
   const handleDismiss = () => {
@@ -144,6 +163,7 @@ export function PushPermissionPrompt({
 
   const isPending = status === 'requesting' || status === 'subscribing';
   const isActive = accountState === 'active' && status !== 'granted';
+  const isPendingUnsubscribe = accountState === 'pending_unsubscribe' && status !== 'granted';
 
   // Embebido, el layout ya aporta el landmark <main>: no se anida otro.
   const Root = embedded ? 'div' : 'main';
@@ -251,6 +271,12 @@ export function PushPermissionPrompt({
           </div>
         )}
 
+        {isPendingUnsubscribe && (
+          <div className="mt-4 text-center text-sm text-muted-foreground" role="status">
+            <span>{PUSH_COPY.prompt.statusDeactivatePending}</span>
+          </div>
+        )}
+
         {accountState === 'unknown' && status !== 'granted' && (
           <div className="mt-4 flex flex-col items-center gap-2 text-center text-sm text-muted-foreground" role="status">
             <span>{PUSH_COPY.prompt.statusCheckFailed}</span>
@@ -275,7 +301,20 @@ export function PushPermissionPrompt({
 
       {/* Acciones ancladas al pie con área táctil >= 48px */}
       <footer className="sticky bottom-0 z-20 flex w-full flex-col gap-2.5 border-t border-border/30 bg-background/95 p-4 backdrop-blur-sm">
-        {isActive ? (
+        {isPendingUnsubscribe ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="default"
+            isPending={deactivating}
+            pendingText={PUSH_COPY.prompt.btnDeactivating}
+            onClick={handleDeactivate}
+            className="w-full gap-2 font-display text-base font-bold"
+          >
+            <BellOff className="h-5 w-5" aria-hidden="true" />
+            <span>{PUSH_COPY.prompt.btnRetryDeactivate}</span>
+          </Button>
+        ) : isActive ? (
           <Button
             type="button"
             variant="outline"

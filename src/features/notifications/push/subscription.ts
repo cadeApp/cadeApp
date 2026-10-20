@@ -94,20 +94,58 @@ export async function getPushSubscription(): Promise<PushSubscription | null> {
   }
 }
 
+/** `name` y `message` de una excepción sin depender de `instanceof` (un `DOMException` puede venir de otro realm). */
+function readErrorField(err: unknown, field: 'name' | 'message'): string | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const value: unknown = Reflect.get(err, field);
+  return typeof value === 'string' ? value : undefined;
+}
+
+const REDACTED = '[redactado]';
+
 /**
- * T-382: diagnóstico de una falla de alta. Solo el código y el `name`/`message` de la excepción original: nunca el
- * endpoint ni las claves, que son una URL de capacidad.
+ * T-382 (PR459-H03): saca de un mensaje de error las URLs (el endpoint push es una URL de capacidad), los valores
+ * `endpoint=`, `p256dh=` y `auth=`, y los secretos conocidos de la operación, si aparecen tal cual.
  */
-function logSubscribeFailure(code: string, cause?: unknown) {
+export function sanitizePushErrorMessage(message: string, knownSecrets: readonly string[] = []): string {
+  let sanitized = message;
+  for (const secret of knownSecrets) {
+    if (secret.length >= 4) {
+      sanitized = sanitized.split(secret).join(REDACTED);
+    }
+  }
+  return sanitized
+    .replace(/\b(endpoint|p256dh|auth)\s*[=:]\s*[^\s,;]+/gi, `$1=${REDACTED}`)
+    .replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi, REDACTED);
+}
+
+/**
+ * T-382: diagnóstico de una falla de alta: el código y el `name` y `message` de la excepción original, con el mensaje
+ * sanitizado. Nunca el objeto de error, la suscripción, el cuerpo del pedido ni las claves.
+ */
+function logSubscribeFailure(code: string, cause?: unknown, knownSecrets: readonly string[] = []) {
+  const name = readErrorField(cause, 'name');
+  const message = readErrorField(cause, 'message');
   console.error('[push] subscribe failed', {
     code,
-    ...(cause instanceof Error ? { name: cause.name, message: cause.message } : {}),
+    ...(name ? { name } : {}),
+    ...(message !== undefined ? { message: sanitizePushErrorMessage(message, knownSecrets) } : {}),
   });
 }
 
-/** Excepción de `pushManager.subscribe`: `NotAllowedError` es el permiso bloqueado (Edge); el resto, sin servicio push. */
+/**
+ * Excepción del navegador antes de confirmar el alta (`serviceWorker.ready`, `getSubscription` o `subscribe`):
+ * `NotAllowedError` es el permiso bloqueado (Edge); el resto, sin servicio push.
+ */
 function classifySubscribeException(err: unknown): 'permission_blocked' | 'push_service_unavailable' {
-  return err instanceof Error && err.name === 'NotAllowedError' ? 'permission_blocked' : 'push_service_unavailable';
+  return readErrorField(err, 'name') === 'NotAllowedError' ? 'permission_blocked' : 'push_service_unavailable';
+}
+
+/** Falla del navegador antes del alta: se clasifica, se registra sanitizada y no se llama al servidor. */
+function browserSubscribeFailure(err: unknown): PushOperationResult {
+  const code = classifySubscribeException(err);
+  logSubscribeFailure(code, err);
+  return { ok: false, error: code };
 }
 
 export async function subscribeToPush(
@@ -126,10 +164,22 @@ export async function subscribeToPush(
     };
   }
 
+  // PR459-H02: las fallas del navegador antes del alta (service worker o suscripción existente) se clasifican por
+  // origen; nunca se presentan como un error del servidor.
+  let registration: ServiceWorkerRegistration;
   try {
-    const registration = await navigator.serviceWorker.ready;
-    let subscription = await registration.pushManager.getSubscription();
+    registration = await navigator.serviceWorker.ready;
+  } catch (err) {
+    return browserSubscribeFailure(err);
+  }
+  let subscription: PushSubscription | null;
+  try {
+    subscription = await registration.pushManager.getSubscription();
+  } catch (err) {
+    return browserSubscribeFailure(err);
+  }
 
+  try {
     // Si no existe suscripción nativa previa, solicitar alta en PushManager
     if (!subscription) {
       const key = vapidPublicKey || publicEnv.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -144,9 +194,7 @@ export async function subscribeToPush(
           applicationServerKey: applicationServerKey as unknown as BufferSource,
         });
       } catch (err) {
-        const code = classifySubscribeException(err);
-        logSubscribeFailure(code, err);
-        return { ok: false, error: code };
+        return browserSubscribeFailure(err);
       }
     }
 
@@ -178,7 +226,7 @@ export async function subscribeToPush(
         return { ok: false, error: code };
       }
     } catch (err) {
-      logSubscribeFailure('network_error', err);
+      logSubscribeFailure('network_error', err, [subscription.endpoint, p256dh, auth]);
       return {
         ok: false,
         error: 'network_error',
@@ -199,10 +247,20 @@ export async function subscribeToPush(
       },
     };
   } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'subscription_failed',
-    };
+    // Fallas posteriores al alta del navegador (por ejemplo, el storage): un código estable, nunca el mensaje crudo.
+    logSubscribeFailure('subscription_failed', err);
+    return { ok: false, error: 'subscription_failed' };
+  }
+}
+
+/** T-382 (PR459-H01): ¿quedó un endpoint válido esperando que el servidor confirme la baja? */
+function hasPendingUnsubscribe(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem(PENDING_UNSUB_STORAGE_KEY);
+    return raw !== null && PendingUnsubEndpointSchema.safeParse(raw).success;
+  } catch {
+    return false;
   }
 }
 
@@ -212,8 +270,11 @@ export async function subscribeToPush(
  * `unknown` (nunca `active`).
  */
 export async function getPushSubscriptionStatus(): Promise<PushSubscriptionState> {
-  if (!isPushSupported() || getNotificationPermission() !== 'granted') {
+  if (!isPushSupported()) {
     return 'inactive';
+  }
+  if (getNotificationPermission() !== 'granted') {
+    return hasPendingUnsubscribe() ? 'pending_unsubscribe' : 'inactive';
   }
 
   let endpoint: string;
@@ -221,7 +282,7 @@ export async function getPushSubscriptionStatus(): Promise<PushSubscriptionState
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
-      return 'inactive';
+      return hasPendingUnsubscribe() ? 'pending_unsubscribe' : 'inactive';
     }
     endpoint = subscription.endpoint;
   } catch {
