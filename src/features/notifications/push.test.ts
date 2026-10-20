@@ -1295,4 +1295,112 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
       }
     });
   });
+  describe('PR459 ronda 2: name sanitizado y baja pendiente sin soporte nativo', () => {
+    function renderPrompt() {
+      return render(React.createElement(PushPermissionPrompt, { embedded: true, onDismiss: vi.fn() }));
+    }
+
+    function calls(fetchMock: ReturnType<typeof routeFetch>, method: string) {
+      return fetchMock.mock.calls
+        .filter(([url, init]) => String(url) === '/api/push/subscriptions' && init?.method === method)
+        .map(([, init]) => JSON.parse(String(init?.body)));
+    }
+
+    function removePushManager() {
+      Reflect.deleteProperty(window, 'PushManager');
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: { ready: new Promise(() => undefined) },
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    function rejectingServiceWorker(where: 'ready' | 'getSubscription') {
+      Object.defineProperty(window, 'PushManager', { value: class MockPushManager {}, writable: true, configurable: true });
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready:
+            where === 'ready'
+              ? Promise.reject(browserError('InvalidStateError', 'no active worker'))
+              : Promise.resolve({
+                  pushManager: { getSubscription: vi.fn().mockRejectedValue(browserError('AbortError', 'gone')) },
+                }),
+        },
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    it('H03: un name de excepción con endpoint y claves se registra sanitizado; los nombres estándar siguen legibles', async () => {
+      setPermission('granted');
+      const leaky = browserError(
+        'AbortError endpoint=https://push.example.com/secret-capability p256dh=BLeakyNameP256dh auth=LeakyNameAuth',
+        'boom'
+      );
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null), subscribe: vi.fn().mockRejectedValue(leaky) });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(await subscribeToPush()).toEqual({ ok: false, error: 'push_service_unavailable' });
+
+      const logged = consoleText(consoleError);
+      for (const secret of ['push.example.com', 'secret-capability', 'BLeakyNameP256dh', 'LeakyNameAuth']) {
+        expect(logged).not.toContain(secret);
+      }
+      const [, details] = consoleError.mock.calls[0] as [string, { code: string; name: string; message: string }];
+      expect(details.code).toBe('push_service_unavailable');
+      expect(details.message).toBe('boom');
+      expect(details.name).toMatch(/^AbortError/);
+    });
+
+    it.each([
+      ['sin PushManager', () => removePushManager()],
+      ['serviceWorker.ready rechazado', () => rejectingServiceWorker('ready')],
+      ['getSubscription rechazado', () => rejectingServiceWorker('getSubscription')],
+    ])('H04 (%s): con baja pendiente muestra «Reintentar baja» y el reintento hace el DELETE con el endpoint en el body', async (_case, setup) => {
+      setPermission('granted');
+      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, ENDPOINT);
+      setup();
+      const fetchMock = routeFetch({ subscriptions: () => Promise.resolve(jsonResponse({ ok: true })) });
+
+      expect(await getPushSubscriptionStatus()).toBe('pending_unsubscribe');
+
+      renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate }));
+
+      expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivated)).toBeTruthy();
+      expect(calls(fetchMock, 'DELETE')).toEqual([{ endpoint: ENDPOINT }]);
+      expect(calls(fetchMock, 'POST')).toEqual([]);
+      expect(fetchMock.mock.calls.every(([url]) => !String(url).includes(ENDPOINT))).toBe(true);
+      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBeNull();
+    });
+
+    it.each([
+      ['sin PushManager, DELETE 500', () => removePushManager(), () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500))],
+      ['ready rechazado, sin red', () => rejectingServiceWorker('ready'), () => Promise.reject(new TypeError('Failed to fetch'))],
+      ['getSubscription rechazado, DELETE 401', () => rejectingServiceWorker('getSubscription'), () => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401))],
+    ])('H04 (%s): si el reintento falla, conserva la baja pendiente y el botón', async (_case, setup, response) => {
+      setPermission('granted');
+      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, ENDPOINT);
+      setup();
+      const fetchMock = routeFetch({ subscriptions: response });
+
+      const result = await unsubscribeFromPush();
+
+      expect(result.ok).toBe(false);
+      expect(calls(fetchMock, 'DELETE')).toEqual([{ endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(ENDPOINT);
+      expect(await getPushSubscriptionStatus()).toBe('pending_unsubscribe');
+    });
+
+    it('H04: sin baja pendiente, un navegador sin PushManager degrada como siempre (inactivo, sin DELETE)', async () => {
+      setPermission('granted');
+      removePushManager();
+      const fetchMock = routeFetch({});
+
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 });

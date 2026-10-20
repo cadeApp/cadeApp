@@ -123,8 +123,15 @@ export function sanitizePushErrorMessage(message: string, knownSecrets: readonly
  * T-382: diagnóstico de una falla de alta: el código y el `name` y `message` de la excepción original, con el mensaje
  * sanitizado. Nunca el objeto de error, la suscripción, el cuerpo del pedido ni las claves.
  */
+/** Un `name` estándar (`AbortError`, `NotAllowedError`, `TypeError`…) se registra tal cual; cualquier otro, sanitizado. */
+const STANDARD_ERROR_NAME = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
+
 function logSubscribeFailure(code: string, cause?: unknown, knownSecrets: readonly string[] = []) {
-  const name = readErrorField(cause, 'name');
+  const rawName = readErrorField(cause, 'name');
+  const name =
+    rawName === undefined || STANDARD_ERROR_NAME.test(rawName)
+      ? rawName
+      : sanitizePushErrorMessage(rawName, knownSecrets);
   const message = readErrorField(cause, 'message');
   console.error('[push] subscribe failed', {
     code,
@@ -270,11 +277,13 @@ function hasPendingUnsubscribe(): boolean {
  * `unknown` (nunca `active`).
  */
 export async function getPushSubscriptionStatus(): Promise<PushSubscriptionState> {
+  // PR459-H04: una baja pendiente se informa aunque el navegador no tenga (o no pueda leer) su suscripción.
+  const pending = hasPendingUnsubscribe();
   if (!isPushSupported()) {
-    return 'inactive';
+    return pending ? 'pending_unsubscribe' : 'inactive';
   }
   if (getNotificationPermission() !== 'granted') {
-    return hasPendingUnsubscribe() ? 'pending_unsubscribe' : 'inactive';
+    return pending ? 'pending_unsubscribe' : 'inactive';
   }
 
   let endpoint: string;
@@ -282,11 +291,11 @@ export async function getPushSubscriptionStatus(): Promise<PushSubscriptionState
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
-      return hasPendingUnsubscribe() ? 'pending_unsubscribe' : 'inactive';
+      return pending ? 'pending_unsubscribe' : 'inactive';
     }
     endpoint = subscription.endpoint;
   } catch {
-    return 'unknown';
+    return pending ? 'pending_unsubscribe' : 'unknown';
   }
 
   try {
@@ -308,6 +317,42 @@ export async function getPushSubscriptionStatus(): Promise<PushSubscriptionState
   }
 }
 
+/**
+ * PR120-H05 / PR459-H04: confirma la baja en el servidor (`DELETE` con el endpoint solo en el cuerpo). Solo un 2xx
+ * limpia el storage; si no, el endpoint queda pendiente para reintentar.
+ */
+async function confirmUnsubscribeOnServer(endpoint: string): Promise<{ ok: boolean; error?: string }> {
+  let deleteOk = false;
+  let deleteStatus = 200;
+  try {
+    const response = await fetch('/api/push/subscriptions', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint }),
+    });
+    deleteOk = response.ok;
+    deleteStatus = response.status;
+  } catch {
+    deleteOk = false;
+  }
+
+  if (!deleteOk) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, endpoint);
+    }
+    return {
+      ok: false,
+      error: deleteStatus === 500 ? 'backend_error' : 'network_error',
+    };
+  }
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(PUSH_STORAGE_KEY, 'false');
+    localStorage.removeItem(PENDING_UNSUB_STORAGE_KEY);
+  }
+  return { ok: true };
+}
+
 export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: string }> {
   const rawPendingEndpoint =
     typeof window !== 'undefined'
@@ -325,16 +370,29 @@ export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: stri
   }
 
   if (!isPushSupported()) {
+    // PR459-H04: sin soporte nativo no hay suscripción que bajar en el navegador, pero una baja pendiente se confirma.
+    if (pendingEndpoint) {
+      return confirmUnsubscribeOnServer(pendingEndpoint);
+    }
     if (typeof window !== 'undefined') {
       localStorage.setItem(PUSH_STORAGE_KEY, 'false');
     }
     return { ok: true };
   }
 
+  let subscription: PushSubscription | null;
   try {
     const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.getSubscription();
+    subscription = await registration.pushManager.getSubscription();
+  } catch {
+    // PR459-H04: si el navegador no deja leer la suscripción, la baja pendiente igual se confirma en el servidor.
+    if (pendingEndpoint) {
+      return confirmUnsubscribeOnServer(pendingEndpoint);
+    }
+    return { ok: false, error: 'unsubscription_failed' };
+  }
 
+  try {
     const endpoint = subscription?.endpoint || pendingEndpoint;
 
     // Idempotencia: si no hay suscripción activa ni pendiente, no hay nada que desuscribir
@@ -355,43 +413,9 @@ export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: stri
       }
     }
 
-    // PR120-H05: Notificar baja al backend y confirmar status 200
-    let deleteOk = false;
-    let deleteStatus = 200;
-    try {
-      const response = await fetch('/api/push/subscriptions', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint }),
-      });
-      deleteOk = response.ok;
-      deleteStatus = response.status;
-    } catch {
-      deleteOk = false;
-    }
-
-    if (!deleteOk) {
-      // Retener endpoint para reintento en segunda llamada
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, endpoint);
-      }
-      return {
-        ok: false,
-        error: deleteStatus === 500 ? 'backend_error' : 'network_error',
-      };
-    }
-
-    // Baja confirmada en backend: limpiar storage
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(PUSH_STORAGE_KEY, 'false');
-      localStorage.removeItem(PENDING_UNSUB_STORAGE_KEY);
-    }
-
-    return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'unsubscription_failed',
-    };
+    // PR120-H05: notificar la baja al backend y confirmar el 2xx (retiene el endpoint para reintentar si falla).
+    return await confirmUnsubscribeOnServer(endpoint);
+  } catch {
+    return { ok: false, error: 'unsubscription_failed' };
   }
 }
