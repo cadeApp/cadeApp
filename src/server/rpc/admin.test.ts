@@ -11,6 +11,7 @@ import {
   adminRegisterPlanPeriodRpc,
   adminUpsertPublicationPlanRpc,
   adminListIncidentsRpc,
+  adminReinstateCourierRpc,
   adminResolveIncidentRpc,
   adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
@@ -1083,5 +1084,86 @@ describe('CC-029 addendum D01-B · admin_list_publication_plans (PR402-H03/H04)'
     expect(sql).toMatch(/revoke all on function public\.admin_list_publication_plans\(integer, integer, uuid, boolean\)\s+from public, anon, authenticated;/);
     expect(sql).not.toMatch(/grant\s+select/i);
     expect(sql).not.toMatch(/policy/i);
+  });
+});
+
+describe('CC-034 · admin_reinstate_courier (T-385)', () => {
+  const MIGRATION = 'supabase/migrations/20261020113000_cc034_admin_reinstate_courier.sql';
+  const caller = (response: { data: unknown; error: { message: string; code?: string } | null }) => {
+    const rpc = vi.fn().mockResolvedValue(response);
+    return { client: { rpc } as SupabaseRpcCaller, rpc };
+  };
+
+  it('manda p_courier_id y p_reason exactos y devuelve la salida validada', async () => {
+    const data = { courierId: COURIER_1_ID, previousStatus: 'suspended', status: 'approved', idempotent: false };
+    const { client, rpc } = caller({ data, error: null });
+    await expect(
+      adminReinstateCourierRpc(client, { courierId: COURIER_1_ID, reason: '  Aclarado el incidente  ' })
+    ).resolves.toEqual({ ok: true, data });
+    expect(rpc).toHaveBeenCalledWith('admin_reinstate_courier', {
+      p_courier_id: COURIER_1_ID,
+      p_reason: 'Aclarado el incidente',
+    });
+  });
+
+  it('la ruta idempotente (previousStatus approved) es éxito', async () => {
+    const data = { courierId: COURIER_1_ID, previousStatus: 'approved', status: 'approved', idempotent: true };
+    const { client } = caller({ data, error: null });
+    await expect(adminReinstateCourierRpc(client, { courierId: COURIER_1_ID, reason: 'Reintento' })).resolves.toEqual({
+      ok: true,
+      data,
+    });
+  });
+
+  it('entrada inválida: VALIDATION_ERROR sin llamar a la RPC', async () => {
+    const { client, rpc } = caller({ data: null, error: null });
+    for (const input of [
+      { courierId: COURIER_1_ID, reason: '' },
+      { courierId: COURIER_1_ID, reason: 'x'.repeat(501) },
+      { courierId: 'no-uuid', reason: 'Revisado' },
+    ]) {
+      await expect(adminReinstateCourierRpc(client, input)).resolves.toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('mapea cada código del contrato y cae a INTERNAL_ERROR con códigos o salidas fuera de contrato', async () => {
+    for (const code of RPC_CONTRACTS.admin_reinstate_courier.errorCodes) {
+      const { client } = caller({ data: null, error: { message: code } });
+      await expect(adminReinstateCourierRpc(client, { courierId: COURIER_1_ID, reason: 'x' })).resolves.toEqual({
+        ok: false,
+        code,
+      });
+    }
+    const unknown = caller({ data: null, error: { message: 'PRICE_BELOW_MIN' } });
+    await expect(
+      adminReinstateCourierRpc(unknown.client, { courierId: COURIER_1_ID, reason: 'x' })
+    ).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    // previousStatus approved sin idempotent es una salida imposible: se rechaza.
+    const inconsistent = caller({
+      data: { courierId: COURIER_1_ID, previousStatus: 'approved', status: 'approved', idempotent: false },
+      error: null,
+    });
+    await expect(
+      adminReinstateCourierRpc(inconsistent.client, { courierId: COURIER_1_ID, reason: 'x' })
+    ).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+
+  it('los códigos que levanta la migración coinciden con el contrato y la RPC empieza por assert_admin_aal2', () => {
+    const sql = fs.readFileSync(path.resolve(process.cwd(), MIGRATION), 'utf8');
+    const admin = fs.readFileSync(
+      path.resolve(process.cwd(), 'supabase/migrations/20260924013700_rpc_admin_v1.sql'),
+      'utf8',
+    );
+    const body = sql.split(/create (?:or replace )?function /i).find((b) => b.startsWith('public.admin_reinstate_courier('));
+    expect(body).toBeDefined();
+    const raised = new Set([...(body ?? '').matchAll(/message = '([A-Z0-9_]+)'/g)].map((m) => m[1] ?? ''));
+    expect(body).toMatch(/begin\s+perform app_private\.assert_admin_aal2\(\);/i);
+    const aal2 = admin.split(/create (?:or replace )?function /i).find((b) => b.startsWith('app_private.assert_admin_aal2('));
+    for (const m of (aal2 ?? '').matchAll(/message = '([A-Z0-9_]+)'/g)) raised.add(m[1] ?? '');
+    expect([...raised].sort()).toEqual([...RPC_CONTRACTS.admin_reinstate_courier.errorCodes].sort());
+    expect(sql).toMatch(/revoke all on function public\.admin_reinstate_courier\(uuid, text\) from public, anon, authenticated;/i);
+    expect(sql).toMatch(/grant execute on function public\.admin_reinstate_courier\(uuid, text\) to authenticated;/i);
+    expect(sql).toMatch(/security definer\s+set search_path = public, pg_temp/i);
   });
 });
