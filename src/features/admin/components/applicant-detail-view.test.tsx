@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ApplicantDetailView } from './applicant-detail-view';
 import { ApplicantsQueue } from './applicants-queue';
 import {
   viewCourierDocumentAction,
   decideCourierAction,
   suspendCourierAction,
+  reinstateCourierAction,
   verifyCourierDocumentAction,
 } from '../actions';
 import type { ApplicantDetail, ApplicantListItem } from '../types';
@@ -24,6 +25,7 @@ vi.mock('../actions', () => ({
   viewCourierDocumentAction: vi.fn(),
   decideCourierAction: vi.fn(),
   suspendCourierAction: vi.fn(),
+  reinstateCourierAction: vi.fn(),
   verifyCourierDocumentAction: vi.fn(),
 }));
 
@@ -429,3 +431,131 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
   });
 });
 
+
+describe('T-380: reactivar o reconsiderar con reinstateCourierAction (CC-034)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const REASON = 'Se revisó el reclamo y no hubo falta del repartidor.';
+
+  function openReinstateDialog(status: 'suspended' | 'rejected', buttonName: RegExp) {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status }} />);
+    fireEvent.click(screen.getByRole('button', { name: buttonName }));
+    const textarea = screen.getByLabelText(/motivo de la decisión/i);
+    fireEvent.change(textarea, { target: { value: REASON } });
+    return screen.getByRole('button', { name: /confirmar decisión/i });
+  }
+
+  it.each([
+    ['suspended' as const, /reactivar repartidor/i, 'Reactivar repartidor'],
+    ['rejected' as const, /reconsiderar aprobación/i, 'Reconsiderar aprobación'],
+  ])('con estado %s, el botón abre su diálogo y llama a reinstateCourierAction (no a decideCourierAction)', async (status, buttonName, title) => {
+    vi.mocked(reinstateCourierAction).mockResolvedValue({ ok: true, data: { success: true, idempotent: false } });
+
+    const confirm = openReinstateDialog(status, buttonName);
+    expect(screen.getByRole('heading', { name: title })).toBeDefined();
+    fireEvent.click(confirm);
+
+    await waitFor(() => {
+      expect(reinstateCourierAction).toHaveBeenCalledWith({ courierId: mockApplicant.id, reason: REASON });
+      expect(refresh).toHaveBeenCalled();
+    });
+    expect(decideCourierAction).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('el motivo es obligatorio: sin texto no llama a la acción', async () => {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status: 'suspended' }} />);
+    fireEvent.click(screen.getByRole('button', { name: /reactivar repartidor/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar decisión/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeDefined());
+    expect(reinstateCourierAction).not.toHaveBeenCalled();
+  });
+
+  it('doble clic en confirmar no duplica la llamada y el botón queda deshabilitado durante la acción', async () => {
+    let resolveAction: (value: Awaited<ReturnType<typeof reinstateCourierAction>>) => void = () => undefined;
+    vi.mocked(reinstateCourierAction).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveAction = resolve;
+      })
+    );
+
+    const confirm = openReinstateDialog('suspended', /reactivar repartidor/i);
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(reinstateCourierAction).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: /procesando/i }) as HTMLButtonElement).disabled).toBe(true)
+    );
+    fireEvent.click(screen.getByRole('button', { name: /procesando/i }));
+
+    resolveAction({ ok: true, data: { success: true, idempotent: false } });
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(reinstateCourierAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('dos envíos seguidos del formulario (clic y Enter) no duplican la llamada', async () => {
+    let resolveAction: (value: Awaited<ReturnType<typeof reinstateCourierAction>>) => void = () => undefined;
+    vi.mocked(reinstateCourierAction).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveAction = resolve;
+      })
+    );
+
+    const confirm = openReinstateDialog('suspended', /reactivar repartidor/i);
+    const form = confirm.closest('form');
+    if (!form) throw new Error('el botón de confirmar tiene que estar dentro del formulario');
+    fireEvent.submit(form);
+    await waitFor(() => expect(reinstateCourierAction).toHaveBeenCalledTimes(1));
+    // El segundo envío se entrega dentro de act: la validación y el handler terminan antes de afirmar.
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    expect(reinstateCourierAction).toHaveBeenCalledTimes(1);
+
+    resolveAction({ ok: true, data: { success: true, idempotent: false } });
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(reinstateCourierAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('idempotent: true (ya estaba aprobado) se trata como éxito', async () => {
+    vi.mocked(reinstateCourierAction).mockResolvedValue({ ok: true, data: { success: true, idempotent: true } });
+
+    fireEvent.click(openReinstateDialog('suspended', /reactivar repartidor/i));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('INVALID_STATE_TRANSITION muestra un mensaje claro en el diálogo, no el genérico ni el de pedidos', async () => {
+    vi.mocked(reinstateCourierAction).mockResolvedValue({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+    fireEvent.click(openReinstateDialog('rejected', /reconsiderar aprobación/i));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(
+      'El estado actual del repartidor no permite este cambio. Actualizá la página para ver su estado.'
+    );
+    expect(screen.queryByText(/inconveniente inesperado/i)).toBeNull();
+    expect(screen.getByRole('dialog')).toBeDefined();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('la primera decisión (pendiente) también muestra el mensaje claro ante INVALID_STATE_TRANSITION', async () => {
+    vi.mocked(decideCourierAction).mockResolvedValue({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+    render(<ApplicantDetailView applicant={mockApplicant} />);
+    fireEvent.click(screen.getByRole('button', { name: /aprobar repartidor/i }));
+    fireEvent.change(screen.getByLabelText(/motivo de la decisión/i), { target: { value: REASON } });
+    fireEvent.click(screen.getByRole('button', { name: /confirmar decisión/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(
+      'El estado actual del repartidor no permite este cambio. Actualizá la página para ver su estado.'
+    );
+    expect(reinstateCourierAction).not.toHaveBeenCalled();
+  });
+});

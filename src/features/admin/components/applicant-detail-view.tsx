@@ -22,9 +22,11 @@ import { notify } from '@/ui/notify';
 import { cn } from '@/ui/cn';
 import { formatDate } from '@/lib/format';
 import { getDomainErrorMessage } from '@/lib/error-messages';
+import type { DomainErrorCode } from '@/domain/errors';
 import {
   viewCourierDocumentAction,
   decideCourierAction,
+  reinstateCourierAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
 } from '../actions';
@@ -39,6 +41,15 @@ import type { ApplicantDetail, ApplicantDocumentDetail } from '../types';
 
 interface ApplicantDetailViewProps {
   readonly applicant: ApplicantDetail;
+}
+
+type DecisionModal = 'approved' | 'rejected' | 'suspended' | 'reactivate' | 'reconsider';
+
+/** El texto genérico de INVALID_STATE_TRANSITION habla de pedidos; acá el estado es el del repartidor. */
+function courierDecisionErrorMessage(code: DomainErrorCode): string {
+  return code === 'INVALID_STATE_TRANSITION'
+    ? ADMIN_COPY.detail.errors.invalidCourierTransition
+    : getDomainErrorMessage(code);
 }
 
 const ROTATION_CLASSES: Record<number, string> = {
@@ -74,9 +85,10 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
   const [rotation, setRotation] = React.useState<0 | 90 | 180 | 270>(0);
 
   // Diálogo y formulario de decisión global sobre el postulante
-  const [decisionModal, setDecisionModal] = React.useState<
-    'approved' | 'rejected' | 'suspended' | null
-  >(null);
+  const [decisionModal, setDecisionModal] = React.useState<DecisionModal | null>(null);
+  const [decisionError, setDecisionError] = React.useState<string | null>(null);
+  // Doble clic: el segundo envío se descarta mientras el primero sigue en curso.
+  const decisionInFlight = React.useRef(false);
 
   const decisionForm = useForm<DecisionFormInput>({
     resolver: zodResolver(decisionFormSchema),
@@ -196,8 +208,26 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
     }
   });
 
+  function openDecisionModal(modal: DecisionModal) {
+    setDecisionError(null);
+    setDecisionModal(modal);
+  }
+
+  function closeDecisionModal() {
+    setDecisionModal(null);
+    setDecisionError(null);
+    decisionForm.reset();
+  }
+
+  function showDecisionError(message: string) {
+    setDecisionError(message);
+    notify.error(message);
+  }
+
   const onDecisionSubmit = decisionForm.handleSubmit(async (data) => {
-    if (!decisionModal) return;
+    if (!decisionModal || decisionInFlight.current) return;
+    decisionInFlight.current = true;
+    setDecisionError(null);
 
     try {
       if (decisionModal === 'suspended') {
@@ -206,10 +236,24 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           reason: data.reason,
         });
         if (!res.ok) {
-          notify.error(getDomainErrorMessage(res.code));
+          showDecisionError(courierDecisionErrorMessage(res.code));
           return;
         }
         notify.success(ADMIN_COPY.detail.success.courierSuspended);
+      } else if (decisionModal === 'reactivate' || decisionModal === 'reconsider') {
+        const res = await reinstateCourierAction({
+          courierId: applicant.id,
+          reason: data.reason,
+        });
+        if (!res.ok) {
+          showDecisionError(courierDecisionErrorMessage(res.code));
+          return;
+        }
+        notify.success(
+          res.data.idempotent
+            ? ADMIN_COPY.detail.success.courierAlreadyApproved
+            : ADMIN_COPY.detail.success.courierReinstated
+        );
       } else {
         const res = await decideCourierAction({
           courierId: applicant.id,
@@ -217,7 +261,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           reason: data.reason,
         });
         if (!res.ok) {
-          notify.error(getDomainErrorMessage(res.code));
+          showDecisionError(courierDecisionErrorMessage(res.code));
           return;
         }
         notify.success(
@@ -227,11 +271,12 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
         );
       }
 
-      setDecisionModal(null);
-      decisionForm.reset();
+      closeDecisionModal();
       router.refresh();
     } catch {
-      notify.error(ADMIN_COPY.detail.errors.decisionConnection);
+      showDecisionError(ADMIN_COPY.detail.errors.decisionConnection);
+    } finally {
+      decisionInFlight.current = false;
     }
   });
 
@@ -290,14 +335,14 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => setDecisionModal('rejected')}
+                onClick={() => openDecisionModal('rejected')}
               >
                 {ADMIN_COPY.detail.applicantActions.reject}
               </Button>
               <Button
                 variant="default"
                 size="sm"
-                onClick={() => setDecisionModal('approved')}
+                onClick={() => openDecisionModal('approved')}
               >
                 {ADMIN_COPY.detail.applicantActions.approve}
               </Button>
@@ -306,7 +351,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
             <Button
               variant="destructive"
               size="sm"
-              onClick={() => setDecisionModal('suspended')}
+              onClick={() => openDecisionModal('suspended')}
             >
               {ADMIN_COPY.detail.applicantActions.suspend}
             </Button>
@@ -314,7 +359,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
             <Button
               variant="default"
               size="sm"
-              onClick={() => setDecisionModal('approved')}
+              onClick={() => openDecisionModal('reactivate')}
             >
               {ADMIN_COPY.detail.applicantActions.reactivate}
             </Button>
@@ -322,7 +367,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setDecisionModal('approved')}
+              onClick={() => openDecisionModal('reconsider')}
             >
               {ADMIN_COPY.detail.applicantActions.reconsider}
             </Button>
@@ -617,13 +662,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                 id="decision-reason"
                 rows={4}
                 {...decisionForm.register('reason')}
-                placeholder={
-                  decisionModal === 'approved'
-                    ? ADMIN_COPY.detail.decisionPlaceholder('approved')
-                    : decisionModal === 'rejected'
-                    ? ADMIN_COPY.detail.decisionPlaceholder('rejected')
-                    : ADMIN_COPY.detail.decisionPlaceholder('suspended')
-                }
+                placeholder={ADMIN_COPY.detail.decisionPlaceholder(decisionModal)}
               />
               {decisionForm.formState.errors.reason ? (
                 <p className="text-sm font-medium text-destructive" role="alert">
@@ -632,21 +671,30 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
               ) : null}
             </div>
 
+            {decisionModal === 'reactivate' || decisionModal === 'reconsider' ? (
+              <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.reinstateDialogNote}</p>
+            ) : null}
+
+            {decisionError ? (
+              <p className="text-sm font-medium text-destructive" role="alert">
+                {decisionError}
+              </p>
+            ) : null}
+
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setDecisionModal(null);
-                  decisionForm.reset();
-                }}
+                onClick={closeDecisionModal}
                 disabled={decisionForm.formState.isSubmitting}
               >
                 {ADMIN_COPY.detail.cancelButton}
               </Button>
               <Button
                 type="submit"
-                variant={decisionModal === 'approved' ? 'default' : 'destructive'}
+                variant={
+                  decisionModal === 'rejected' || decisionModal === 'suspended' ? 'destructive' : 'default'
+                }
                 disabled={decisionForm.formState.isSubmitting}
               >
                 {decisionForm.formState.isSubmitting

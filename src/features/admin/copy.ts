@@ -131,6 +131,10 @@ export const ADMIN_COPY = {
         ? 'Rechazar postulación'
         : decision === 'suspended'
         ? 'Suspender repartidor'
+        : decision === 'reactivate'
+        ? 'Reactivar repartidor'
+        : decision === 'reconsider'
+        ? 'Reconsiderar aprobación'
         : 'Decisión sobre postulante',
     decisionDialogDescription:
       'Para garantizar la transparencia operativa, debés ingresar el motivo vinculante que quedará registrado en el historial.',
@@ -140,7 +144,13 @@ export const ADMIN_COPY = {
         ? 'Ej: Documentación DNI y selfie verificada. Cumple con los requisitos del piloto.'
         : decision === 'rejected'
         ? 'Ej: Documento DNI ilegible o vencido.'
+        : decision === 'reactivate'
+        ? 'Ej: Se revisó el reclamo y no hubo falta del repartidor.'
+        : decision === 'reconsider'
+        ? 'Ej: Presentó la documentación que faltaba y es legible.'
         : 'Ej: Reclamo reiterado de comercios por demora injustificada.',
+    reinstateDialogNote:
+      'Vuelve como aprobado y sin disponibilidad: tiene que activarla para recibir pedidos. Las ofertas retiradas no se recuperan.',
     decisionDialogConfirm: 'Confirmar decisión',
     decisionDialogProcessing: 'Procesando...',
     cancelButton: 'Cancelar',
@@ -151,11 +161,15 @@ export const ADMIN_COPY = {
       courierSuspended: 'Repartidor suspendido con éxito.',
       applicantApproved: 'Postulante aprobado como repartidor activo.',
       applicantRejected: 'Postulación rechazada.',
+      courierReinstated: 'Repartidor aprobado de nuevo. Tiene que activar su disponibilidad para recibir pedidos.',
+      courierAlreadyApproved: 'El repartidor ya estaba aprobado.',
     },
     errors: {
       loadDocumentConnection: 'Error de conexión al solicitar visualización del documento.',
       verifyDocumentConnection: 'Error de conexión al verificar documento.',
       decisionConnection: 'Error de conexión al procesar la decisión.',
+      invalidCourierTransition:
+        'El estado actual del repartidor no permite este cambio. Actualizá la página para ver su estado.',
     },
   },
   mfa: {
