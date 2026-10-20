@@ -52,6 +52,12 @@ export const suspendCourierSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 });
 
+// CC-034: reactivar un suspendido o reconsiderar un rechazado.
+export const reinstateCourierSchema = z.object({
+  courierId: z.string().uuid(),
+  reason: z.string().trim().min(1).max(500),
+});
+
 export const verifyCourierDocumentSchema = z
   .object({
     documentId: z.string().uuid(),
@@ -266,6 +272,7 @@ export type AdminMfaInput = z.infer<typeof adminMfaSchema>;
 export type ViewCourierDocumentInput = z.infer<typeof viewCourierDocumentSchema>;
 export type DecideCourierInput = z.infer<typeof decideCourierSchema>;
 export type SuspendCourierInput = z.infer<typeof suspendCourierSchema>;
+export type ReinstateCourierInput = z.infer<typeof reinstateCourierSchema>;
 export type VerifyCourierDocumentInput = z.infer<typeof verifyCourierDocumentSchema>;
 export type RejectDocumentFormInput = z.infer<typeof rejectDocumentFormSchema>;
 export type DecisionFormInput = z.infer<typeof decisionFormSchema>;

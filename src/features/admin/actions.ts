@@ -9,6 +9,7 @@ import {
   adminGrantPublicationCreditsRpc,
   adminListPublicationPlansRpc,
   adminRegisterPlanPeriodRpc,
+  adminReinstateCourierRpc,
   adminUpsertPublicationPlanRpc,
   adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
@@ -22,11 +23,13 @@ import {
   viewCourierDocumentSchema,
   decideCourierSchema,
   suspendCourierSchema,
+  reinstateCourierSchema,
   verifyCourierDocumentSchema,
   type AdminMfaInput,
   type ViewCourierDocumentInput,
   type DecideCourierInput,
   type SuspendCourierInput,
+  type ReinstateCourierInput,
   type VerifyCourierDocumentInput,
   setMerchantSubscriptionSchema,
   updatePlatformSettingSchema,
@@ -250,12 +253,45 @@ export async function decideCourierAction(
     if (rpcResult.code === 'REASON_REQUIRED') return err('REASON_REQUIRED');
     if (rpcResult.code === 'UNAUTHORIZED_ACTOR') return err('UNAUTHORIZED_ACTOR');
     if (rpcResult.code === 'NOT_FOUND') return err('NOT_FOUND');
+    if (rpcResult.code === 'INVALID_STATE_TRANSITION') return err('INVALID_STATE_TRANSITION');
     return err('INTERNAL_ERROR');
   }
 
   revalidatePath('/admin/applicants');
   revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
   return ok({ success: true });
+}
+
+/**
+ * CC-034: reactiva a un repartidor suspendido o reconsidera uno rechazado (vuelve a `approved` sin disponibilidad).
+ * El motivo es obligatorio. `idempotent: true` (ya estaba aprobado: doble clic o reintento) es éxito.
+ */
+export async function reinstateCourierAction(
+  input: ReinstateCourierInput
+): Promise<ActionResult<{ success: true; idempotent: boolean }, DomainErrorCode>> {
+  const parsed = reinstateCourierSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  // Cliente de sesión con AAL2, nunca createAdminClient: la RPC vuelve a exigir admin con MFA.
+  const rpcResult = await adminReinstateCourierRpc(authResult.data.supabase, {
+    courierId: parsed.data.courierId,
+    reason: parsed.data.reason,
+  });
+
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath('/admin/applicants');
+  revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
+  return ok({ success: true, idempotent: rpcResult.data.idempotent });
 }
 
 /**
