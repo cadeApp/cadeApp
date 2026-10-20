@@ -124,3 +124,44 @@ node /tmp/pr459-r2-probes.cjs
 **Este harness de análisis de código no sustituye pruebas RED/GREEN.** Los mutantes son marcadores de posibles cambios, no parches listos para producción; las pruebas de integración reales nuevas deben hacer fallar el SHA previo y pasar el SHA corregido.
 
 **Autor, no revisor:** `docs/tasks/log/T-382.md` a `0e32446d` declara tests focalizados 173/173, generales 3028/3028, M8–M12 RED y GREEN, E2E 7+1 passed. No reproducidos desde esta sesión. Sin clon por DNS, `git merge-tree`/`analizar.mjs` y tests locales no ejecutados; `e2e-preview` oficial diferido por decisión de Lautaro073.
+
+## Ronda 3 — sondas independientes S5 y S6
+
+**SHA funcional:** `0c534f8cccaca9c281a3b29b71c2cde349ee0d0d`. Esta revisión corrió **Node local sobre un modelo mínimo de los predicados y del contrato SQL**, NO importó las funciones de producción ni ejecutó Supabase. Datos del modelo ficticios.
+
+Salida realmente obtenida:
+
+```text
+S5: regex acepta token auth puramente alfanumérico de 22 chars: YES (riesgo condicionado).
+S6: cuenta B limpia pending local con 200 aunque la fila de A siga en DB: YES (simulación de contrato).
+```
+
+Harness completo ejecutado desde `/tmp/pr459-r3-static.cjs`:
+
+```js
+const assert = require('node:assert/strict');
+// Sonda de contrato por inspección; NO ejecuta código de la aplicación.
+const standardName=/^[A-Za-z][A-Za-z0-9]{0,63}$/;
+const authToken='AaBbCcDdEeFf0123456789';
+assert(standardName.test(authToken),'regex does not accept sample secret');
+console.log('S5: regex acepta token auth puramente alfanumérico de 22 chars: YES (riesgo condicionado).');
+const userA='A',userB='B',endpoint='https://push.example.invalid/endpoint';
+let rows=[{user_id:userA,endpoint}];
+let pending=endpoint;
+// Simulación del contrato DELETE en develop: DELETE WHERE user_id = B AND endpoint = E;
+// si no hay error db (0 filas borradas), responde {ok:true}.
+rows=rows.filter(row=>!(row.user_id===userB && row.endpoint===endpoint));
+const response={ok:true};
+if(response.ok)pending=null; // contrato del confirmUnsubscribeOnServer
+assert.equal(pending,null);
+assert.deepEqual(rows,[{user_id:userA,endpoint}]);
+console.log('S6: cuenta B limpia pending local con 200 aunque la fila de A siga en DB: YES (simulación de contrato).');
+```
+
+### Fuente y reproducción funcional pendiente
+
+- Código real SHA `0c534f8`: `subscription.ts:127` (regex), `129-140` (log), `263-268` (pending solo URL), `279-298` (estado no scoped), `324-353` (un DELETE 2xx limpia local), `356-375` (reintento). Servidor `develop@04f1183`: `route.ts` DELETE filtrado por endpoint y `user_id`, responde ok en ausencia de dbError sin comprobar filas.
+- La bitácora `fb3379bc` contiene M13–M17, 181 tests focalizados, 3036 tests generales y E2E 7+1; verificado que están escritos, **no reproducidos en esta sesión**.
+- En esta sesión `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` devolvió DNS `Could not resolve host: github.com`. No hubo worktree, `pnpm`, `git merge-tree` ni pruebas contra Supabase/Vercel. Al no haber clon, `node docs/revision-pr/analizar.mjs verificacion` no se pudo ejecutar aquí.
+- CI HEAD `fb3379bc`: unit/typecheck/lint/build/audit/bundle-budget success; approval-policy failure; db-tests cancelado y e2e-preview no final. `develop` avanzó 15 commits respecto a la base histórica del PR, `mergeable_state=unstable` en lectura REST; sincronizar y revalidar antes de declarar lista.
+- Tests funcionales requeridos para cerrar: H03 inyección de `Error.name` que sea **todo un token** (no solo etiquetas), mutar whitelist; H05 fixture A→B→A en mismo origen, primer DELETE fallido, B no limpia el pending de A, A reintenta con misma sesión, DB sin fila A, mutate quitar chequeo de identidad y exigir RED. Guardar salidas por comando en bitácora, no presentarlas como comprobadas antes.

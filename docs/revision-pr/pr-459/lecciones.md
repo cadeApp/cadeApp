@@ -23,3 +23,9 @@ H02: `pushManager.subscribe()` está cubierto; `serviceWorker.ready` y `pushMana
 - **H04 / P06:** no condicionar una operación remota pendiente a las capacidades nativas que originalmente la crearon. Probar ausencia de PushManager, fallos de ready/getSubscription, permiso denegado y presencia/ausencia de endpoint pendiente.
 - **H03 / P08:** al sanear un objeto de log, cubrir **todos** los campos dinámicos, incluido `Error.name`, no solo `Error.message`; tests de campos contaminados por separado.
 - No asignar `AG` sin verificar el máximo histórico de ramas ni modificar `AGENTS.md` por una PR aislada.
+
+## Ronda 3 — nuevas variantes de P08/P06
+
+- **H03 / P08:** un regex con aspecto de whitelist no es una whitelist semántica; toda forma válida de dato sensible que pueda coincidir con el regex también se considerará «nombre estándar» y quedará visible. Testear nombres íntegramente iguales a tokens, no solo etiquetas con espacios. Propuesta de control: nombres permitidos por igualdad exacta.
+- **H05 / P06:** localStorage pertenece al origen, no a una cuenta. Cualquier estado diferido que implique cambios sobre datos de una identidad debe persistir identidad de origen y revalidar sesión antes de ejecutar, especialmente si la API devuelve éxito con cero filas afectadas. La integración A→B→A es distinta de alta entre cuentas con estado normal.
+- No numerar AG nueva ni editar `AGENTS.md` sin revisar recurrencia y máximo de todas las ramas.
