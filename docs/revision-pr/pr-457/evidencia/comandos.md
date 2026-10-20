@@ -57,7 +57,7 @@ const oracle = [
   "    const chain = JSON.parse(runSql(",
   "      \x60select coalesce(jsonb_agg(jsonb_build_object('from', before->>'user_id', 'to', after->>'user_id') order by id), '[]'::jsonb)::text",
   "       from public.audit_log where action = 'push_subscription_reassigned'",
-  "       and target_id in (select id::text from public.push_subscriptions where endpoint = '@{endpoint}');\x60",
+  "       and target_id in (select id::text from public.push_subscriptions where endpoint = '${endpoint}');\x60",
   "    ));",
   "    assert.deepEqual(chain, [{from: userC, to: userA}, {from: userA, to: userB}], 'PR457 audit chain C→A→B');",
   ""
