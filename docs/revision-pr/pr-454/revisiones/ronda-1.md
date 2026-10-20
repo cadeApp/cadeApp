@@ -1,8 +1,8 @@
 # Informe de revisión independiente — PR #454 / T-384 — Ronda 1
 
-**PR:** https://github.com/cadeApp/cadeApp/pull/454  
-**HEAD revisado:** `cc87a902e30c5c2f452e80edb34ca78dac396ab3` · **base:** develop @ `03dec5b074e634d6f3895c282e58f7d7e6eb4456`  
-**Fecha:** 2026-10-20 · **Estado PR:** Draft  
+**PR:** https://github.com/cadeApp/cadeApp/pull/454
+**HEAD revisado:** `cc87a902e30c5c2f452e80edb34ca78dac396ab3` · **base:** develop @ `03dec5b074e634d6f3895c282e58f7d7e6eb4456`
+**Fecha:** 2026-10-20 · **Estado PR:** Draft
 **Resultado:** **CON BLOQUEANTES (6)** · **Mejoras:** 0
 
 ## Alcance revisado
