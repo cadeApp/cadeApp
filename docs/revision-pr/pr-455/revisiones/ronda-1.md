@@ -11,7 +11,7 @@
 
 | ID | Severidad | Archivo | Problema | Tipo |
 |---|---|---|---|---|
-| PR455-H01 | Medio · bloqueante de contrato | `src/domain/testing/rpc-fake.ts:3118` | El fake fuerza `available=false` mientras la SQL deja `available` intacto | Análisis |
+| PR455-H01 | Medio · bloqueante de contrato | `src/domain/testing/rpc-fake.ts:3120` | El fake fuerza `available=false` mientras la SQL deja `available` intacto | Análisis |
 | PR455-H02 | Medio · bloqueante de cobertura DoD | `supabase/tests/cc034_admin_reinstate_courier.sql:302` | Idempotencia solo verifica respuesta y auditoría, no ausencia de UPDATE | Análisis |
 
 ## PR455-H01 — El fake altera disponibilidad contra el contrato

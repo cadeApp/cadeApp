@@ -66,7 +66,7 @@ Para revalidar el test como control negativo después del arreglo, reintroducir 
 
 ## H02 · test SQL necesario y control negativo
 
-En `supabase/tests/cc034_admin_reinstate_courier.sql`, insertar **inmediatamente antes** de la llamada idempotente de la sección 6:
+En `supabase/tests/cc034_admin_reinstate_courier.sql`, insertar **justo antes** de `select pg_temp.act_as(pg_temp.admin_a(), 'aal2');` en la sección 6, todavía con el rol postgres:
 
 ```sql
 create table pg_temp.reinstate_before_retry as
