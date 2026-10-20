@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as courierRpc from './courier';
 import {
   mapReplaceCourierDocumentRpcError,
   replaceCourierDocumentRpc,
@@ -155,5 +156,78 @@ describe('CC-025 — replaceCourierDocumentRpc', () => {
     if (!resThrowing.ok) {
       expect(resThrowing.code).toBe('INTERNAL_ERROR');
     }
+  });
+});
+
+describe('CC-033 — addCourierOptionalDocumentRpc', () => {
+  const storagePath = 'courier/00000000-0000-4000-8000-0000000000c1/insurance_123.jpg';
+
+  function invokeAddOptionalDocument(
+    caller: SupabaseRpcCaller,
+    rawInput: unknown,
+  ): Promise<unknown> {
+    const candidate = courierRpc as Record<string, unknown>;
+    return (candidate.addCourierOptionalDocumentRpc as (
+      rpcCaller: SupabaseRpcCaller,
+      input: unknown,
+    ) => Promise<unknown>)(caller, rawInput);
+  }
+
+  it('expone el wrapper tipado para la RPC nueva', () => {
+    expect(courierRpc).toHaveProperty('addCourierOptionalDocumentRpc');
+  });
+
+  it('rechaza entrada inválida antes de llamar a Supabase', async () => {
+    const caller: SupabaseRpcCaller = {
+      async rpc() {
+        throw new Error('no debe invocarse');
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'dni_front', storagePath: '' }),
+    ).resolves.toMatchObject({ ok: false, code: 'VALIDATION_ERROR' });
+  });
+
+  it.each([
+    'UNAUTHENTICATED',
+    'UNAUTHORIZED_ACTOR',
+    'NOT_FOUND',
+    'INVALID_STATE_TRANSITION',
+    'VALIDATION_ERROR',
+  ])('preserva el código público %s devuelto por Postgres', async (code) => {
+    const caller: SupabaseRpcCaller = {
+      async rpc() {
+        return { data: null, error: { message: code } };
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath }),
+    ).resolves.toMatchObject({ ok: false, code });
+  });
+
+  it('devuelve la salida válida de una alta nueva', async () => {
+    const caller: SupabaseRpcCaller = {
+      async rpc() {
+        return {
+          data: {
+            documentId: '00000000-0000-4000-8000-0000000000d1',
+            kind: 'insurance',
+            status: 'submitted',
+            isCurrent: true,
+            idempotent: false,
+          },
+          error: null,
+        };
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { kind: 'insurance', status: 'submitted', idempotent: false },
+    });
   });
 });

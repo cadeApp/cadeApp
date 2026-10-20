@@ -1376,16 +1376,17 @@ export type Database = {
         }
         Returns: Json
       }
-      admin_verify_document: {
-        Args: {
-          p_decision: string
-          p_document_id: string
-          p_reason?: string
-          p_rejection_code?: string
+        admin_verify_document: {
+          Args: {
+            p_decision: string
+            p_document_id: string
+            p_reason?: string
+            p_rejection_code?: string
+          }
+          Returns: Json
         }
-        Returns: Json
-      }
-      calculate_route_distance: {
+        add_courier_optional_document: { Args: { p_payload: Json }; Returns: Json }
+        calculate_route_distance: {
         Args: {
           p_dropoff_lat?: number
           p_dropoff_lng?: number
