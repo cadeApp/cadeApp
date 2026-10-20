@@ -388,6 +388,18 @@ test.describe('T-382 — avisos push en «Configurar»', () => {
     );
   }
 
+  /** El login termina al salir de /login; se espera a que aterrice en el feed antes de navegar a «Configurar». */
+  async function loginCourierAndOpenSettings(
+    page: import('@playwright/test').Page,
+    login: (index: number, page: import('@playwright/test').Page) => Promise<unknown>,
+    index: number
+  ) {
+    await login(index, page);
+    await page.waitForURL(/\/courier\/feed/);
+    await page.goto('/courier/profile/notifications');
+    await expect(page.getByRole('heading', { name: '¿Te avisamos al instante?' })).toBeVisible();
+  }
+
   function fakeEndpointFor(runId: string) {
     return `https://fcm.googleapis.com/fcm/send/t382-${runId.replace(/[^a-z0-9]/gi, '')}`;
   }
@@ -420,14 +432,14 @@ test.describe('T-382 — avisos push en «Configurar»', () => {
       }
     });
 
-    await loginAsCourier(0, page);
-    await page.goto('/courier/profile/notifications');
+    await loginCourierAndOpenSettings(page, loginAsCourier, 0);
     const activate = page.getByRole('button', { name: /^Activar avisos$/i });
     await expect(activate).toBeVisible();
     await activate.click();
 
-    const alert = page.getByRole('alert');
-    await expect(alert).toContainText('Usar los servicios de Google para mensajes push');
+    // Next agrega su propio `alert` (anunciador de rutas): se filtra por el texto del mensaje.
+    const alert = page.getByRole('alert').filter({ hasText: 'Usar los servicios de Google para mensajes push' });
+    await expect(alert).toBeVisible();
     await expect(alert).toContainText('Chrome');
     await expect(page.getByText(/No se pudo confirmar la suscripción con el servidor/i)).toHaveCount(0);
     await expect(page.getByText(/Avisos activados/i)).toHaveCount(0);
@@ -444,10 +456,11 @@ test.describe('T-382 — avisos push en «Configurar»', () => {
 
     try {
       // 1. Cuenta A activa los avisos con el gesto del usuario: alta real en el servidor.
-      await loginAsCourier(0, page);
-      await page.goto('/courier/profile/notifications');
+      await loginCourierAndOpenSettings(page, loginAsCourier, 0);
       await page.getByRole('button', { name: /^Activar avisos$/i }).click();
       await expect(page.getByText(/¡Avisos activados con éxito!/i)).toBeVisible();
+      // Tras el éxito, el prompt vuelve a la pantalla anterior (el feed): se espera antes de navegar.
+      await page.waitForURL(/\/courier\/feed/);
 
       // 2. Al volver a «Configurar», el estado viene del servidor para la cuenta A.
       await page.goto('/courier/profile/notifications');
@@ -466,12 +479,11 @@ test.describe('T-382 — avisos push en «Configurar»', () => {
       expect(await page.evaluate(() => localStorage.getItem('cadeapp_push_enabled'))).toBe('true');
       await page.context().clearCookies();
       await loginAsCourier(1, page);
-      await page.goto('/courier/profile/notifications');
-
+      await page.waitForURL(/\/courier\/feed/);
       const statusResponse = page.waitForResponse(
         (response) => new URL(response.url()).pathname === '/api/push/subscriptions/status'
       );
-      await page.reload();
+      await page.goto('/courier/profile/notifications');
       expect(await (await statusResponse).json()).toEqual({ active: false });
       await expect(page.getByRole('button', { name: /^Activar avisos$/i })).toBeVisible();
       await expect(page.getByText(/Avisos activados/i)).toHaveCount(0);
