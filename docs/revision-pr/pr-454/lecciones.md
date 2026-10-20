@@ -18,3 +18,10 @@ No proponer reglas nuevas para AGENTS.md solo por esta PR.
 - **P08 / AG-37:** enumerar clase completa: actores con consentimiento inactivo, combinatoria kind/estado elegible y código SQLSTATE exacto. No reemplazar por porcentaje de coverage.
 - **Proceso H07:** el commit 46114f51 del agy de implementación solo quitó tres espacios al final de la ronda 1. Comparados los blobs, no cambió ninguna afirmación. La carpeta pertenece al revisor: futuros arreglos no deben tocarla.
 - No se asignan AG nuevos ni se declara mutación independiente RED/GREEN donde solo hay logs CI del autor.
+
+## Ronda 3
+
+- **P08 / AG-37**: los casos contractuales que faltaban fueron añadidos con observación de estado (`getDocument`, estado courier y auditoría), en vez de conformarse con cobertura porcentual. El job final prueba la suite, pero no suplanta una mutación independiente.
+- **P11 / AG-59**: la regex del fake ya coincide en case sensitivity con SQL. Se demostró por comparación de expresiones extraídas del blob, incluido mutante `/i`; no atribuir al ejercicio aislado el peso de ejecutar Vitest mutado.
+- **Rollout E2E:** no confundir workflow de dispatch `SUCCESS` con check `e2e-preview SUCCESS`: el gate publica `ERROR / BLOCKED` y saltea E2E cuando detecta migración. T-384 es aditivo y sin UI; el despliegue de la migración a Develop debe comprobarse posmerge antes de T-376. Si el contexto bloqueado es requerido para merge, revisar la compatibilidad de la política sin fabricar un verde.
+- **Proceso:** no reescribir informes previos ni marcar hallazgos como verificados a partir de mutaciones autodeclaradas. No se asignan AG nuevos.
