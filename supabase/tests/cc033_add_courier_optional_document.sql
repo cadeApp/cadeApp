@@ -56,6 +56,7 @@ select is(public.add_courier_optional_document(jsonb_build_object('kind','licens
 select is((select license_status::text from public.couriers where profile_id=pg_temp.approved()),'submitted','actualiza license_status');
 select is((select doc_level from public.couriers where profile_id=pg_temp.approved()),0,'alta no eleva doc_level');
 select is((select count(*)::int from public.courier_documents where courier_id=pg_temp.approved() and kind='license' and is_current),1,'crea exactamente un documento vigente');
+select pg_temp.as_postgres();
 select is((select count(*)::int from public.audit_log where actor_id=pg_temp.approved() and action='add_courier_optional_document'),1,'crea una auditoría');
 select ok(not exists(select 1 from public.audit_log where actor_id=pg_temp.approved() and action='add_courier_optional_document' and (before::text like '%license_1730000000000.jpg%' or after::text like '%license_1730000000000.jpg%')),'auditoría no guarda storage_path');
 select pg_temp.act_as(pg_temp.pending());
@@ -66,6 +67,7 @@ select is((select doc_level from public.couriers where profile_id=pg_temp.pendin
 select pg_temp.act_as(pg_temp.incomplete());
 select throws_matching($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000033c3/license_1730000000002.jpg')); $$,'INVALID_STATE_TRANSITION','onboarding incompleto es rechazado');
 select is((select count(*)::int from public.courier_documents where courier_id=pg_temp.incomplete()),0,'onboarding incompleto no inserta');
+select pg_temp.as_postgres();
 select is((select count(*)::int from public.audit_log where actor_id=pg_temp.incomplete() and action='add_courier_optional_document'),0,'onboarding incompleto no audita');
 select pg_temp.act_as(pg_temp.approved());
 select throws_matching($$ select public.add_courier_optional_document('null'::jsonb); $$,'VALIDATION_ERROR','payload JSON null es inválido');
@@ -102,7 +104,9 @@ select is(public.add_courier_optional_document(jsonb_build_object('kind','insura
 select is(public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','courier/00000000-0000-4000-8000-0000000033c1/insurance_1730000000007.jpg','idempotencyKey','00000000-0000-4000-8000-0000000033d1'))->>'idempotent','true','misma clave y path es idempotente');
 select throws_matching($$ select public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','courier/00000000-0000-4000-8000-0000000033c1/insurance_1730000000008.jpg','idempotencyKey','00000000-0000-4000-8000-0000000033d1')); $$,'VALIDATION_ERROR','misma clave con otro path falla');
 select is((select count(*)::int from public.courier_documents where courier_id=pg_temp.approved() and kind='insurance'),1,'clave no duplica filas');
+select pg_temp.as_postgres();
 select is((select count(*)::int from public.audit_log where actor_id=pg_temp.approved() and action='add_courier_optional_document' and after->>'idempotency_key'='00000000-0000-4000-8000-0000000033d1'),1,'clave no duplica auditoría');
+select pg_temp.act_as(pg_temp.approved());
 select is(public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','courier/00000000-0000-4000-8000-0000000033c1/insurance_1730000000007.jpg'))->>'idempotent','true','mismo path submitted sin clave es idempotente');
 
 select pg_temp.act_as(pg_temp.rejected()); select throws_matching($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000033c4/license_1730000000003.jpg')); $$,'UNAUTHORIZED_ACTOR','rejected es rechazado');
