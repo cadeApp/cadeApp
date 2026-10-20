@@ -1451,6 +1451,7 @@ export type Database = {
         Args: { p_limit?: number }
         Returns: Json
       }
+      register_push_subscription: { Args: { p_payload: Json }; Returns: Json }
       replace_courier_document: { Args: { p_payload: Json }; Returns: Json }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }

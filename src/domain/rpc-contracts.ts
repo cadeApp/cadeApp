@@ -626,6 +626,33 @@ export const adminSuspendCourierOutputSchema = z.object({
   deactivatedAt: isoTimestampSchema,
 });
 
+// CC-035: register_push_subscription (registra la suscripción y reasigna el endpoint a la cuenta logueada)
+const pushKeySchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[A-Za-z0-9_-]+$/);
+export const registerPushSubscriptionInputSchema = z.object({
+  endpoint: z
+    .string()
+    .max(2048)
+    .regex(/^https:\/\/\S+$/),
+  p256dh: pushKeySchema,
+  auth: pushKeySchema,
+  platform: z.literal('web').nullable().optional(),
+});
+/** Nunca incluye al dueño anterior del endpoint (CC-035, matriz de exposición). */
+export const registerPushSubscriptionOutputSchema = z
+  .object({
+    subscriptionId: uuidSchema,
+    created: z.boolean(),
+    reassigned: z.boolean(),
+  })
+  .strict()
+  .refine((output) => !(output.created && output.reassigned), {
+    message: 'una suscripción recién creada no puede venir reasignada',
+  });
+
 // CC-034: admin_reinstate_courier (reactivar un suspendido o reconsiderar un rechazado)
 export const adminReinstateCourierInputSchema = z.object({
   courierId: uuidSchema,
@@ -1378,6 +1405,16 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  register_push_subscription: {
+    inputSchema: registerPushSubscriptionInputSchema,
+    outputSchema: registerPushSubscriptionOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   /**
    * CC-016: solo el comercio dueño de la solicitud. Solicitud inexistente o ajena responden igual
    * (`NOT_FOUND`) para no confirmar que el id existe.
@@ -1632,6 +1669,7 @@ export const ALL_RPC_NAMES = [
   'get_trip_details',
   'get_request_offer_couriers',
   'get_merchant_request_private_fields',
+  'register_push_subscription',
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_reinstate_courier',
