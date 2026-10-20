@@ -5,28 +5,27 @@
 | PR | https://github.com/cadeApp/cadeApp/pull/448 |
 | Autor | @Lautaro073 |
 | Rama | `docs/T-379-qa-fichas` → `develop` |
-| SHA revisado | `bbb5689612badb5103f64f8122814ccc124f7595` |
-| Base de la PR al revisar | `54bbdcd7b079fa208e970725efa66832a8fac724` |
-| Cambios del autor | 8 archivos; +801 / -0; exclusivamente documentación |
-| Ronda 1 | **CON BLOQUEANTES (5)**. Ninguna aprobación ni merge. |
+| Ronda 1 | `bbb5689612badb5103f64f8122814ccc124f7595` — cinco bloqueantes abiertos inicialmente |
+| Ronda 2 | Autor `b47f2c6d436f199719624d872faeec22f3cdf515`; verificación y merge de develop `e06cb606651f0c94e4ae00eca12758eb9b2b8b53` |
+| Base integrada en la rama | `develop@b35b0aef48608d0f3dd767460c65eccf56aed9f0` |
+| Estado de revisión | **SIN BLOQUEANTES — 5/5 corregidos y verificados documentalmente** |
 
-## Rondas
+## Rondas (histórico inmutable)
 
-- [Ronda 1 — informe completo](revisiones/ronda-1.md): revisión documental por inspección, 5 hallazgos abiertos (H01–H05), decisiones 1-A, 2-A y 3-A ya tomadas por Lautaro073.
-- [Hallazgos estructurados](hallazgos.jsonl), [evidencia y comprobaciones](evidencia/comandos.md), [lecciones](lecciones.md).
+- [Ronda 1](revisiones/ronda-1.md): diagnóstico original sobre `bbb5689612badb5103f64f8122814ccc124f7595`. 5 bloqueantes iniciales, sin pnpm ni E2E.
+- [Ronda 2](revisiones/ronda-2.md): correcciones sobre `e06cb606651f0c94e4ae00eca12758eb9b2b8b53`, cinco hallazgos cerrados por inspección y pruebas documentales con mutaciones propias.
+- [Evidencia reproducible y corrección del harness H02](evidencia/comandos.md), [hallazgos.jsonl](hallazgos.jsonl), [lecciones](lecciones.md).
 
-## Estado
+## Estado de hallazgos
 
-| ID | Prioridad | Archivo de origen | Estado |
+| Hallazgo | Componente | Estado | Verificado en SHA |
 |---|---|---|---|
-| PR448-H01 | Bloqueante | T-379.md | abierto |
-| PR448-H02 | Bloqueante | T-382.md | abierto |
-| PR448-H03 | Bloqueante | CC-034.md | abierto |
-| PR448-H04 | Bloqueante | T-379.md | abierto |
-| PR448-H05 | Bloqueante | T-381.md | abierto |
+| PR448-H01 | T-379 | arreglado-verificado | `e06cb606651f` |
+| PR448-H02 | T-382 | arreglado-verificado | `e06cb606651f` |
+| PR448-H03 | CC-034 | arreglado-verificado | `e06cb606651f` |
+| PR448-H04 | T-379 | arreglado-verificado | `e06cb606651f` |
+| PR448-H05 | T-381 | arreglado-verificado | `e06cb606651f` |
 
-La rama estaba **11 commits detrás** de `develop` al contrastar las refs; la PR aparecía mergeable en GitHub. Reconfirmar compatibilidad antes del cierre y no suponer conflictos ni la ausencia de ellos a partir de inspección estática.
+## Cierre
 
-## Siguiente paso
-
-El autor **solo corrige las fichas, los contratos y la fila del plan si procede**. No implementa las cinco tareas ni las dos RPC dentro de esta PR documental. Debe hacer `git pull` antes de cambiar nada y mantener intacto `docs/revision-pr/pr-448/**`. Después: nueva ronda independiente al HEAD pusheado. No solicitar checks verdes de código solo por añadir esta bitácora de revisión.
+Los 14 archivos del diff contra `develop` son solo documentación. La reconciliación de `docs/implementation-plan.md` conserva T-376/T-377 upstream y T-379..T-383 de esta PR. GitHub informó rama al día y `mergeable=true` tras el merge de develop. **Esto no verifica tests de ejecución del producto:** las tareas siguen por implementar en otras PRs. El informe literal sin bloqueantes debe figurar en el cuerpo para `approval-policy`; no confundir CI pendiente con un defecto funcional ni exigir otra batería solo por el commit de revisión.
