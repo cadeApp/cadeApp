@@ -48,6 +48,8 @@ let mockLoadingStatus = 'LOADED';
 let mockPublicApiKey = 'test-google-maps-api-key';
 let mockPublicMapId = 'test-map-id';
 let mockOnError: (() => void) | null = null;
+// T-377: biblioteca `routes` que devuelve useMapsLibrary; null = todavía no cargó (o no carga nunca).
+let mockRoutesLibrary: unknown = null;
 
 vi.mock('@/lib/env.public', () => ({
   publicEnv: {
@@ -72,6 +74,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     FAILED: 'FAILED',
   },
   useApiLoadingStatus: () => mockLoadingStatus,
+  useMapsLibrary: (name: string) => (name === 'routes' ? mockRoutesLibrary : null),
   // Como el SDK real: sin mapa cargado (SDK fallido) useMap devuelve null
   useMap: () => (mockLoadingStatus === 'LOADED' ? { fitBounds: mockFitBounds } : null),
   APIProvider: ({
@@ -247,6 +250,7 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
     mockPublicApiKey = 'test-google-maps-api-key';
     mockPublicMapId = 'test-map-id';
     mockOnError = null;
+    mockRoutesLibrary = null;
     mockFitBounds.mockClear();
 
     mockChannel.on.mockReturnValue(mockChannel);
@@ -431,10 +435,11 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
       expect(screen.queryByRole('link', { name: /abrir en google maps/i })).toBeNull();
     });
 
-    it('T-350: C06 muestra «Ruta directa sin desvíos» con text-primary-dark y nunca text-primary (axe AA)', () => {
+    it('T-350/T-377: C06 describe la línea recta orientativa con text-primary-dark y nunca text-primary (axe AA)', () => {
       render(<TripMerchantView trip={baseTrip} />);
 
-      const routeNote = screen.getByText('Ruta directa sin desvíos');
+      expect(screen.queryByText('Ruta directa sin desvíos')).toBeNull();
+      const routeNote = screen.getByText('Línea recta orientativa');
       expect(routeNote.classList.contains('text-primary-dark')).toBe(true);
       expect(routeNote.classList.contains('text-primary')).toBe(false);
     });
@@ -1078,6 +1083,391 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
       render(<TripCourierView trip={baseTrip} />);
       expect(screen.getByTestId('route-map-fallback')).toBeDefined();
       expect(mockFitBounds).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('8. T-377 — Recorrido por calles con Route.computeRoutes y fallbacks excluyentes', () => {
+    const STREET_FALLBACK_TEXT = 'Línea recta orientativa; la ruta por calles no está disponible';
+
+    type LatLngLike = { readonly lat: number; readonly lng: number };
+    type ComputeRoutesRequestLike = {
+      origin: LatLngLike;
+      destination: LatLngLike;
+      intermediates: Array<{ location: LatLngLike }>;
+      travelMode: string;
+      fields: string[];
+      optimizeWaypointOrder: boolean;
+    };
+
+    /** Igual que google.maps.LatLngAltitude: lat/lng son getters, no propiedades propias. */
+    function latLngAltitude(lat: number, lng: number) {
+      return {
+        get lat() {
+          return lat;
+        },
+        get lng() {
+          return lng;
+        },
+        get altitude() {
+          return 0;
+        },
+      };
+    }
+
+    function installRoutesLibrary(
+      computeRoutes: (request: ComputeRoutesRequestLike) => Promise<unknown>
+    ) {
+      const spy = vi.fn(computeRoutes);
+      mockRoutesLibrary = { Route: { computeRoutes: spy } };
+      return spy;
+    }
+
+    const STREET_PATH = [
+      latLngAltitude(-27.4333, -65.6167),
+      latLngAltitude(-27.4301, -65.6175),
+      latLngAltitude(-27.4285, -65.6131),
+      latLngAltitude(-27.425, -65.61),
+    ];
+    const STREET_PATH_LITERALS = STREET_PATH.map((point) => ({ lat: point.lat, lng: point.lng }));
+    const STRAIGHT_PATH = [
+      { lat: baseTrip.pickupLat, lng: baseTrip.pickupLng },
+      { lat: baseTrip.dropoffLat, lng: baseTrip.dropoffLng },
+    ];
+
+    function polylinePaths(): unknown[] {
+      return screen
+        .queryAllByTestId('mock-route-polyline')
+        .map((node) => JSON.parse(node.getAttribute('data-path') || '[]'));
+    }
+
+    async function flushRoutes() {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    function makeDropsTrip(
+      points: ReadonlyArray<{ lat: number | null; lng: number | null; position: number }>
+    ): TripDetails {
+      return {
+        ...baseTrip,
+        dropsCount: points.length,
+        drops: points.map((point) => ({
+          id: `00000000-0000-4000-8000-0000000003${String(point.position).padStart(2, '0')}`,
+          position: point.position,
+          dropoffZoneName: 'Centro',
+          dropoffAddress: `Calle ${point.position}, Aguilares`,
+          recipientName: `Cliente ${point.position}`,
+          recipientPhone: '3865100000',
+          deliveryNotes: null,
+          cashChangeAmount: null,
+          packageType: 'chico',
+          recipientPaymentMethod: 'transfer',
+          needsChange: false,
+          approxDistanceM: null,
+          status: 'pending',
+          deliveredAt: null,
+          failedReason: null,
+          dropoffLat: point.lat,
+          dropoffLng: point.lng,
+        })),
+      };
+    }
+
+    it('ruta OK: llama computeRoutes una vez con el contrato exacto y dibuja la geometría por calles', async () => {
+      const computeRoutes = installRoutesLibrary(async () => ({
+        routes: [{ path: STREET_PATH }],
+        fallbackInfo: null,
+        geocodingResults: null,
+      }));
+
+      render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+
+      expect(computeRoutes).toHaveBeenCalledTimes(1);
+      const [request] = computeRoutes.mock.calls[0] as [ComputeRoutesRequestLike];
+      expect(request).toEqual({
+        origin: { lat: baseTrip.pickupLat, lng: baseTrip.pickupLng },
+        destination: { lat: baseTrip.dropoffLat, lng: baseTrip.dropoffLng },
+        intermediates: [],
+        travelMode: 'DRIVING',
+        fields: ['path'],
+        optimizeWaypointOrder: false,
+      });
+
+      expect(polylinePaths()).toEqual([STREET_PATH_LITERALS]);
+      expect(screen.queryByText(STREET_FALLBACK_TEXT)).toBeNull();
+      // La distancia sigue siendo la del servidor (D15), no la de la ruta.
+      expect(screen.getByTestId('route-map-distance').textContent).toMatch(/≈ 2,5 km/);
+    });
+
+    it('ruta OK en C06: el pie describe el recorrido por calles con text-primary-dark', async () => {
+      installRoutesLibrary(async () => ({ routes: [{ path: STREET_PATH }] }));
+
+      render(<TripMerchantView trip={baseTrip} />);
+      await flushRoutes();
+
+      const routeNote = screen.getByText('Recorrido orientativo por calles');
+      expect(routeNote.classList.contains('text-primary-dark')).toBe(true);
+      expect(screen.queryByText('Línea recta orientativa')).toBeNull();
+    });
+
+    it('el encuadre incluye la geometría por calles aunque salga del rectángulo de los pines', async () => {
+      const detour = [
+        latLngAltitude(-27.4333, -65.6167),
+        latLngAltitude(-27.44, -65.63),
+        latLngAltitude(-27.425, -65.61),
+      ];
+      installRoutesLibrary(async () => ({ routes: [{ path: detour }] }));
+
+      render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+
+      expect(mockFitBounds).toHaveBeenLastCalledWith(
+        { north: -27.425, south: -27.44, east: -65.61, west: -65.63 },
+        expect.any(Number)
+      );
+    });
+
+    it('varias entregas: origen = retiro, destino = última entrega e intermedias en orden de position', async () => {
+      const computeRoutes = installRoutesLibrary(async () => ({ routes: [{ path: STREET_PATH }] }));
+      // Desordenadas a propósito: el orden lo fija `position`, no el arreglo.
+      const trip = makeDropsTrip([
+        { lat: -27.41, lng: -65.59, position: 3 },
+        { lat: -27.45, lng: -65.62, position: 1 },
+        { lat: -27.43, lng: -65.6, position: 2 },
+      ]);
+
+      render(<TripCourierView trip={trip} />);
+      await flushRoutes();
+
+      expect(computeRoutes).toHaveBeenCalledTimes(1);
+      const [request] = computeRoutes.mock.calls[0] as [ComputeRoutesRequestLike];
+      expect(request.origin).toEqual({ lat: baseTrip.pickupLat, lng: baseTrip.pickupLng });
+      expect(request.intermediates).toEqual([
+        { location: { lat: -27.45, lng: -65.62 } },
+        { location: { lat: -27.43, lng: -65.6 } },
+      ]);
+      expect(request.destination).toEqual({ lat: -27.41, lng: -65.59 });
+      expect(request.optimizeWaypointOrder).toBe(false);
+      expect(polylinePaths()).toEqual([STREET_PATH_LITERALS]);
+    });
+
+    it('error de la API: línea recta con el texto de fallback', async () => {
+      const computeRoutes = installRoutesLibrary(async () => {
+        throw new Error('REQUEST_DENIED');
+      });
+
+      render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+
+      expect(computeRoutes).toHaveBeenCalledTimes(1);
+      expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+      expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+      expect(screen.getByRole('link', { name: /abrir en google maps/i })).toBeDefined();
+    });
+
+    it('sin ruta: routes vacío o sin path válido cae a la línea recta con el texto', async () => {
+      installRoutesLibrary(async () => ({ routes: [] }));
+      const { unmount } = render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+      expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+      expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+      unmount();
+
+      installRoutesLibrary(async () => ({
+        routes: [{ path: [latLngAltitude(-27.4333, -65.6167), latLngAltitude(Number.NaN, -65.61)] }],
+      }));
+      render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+      expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+      expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+    });
+
+    it('sin biblioteca: si routes no carga, línea recta y, vencida la espera, el texto de fallback', () => {
+      vi.useFakeTimers();
+      try {
+        mockRoutesLibrary = null;
+        render(<TripCourierView trip={baseTrip} />);
+
+        // Mientras carga se ve la línea recta, sin afirmar todavía que la ruta falló.
+        expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+        expect(screen.queryByText(STREET_FALLBACK_TEXT)).toBeNull();
+
+        act(() => {
+          vi.advanceTimersByTime(15_000);
+        });
+        expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+        expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('biblioteca sin Route.computeRoutes: línea recta con el texto y sin romper la vista', async () => {
+      mockRoutesLibrary = {};
+      render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+
+      expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+      expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+    });
+
+    it('más de 10 entregas intermedias: no llama a la API y usa la línea recta con el texto', async () => {
+      const computeRoutes = installRoutesLibrary(async () => ({ routes: [{ path: STREET_PATH }] }));
+      const points = Array.from({ length: 12 }, (_, index) => ({
+        lat: -27.47 + index * 0.007,
+        lng: -65.64 + index * 0.004,
+        position: index + 1,
+      }));
+
+      render(<TripCourierView trip={makeDropsTrip(points)} />);
+      await flushRoutes();
+
+      expect(computeRoutes).not.toHaveBeenCalled();
+      const [path] = polylinePaths() as [Array<{ lat: number; lng: number }>];
+      expect(path).toHaveLength(13);
+      expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+    });
+
+    it('con 10 entregas intermedias (11 entregas) todavía calcula la ruta', async () => {
+      const computeRoutes = installRoutesLibrary(async () => ({ routes: [{ path: STREET_PATH }] }));
+      const points = Array.from({ length: 11 }, (_, index) => ({
+        lat: -27.47 + index * 0.007,
+        lng: -65.64 + index * 0.004,
+        position: index + 1,
+      }));
+
+      render(<TripCourierView trip={makeDropsTrip(points)} />);
+      await flushRoutes();
+
+      expect(computeRoutes).toHaveBeenCalledTimes(1);
+      const [request] = computeRoutes.mock.calls[0] as [ComputeRoutesRequestLike];
+      expect(request.intermediates).toHaveLength(10);
+    });
+
+    it('rerender con los mismos puntos no repite la llamada', async () => {
+      const computeRoutes = installRoutesLibrary(async () => ({ routes: [{ path: STREET_PATH }] }));
+
+      // Un refresco del viaje trae objetos y arreglos nuevos con los mismos puntos: no es una secuencia nueva.
+      const points = [
+        { lat: -27.45, lng: -65.62, position: 1 },
+        { lat: -27.41, lng: -65.59, position: 2 },
+      ];
+      const { rerender } = render(<TripCourierView trip={makeDropsTrip(points)} />);
+      await flushRoutes();
+      rerender(<TripCourierView trip={makeDropsTrip(points.map((point) => ({ ...point })))} />);
+      rerender(<TripCourierView trip={{ ...makeDropsTrip(points), courierName: 'Otro nombre' }} />);
+      await flushRoutes();
+
+      expect(computeRoutes).toHaveBeenCalledTimes(1);
+      expect(polylinePaths()).toEqual([STREET_PATH_LITERALS]);
+    });
+
+    it('respuesta tardía: si cambian los puntos se ignora la respuesta vieja y se dibuja la nueva', async () => {
+      const resolvers: Array<(value: unknown) => void> = [];
+      const computeRoutes = installRoutesLibrary(
+        () =>
+          new Promise((resolve) => {
+            resolvers.push(resolve);
+          })
+      );
+      const movedTrip = { ...baseTrip, dropoffLat: -27.41, dropoffLng: -65.59 };
+      // Con un punto intermedio para que no coincida con la línea recta del fallback.
+      const newPath = [
+        latLngAltitude(-27.4333, -65.6167),
+        latLngAltitude(-27.42, -65.605),
+        latLngAltitude(-27.41, -65.59),
+      ];
+
+      const { rerender } = render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+      rerender(<TripCourierView trip={movedTrip} />);
+      await flushRoutes();
+      expect(computeRoutes).toHaveBeenCalledTimes(2);
+
+      // Llega primero la respuesta nueva y después la vieja: la vieja no la pisa.
+      await act(async () => {
+        resolvers[1]?.({ routes: [{ path: newPath }] });
+      });
+      await act(async () => {
+        resolvers[0]?.({ routes: [{ path: STREET_PATH }] });
+      });
+
+      expect(polylinePaths()).toEqual([
+        [
+          { lat: -27.4333, lng: -65.6167 },
+          { lat: -27.42, lng: -65.605 },
+          { lat: -27.41, lng: -65.59 },
+        ],
+      ]);
+      expect(screen.queryByText(STREET_FALLBACK_TEXT)).toBeNull();
+    });
+
+    it('respuesta tardía tras desmontar: no actualiza nada ni avisa errores de React', async () => {
+      let resolveLate: ((value: unknown) => void) | undefined;
+      installRoutesLibrary(
+        () =>
+          new Promise((resolve) => {
+            resolveLate = resolve;
+          })
+      );
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { unmount } = render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+      unmount();
+      await act(async () => {
+        resolveLate?.({ routes: [{ path: STREET_PATH }] });
+      });
+
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+      expect(consoleError).not.toHaveBeenCalled();
+    });
+
+    it('sin pin en retiro, entrega final o entrega intermedia: sin Polyline y sin llamar a la API (T-363)', async () => {
+      const computeRoutes = installRoutesLibrary(async () => ({ routes: [{ path: STREET_PATH }] }));
+
+      const { unmount: u1 } = render(<TripCourierView trip={{ ...baseTrip, pickupLat: null }} />);
+      await flushRoutes();
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+      expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+      u1();
+
+      const { unmount: u2 } = render(<TripCourierView trip={{ ...baseTrip, dropoffLng: null }} />);
+      await flushRoutes();
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+      u2();
+
+      render(
+        <TripCourierView
+          trip={makeDropsTrip([
+            { lat: -27.45, lng: -65.62, position: 1 },
+            { lat: null, lng: null, position: 2 },
+            { lat: -27.41, lng: -65.59, position: 3 },
+          ])}
+        />
+      );
+      await flushRoutes();
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+      expect(screen.getByTestId('route-map-missing-points').textContent).toContain('entrega 2');
+
+      expect(computeRoutes).not.toHaveBeenCalled();
+      expect(screen.queryByText(STREET_FALLBACK_TEXT)).toBeNull();
+    });
+
+    it('Maps JS no carga: se mantiene el fallback sin mapa y nunca se calcula la ruta', async () => {
+      const computeRoutes = installRoutesLibrary(async () => ({ routes: [{ path: STREET_PATH }] }));
+      mockLoadingStatus = 'FAILED';
+
+      render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+
+      expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+      expect(screen.queryByText(STREET_FALLBACK_TEXT)).toBeNull();
+      expect(computeRoutes).not.toHaveBeenCalled();
     });
   });
 });
