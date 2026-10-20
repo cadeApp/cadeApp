@@ -661,7 +661,10 @@ export const replaceCourierDocumentOutputSchema = z.object({
 export const addCourierOptionalDocumentInputSchema = z.object({
   kind: z.enum(['license', 'insurance']),
   storagePath: z.string().trim().min(1).max(500),
-  idempotencyKey: uuidSchema.optional(),
+  idempotencyKey: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    .optional(),
 });
 export const addCourierOptionalDocumentOutputSchema = z.object({
   documentId: uuidSchema,

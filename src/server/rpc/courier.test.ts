@@ -178,8 +178,10 @@ describe('CC-033 — addCourierOptionalDocumentRpc', () => {
   });
 
   it('rechaza entrada inválida antes de llamar a Supabase', async () => {
+    let calls = 0;
     const caller: SupabaseRpcCaller = {
       async rpc() {
+        calls += 1;
         throw new Error('no debe invocarse');
       },
     };
@@ -187,6 +189,7 @@ describe('CC-033 — addCourierOptionalDocumentRpc', () => {
     await expect(
       invokeAddOptionalDocument(caller, { kind: 'dni_front', storagePath: '' }),
     ).resolves.toMatchObject({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(calls).toBe(0);
   });
 
   it.each([
@@ -208,8 +211,10 @@ describe('CC-033 — addCourierOptionalDocumentRpc', () => {
   });
 
   it('devuelve la salida válida de una alta nueva', async () => {
+    const calls: Array<{ fn: string; args: Record<string, unknown> | undefined }> = [];
     const caller: SupabaseRpcCaller = {
-      async rpc() {
+      async rpc(fn, args) {
+        calls.push({ fn, args });
         return {
           data: {
             documentId: '00000000-0000-4000-8000-0000000000d1',
@@ -229,5 +234,57 @@ describe('CC-033 — addCourierOptionalDocumentRpc', () => {
       ok: true,
       data: { kind: 'insurance', status: 'submitted', idempotent: false },
     });
+    expect(calls).toEqual([
+      {
+        fn: 'add_courier_optional_document',
+        args: { p_payload: { kind: 'insurance', storagePath } },
+      },
+    ]);
+  });
+
+  it('preserva una idempotencyKey válida en el payload exacto de PostgREST', async () => {
+    const idempotencyKey = '00000000-0000-4000-8000-0000000000d2';
+    const calls: Array<{ fn: string; args: Record<string, unknown> | undefined }> = [];
+    const caller: SupabaseRpcCaller = {
+      async rpc(fn, args) {
+        calls.push({ fn, args });
+        return {
+          data: {
+            documentId: '00000000-0000-4000-8000-0000000000d1',
+            kind: 'insurance',
+            status: 'submitted',
+            isCurrent: true,
+            idempotent: false,
+          },
+          error: null,
+        };
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath, idempotencyKey }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(calls).toEqual([
+      {
+        fn: 'add_courier_optional_document',
+        args: { p_payload: { kind: 'insurance', storagePath, idempotencyKey } },
+      },
+    ]);
+  });
+
+  it.each([
+    { response: { data: { documentId: 'not-a-uuid' }, error: null }, label: 'salida malformada' },
+    { response: new Error('red caída'), label: 'excepción del cliente' },
+  ])('convierte %s en INTERNAL_ERROR', async ({ response }) => {
+    const caller: SupabaseRpcCaller = {
+      async rpc() {
+        if (response instanceof Error) throw response;
+        return response;
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath }),
+    ).resolves.toMatchObject({ ok: false, code: 'INTERNAL_ERROR' });
   });
 });

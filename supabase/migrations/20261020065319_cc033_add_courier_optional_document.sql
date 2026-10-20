@@ -30,6 +30,10 @@ begin
     raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
   end if;
 
+  if jsonb_typeof(p_payload) <> 'object' then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
   select role, consent_status into v_profile_role, v_consent_status
   from public.profiles
   where id = v_actor_id;
@@ -38,12 +42,18 @@ begin
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
   end if;
 
+  if not (p_payload ? 'kind') or jsonb_typeof(p_payload->'kind') <> 'string'
+     or not (p_payload ? 'storagePath') or jsonb_typeof(p_payload->'storagePath') <> 'string'
+     or ((p_payload ? 'idempotencyKey') and jsonb_typeof(p_payload->'idempotencyKey') <> 'string') then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
   v_kind_text := p_payload->>'kind';
   v_storage_path := p_payload->>'storagePath';
-  v_idempotency_key_text := nullif(trim(p_payload->>'idempotencyKey'), '');
+  v_idempotency_key_text := p_payload->>'idempotencyKey';
 
-  if v_kind_text not in ('license', 'insurance')
-     or v_storage_path is null
+  if v_kind_text is null
+     or v_kind_text not in ('license', 'insurance')
      or trim(v_storage_path) = '' then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
@@ -57,13 +67,14 @@ begin
   end if;
 
   v_storage_suffix := substr(v_storage_path, length(v_expected_prefix) + 1);
-  if v_storage_suffix !~* '^[0-9]+[.](png|jpe?g|webp|pdf)$'
+  if v_storage_suffix !~ '^[0-9]+[.](png|jpe?g|webp|pdf)$'
      or v_storage_suffix like '%/%' then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  if v_idempotency_key_text is not null
-     and v_idempotency_key_text !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+  if (p_payload ? 'idempotencyKey')
+     and (v_idempotency_key_text is null
+          or v_idempotency_key_text !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
