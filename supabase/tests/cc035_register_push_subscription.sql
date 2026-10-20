@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(38);
+select plan(41);
 
 -- CC-035 (T-386): register_push_subscription registra la suscripción y reasigna el endpoint a la cuenta logueada.
 create function pg_temp.merchant_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000035b1'::uuid $$;
@@ -153,6 +153,22 @@ select throws_matching(
   $$ select public.register_push_subscription('"no es un objeto"'::jsonb) $$,
   'VALIDATION_ERROR',
   'payload que no es un objeto: VALIDATION_ERROR'
+);
+-- PR457-H01: `->>` convertiría estos valores en texto que pasa la regex; el tipo JSON tiene que ser string.
+select throws_matching(
+  $$ select public.register_push_subscription(pg_temp.payload(pg_temp.endpoint()) || jsonb_build_object('p256dh', true)) $$,
+  'VALIDATION_ERROR',
+  'p256dh booleano: VALIDATION_ERROR'
+);
+select throws_matching(
+  $$ select public.register_push_subscription(pg_temp.payload(pg_temp.endpoint()) || jsonb_build_object('auth', 12345)) $$,
+  'VALIDATION_ERROR',
+  'auth numérico: VALIDATION_ERROR'
+);
+select throws_matching(
+  $$ select public.register_push_subscription(pg_temp.payload(pg_temp.endpoint()) || jsonb_build_object('platform', jsonb_build_object('x', 1))) $$,
+  'VALIDATION_ERROR',
+  'platform objeto: VALIDATION_ERROR'
 );
 
 select pg_temp.reset_actor();

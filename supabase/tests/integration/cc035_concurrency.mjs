@@ -7,6 +7,8 @@
  *      con 1 auditoría de reasignación, sin errores ni 40P01.
  *   2. reasignar/reasignar: dos cuentas toman a la vez un endpoint de una tercera. La segunda espera el lock de la
  *      fila y reasigna después: 1 fila, de la segunda cuenta, con 2 auditorías.
+ *   --mutation-lock-check: una copia efímera sin el `for update` de la lectura por endpoint hace que la segunda
+ *   reasignación audite a C como dueño previo (cadena C→A, C→B: RED); al restaurar, C→A→B (GREEN).
  *   --mutation-check: una copia efímera de la migración con un solo intento (sin reintento ante unique_violation) deja
  *   a la segunda sesión del escenario 1 en error (RED); al restaurar la migración original vuelve a GREEN.
  */
@@ -204,6 +206,20 @@ function snapshot(endpoint) {
   return { rows, audits };
 }
 
+/** Cadena de reasignaciones del endpoint, en orden de auditoría: [{ from, to }, ...]. */
+function auditChain(endpoint) {
+  const out = runSql(`
+    select coalesce(
+      jsonb_agg(jsonb_build_object('from', before->>'user_id', 'to', after->>'user_id') order by id),
+      '[]'::jsonb
+    )::text
+    from public.audit_log
+    where action = 'push_subscription_reassigned'
+      and target_id in (select id::text from public.push_subscriptions where endpoint = '${endpoint}');
+  `);
+  return JSON.parse(out);
+}
+
 const registerCall = (endpoint, keySuffix) =>
   `public.register_push_subscription(jsonb_build_object('endpoint', '${endpoint}', 'p256dh', 'P256dh${keySuffix}', 'auth', 'Auth${keySuffix}', 'platform', 'web'))`;
 
@@ -244,11 +260,12 @@ async function scenario1(userA, userB, endpoint) {
   assert.match(observed.second.body, /"created": false/, `${TAG} la segunda no crea otra fila`);
   assert.deepEqual(observed.rows, [userB], `${TAG} queda 1 sola fila, de B (último commit)`);
   assert.equal(observed.audits, 1, `${TAG} 1 auditoría de reasignación`);
+  assert.deepEqual(auditChain(endpoint), [{ from: userA, to: userB }], `${TAG} la única reasignación es A→B`);
   console.log(`${TAG} Escenario 1 GREEN: unique_violation reintentada, 1 fila de B, 1 auditoría, sin 40P01.`);
 }
 
-async function scenario2(userA, userB, userC, endpoint) {
-  console.log(`${TAG} Escenario 2: reasignar/reasignar un endpoint existente...`);
+/** Escenario 2: dos reasignaciones simultáneas de un endpoint de C. Devuelve lo observado para el mutation-check. */
+async function reassignTwice(userA, userB, userC, endpoint) {
   resetEndpoint(endpoint);
   runSql(`
     insert into public.push_subscriptions (user_id, endpoint, p256dh, auth, platform)
@@ -272,19 +289,35 @@ async function scenario2(userA, userB, userC, endpoint) {
     await s2.waitFor(`END_${second}`);
     await s2.commit();
 
-    const output = s1.output + s2.output;
-    assert.ok(!output.includes('40P01'), `${TAG} no debe haber deadlock 40P01`);
-    const result = s2.result(second);
-    assert.ok(result.ok, `${TAG} la segunda reasignación debe aplicarse: ${result.body}`);
-    assert.match(result.body, /"reassigned": true/, `${TAG} la segunda reasigna desde A`);
-    const after = snapshot(endpoint);
-    assert.deepEqual(after.rows, [userB], `${TAG} 1 sola fila, de B`);
-    assert.equal(after.audits, 2, `${TAG} 2 auditorías: C→A y A→B`);
-    console.log(`${TAG} Escenario 2 GREEN: el lock de la fila serializa, 1 fila de B y 2 auditorías.`);
+    return {
+      output: s1.output + s2.output,
+      second: s2.result(second),
+      ...snapshot(endpoint),
+      chain: auditChain(endpoint),
+    };
   } finally {
     await s1.close();
     await s2.close();
   }
+}
+
+async function scenario2(userA, userB, userC, endpoint) {
+  console.log(`${TAG} Escenario 2: reasignar/reasignar un endpoint existente...`);
+  const observed = await reassignTwice(userA, userB, userC, endpoint);
+  assert.ok(!observed.output.includes('40P01'), `${TAG} no debe haber deadlock 40P01`);
+  assert.ok(observed.second.ok, `${TAG} la segunda reasignación debe aplicarse: ${observed.second.body}`);
+  assert.match(observed.second.body, /"reassigned": true/, `${TAG} la segunda reasigna desde A`);
+  assert.deepEqual(observed.rows, [userB], `${TAG} 1 sola fila, de B`);
+  assert.equal(observed.audits, 2, `${TAG} 2 auditorías`);
+  assert.deepEqual(
+    observed.chain,
+    [
+      { from: userC, to: userA },
+      { from: userA, to: userB },
+    ],
+    `${TAG} la cadena de auditoría es C→A y después A→B`
+  );
+  console.log(`${TAG} Escenario 2 GREEN: el lock de la fila serializa; 1 fila de B y cadena C→A→B.`);
 }
 
 async function mutationCheck(userA, userB, endpoint) {
@@ -309,6 +342,42 @@ async function mutationCheck(userA, userB, endpoint) {
   console.log(`${TAG} Control de mutación GREEN confirmado: con la migración original la segunda reintenta y gana.`);
 }
 
+async function lockMutationCheck(userA, userB, userC, endpoint) {
+  console.log(`${TAG} --- Control de mutación: register_push_subscription sin "for update" en la lectura por endpoint ---`);
+  const originalSql = fs.readFileSync(migrationPath, 'utf8');
+  const lockClause = /\n\s*for update;/;
+  assert.equal(originalSql.match(new RegExp(lockClause, 'g'))?.length, 1, `${TAG} debe haber un único "for update" a mutar`);
+  const mutatedSql = originalSql.replace(lockClause, ';');
+  let observed;
+  try {
+    runSql(mutatedSql);
+    observed = await reassignTwice(userA, userB, userC, endpoint);
+  } finally {
+    runSql(originalSql);
+  }
+  // RED solo por la aserción concreta de la cadena: la ejecución tiene que haber terminado bien.
+  assert.ok(observed.second.ok, `${TAG} la mutación debe ejecutar sin error para que el RED sea de la cadena`);
+  assert.notDeepEqual(
+    observed.chain,
+    [
+      { from: userC, to: userA },
+      { from: userA, to: userB },
+    ],
+    `${TAG} RED esperado: sin el lock la segunda lee a C como dueño (obtenido ${JSON.stringify(observed.chain)})`
+  );
+  assert.deepEqual(
+    observed.chain,
+    [
+      { from: userC, to: userA },
+      { from: userC, to: userB },
+    ],
+    `${TAG} RED esperado: las dos auditorías registran a C como dueño previo`
+  );
+  console.log(`${TAG} Control de mutación del lock RED confirmado: cadena ${JSON.stringify(observed.chain)} (C→A, C→B).`);
+  await scenario2(userA, userB, userC, endpoint);
+  console.log(`${TAG} Control de mutación del lock GREEN confirmado: con la migración original la cadena es C→A→B.`);
+}
+
 async function main() {
   const userA = crypto.randomUUID();
   const userB = crypto.randomUUID();
@@ -327,6 +396,8 @@ async function main() {
 
   if (process.argv.includes('--mutation-check')) {
     await mutationCheck(userA, userB, endpoint);
+  } else if (process.argv.includes('--mutation-lock-check')) {
+    await lockMutationCheck(userA, userB, userC, endpoint);
   } else {
     await scenario1(userA, userB, endpoint);
     await scenario2(userA, userB, userC, endpoint);

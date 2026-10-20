@@ -1405,10 +1405,6 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
-  /**
-   * CC-016: solo el comercio dueño de la solicitud. Solicitud inexistente o ajena responden igual
-   * (`NOT_FOUND`) para no confirmar que el id existe.
-   */
   register_push_subscription: {
     inputSchema: registerPushSubscriptionInputSchema,
     outputSchema: registerPushSubscriptionOutputSchema,
@@ -1419,6 +1415,10 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * CC-016: solo el comercio dueño de la solicitud. Solicitud inexistente o ajena responden igual
+   * (`NOT_FOUND`) para no confirmar que el id existe.
+   */
   get_request_offer_couriers: {
     inputSchema: getRequestOfferCouriersInputSchema,
     outputSchema: getRequestOfferCouriersOutputSchema,
