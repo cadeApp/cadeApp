@@ -84,7 +84,7 @@ function fixture() {
   runSql(`
     insert into auth.users(id,instance_id,aud,role,email,encrypted_password,raw_user_meta_data) values
       ('${courierId}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','cc033-${courierId}@test','pwd','{"role":"courier"}'),
-      ('${adminId}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','cc033-${adminId}@test','pwd','{"role":"admin"}') on conflict do nothing;
+      ('${adminId}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','cc033-${adminId}@test','pwd','{"role":"merchant"}') on conflict do nothing;
     insert into public.profiles(id,role,consent_status) values
       ('${courierId}','courier','active'),('${adminId}','admin','active')
       on conflict(id) do update set role=excluded.role,consent_status='active';

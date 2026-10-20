@@ -17,7 +17,7 @@ create function pg_temp.as_postgres() returns void language plpgsql as $$ begin 
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
 values
-  (pg_temp.admin(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc033-admin@example.test', 'pwd', '{"role":"admin"}'),
+  (pg_temp.admin(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc033-admin@example.test', 'pwd', '{"role":"merchant"}'),
   (pg_temp.merchant(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc033-merchant@example.test', 'pwd', '{"role":"merchant"}'),
   (pg_temp.approved(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc033-approved@example.test', 'pwd', '{"role":"courier"}'),
   (pg_temp.pending(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc033-pending@example.test', 'pwd', '{"role":"courier"}'),
