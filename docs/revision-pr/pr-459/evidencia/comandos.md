@@ -83,3 +83,44 @@ Bitácora `docs/tasks/log/T-382.md` a este SHA: RED inicial `21 failed`; GREEN u
 ## Rama y alcance
 
 GitHub `compare(develop, feat/T-382-push-errors-status)`: `ahead 3`/`behind 0`; `mergeable=true`. 14 archivos del diff, todos dentro de los permitidos de la ficha de develop. `git merge-tree` y `node docs/revision-pr/analizar.mjs verificacion` **no ejecutados aquí** por falta de clon. El comentario final de PR referencia la carpeta y el SHA; el commit exclusivamente documental que agrega esta revisión no exige un nuevo gate E2E por sí mismo.
+
+## Ronda 2 — Evidencia independiente, exclusivamente estática
+
+**SHA de código:** `dc5f78cbf3ea7ec92f8b2a06464cac885d73389e`. Las sondas de abajo se ejecutaron en memoria sobre blobs recuperados de GitHub, sin ejecutar Vitest/Playwright. Baseline defecto detectado=true; con reemplazo hipotético en memoria, defecto detectado=false; **esto NO verifica comportamiento ni arreglos**.
+
+- S1: early return `inactive` de `getPushSubscriptionStatus` sin consultar endpoint pendiente cuando falta soporte.
+- S2: early return `ok:true` de `unsubscribeFromPush` sin realizar DELETE pendiente.
+- S3: propiedad `name` del logger registrada sin pasar por sanitizador.
+- S4: excepción de `serviceWorker.ready` o `getSubscription` retorna `unknown` ignorando pendiente.
+
+### Harness completo reproducible desde la raíz del repo, SHA funcional examinado
+
+```bash
+cat >/tmp/pr459-r2-probes.cjs <<'NODE'
+const fs = require('node:fs');
+const src = fs.readFileSync('src/features/notifications/push/subscription.ts', 'utf8');
+const section = (a,b)=>src.split(a)[1]?.split(b)[0] || '';
+const status = section('export async function getPushSubscriptionStatus()', 'export async function unsubscribeFromPush()');
+const unsub = section('export async function unsubscribeFromPush()', '__END__');
+const logger = section('function logSubscribeFailure(', '/**');
+const preSW = status.split('let endpoint: string;')[1]?.split("try {\n    const response")[0] || '';
+const checks = [
+ ['S1',status,x=>/if \(!isPushSupported\(\)\)\s*\{\s*return 'inactive';/.test(x),x=>x.replace("return 'inactive';","return hasPendingUnsubscribe() ? 'pending_unsubscribe' : 'inactive';")],
+ ['S2',unsub,x=>/if \(!isPushSupported\(\)\)[\s\S]{0,170}return \{ ok: true \};/.test(x),x=>x.replace("if (!isPushSupported()) {","if (!isPushSupported() && !pendingEndpoint) {")],
+ ['S3',logger,x=>x.includes('...(name ? { name } : {})'),x=>x.replace('...(name ? { name } : {})','...(name ? { name: sanitizePushErrorMessage(name, knownSecrets) } : {})')],
+ ['S4',preSW,x=>x.includes("} catch {\n    return 'unknown';\n  }"),x=>x.replace("} catch {\n    return 'unknown';\n  }","} catch {\n    return hasPendingUnsubscribe() ? 'pending_unsubscribe' : 'unknown';\n  }")]
+];
+let invalid=false;
+for(const [label,original,check,mutate] of checks){
+ const changed=mutate(original), base=check(original), after=check(changed);
+ console.log(label, 'baseline_defect='+base, 'hypothetical_fix_defect='+after);
+ if(!base || after || original===changed) invalid=true;
+}
+process.exitCode=invalid?1:0;
+NODE
+node /tmp/pr459-r2-probes.cjs
+```
+
+**Este harness de análisis de código no sustituye pruebas RED/GREEN.** Los mutantes son marcadores de posibles cambios, no parches listos para producción; las pruebas de integración reales nuevas deben hacer fallar el SHA previo y pasar el SHA corregido.
+
+**Autor, no revisor:** `docs/tasks/log/T-382.md` a `0e32446d` declara tests focalizados 173/173, generales 3028/3028, M8–M12 RED y GREEN, E2E 7+1 passed. No reproducidos desde esta sesión. Sin clon por DNS, `git merge-tree`/`analizar.mjs` y tests locales no ejecutados; `e2e-preview` oficial diferido por decisión de Lautaro073.
