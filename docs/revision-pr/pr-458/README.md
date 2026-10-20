@@ -6,28 +6,25 @@
 | Tarea | T-380 · Fase 3 · issue #442 |
 | Autor | @Lautaro073 |
 | Rama | `feat/T-380-admin-reinstate-courier` → `develop` |
-| SHA revisado | `961d6ea6555f42193fec806d2d216adbee2c6893` |
 | Base al revisar | `fee28dbdf2cf358aa8d36198d81b3cb04f81e61b` |
-| Diff | 10 archivos · +617 / -30 |
-| Estado | Ronda 1: **CON BLOQUEANTES (2)** |
+| Estado | **Ronda 2: SIN BLOQUEANTES técnicos**; pendiente el cierre de CI oficial del SHA de código |
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA de código revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `961d6ea6555f42193fec806d2d216adbee2c6893` | 2 bloqueantes, 0 decisiones | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `acd94ce13e318a279e2926c5dc4dce8200912c02` | 0 bloqueantes nuevos, H01/H02 corregidos | [ronda-2.md](revisiones/ronda-2.md) |
 
-## Estado por hallazgo
+## Estado de hallazgos
 
-| ID | Síntesis | Severidad | Estado |
-|---|---|---|---|
-| PR458-H01 | Sleep fijo en prueba de doble envío | medio | abierto |
-| PR458-H02 | Mutaciones RED/GREEN no reproducibles con la bitácora | medio | abierto |
+| ID | Hallazgo | Estado |
+|---|---|---|
+| PR458-H01 | Sleep fijo en test de doble envío | arreglado-verificado (control estático propio + Vitest oficial; RED dinámico documentado por autor) |
+| PR458-H02 | Evidencia M1–M8 incompleta | arreglado-verificado (cotejo propio de 9 preimágenes y formato + CI; sin reejecutar mutaciones Vitest) |
 
-## Para continuar
+## Condición operativa de merge
 
-1. Autor: seguir **únicamente** el prompt adjunto al comentario de cierre en la PR; no editar esta carpeta de revisión.
-2. Nueva ronda independiente después del push; no merge ni aprobación mientras haya bloqueantes.
-3. CI de código verde en `11f626b5`; `961d6ea6555f42193fec806d2d216adbee2c6893` solo modificó la bitácora desde ese SHA y las corridas del nuevo HEAD estaban en curso cuando se inspeccionó. El cambio de bitácora **no exige repetir CI** por sí solo.
+La revisión del código queda **SIN BLOQUEANTES**. Antes de mergear, confirmar `db-tests` y `e2e-preview` verdes en el SHA `acd94ce13e318a279e2926c5dc4dce8200912c02`, y que el HEAD/base no cambiaron. El CI anterior de `11f626b5` fue verde, pero no sustituye afirmar el estado de un job pendiente. El commit documental de esta revisión no requiere por sí solo un CI nuevo. La PR permanece en Draft; la revisión no la aprueba ni mergea.
 
-Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl) · [comandos](evidencia/comandos.md) · [lecciones](lecciones.md).
+Datos: [hallazgos.jsonl](hallazgos.jsonl) · [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).

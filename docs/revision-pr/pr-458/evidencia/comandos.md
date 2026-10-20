@@ -70,3 +70,85 @@ git ls-remote origin feat/T-380-admin-reinstate-courier
 ```
 
 No exigir nueva ejecución de CI exclusivamente por editar `docs/tasks/log/T-380.md`; si cambia la prueba de H01, ejecutar las comprobaciones reales de esa modificación.
+
+---
+
+## Ronda 2 · SHA de código `acd94ce13e318a279e2926c5dc4dce8200912c02`
+
+### Procedencia y alcance
+
+- `git ls-remote` ejecutado en el contenedor de revisión no puede resolver `github.com`; la comparación GitHub confirmó HEAD exacto `acd94ce13e318a279e2926c5dc4dce8200912c02` y base `fee28dbdf2cf358aa8d36198d81b3cb04f81e61b`.
+- Inspección directa de fuente real y del test nuevo, de la bitácora M1–M9, revisión estructural de todos los snippets «Antes», comparación de cambios vs. revisión R1 y lectura del unit job oficial en el SHA.
+- **Control independiente ejecutado en el runtime JS del revisor** usando los textos devueltos por el conector GitHub: GREEN del test/componente (sin sleep, con `act` y guarda), RED estático al remover en memoria la guarda, 9/9 registros completos y 9/9 preimágenes exactas. No se ejecutó Vitest local y el RED independiente **no** es un RED dinámico.
+- El primer intento de contar secciones usó `m[1]` en lugar de `m[2]`, dando false por error del checker. Corregido en el mismo turno y control reejecutado: `9/9`.
+- CI [39445319788](https://github.com/cadeApp/cadeApp/actions/runs/39445319788): unit `151 passed (151)` archivos y `2964 passed (2964)` tests; typecheck, lint, build, audit y bundle-budget success. `db-tests` en curso al emitir el informe; `e2e-preview` [39445508447](https://github.com/cadeApp/cadeApp/actions/runs/39445508447) pendiente. El bundle muestra `/admin/applicants/[id] 248 kB`, valor advisory que ya constaba en R1.
+- Autor: M9 declara RED con 2 llamadas, GREEN de 19/19; M1–M9 todos acompañados de comandos reales según bitácora. **No se apropia esa ejecución el revisor.**
+
+### Harness de inspección estática reproducible
+
+Ejecutar desde la raíz de un checkout limpio del SHA de código. No requiere red, dependencias ni muta archivos. Guarda en `/tmp/pr458-r2-static.cjs`:
+
+```bash
+cat > /tmp/pr458-r2-static.cjs <<'NODE'
+#!/usr/bin/env node
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.cwd();
+const read = name => fs.readFileSync(path.join(root, name), 'utf8');
+const prod = read('src/features/admin/components/applicant-detail-view.tsx');
+const test = read('src/features/admin/components/applicant-detail-view.test.tsx');
+const log = read('docs/tasks/log/T-380.md');
+const map = {
+  1: 'src/features/admin/actions.ts',
+  2: 'src/features/admin/actions.ts',
+  3: 'src/features/admin/actions.ts',
+  4: 'src/features/admin/schemas.ts',
+  5: 'src/features/admin/components/applicant-detail-view.tsx',
+  6: 'src/features/admin/components/applicant-detail-view.tsx',
+  7: 'src/features/admin/components/applicant-detail-view.tsx',
+  8: 'src/features/admin/components/applicant-detail-view.tsx',
+  9: 'src/features/admin/components/applicant-detail-view.tsx',
+};
+const sections = [...log.matchAll(/#### M(\d+) —[^\n]+\n([\s\S]*?)(?=\n#### M\d+ —|\n- Comprobación final:)/g)];
+const guard = 'if (!decisionModal || decisionInFlight.current) return;';
+const targetStart = test.indexOf("it('dos envíos seguidos del formulario");
+const targetEnd = test.indexOf("it('idempotent: true", targetStart);
+const target = targetStart >= 0 && targetEnd > targetStart ? test.slice(targetStart, targetEnd) : '';
+const green = prod.includes(guard)
+  && prod.includes('decisionInFlight.current = true;')
+  && prod.includes('decisionInFlight.current = false;')
+  && !/\bsetTimeout\s*\(/.test(target)
+  && /await act\(async \(\) => \{\s*fireEvent\.submit\(form\);\s*\}\)/.test(target)
+  && /expect\(reinstateCourierAction\)\.toHaveBeenCalledTimes\(1\)/.test(target);
+const mutant = prod.replace(guard, 'if (!decisionModal) return;');
+const red = mutant !== prod && !mutant.includes(guard);
+const fields = ['- Antes:', '- Después', '- Comando:', 'RED (exit 1)', 'GREEN (exit 0)', 'Test Files', 'Tests  '];
+const complete = sections.length === 9 && sections.every(m => {
+  const index = Number(m[1]);
+  const body = m[2];
+  const previous = /- Antes:\s*\x60\x60\x60ts\n([\s\S]*?)\n\x60\x60\x60/.exec(body)?.[1];
+  if (!previous || !map[index]) return false;
+  return fields.every(field => body.includes(field)) && read(map[index]).includes(previous);
+});
+console.log('GREEN structural H01:', green);
+console.log('RED structural with guard removed in memory:', red);
+console.log('M1–M9 traceable:', complete, 'records:', sections.length);
+if (!(green && red && complete)) process.exitCode = 1;
+// Static only: does NOT execute mutated Vitest or confirm author's recorded RED runtime.
+
+NODE
+node /tmp/pr458-r2-static.cjs
+```
+
+Resultado registrado con el equivalente sobre las fuentes devueltas por GitHub: GREEN H01 = true · RED in-memory H01 = true · M1–M9 9/9 completos, 9/9 preimágenes exactas. El comando Node aquí documentado es reproducible pero **no se ejecutó localmente en este entorno**, porque no se pudo clonar el repositorio.
+
+### Comandos que corresponden a pruebas dinámicas (no ejecutados por el revisor)
+
+```bash
+pnpm exec vitest run src/features/admin/components/applicant-detail-view.test.tsx src/features/admin/actions.test.ts
+pnpm typecheck && pnpm lint && pnpm test
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+Cuando termine el CI de `acd94ce13e318a279e2926c5dc4dce8200912c02`, corroborar `db-tests` (`Files= / Tests= / Result: PASS` y `git diff --exit-code`) y el resultado definitivo de `e2e-preview`. No anunciar merge permitido únicamente por `unit`.
