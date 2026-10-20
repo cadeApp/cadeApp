@@ -399,6 +399,8 @@ export interface FakeRpcOptions {
   readonly initialCouriers?: readonly FakeSeedCourier[];
   readonly initialMerchants?: readonly FakeSeedMerchant[];
   readonly initialDocuments?: readonly FakeSeedDocument[];
+  /** Objetos existentes en el bucket privado `courier-docs`, para emular su comprobación por las RPC. */
+  readonly initialStoragePaths?: readonly string[];
   readonly initialIncidents?: readonly FakeSeedIncident[];
   readonly initialCancellationReasons?: readonly FakeSeedCancellationReason[];
 }
@@ -469,6 +471,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   get_merchant_request_private_fields: ['merchant'],
   register_push_subscription: ['merchant', 'courier', 'admin'],
   replace_courier_document: ['courier'],
+  add_courier_optional_document: ['courier'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
   admin_reinstate_courier: ['admin'],
@@ -615,6 +618,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const couriers = new Map<string, FakeCourierRecord>();
   const merchants = new Map<string, FakeMerchantRecord>();
   const documents = new Map<string, FakeDocumentRecord>();
+  const storedCourierDocumentPaths = new Set<string>();
   const incidents = new Map<string, FakeIncidentRecord>();
   const pushSubscriptions = new Map<string, FakePushSubscriptionRecord>();
   const cancellationReasons: FakeCancellationReasonRecord[] = [];
@@ -1272,6 +1276,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   (options.initialCouriers ?? []).forEach(putCourier);
   (options.initialMerchants ?? []).forEach(putMerchant);
   (options.initialDocuments ?? []).forEach(putDocument);
+  (options.initialStoragePaths ?? []).forEach((path) => storedCourierDocumentPaths.add(path));
   (options.initialIncidents ?? []).forEach(putIncident);
   (options.initialCancellationReasons ?? []).forEach((row) => cancellationReasons.push({ ...row }));
 
@@ -1323,7 +1328,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         rpcName === 'report_incident' ||
         rpcName === 'submit_offer' ||
         rpcName === 'take_request' ||
-        rpcName === 'replace_courier_document') &&
+        (rpcName === 'replace_courier_document' || rpcName === 'add_courier_optional_document')) &&
       (actor.consentStatus ?? 'active') !== 'active'
     ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
@@ -2949,6 +2954,89 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             hasMore,
             nextCursor: hasMore && last ? { beforeCreatedAt: last.createdAt, beforeId: last.id } : null,
           },
+        });
+      }),
+
+    add_courier_optional_document: (rawInput) =>
+      executeRpc('add_courier_optional_document', rawInput, false, (input) => {
+        const courier = couriers.get(actor.userId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'rejected' || courier.status === 'suspended') {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+        if ((courier.status !== 'pending' && courier.status !== 'approved') || courier.vehicleType === null) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        const prefix = `courier/${actor.userId}/${input.kind}_`;
+        const suffix = input.storagePath.slice(prefix.length);
+        if (
+          !input.storagePath.startsWith(prefix) ||
+          input.storagePath.includes('..') ||
+          !/^[0-9]+[.](png|jpe?g|webp|pdf)$/.test(suffix)
+        ) {
+          return err('VALIDATION_ERROR');
+        }
+
+        if (input.idempotencyKey) {
+          for (const document of documents.values()) {
+            if (
+              document.courierId === actor.userId &&
+              document.kind === input.kind &&
+              document.idempotencyKey === input.idempotencyKey
+            ) {
+              if (document.storagePath !== input.storagePath) return err('VALIDATION_ERROR');
+              return ok({
+                documentId: document.documentId,
+                kind: document.kind as 'license' | 'insurance',
+                status: document.status,
+                isCurrent: document.isCurrent,
+                idempotent: true,
+              });
+            }
+          }
+        }
+
+        const currentDocument = [...documents.values()].find(
+          (document) =>
+            document.courierId === actor.userId && document.kind === input.kind && document.isCurrent
+        );
+        if (currentDocument?.status === 'submitted' && currentDocument.storagePath === input.storagePath) {
+          return ok({
+            documentId: currentDocument.documentId,
+            kind: input.kind,
+            status: currentDocument.status,
+            isCurrent: true,
+            idempotent: true,
+          });
+        }
+        if (currentDocument) return err('INVALID_STATE_TRANSITION');
+        if (!storedCourierDocumentPaths.has(input.storagePath)) return err('NOT_FOUND');
+
+        const documentId = crypto.randomUUID();
+        documents.set(documentId, {
+          documentId,
+          courierId: actor.userId,
+          kind: input.kind,
+          status: 'submitted',
+          isCurrent: true,
+          rejectionCode: null,
+          storagePath: input.storagePath,
+          purgeAfter: null,
+          idempotencyKey: input.idempotencyKey ?? null,
+        });
+        if (input.kind === 'license') {
+          courier.licenseStatus = 'submitted';
+        } else {
+          courier.insuranceStatus = 'submitted';
+        }
+
+        return ok({
+          documentId,
+          kind: input.kind,
+          status: 'submitted',
+          isCurrent: true,
+          idempotent: false,
         });
       }),
 

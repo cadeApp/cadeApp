@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as courierRpc from './courier';
 import {
   mapReplaceCourierDocumentRpcError,
   replaceCourierDocumentRpc,
@@ -155,5 +156,135 @@ describe('CC-025 — replaceCourierDocumentRpc', () => {
     if (!resThrowing.ok) {
       expect(resThrowing.code).toBe('INTERNAL_ERROR');
     }
+  });
+});
+
+describe('CC-033 — addCourierOptionalDocumentRpc', () => {
+  const storagePath = 'courier/00000000-0000-4000-8000-0000000000c1/insurance_123.jpg';
+
+  function invokeAddOptionalDocument(
+    caller: SupabaseRpcCaller,
+    rawInput: unknown,
+  ): Promise<unknown> {
+    const candidate = courierRpc as Record<string, unknown>;
+    return (candidate.addCourierOptionalDocumentRpc as (
+      rpcCaller: SupabaseRpcCaller,
+      input: unknown,
+    ) => Promise<unknown>)(caller, rawInput);
+  }
+
+  it('expone el wrapper tipado para la RPC nueva', () => {
+    expect(courierRpc).toHaveProperty('addCourierOptionalDocumentRpc');
+  });
+
+  it('rechaza entrada inválida antes de llamar a Supabase', async () => {
+    let calls = 0;
+    const caller: SupabaseRpcCaller = {
+      async rpc() {
+        calls += 1;
+        throw new Error('no debe invocarse');
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'dni_front', storagePath: '' }),
+    ).resolves.toMatchObject({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(calls).toBe(0);
+  });
+
+  it.each([
+    'UNAUTHENTICATED',
+    'UNAUTHORIZED_ACTOR',
+    'NOT_FOUND',
+    'INVALID_STATE_TRANSITION',
+    'VALIDATION_ERROR',
+  ])('preserva el código público %s devuelto por Postgres', async (code) => {
+    const caller: SupabaseRpcCaller = {
+      async rpc() {
+        return { data: null, error: { message: code } };
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath }),
+    ).resolves.toMatchObject({ ok: false, code });
+  });
+
+  it('devuelve la salida válida de una alta nueva', async () => {
+    const calls: Array<{ fn: string; args: Record<string, unknown> | undefined }> = [];
+    const caller: SupabaseRpcCaller = {
+      async rpc(fn, args) {
+        calls.push({ fn, args });
+        return {
+          data: {
+            documentId: '00000000-0000-4000-8000-0000000000d1',
+            kind: 'insurance',
+            status: 'submitted',
+            isCurrent: true,
+            idempotent: false,
+          },
+          error: null,
+        };
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { kind: 'insurance', status: 'submitted', idempotent: false },
+    });
+    expect(calls).toEqual([
+      {
+        fn: 'add_courier_optional_document',
+        args: { p_payload: { kind: 'insurance', storagePath } },
+      },
+    ]);
+  });
+
+  it('preserva una idempotencyKey válida en el payload exacto de PostgREST', async () => {
+    const idempotencyKey = '00000000-0000-4000-8000-0000000000d2';
+    const calls: Array<{ fn: string; args: Record<string, unknown> | undefined }> = [];
+    const caller: SupabaseRpcCaller = {
+      async rpc(fn, args) {
+        calls.push({ fn, args });
+        return {
+          data: {
+            documentId: '00000000-0000-4000-8000-0000000000d1',
+            kind: 'insurance',
+            status: 'submitted',
+            isCurrent: true,
+            idempotent: false,
+          },
+          error: null,
+        };
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath, idempotencyKey }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(calls).toEqual([
+      {
+        fn: 'add_courier_optional_document',
+        args: { p_payload: { kind: 'insurance', storagePath, idempotencyKey } },
+      },
+    ]);
+  });
+
+  it.each([
+    { response: { data: { documentId: 'not-a-uuid' }, error: null }, label: 'salida malformada' },
+    { response: new Error('red caída'), label: 'excepción del cliente' },
+  ])('convierte %s en INTERNAL_ERROR', async ({ response }) => {
+    const caller: SupabaseRpcCaller = {
+      async rpc() {
+        if (response instanceof Error) throw response;
+        return response;
+      },
+    };
+
+    await expect(
+      invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath }),
+    ).resolves.toMatchObject({ ok: false, code: 'INTERNAL_ERROR' });
   });
 });

@@ -1292,6 +1292,10 @@ export type Database = {
         }
         Returns: Json
       }
+      add_courier_optional_document: {
+        Args: { p_payload: Json }
+        Returns: Json
+      }
       admin_decide_courier: {
         Args: { p_courier_id: string; p_decision: string; p_reason?: string }
         Returns: Json

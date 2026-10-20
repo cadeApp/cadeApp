@@ -700,6 +700,23 @@ export const replaceCourierDocumentOutputSchema = z.object({
   idempotent: z.boolean(),
 });
 
+// CC-033: alta posterior de licencia o seguro opcionales.
+export const addCourierOptionalDocumentInputSchema = z.object({
+  kind: z.enum(['license', 'insurance']),
+  storagePath: z.string().trim().min(1).max(500),
+  idempotencyKey: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    .optional(),
+});
+export const addCourierOptionalDocumentOutputSchema = z.object({
+  documentId: uuidSchema,
+  kind: z.enum(['license', 'insurance']),
+  status: documentReviewStatusSchema,
+  isCurrent: z.boolean(),
+  idempotent: z.boolean(),
+});
+
 // 17. admin_set_subscription
 export const adminSetSubscriptionInputSchema = z.object({
   merchantId: uuidSchema,
@@ -1508,6 +1525,17 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  add_courier_optional_document: {
+    inputSchema: addCourierOptionalDocumentInputSchema,
+    outputSchema: addCourierOptionalDocumentOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_set_subscription: {
     inputSchema: adminSetSubscriptionInputSchema,
     outputSchema: adminSetSubscriptionOutputSchema,
@@ -1675,6 +1703,7 @@ export const ALL_RPC_NAMES = [
   'admin_reinstate_courier',
   'admin_verify_document',
   'replace_courier_document',
+  'add_courier_optional_document',
   'admin_set_subscription',
   'admin_update_setting',
   'admin_resolve_incident',
