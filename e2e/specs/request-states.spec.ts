@@ -11,6 +11,7 @@ import {
   createStagingSeedContext,
   seedStagingData,
   cleanupStagingData,
+  seedOffersForFirstRequest,
 } from '../fixtures';
 
 /**
@@ -1359,4 +1360,60 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// T-381: el conteo de la tarjeta del panel sigue a las ofertas pendientes reales
+// ---------------------------------------------------------------------------
+test.describe('T-381 — conteo de ofertas de la tarjeta tras suspender a un ofertante', () => {
+  test('al volver al panel por navegación interna, la tarjeta pasa de 2 a 1 oferta sin recargar', async ({
+    page,
+    stagingContext,
+    loginAsMerchant,
+  }) => {
+    const requestId = stagingContext.createdRequestIds[0];
+    const suspended = stagingContext.courierUsers?.[1];
+    if (!requestId || !suspended) {
+      throw new Error('[E2E Precondition Error] Se requieren la solicitud sembrada y dos repartidores');
+    }
+    await seedOffersForFirstRequest(stagingContext);
 
+    // 1. El comercio ve la tarjeta con dos ofertas y entra al detalle por el enlace del panel.
+    await loginAsMerchant(page);
+    await page.waitForURL(/\/merchant\/dashboard/);
+    await expect(page.getByText('2 ofertas recibidas')).toBeVisible();
+    await page.getByRole('link', { name: 'Ver ofertas' }).click();
+    await page.waitForURL(new RegExp(`/merchant/requests/${requestId}`));
+
+    // Marca del documento: si la vuelta al panel recargara la página, se perdería.
+    await page.evaluate(() => {
+      (window as unknown as { __t381SameDocument: boolean }).__t381SameDocument = true;
+    });
+
+    // 2. El admin suspende al segundo ofertante (sesión AAL2 real); su oferta pendiente pasa a withdrawn.
+    const adminCredentials = await seedAdminUser(stagingContext);
+    const adminClient = await createAuthenticatedClient(adminCredentials);
+    await elevateAdminToAal2(adminClient, adminCredentials);
+    const { error: suspendErr } = await adminClient.rpc('admin_suspend_courier', {
+      p_courier_id: suspended.id,
+      p_reason: `Suspensión E2E T-381 ${stagingContext.testRunId}`,
+    });
+    if (suspendErr) {
+      throw new Error(`[E2E Admin Error] Falló admin_suspend_courier: ${suspendErr.message}`);
+    }
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(
+      inspection.offers.map((offer) => [offer.courierId === suspended.id, offer.status]).sort()
+    ).toEqual([
+      [false, 'pending'],
+      [true, 'withdrawn'],
+    ]);
+
+    // 3. Vuelta al panel por navegación interna (historial del cliente), sin recarga.
+    await page.goBack();
+    await page.waitForURL(/\/merchant\/dashboard/);
+    await expect(page.getByText('1 oferta recibida')).toBeVisible();
+    await expect(page.getByText('2 ofertas recibidas')).toHaveCount(0);
+    expect(
+      await page.evaluate(() => (window as unknown as { __t381SameDocument?: boolean }).__t381SameDocument)
+    ).toBe(true);
+  });
+});

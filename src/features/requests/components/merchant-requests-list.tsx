@@ -17,6 +17,7 @@ import type { RpcOutput } from '@/domain/rpc-contracts';
 import type { MerchantRequestSummary, MerchantMetrics } from '../types';
 import { cancelMerchantRequestAction } from '../actions';
 import { MerchantRequestCancelDialog } from './merchant-request-cancel-dialog';
+import { useMerchantPanelRefresh } from '../hooks/use-merchant-panel-refresh';
 
 export interface MerchantRequestsListProps {
   readonly requests: readonly MerchantRequestSummary[];
@@ -72,6 +73,8 @@ function getPackageLabel(packageType: string): string {
 
 export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRequestsListProps) {
   const router = useRouter();
+  // T-381: el conteo de ofertas de las tarjetas sigue a las pendientes reales al volver al panel.
+  useMerchantPanelRefresh();
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
