@@ -149,6 +149,9 @@ async function addAgainstSuspend(suspensionFirst) {
       await waitBlocked(add, suspend);
       add.send('commit;');
       await suspend.waitFor(`${suspendDone}:DONE`);
+      const suspendCommit = `SUSPEND_${crypto.randomUUID()}_COMMIT`;
+      suspend.send(`commit; select '${suspendCommit}';`);
+      await suspend.waitFor(suspendCommit);
       assert.ok(!suspend.output.includes('40P01'), 'alta/suspensión no genera deadlock');
       assert.equal(Number(runSql(`select count(*) from public.courier_documents where courier_id='${courierId}' and kind='insurance' and is_current;`)), 1, 'alta previa persiste antes de suspensión');
     }
