@@ -95,7 +95,7 @@ export const COURIER_ONBOARDING_COPY = {
   optionalDocumentHint:
     'Podés subirlo ahora: queda en revisión y, cuando el admin lo valide, suma respaldo a tus ofertas.',
   optionalDocumentAddTitle: (title: string) => `Subir ${title.toLowerCase()}`,
-  optionalDocumentSubtitle: 'Seleccioná un archivo claro: foto o PDF.',
+  optionalDocumentSubtitle: 'Seleccioná una foto clara: JPG, PNG o WebP.',
   optionalDocumentSubmitted: 'Documento enviado. Queda en revisión hasta que el admin lo valide.',
   optionalDocumentErrors: {
     network: 'No pudimos enviarlo por un problema de conexión. Volvé a seleccionar el archivo para reintentar.',
@@ -103,8 +103,7 @@ export const COURIER_ONBOARDING_COPY = {
     unauthorized: 'Tu cuenta no puede cargar documentos en este momento.',
     notFound: 'No encontramos el archivo subido. Volvé a seleccionarlo para reintentar.',
     generic: 'No pudimos enviar el documento. Volvé a intentar en unos momentos.',
-    pdfTooLarge: 'El PDF supera los 10 MB. Elegí un archivo más liviano.',
-    unsupportedType: 'Ese formato no se admite. Subí una foto (JPG, PNG o WEBP) o un PDF.',
+    unsupportedType: 'Ese formato no se admite. Subí una foto JPG, PNG o WebP.',
   },
 } as const;
 

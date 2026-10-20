@@ -2624,7 +2624,7 @@ describe('T-376 · CC-033: alta desde el perfil de la licencia o el seguro no ca
   });
 });
 
-describe('T-376 · PR464 ronda 1: PDF y reintento tras NOT_FOUND en el alta', () => {
+describe('T-376 · PR464 ronda 1: formatos del alta y reintento tras NOT_FOUND', () => {
   afterEach(cleanup);
   beforeEach(() => {
     vi.clearAllMocks();
@@ -2646,52 +2646,27 @@ describe('T-376 · PR464 ronda 1: PDF y reintento tras NOT_FOUND en el alta', ()
 
   const input = () => screen.getByLabelText(/^Subir seguro de accidentes$/i) as HTMLInputElement;
 
-  it('H01: el alta acepta PDF (y el reemplazo sigue solo con imágenes)', () => {
-    const view = renderAdd();
-    expect(input().accept.split(',')).toContain('application/pdf');
-    view.unmount();
-    render(
-      <DocumentReplacementCard courierId="courier-376" kind="insurance" title="Seguro de accidentes" initialStatus="rejected" />
-    );
-    expect((screen.getByLabelText(/Reemplazar seguro de accidentes/i) as HTMLInputElement).accept).toBe(
-      'image/jpeg,image/png,image/webp'
-    );
-  });
-
-  it('H01: un PDF se sube tal cual, sin pasar por la compresión de imágenes, y queda en revisión', async () => {
-    mockUploadCourierDocument.mockResolvedValue({ storagePath: 'courier/courier-376/insurance_1730000000100.pdf' });
-    const addAction = vi
-      .spyOn(actionsModule, 'addCourierOptionalDocumentAction')
-      .mockResolvedValue(okResult('d0000000-0000-4000-8000-000000000400'));
-    const pdf = new File(['%PDF-1.4 seguro'], 'seguro.pdf', { type: 'application/pdf' });
-
+  it('H01: el texto del alta ofrece solo los formatos que acepta el selector (fotos, sin PDF)', () => {
     renderAdd();
-    fireEvent.change(input(), { target: { files: [pdf] } });
-
-    await waitFor(() => expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined());
-    expect(compressImage).not.toHaveBeenCalled();
-    expect(mockUploadCourierDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ courierId: 'courier-376', kind: 'insurance', file: pdf })
-    );
-    expect(addAction).toHaveBeenCalledWith(
-      expect.objectContaining({ storagePath: 'courier/courier-376/insurance_1730000000100.pdf' })
-    );
+    expect(input().accept).toBe('image/jpeg,image/png,image/webp');
+    expect(screen.getByText(COURIER_ONBOARDING_COPY.optionalDocumentSubtitle)).toBeDefined();
+    expect(COURIER_ONBOARDING_COPY.optionalDocumentSubtitle).not.toMatch(/pdf/i);
+    expect(COURIER_ONBOARDING_COPY.optionalDocumentSubtitle).toMatch(/JPG/);
+    expect(COURIER_ONBOARDING_COPY.optionalDocumentSubtitle).toMatch(/PNG/);
+    expect(COURIER_ONBOARDING_COPY.optionalDocumentSubtitle).toMatch(/WebP/i);
   });
 
   it.each([
-    ['un PDF de más de 10 MB', () => {
-      const big = new File(['%PDF'], 'seguro.pdf', { type: 'application/pdf' });
-      Object.defineProperty(big, 'size', { value: 10 * 1024 * 1024 + 1 });
-      return big;
-    }, 'pdfTooLarge'],
-    ['un formato no admitido', () => new File(['texto'], 'seguro.txt', { type: 'text/plain' }), 'unsupportedType'],
-  ] as const)('H01: %s no se sube y muestra su mensaje', async (_case, makeFile, key) => {
+    ['un PDF', () => new File(['%PDF-1.4'], 'seguro.pdf', { type: 'application/pdf' })],
+    ['un texto', () => new File(['texto'], 'seguro.txt', { type: 'text/plain' })],
+  ] as const)('H01: %s no se sube y muestra que solo se admiten fotos', async (_case, makeFile) => {
     const addAction = vi.spyOn(actionsModule, 'addCourierOptionalDocumentAction');
 
     renderAdd();
     fireEvent.change(input(), { target: { files: [makeFile()] } });
 
-    expect((await screen.findByText(COURIER_ONBOARDING_COPY.optionalDocumentErrors[key])).getAttribute('role')).toBe('alert');
+    const message = await screen.findByText(COURIER_ONBOARDING_COPY.optionalDocumentErrors.unsupportedType);
+    expect(message.getAttribute('role')).toBe('alert');
     expect(mockUploadCourierDocument).not.toHaveBeenCalled();
     expect(compressImage).not.toHaveBeenCalled();
     expect(addAction).not.toHaveBeenCalled();

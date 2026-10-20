@@ -26,9 +26,11 @@ export interface DocumentReplacementCardProps {
   mode?: 'replace' | 'add';
 }
 
-/** T-376 (PR464-H01): el alta admite fotos y PDF (como el bucket y CC-033); el PDF se sube sin comprimir. */
-const ADD_ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
-const PDF_MAX_BYTES = 10 * 1024 * 1024;
+/**
+ * T-376 (PR464-H01): el alta admite solo las fotos que acepta el selector y que el visor del admin puede mostrar. El
+ * PDF de punta a punta (selector, subida y visor auditado) es el issue #465.
+ */
+const ADD_ACCEPTED_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/webp'];
 
 /** T-376: un mensaje por causa de falla del alta de un documento opcional. */
 function addErrorMessage(code: DomainErrorCode): string {
@@ -87,18 +89,10 @@ export function DocumentReplacementCard({
     setSuccessMessage(null);
     setSelectedFileName(file.name);
 
-    const isPdf = file.type === 'application/pdf';
-    if (mode === 'add') {
-      if (!(ADD_ACCEPTED_TYPES as readonly string[]).includes(file.type)) {
-        setUploadStatus('error');
-        setErrorMessage(COURIER_ONBOARDING_COPY.optionalDocumentErrors.unsupportedType);
-        return;
-      }
-      if (isPdf && file.size > PDF_MAX_BYTES) {
-        setUploadStatus('error');
-        setErrorMessage(COURIER_ONBOARDING_COPY.optionalDocumentErrors.pdfTooLarge);
-        return;
-      }
+    if (mode === 'add' && !ADD_ACCEPTED_TYPES.includes(file.type)) {
+      setUploadStatus('error');
+      setErrorMessage(COURIER_ONBOARDING_COPY.optionalDocumentErrors.unsupportedType);
+      return;
     }
     // Identificador único del archivo seleccionado (nombre, tamaño, tipo y última modificación)
     const fingerprint = `${file.name}-${file.size}-${file.type}-${file.lastModified}`;
@@ -158,12 +152,9 @@ export function DocumentReplacementCard({
 
       // 2. Subida a Supabase Storage SOLO si no fue confirmada previamente para este intento (PR358-R01)
       if (!attempt.uploadConfirmed) {
-        let compressed: File = file;
-        if (!(mode === 'add' && isPdf)) {
-          setIsCompressing(true);
-          compressed = await compressImage(file);
-          setIsCompressing(false);
-        }
+        setIsCompressing(true);
+        const compressed = await compressImage(file);
+        setIsCompressing(false);
 
         const { storagePath } = await uploadCourierDocument({
           courierId: resolvedCourierId,
@@ -305,7 +296,6 @@ export function DocumentReplacementCard({
 
         <DocumentUploadCard
           kind={kind}
-          accept={ADD_ACCEPTED_TYPES.join(',')}
           title={COURIER_ONBOARDING_COPY.optionalDocumentAddTitle(title)}
           subtitle={COURIER_ONBOARDING_COPY.optionalDocumentSubtitle}
           status={uploadStatus}
