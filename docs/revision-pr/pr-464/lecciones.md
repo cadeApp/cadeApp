@@ -13,3 +13,7 @@
 3. Diferenciar prueba de RPC autenticada de E2E por la UI del administrador; no declarar verificado el visor si se hizo una llamada directa a RPC.
 
 **No se asignó un número AG global nuevo:** el entorno solo permite consulta del repositorio por API, no el `git grep` sobre todas las ramas remotas exigido para reservar un número sin colisiones. Incorporar estas lecciones al numerado en una sesión con clon completo; no modificar `AGENTS.md` por una sola PR.
+
+## Dependencias de UX detectadas
+- `CC-033` admite PDF, pero el visor admin usa `<img>`; habilitar solamente el selector degradaría la experiencia. Issue #465 para un flujo completo; T-376 debe alinear el copy a las imágenes admitidas.
+- La vulnerabilidad Vite audit preexistente se abrió por separado como #466.
