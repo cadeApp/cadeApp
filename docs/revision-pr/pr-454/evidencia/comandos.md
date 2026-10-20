@@ -65,3 +65,54 @@ En SQL, `NULL NOT IN ('license','insurance')` evalúa a NULL, no TRUE. Con `stor
 
 ## No comprobado
 No se pudo ejecutar `git merge-tree`, tests unitarios locales ni suite SQL propia. La ausencia de estos comandos no es un pase silencioso: exige revalidación por un revisor en la siguiente ronda.
+
+## Ronda 2 — 2026-10-20 — SHA cb32fdce9986ed133db68def0d1a2017122b90a7
+
+### CI verificado desde los logs originales
+
+- Run https://github.com/cadeApp/cadeApp/actions/runs/39437579550 (completado SUCCESS).
+- Unit job https://github.com/cadeApp/cadeApp/actions/runs/39437579550/job/118678566926: `Test Files 152 passed`, `Tests 2961 passed`, `rpc-fake.ts branches 90.63%`.
+- DB job https://github.com/cadeApp/cadeApp/actions/runs/39437579550/job/118678566374: `Files=34, Tests=3012, Result: PASS`, `[CC-033] concurrencia completada sin deadlocks en producción.`, `[CC-033] mutación RED detectada y migración original GREEN restaurada.`; paso `git diff --exit-code -- src/types/database.types.ts` con resultado SUCCESS.
+- Typecheck, lint, audit, build, bundle-budget: SUCCESS en el mismo run.
+
+### Comprobación independiente en Node (sólo regex, no FakeRpcClient)
+
+Se reprodujo este fragmento aislado de las regex presentes en la rama:
+
+```bash
+node - <<'JS'
+const suffix='1730000000005.PNG';
+const fake=/^[0-9]+[.](png|jpe?g|webp|pdf)$/i;
+const sql=/^[0-9]+[.](png|jpe?g|webp|pdf)$/;
+console.log(JSON.stringify({suffix,fake_accepts:fake.test(suffix),sql_accepts:sql.test(suffix)}));
+JS
+```
+
+**Salida real:** `{"suffix":"1730000000005.PNG","fake_accepts":true,"sql_accepts":false}`.
+Prueba aislada de semántica de expresiones regulares; no se hizo pasar por test verde/rojo del repositorio.
+
+### Arnés para la próxima ronda (guardar como /tmp/pr454-r3.sh y ejecutar desde repo limpio)
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+test -f src/domain/testing/rpc-fake.ts
+test -f src/domain/cc033-add-courier-optional-document.test.ts
+node --input-type=module <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const s=fs.readFileSync('src/domain/testing/rpc-fake.ts','utf8');
+const segment=s.slice(s.indexOf("add_courier_optional_document: (rawInput)"),s.indexOf("replace_courier_document: (rawInput)"));
+assert.ok(segment.length>0,'RPC fake debe existir');
+assert.ok(segment.includes('!/^[0-9]+[.](png|jpe?g|webp|pdf)$/.test(suffix)'), 'fake debe usar regex sin i');
+console.log('PASS: guard de extensión case-sensitive presente');
+JS
+pnpm exec vitest run src/domain/cc033-add-courier-optional-document.test.ts src/server/rpc/courier.test.ts
+pnpm test:coverage > /tmp/pr454-r3-coverage.log 2>&1 || { tail -n 60 /tmp/pr454-r3-coverage.log; exit 1; }
+grep -E 'Test Files|Tests |rpc-fake.ts|Coverage for branches' /tmp/pr454-r3-coverage.log | tail -n 15
+pnpm typecheck
+pnpm lint
+# PostgreSQL NO local. Verificar pgTAP, concurrencia y drift sólo desde db-tests CI.
+```
+
+Para RED genuino, agregar primero los tests de `.PNG`, actor merchant, consentimiento inactivo y `approved`. El test de `.PNG` debe fallar sobre el fake actual con `/i` (se acepta cuando se exige VALIDATION_ERROR), luego pasar sin `/i`. Comprobar que falla la ASERCIÓN esperada y no el arnés. Para SQL, preparar mutaciones efímeras bajo el runner autorizado db-tests y conservar sus resúmenes. Esta sesión no pudo ejecutar dicho arnés sobre el repositorio por fallo DNS al hacer git ls-remote; no se inventó resultado.
