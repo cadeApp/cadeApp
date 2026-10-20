@@ -21,6 +21,14 @@ import {
   type RouteCoordinate,
   type RouteStop,
 } from '../route-points';
+import {
+  buildStreetRouteRequest,
+  extractStreetRoutePath,
+  getComputeRoutes,
+  MAX_STREET_ROUTE_INTERMEDIATES,
+  ROUTES_LIBRARY_TIMEOUT_MS,
+  streetRouteKey,
+} from '../route-map-street-route';
 
 /** Margen en px alrededor de los pines al encuadrar el recorrido. */
 const ROUTE_BOUNDS_PADDING_PX = 32;
@@ -93,6 +101,114 @@ export interface TripRouteMapProps {
   title?: string;
   className?: string;
   drops?: readonly TripRouteMapDrop[];
+}
+
+/** Texto visible cuando hay mapa y pines pero no hay ruta por calles: la línea recta es solo orientativa. */
+const STREET_ROUTE_FALLBACK_TEXT = 'Línea recta orientativa; la ruta por calles no está disponible';
+
+interface StreetRouteInput {
+  readonly key: string;
+  readonly points: readonly RouteCoordinate[];
+}
+
+interface StreetRouteResult {
+  readonly key: string;
+  readonly status: 'street' | 'straight';
+  readonly path: readonly RouteCoordinate[] | null;
+}
+
+/**
+ * Calcula el recorrido vehicular por calles con `Route.computeRoutes` (biblioteca `routes`, T-377). Una sola llamada
+ * por secuencia de puntos (`input` cambia solo si cambia la clave) y se ignoran las respuestas que llegan después de
+ * un cambio de puntos o de desmontar. Cualquier falla informa `straight`: el mapa dibuja la línea recta orientativa.
+ */
+/** Espera máxima de `Route.computeRoutes` una vez cargada la biblioteca (D2-B de la ronda 1 de #453, sin reintentos). */
+const COMPUTE_ROUTES_TIMEOUT_MS = 10_000;
+
+/**
+ * Carga la biblioteca `routes` con `google.maps.importLibrary`, que ya existe cuando Maps JS está cargado. Se llama de
+ * forma explícita (D1-B de la ronda 1 de #453): `useMapsLibrary` de @vis.gl 1.10.1 no captura el rechazo de la carga
+ * y deja un `unhandledrejection`; acá el rechazo llega a quien llama y termina en la línea recta.
+ */
+function importRoutesLibrary(): Promise<unknown> {
+  const maps = (globalThis as { google?: { maps?: { importLibrary?: unknown } } }).google?.maps;
+  if (!maps || typeof maps.importLibrary !== 'function') {
+    return Promise.reject(new Error('google.maps.importLibrary no disponible'));
+  }
+  const importLibrary = maps.importLibrary as (name: string) => Promise<unknown>;
+  return Promise.resolve(importLibrary.call(maps, 'routes'));
+}
+
+/**
+ * Calcula el recorrido vehicular por calles con `Route.computeRoutes` (biblioteca `routes`, T-377). Una sola llamada
+ * por secuencia de puntos (`input` cambia solo si cambia la clave). Se publica un único resultado por secuencia: lo
+ * que llegue después de un cambio de puntos, de desmontar o de un timeout se ignora. La carga de la biblioteca y el
+ * cálculo tienen cada uno su espera máxima de 10 s; cualquier falla informa `straight` (línea recta orientativa).
+ */
+function StreetRouteLoader({
+  input,
+  onResult,
+}: {
+  input: StreetRouteInput;
+  onResult: (result: StreetRouteResult) => void;
+}) {
+  const status = useApiLoadingStatus();
+
+  React.useEffect(() => {
+    if (status !== APILoadingStatus.LOADED) return undefined;
+    const straight: StreetRouteResult = { key: input.key, status: 'straight', path: null };
+    let active = true;
+    let settled = false;
+    let computeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (result: StreetRouteResult) => {
+      if (!active || settled) return;
+      settled = true;
+      clearTimeout(libraryTimer);
+      clearTimeout(computeTimer);
+      onResult(result);
+    };
+
+    // Si la biblioteca no llega a cargar, se admite el fallback después de una espera acotada.
+    const libraryTimer = setTimeout(() => finish(straight), ROUTES_LIBRARY_TIMEOUT_MS);
+
+    importRoutesLibrary().then(
+      (routesLibrary) => {
+        if (!active || settled) return;
+        clearTimeout(libraryTimer);
+        const computeRoutes = getComputeRoutes(routesLibrary);
+        const request = buildStreetRouteRequest(input.points);
+        if (!computeRoutes || !request) {
+          finish(straight);
+          return;
+        }
+        let pending: Promise<unknown>;
+        try {
+          pending = computeRoutes(request);
+        } catch {
+          finish(straight);
+          return;
+        }
+        computeTimer = setTimeout(() => finish(straight), COMPUTE_ROUTES_TIMEOUT_MS);
+        pending.then(
+          (result) => {
+            const path = extractStreetRoutePath(result);
+            finish(path ? { key: input.key, status: 'street', path } : straight);
+          },
+          () => finish(straight)
+        );
+      },
+      () => finish(straight)
+    );
+
+    return () => {
+      active = false;
+      clearTimeout(libraryTimer);
+      clearTimeout(computeTimer);
+    };
+  }, [status, input, onResult]);
+
+  return null;
 }
 
 function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
@@ -206,7 +322,29 @@ export function TripRouteMap({
     [mappedStops]
   );
 
-  const routeBounds = React.useMemo(() => computeRouteBounds(polylinePath), [polylinePath]);
+  // T-377: ruta por calles. La entrada solo cambia cuando cambia la secuencia de puntos, no en cada rerender.
+  const routeKey = streetRouteKey(polylinePath);
+  const [streetRouteInput, setStreetRouteInput] = React.useState<StreetRouteInput>(() => ({
+    key: routeKey,
+    points: polylinePath,
+  }));
+  if (streetRouteInput.key !== routeKey) {
+    setStreetRouteInput({ key: routeKey, points: polylinePath });
+  }
+  const [streetRoute, setStreetRoute] = React.useState<StreetRouteResult | null>(null);
+  const exceedsStreetRouteLimit = polylinePath.length - 2 > MAX_STREET_ROUTE_INTERMEDIATES;
+  const streetRouteStatus: 'pending' | 'street' | 'straight' = exceedsStreetRouteLimit
+    ? 'straight'
+    : streetRoute?.key === routeKey
+      ? streetRoute.status
+      : 'pending';
+  const streetPath = streetRouteStatus === 'street' ? (streetRoute?.path ?? null) : null;
+  const drawnPath = streetPath ?? polylinePath;
+
+  const routeBounds = React.useMemo(
+    () => computeRouteBounds(streetPath ? [...polylinePath, ...streetPath] : polylinePath),
+    [polylinePath, streetPath]
+  );
 
   const formattedDistance = React.useMemo(() => {
     if (routeDistanceM == null || routeDistanceM < 1) return null;
@@ -282,6 +420,9 @@ export function TripRouteMap({
             }}
           >
             <MapStatusWatcher onFailed={() => setApiLoadFailed(true)} />
+            {polylinePath.length >= 2 && !exceedsStreetRouteLimit && (
+              <StreetRouteLoader input={streetRouteInput} onResult={setStreetRoute} />
+            )}
             <GoogleMap
               defaultCenter={mapCenter}
               defaultZoom={14}
@@ -301,10 +442,10 @@ export function TripRouteMap({
                 />
               ))}
 
-              {/* Traza orientativa directa entre pines */}
-              {polylinePath.length >= 2 && (
+              {/* Recorrido por calles o, si no está disponible, línea recta orientativa entre pines */}
+              {drawnPath.length >= 2 && (
                 <Polyline
-                  path={polylinePath}
+                  path={drawnPath}
                   strokeColor="#0B7A7D"
                   strokeOpacity={0.8}
                   strokeWeight={4}
@@ -349,13 +490,30 @@ export function TripRouteMap({
         )}
       </div>
 
+      {isMapAvailable && streetRouteStatus === 'straight' && (
+        <p
+          role="status"
+          data-testid="route-map-street-fallback"
+          className="flex items-center gap-2 px-3.5 pt-2 text-xs text-muted-foreground"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span>{STREET_ROUTE_FALLBACK_TEXT}</span>
+        </p>
+      )}
+
       {/* Pie informativo para C06 (cuando no hay botón externo) */}
       {!showExternalNavigation && (
         <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-3.5 py-2 text-xs text-muted-foreground">
           <span>
             {pickupZoneName} → {dropoffZoneName}
           </span>
-          <span className="font-medium text-primary-dark">Ruta directa sin desvíos</span>
+          <span className="font-medium text-primary-dark">
+            {!isMapAvailable
+              ? 'Mapa no disponible'
+              : streetRouteStatus === 'street'
+                ? 'Recorrido orientativo por calles'
+                : 'Línea recta orientativa'}
+          </span>
         </div>
       )}
 
