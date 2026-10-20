@@ -7,35 +7,35 @@
 | Tarea futura | T-376, issue #435 |
 | Autor | @Lautaro073 |
 | Rama | `cc/CC-033-courier-optional-documents` → `develop` |
-| Base revisada | `54bbdcd7b079fa208e970725efa66832a8fac724` |
-| SHA revisado | `639ea6dc74ad87a27fb533dfd460d21e72f7dcc8` |
-| Alcance original | 3 documentos, +261/-0; sin código ni SQL |
-| Estado | **CON BLOQUEANTES (3)**; PR Draft; no apta para merge hasta corrección y segunda ronda |
+| Base de la ronda 2 | `54bbdcd7b079fa208e970725efa66832a8fac724` |
+| SHA de autor revisado en ronda 2 | `79389ea830cc1c63636ffd06c35cefeafabdad6e` |
+| Alcance | PR documental: contrato, ficha y fila del plan; carpeta de revisión escrita solo por el revisor |
+| Estado de revisión | **SIN BLOQUEANTES DOCUMENTALES** (ronda 2), sin aprobación ni merge automático |
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA de autor revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `639ea6dc74ad87a27fb533dfd460d21e72f7dcc8` | 3 bloqueantes documentales (H01–H03) | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `79389ea830cc1c63636ffd06c35cefeafabdad6e` | **0 bloqueantes. H01–H03 corregidos y comprobados por inspección documental independiente** | [ronda-2.md](revisiones/ronda-2.md) |
 
-## Hallazgos
+## Estado por hallazgo
 
-| ID | Severidad | Motivo | Estado |
+| ID | Título resumido | Severidad original | Estado tras ronda 2 |
 |---|---|---|---|
-| PR436-H01 | alto | Falta bloquear carga posterior mientras `vehicle_type IS NULL` | abierto; decisión A tomada por Lautaro073 |
-| PR436-H02 | medio | El contrato no exige pruebas reales de carrera con sesiones simultáneas en la implementación | abierto |
-| PR436-H03 | medio | Rollback no ordena retirar UI antes de retirar RPC | abierto |
+| PR436-H01 | Guard `vehicle_type IS NOT NULL` y elegibilidad bajo lock | alto | **arreglado-verificado** (documentación) |
+| PR436-H02 | Concurrencia multisesión futura exigida | medio | **arreglado-verificado** (documentación) |
+| PR436-H03 | Rollback UI antes de RPC | medio | **arreglado-verificado** (documentación) |
 
-Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl). Evidencia y comandos: [evidencia/comandos.md](evidencia/comandos.md). Lecciones: [lecciones.md](lecciones.md).
+Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl). Evidencia y arnés: [evidencia/comandos.md](evidencia/comandos.md). Lecciones: [lecciones.md](lecciones.md).
 
-## Alcance de esta ronda
+## Alcance y limitaciones
 
-**Solo revisión documental y lectura estática de código.** La PR no implementa la RPC. No se exigieron ni ejecutaron `e2e-preview`, `db-tests`, `pnpm test:db`, Docker o Supabase local. El autor declaró `pnpm vitest run tools/verify-fichas.test.ts` (7/7) y `git diff --check` limpio, no reproducidos por el revisor en un checkout local. No atribuir GREEN de CI ni pruebas de concurrencia a esta ronda.
+- La ronda 2 contrastó exclusivamente los cambios del commit `79389ea830cc1c63636ffd06c35cefeafabdad6e` con la base de revisión anterior `6191721a`, que afectan solo `docs/contracts/CC-033.md`, `docs/tasks/T-376.md` y la **fila T-376** de `docs/implementation-plan.md`. No hubo escrituras del autor en `docs/revision-pr/pr-436/`.
+- 16/16 aserciones de **estructura documental** pasaron en un verificador independiente ejecutado sobre los textos del SHA especificado, con contraste semántico por lectura. La verificación no prueba que una RPC futura funcione.
+- El autor declaró `verify-fichas 7/7` y `git diff --check` limpio. El revisor no reprodujo esas dos ejecuciones en checkout local. No se exigieron ni ejecutaron E2E, DB tests ni Supabase/Docker local por esta PR únicamente documental.
+- Al momento de la lectura, `develop` no había avanzado frente al ancestro de la PR (compare remoto: ahead 3, behind 0). No se verificó merge-tree local.
+- La PR de implementación de CC-033 deberá ejecutar sus propias pruebas de RPC, seguridad e integración; T-376 permanece **bloqueada** hasta que esa implementación esté mergeada y aplicada en Develop, como marca su ficha.
+- No se exige una nueva corrida de CI verde únicamente por agregar esta carpeta de revisión; cualquier requisito de rama propio de GitHub es independiente de la evaluación documental.
 
-La ficha `docs/tasks/T-376.md` se crea en esta misma PR y **no existe en develop**, por lo que se comparó su contenido de la rama contra el plan en develop, en vez de afirmar que fue leída desde develop.
-
-## Próximo paso
-
-El autor hace `git pull` del commit de la revisión y corrige **solo** `docs/contracts/CC-033.md`, `docs/tasks/T-376.md` y la fila T-376 de `docs/implementation-plan.md`; sin tocar `docs/revision-pr/**`. Registra la decisión A, los requisitos de las pruebas futuras y el orden de rollback; corre únicamente verificaciones documentales y publica commit + push. La revisión independiente abre ronda 2 sobre el nuevo SHA.
-
-**Sin aprobación y sin merge en ronda 1.**
+**Conclusión:** sin bloqueantes en la revisión independiente de documentación; Lautaro073 decide si marca Ready y mergea, sujeto a los gates que establezca el repositorio.
