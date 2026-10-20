@@ -210,7 +210,7 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
                           type="button"
                           variant="outline"
                           onClick={() => setOfferToWithdraw(offer)}
-                          className="text-danger hover:bg-danger/10 hover:text-danger border-danger/30 min-h-12 w-full text-sm font-semibold"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30 min-h-12 w-full text-sm font-semibold"
                         >
                           {OFFERS_COPY.withdrawOfferButton}
                         </Button>
