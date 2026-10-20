@@ -178,7 +178,9 @@ async function mutationCheck() {
       await waitBlocked(courierLock, rpc);
       courierLock.send(`select 1 from public.courier_documents where courier_id='${courierId}' and kind='insurance' for update;`);
       const results = await Promise.allSettled([courierLock.waitFor(/40P01|deadlock detected/, 5000), rpc.waitFor(/40P01|deadlock detected/, 5000)]);
-      assert.ok(results.some((result) => result.status === 'fulfilled'), 'mutación RED provoca deadlock real 40P01');
+      const deadlockSeen = results.some((result) => result.status === 'fulfilled')
+        || [courierLock.output, rpc.output].some((output) => /40P01|deadlock detected/.test(output));
+      assert.ok(deadlockSeen, `mutación RED provoca deadlock real 40P01: ${courierLock.output}\n${rpc.output}`);
     } finally { await courierLock.close(); await rpc.close(); }
   } finally {
     runSql(original);
