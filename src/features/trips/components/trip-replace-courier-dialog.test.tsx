@@ -96,8 +96,16 @@ describe('T-369 / CC-029 D-C2b — diálogo de «sacar al repartidor»', () => {
     expect(screen.getByRole('heading', { name: '¿Confirmás que querés sacarlo y republicar?' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reportar que no se presentó' })).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sí, sacar y republicar' }));
+    const confirm = screen.getByRole('button', { name: 'Sí, sacar y republicar' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    const reason = screen.getByLabelText('Motivo del cambio de repartidor');
+    fireEvent.change(reason, { target: { value: '   ' } });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(reason, { target: { value: '  No responde los mensajes  ' } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
     expect(onConfirmReplace).toHaveBeenCalledTimes(1);
+    expect(onConfirmReplace).toHaveBeenCalledWith('No responde los mensajes');
   });
 
   it('mientras republica no se puede cerrar ni repetir la acción', () => {
@@ -132,11 +140,18 @@ describe('T-369 / CC-029 D-C2b — diálogo de «sacar al repartidor»', () => {
     render(<TripMerchantContainer trip={trip} />);
     fireEvent.click(screen.getByRole('button', { name: 'Cambiar de repartidor' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Sacar y republicar' }));
+    fireEvent.change(screen.getByLabelText('Motivo del cambio de repartidor'), {
+      target: { value: 'No responde los mensajes' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Sí, sacar y republicar' }));
 
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith(`/merchant/requests/${REQUEST_ID}`));
     expect(mocks.republishTripAction).toHaveBeenCalledTimes(1);
-    expect(mocks.republishTripAction).toHaveBeenCalledWith({ requestId: REQUEST_ID, reason: null });
+    // T-378: republish_request exige motivo desde matched (REASON_REQUIRED); antes se mandaba null y siempre fallaba.
+    expect(mocks.republishTripAction).toHaveBeenCalledWith({
+      requestId: REQUEST_ID,
+      reason: 'No responde los mensajes',
+    });
     expect(mocks.merchantReportNoShowAction).not.toHaveBeenCalled();
   });
 
@@ -218,6 +233,9 @@ describe('T-369 / CC-029 D-C2b — diálogo de «sacar al repartidor»', () => {
     render(<TripMerchantContainer trip={trip} />);
     fireEvent.click(screen.getByRole('button', { name: 'Cambiar de repartidor' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Sacar y republicar' }));
+    fireEvent.change(screen.getByLabelText('Motivo del cambio de repartidor'), {
+      target: { value: 'Tarda demasiado' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Sí, sacar y republicar' }));
 
     const alert = await within(screen.getByRole('alertdialog')).findByRole('alert');

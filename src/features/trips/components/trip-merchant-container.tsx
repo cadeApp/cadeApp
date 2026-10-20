@@ -77,11 +77,11 @@ export function TripMerchantContainer({ trip, cancellationHistory }: TripMerchan
   };
 
   // D-C2a: republicar desde `matched` deja firme el consumo anterior y reserva otro crédito (lo decide la RPC).
-  const handleConfirmReplace = () => {
+  const handleConfirmReplace = (reason: string) => {
     startTransition(async () => {
       setReplaceError(null);
       setReplaceCreditsExhausted(false);
-      const res = await republishTripAction({ requestId: trip.id, reason: null });
+      const res = await republishTripAction({ requestId: trip.id, reason });
 
       if (res.ok) {
         notify.success('Sacaste al repartidor. Solicitud republicada para recibir nuevas ofertas.');
