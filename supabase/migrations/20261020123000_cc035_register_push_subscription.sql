@@ -29,6 +29,14 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
+  -- Tipos JSON antes de `->>`: un booleano o un número pasarían la regex como texto (PR457-H01).
+  if jsonb_typeof(p_payload->'endpoint') is distinct from 'string'
+     or jsonb_typeof(p_payload->'p256dh') is distinct from 'string'
+     or jsonb_typeof(p_payload->'auth') is distinct from 'string'
+     or (p_payload ? 'platform' and jsonb_typeof(p_payload->'platform') not in ('null', 'string')) then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
   v_endpoint := p_payload->>'endpoint';
   v_p256dh := p_payload->>'p256dh';
   v_auth_key := p_payload->>'auth';
