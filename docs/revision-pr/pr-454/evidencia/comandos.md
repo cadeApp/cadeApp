@@ -116,3 +116,70 @@ pnpm lint
 ```
 
 Para RED genuino, agregar primero los tests de `.PNG`, actor merchant, consentimiento inactivo y `approved`. El test de `.PNG` debe fallar sobre el fake actual con `/i` (se acepta cuando se exige VALIDATION_ERROR), luego pasar sin `/i`. Comprobar que falla la ASERCIÓN esperada y no el arnés. Para SQL, preparar mutaciones efímeras bajo el runner autorizado db-tests y conservar sus resúmenes. Esta sesión no pudo ejecutar dicho arnés sobre el repositorio por fallo DNS al hacer git ls-remote; no se inventó resultado.
+
+## Ronda 3 — 2026-10-20 — SHA `5ebda83932d8279a7f88e61e70694d0136ed8fc5`
+
+- Comparación GitHub `7e0712a5...5ebda83932d8279a7f88e61e70694d0136ed8fc5`: solo cuatro archivos de corrección (SQL pgTAP, fake, test fake, bitácora), cero commits behind. No edición nueva de la carpeta del revisor.
+- CI oficial [39444717225](https://github.com/cadeApp/cadeApp/actions/runs/39444717225): unit job 118703452341 `152 files / 2965 tests passed`, fake branch `90.69%`; db job 118703452788 `cc033_add_courier_optional_document.sql .. ok`, `Files=34, Tests=3019, Result: PASS`, comparador de tipos SUCCESS. `build/lint/typecheck/audit/bundle-budget` verdes.
+- [e2e-preview workflow 39444841967](https://github.com/cadeApp/cadeApp/actions/runs/39444841967): resolve-preview imprimió `BLOCKED / REQUIRES DEVELOP MIGRATION`, e2e job SKIPPED; el contexto de commit `e2e-preview` es ERROR adrede por `gatePreview` al detectar la migración. No hay Playwright ejecutado.
+- `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD`: error real `Could not resolve host: github.com` en contenedor de revisión; no clon Git ni tests Vitest/PG locales. Protección de develop: API devuelve 403.
+
+### Comprobación independiente de semántica de regex (fuente real, en memoria)
+
+Ejecutado por este revisor sobre las expresiones extraídas del blob publicado de `rpc-fake.ts` y la migración. **Los once chequeos estructurales/semánticos dieron true**, pero los estructurales solo comprueban presencia de reglas y aserciones; no constituyen pruebas de comportamiento de la aplicación. Observación directa:
+
+```text
+SHA=5ebda83932d8279a7f88e61e70694d0136ed8fc5
+fakeFlags=""
+fake aceptó .jpg=true
+fake aceptó .PNG=false
+SQL aceptó .PNG=false
+mutante /i aceptó .PNG=true
+```
+
+La variante mutada admite el sufijo que la prueba pretende rechazar, **RED de la propiedad de la expresión**, no RED ejecutado en Vitest. No se mutó archivo alguno, no se alteró una expectativa y no se afirmó haber reproducido las mutaciones del agy.
+
+### Arnés completo copiable a /tmp (sin mutación del working tree)
+
+El siguiente script puede guardarse como `/tmp/pr454-r3.sh` y ejecutarse desde un clon limpio del SHA revisado. El bloque Node *extrae* la regex y demuestra su mutación `/i` en memoria; los tests reales se corren sin modificar producción. **Este arnés no fue ejecutado íntegro por este revisor** porque no hay clon. No iniciar Supabase ni Docker local.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+test "$(git rev-parse HEAD)" = "5ebda83932d8279a7f88e61e70694d0136ed8fc5"
+git diff --quiet
+git diff --cached --quiet
+node --input-type=module <<'JS'
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const fake = readFileSync('src/domain/testing/rpc-fake.ts','utf8');
+const migration = readFileSync('supabase/migrations/20261020065319_cc033_add_courier_optional_document.sql','utf8');
+const tests = readFileSync('src/domain/cc033-add-courier-optional-document.test.ts','utf8');
+const pg = readFileSync('supabase/tests/cc033_add_courier_optional_document.sql','utf8');
+const slice = fake.slice(fake.indexOf('add_courier_optional_document: (rawInput)'),fake.indexOf('replace_courier_document: (rawInput)'));
+assert.ok(slice.length > 200);
+const re = slice.match(/!\/([^\n/]+)\/([a-z]*)\.test\(suffix\)/);
+const sql = migration.match(/v_storage_suffix !~ '([^']+)'/);
+assert.ok(re && sql, 'Guard de producción real no encontrado');
+const green = new RegExp(re[1],re[2]), sqlPattern = new RegExp(sql[1]), red = new RegExp(re[1],re[2]+'i');
+assert.equal(green.test('1730000000005.jpg'),true);
+assert.equal(green.test('1730000000005.PNG'),false);
+assert.equal(sqlPattern.test('1730000000005.PNG'),false);
+assert.equal(red.test('1730000000005.PNG'),true);
+assert.ok(tests.includes('storagePath: uppercasePath })'));
+assert.ok(tests.includes("getDocument(documentId)"));
+assert.ok(pg.includes("consent_status = 'reconsent_required'"));
+assert.ok(pg.includes("'pending crea license vigente'"));
+assert.ok(pg.includes("'42501'::char(5),null::text,'INSERT directo denegado"));
+console.log('GREEN guard original; RED propiedad con mutación /i en memoria; tests/pgTAP presentes');
+JS
+pnpm exec vitest run src/domain/cc033-add-courier-optional-document.test.ts src/server/rpc/courier.test.ts
+pnpm test:coverage > /tmp/pr454-r3-coverage.log 2>&1 || { tail -n 60 /tmp/pr454-r3-coverage.log; exit 1; }
+grep -E 'Test Files|Tests |rpc-fake.ts' /tmp/pr454-r3-coverage.log | tail -n 15
+pnpm typecheck
+pnpm lint
+node --check supabase/tests/integration/cc033_concurrency.mjs
+git diff --check
+```
+
+La mutación RED del fake completo (merchant/consent/documentos.set) y mutación RED de PostgreSQL **no se ejecutaron independientemente**. En un futuro entorno con clon + runner autorizado, ejecutar mutaciones efímeras con test real y restauración, sin cambiar expectativas ni rebajar gates.
