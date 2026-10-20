@@ -14,7 +14,8 @@ declare
   v_storage_path text;
   v_expected_prefix text;
   v_storage_suffix text;
-  v_idempotency_key text;
+  v_idempotency_key_text text;
+  v_idempotency_key uuid;
   v_courier_rec record;
   v_existing_id uuid;
   v_existing_status public.document_review_status;
@@ -39,7 +40,7 @@ begin
 
   v_kind_text := p_payload->>'kind';
   v_storage_path := p_payload->>'storagePath';
-  v_idempotency_key := nullif(trim(p_payload->>'idempotencyKey'), '');
+  v_idempotency_key_text := nullif(trim(p_payload->>'idempotencyKey'), '');
 
   if v_kind_text not in ('license', 'insurance')
      or v_storage_path is null
@@ -61,10 +62,12 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  if v_idempotency_key is not null
-     and v_idempotency_key !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+  if v_idempotency_key_text is not null
+     and v_idempotency_key_text !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
+
+  v_idempotency_key := v_idempotency_key_text::uuid;
 
   -- Orden de locks de CC-025/CC-033: couriers, profiles, courier_documents.
   select profile_id, status, vehicle_type into v_courier_rec

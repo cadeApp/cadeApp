@@ -216,6 +216,10 @@ jobs:
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_concurrency.mjs --mutation-check
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_backfill.mjs
 
+            # CC-033: alta opcional posterior, serialización con suspensión y mutación de orden de locks.
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc033_concurrency.mjs
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc033_concurrency.mjs --mutation-check
+
             # Huérfanos de courier-docs CC-030 (T-370): carreras writer/reclamo y controles RED->GREEN
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc030_orphan_concurrency.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc030_orphan_concurrency.mjs --mutation-check
