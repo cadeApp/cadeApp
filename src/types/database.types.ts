@@ -1342,6 +1342,10 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_reinstate_courier: {
+        Args: { p_courier_id: string; p_reason: string }
+        Returns: Json
+      }
       admin_resolve_incident: {
         Args: { p_decision: string; p_incident_id: string; p_reason: string }
         Returns: Json

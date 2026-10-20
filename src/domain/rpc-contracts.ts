@@ -626,6 +626,22 @@ export const adminSuspendCourierOutputSchema = z.object({
   deactivatedAt: isoTimestampSchema,
 });
 
+// CC-034: admin_reinstate_courier (reactivar un suspendido o reconsiderar un rechazado)
+export const adminReinstateCourierInputSchema = z.object({
+  courierId: uuidSchema,
+  reason: z.string().trim().min(1).max(500),
+});
+export const adminReinstateCourierOutputSchema = z
+  .object({
+    courierId: uuidSchema,
+    previousStatus: z.enum(['suspended', 'rejected', 'approved']),
+    status: z.literal('approved'),
+    idempotent: z.boolean(),
+  })
+  .refine((output) => (output.previousStatus === 'approved') === output.idempotent, {
+    message: 'previousStatus approved solo en la ruta idempotente',
+  });
+
 // 16. admin_verify_document
 export const adminVerifyDocumentInputSchema = z.object({
   documentId: uuidSchema,
@@ -1418,6 +1434,19 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  admin_reinstate_courier: {
+    inputSchema: adminReinstateCourierInputSchema,
+    outputSchema: adminReinstateCourierOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'NOT_FOUND',
+      'REASON_REQUIRED',
+      'INVALID_STATE_TRANSITION',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_verify_document: {
     inputSchema: adminVerifyDocumentInputSchema,
     outputSchema: adminVerifyDocumentOutputSchema,
@@ -1605,6 +1634,7 @@ export const ALL_RPC_NAMES = [
   'get_merchant_request_private_fields',
   'admin_decide_courier',
   'admin_suspend_courier',
+  'admin_reinstate_courier',
   'admin_verify_document',
   'replace_courier_document',
   'admin_set_subscription',

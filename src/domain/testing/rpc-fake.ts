@@ -459,6 +459,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   replace_courier_document: ['courier'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
+  admin_reinstate_courier: ['admin'],
   admin_verify_document: ['admin'],
   admin_set_subscription: ['admin'],
   admin_update_setting: ['admin'],
@@ -1177,7 +1178,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       insuranceStatus: c.insuranceStatus ?? prev?.insuranceStatus ?? 'none',
       displayName: c.displayName ?? prev?.displayName ?? 'Cadete',
       phone: c.phone ?? prev?.phone ?? '3865111111',
-      vehicleType: c.vehicleType ?? prev?.vehicleType ?? 'moto',
+      // `null` es un valor explícito (onboarding incompleto); solo `undefined` toma el previo o el default.
+      vehicleType: c.vehicleType === undefined ? (prev?.vehicleType ?? 'moto') : c.vehicleType,
       vehiclePlate: c.vehiclePlate ?? prev?.vehiclePlate ?? 'AA123BB',
     });
   }
@@ -3095,6 +3097,27 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           withdrawnOffersCount,
           deactivatedAt: nowFn().toISOString(),
         });
+      }),
+
+    admin_reinstate_courier: (rawInput) =>
+      executeRpc('admin_reinstate_courier', rawInput, true, (input) => {
+        if (input.reason.trim().length === 0) return err('REASON_REQUIRED');
+        const courier = couriers.get(input.courierId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'approved') {
+          return ok({
+            courierId: input.courierId,
+            previousStatus: 'approved',
+            status: 'approved',
+            idempotent: true,
+          });
+        }
+        if (courier.status === 'pending' || courier.vehicleType === null) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        const previousStatus = courier.status;
+        courier.status = 'approved';
+        return ok({ courierId: input.courierId, previousStatus, status: 'approved', idempotent: false });
       }),
 
     admin_verify_document: (rawInput) =>

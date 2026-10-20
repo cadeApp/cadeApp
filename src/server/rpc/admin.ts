@@ -33,6 +33,7 @@ export interface SupabaseRpcCaller {
 type AdminRpcName =
   | 'admin_decide_courier'
   | 'admin_suspend_courier'
+  | 'admin_reinstate_courier'
   | 'admin_verify_document'
   | 'admin_set_subscription'
   | 'admin_update_setting'
@@ -132,6 +133,44 @@ export async function adminDecideCourierRpc(
     } catch {
       // Best effort: fallo en la purga no altera la decisión administrativa
     }
+  }
+
+  return ok(parsedOutput.data);
+}
+
+/**
+ * Typed server wrapper for `public.admin_reinstate_courier(p_courier_id, p_reason)` (CC-034): reactiva un repartidor
+ * suspendido o reconsidera uno rechazado. Sobre uno ya aprobado devuelve `idempotent: true`.
+ */
+export async function adminReinstateCourierRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<
+  ActionResult<
+    RpcOutput<'admin_reinstate_courier'>,
+    RpcErrorCode<'admin_reinstate_courier'> | 'INTERNAL_ERROR'
+  >
+> {
+  const parsedInput =
+    RPC_CONTRACTS.admin_reinstate_courier.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const { courierId, reason } = parsedInput.data;
+  const { data, error } = await client.rpc('admin_reinstate_courier', {
+    p_courier_id: courierId,
+    p_reason: reason,
+  });
+
+  if (error) {
+    return err(mapAdminRpcError('admin_reinstate_courier', error));
+  }
+
+  const parsedOutput =
+    RPC_CONTRACTS.admin_reinstate_courier.outputSchema.safeParse(data);
+  if (!parsedOutput.success) {
+    return err('INTERNAL_ERROR');
   }
 
   return ok(parsedOutput.data);
