@@ -457,8 +457,13 @@ test.describe('T-382 — avisos push en «Configurar»', () => {
     try {
       // 1. Cuenta A activa los avisos con el gesto del usuario: alta real en el servidor.
       await loginCourierAndOpenSettings(page, loginAsCourier, 0);
+      // El alta se confirma por la respuesta del POST: el mensaje de éxito dura 700 ms antes de volver atrás.
+      const subscribed = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/push/subscriptions' && response.request().method() === 'POST'
+      );
       await page.getByRole('button', { name: /^Activar avisos$/i }).click();
-      await expect(page.getByText(/¡Avisos activados con éxito!/i)).toBeVisible();
+      expect((await subscribed).status()).toBe(200);
       // Tras el éxito, el prompt vuelve a la pantalla anterior (el feed): se espera antes de navegar.
       await page.waitForURL(/\/courier\/feed/);
 
@@ -511,8 +516,13 @@ test.describe('T-382 — avisos push en «Configurar»', () => {
     try {
       // 1. A activa los avisos (alta real) y después los desactiva con el DELETE caído: queda la baja pendiente.
       await loginCourierAndOpenSettings(page, loginAsCourier, 0);
+      // El alta se confirma por la respuesta del POST: el mensaje de éxito dura 700 ms antes de volver atrás.
+      const subscribed = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/push/subscriptions' && response.request().method() === 'POST'
+      );
       await page.getByRole('button', { name: /^Activar avisos$/i }).click();
-      await expect(page.getByText(/¡Avisos activados con éxito!/i)).toBeVisible();
+      expect((await subscribed).status()).toBe(200);
       await page.waitForURL(/\/courier\/feed/);
       await page.goto('/courier/profile/notifications');
       await page.route('**/api/push/subscriptions', (route) =>
