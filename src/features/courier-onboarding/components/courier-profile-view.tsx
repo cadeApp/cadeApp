@@ -345,6 +345,11 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
   }
 
   const vehicle = getVehicleInfo(activeProfile.vehicleType);
+  // T-376 / CC-033: la licencia o el seguro que no se cargaron se suben desde el perfil, solo con el onboarding
+  // completo y el repartidor pendiente o aprobado (la RPC vuelve a exigir lo mismo).
+  const canAddOptionalDocuments =
+    activeProfile.onboardingComplete &&
+    (activeProfile.courierStatus === 'approved' || activeProfile.courierStatus === 'pending');
   const isMotorVehicle =
     activeProfile.vehicleType === 'moto' ||
     activeProfile.vehicleType === 'motorcycle' ||
@@ -687,6 +692,18 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                   />
                 </div>
               )}
+              {canAddOptionalDocuments && profile?.licenseStatus === 'none' && (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    mode="add"
+                    courierId={activeProfile.courierId}
+                    kind="license"
+                    title="Licencia de conducir"
+                    initialStatus="none"
+                    onReplaced={handleDocumentReplaced}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-2">
@@ -703,6 +720,18 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                     title="Seguro de accidentes"
                     initialStatus={profile?.insuranceStatus ?? 'rejected'}
                     rejectionMessage={activeProfile.insuranceRejectionMessage}
+                    onReplaced={handleDocumentReplaced}
+                  />
+                </div>
+              )}
+              {canAddOptionalDocuments && profile?.insuranceStatus === 'none' && (
+                <div className="py-3">
+                  <DocumentReplacementCard
+                    mode="add"
+                    courierId={activeProfile.courierId}
+                    kind="insurance"
+                    title="Seguro de accidentes"
+                    initialStatus="none"
                     onReplaced={handleDocumentReplaced}
                   />
                 </div>

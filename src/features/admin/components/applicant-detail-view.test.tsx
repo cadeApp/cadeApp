@@ -559,3 +559,40 @@ describe('T-380: reactivar o reconsiderar con reinstateCourierAction (CC-034)', 
     expect(reinstateCourierAction).not.toHaveBeenCalled();
   });
 });
+
+describe('T-376 / CC-033: señal de documento opcional en revisión en la cola de aprobados', () => {
+  function approved(overrides: Partial<ApplicantListItem>): ApplicantListItem {
+    return {
+      id: 'a0000000-0000-0000-0000-000000000376',
+      fullName: 'Rita Repartidora',
+      dniHash: 'hash-376',
+      phone: '3865000376',
+      vehicleType: 'moto',
+      docLevel: 1,
+      createdAt: '2026-10-20T10:00:00.000Z',
+      status: 'approved',
+      licenseStatus: 'verified',
+      insuranceStatus: 'none',
+      documentsSummary: { hasDniFront: true, hasDniBack: true, hasSelfie: true, hasLicense: true, hasInsurance: false },
+      ...overrides,
+    };
+  }
+
+  it.each([
+    ['seguro', { insuranceStatus: 'submitted', documentsSummary: { hasDniFront: true, hasDniBack: true, hasSelfie: true, hasLicense: true, hasInsurance: true } }],
+    ['licencia', { licenseStatus: 'submitted' }],
+  ] as const)('un aprobado con %s en revisión muestra «Documento opcional en revisión»', (_case, overrides) => {
+    render(<ApplicantsQueue initialTab="approved" applicants={[approved(overrides)]} />);
+    expect(screen.getByText('Documento opcional en revisión')).toBeDefined();
+  });
+
+  it('sin documentos opcionales en revisión no muestra la señal', () => {
+    render(
+      <ApplicantsQueue
+        initialTab="approved"
+        applicants={[approved({ insuranceStatus: 'verified', documentsSummary: { hasDniFront: true, hasDniBack: true, hasSelfie: true, hasLicense: true, hasInsurance: true } })]}
+      />
+    );
+    expect(screen.queryByText('Documento opcional en revisión')).toBeNull();
+  });
+});
