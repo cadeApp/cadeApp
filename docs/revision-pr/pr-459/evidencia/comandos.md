@@ -236,3 +236,55 @@ async function expectFailure(label,fn) {
 ```
 
 **Autor:** bitácora `39360343` documenta M18–M20 RED/GREEN, 188 focalizados y 3059 generales, typecheck/lint, E2E real con usuarios A/B del Preview `da930eff` GREEN `8+2`, y RED en deploy previo. Inspeccionado el código E2E, no reproducido por revisor. R4 S7/S8 son **mutaciones propias de modelo**, no tests de aplicación ni GREEN de reparación.
+
+## Ronda 5 — lectura de SHA real y sondas independientes S9–S13
+
+**SHA de aplicación:** `f8f2fc2501aad66a2bfd5ea52913f1d5195b2e5e`. **SHA de bitácora y E2E:** `8445008adf8d1cb179172f7237e946cb4a8b3115`.
+
+**Método:** obtención de los blobs mediante GitHub conector y ejecución de predicados sobre el **texto de producción y test real** en una sandbox V8; mutantes solo en memoria, no escriben ni ejecutan TS. Dado que `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` falló por DNS (`Could not resolve host: github.com`), no se dispuso de worktree ni se ejecutaron Vitest, Playwright o `pnpm`. **No presentar sondas como un RED/GREEN funcional.**
+
+**Resultados de S9–S12 ejecutados (true = condición fuente presente):**
+
+```text
+S9 guardia H05 post-DELETE y previa al localStorage.removeItem: true; al quitarla hipotéticamente: false.
+S10 guardia H06 de userId previa a native unsubscribe() y DELETE: true; al quitarla: false.
+S11 test de DELETE diferido que cambia A→B antes de resolver response: true; mutando la transición en test: false.
+S12 test que prohíbe native.unsubscribe y DELETE sin sesión: true; quitando assertion de native: false.
+S13 E2E H05 y alta de A: espera POST 200, no depende del texto de éxito transitorio; cleanup en finally: true.
+```
+
+**Harness independiente reproducible:** desde una copia limpia del repo, escribir el siguiente script fuera del repo y ejecutarlo con Node.
+
+```bash
+cat >/tmp/pr459-r5-probes.cjs <<'NODE'
+const fs=require('node:fs');
+const code=fs.readFileSync('src/features/notifications/push/subscription.ts','utf8');
+const tests=fs.readFileSync('src/features/notifications/push.test.ts','utf8');
+const e2e=fs.readFileSync('e2e/specs/notifications.spec.ts','utf8');
+const between=(t,a,b)=>t.split(a)[1]?.split(b)[0]||'';
+const confirm=between(code,'async function confirmUnsubscribeOnServer(', 'export async function unsubscribeFromPush()');
+const unsub=between(code,'export async function unsubscribeFromPush()','__END__');
+const probes=[
+ ['S9',confirm,x=>{const fetch=x.indexOf("await fetch('/api/push/subscriptions'"); const guard=x.indexOf("if ((await getCurrentUserId()) !== userId)",fetch); const del=x.indexOf('localStorage.removeItem(',fetch); return fetch>=0 && guard>fetch && del>guard;}, x=>x.replace(/if \(\(await getCurrentUserId\(\)\) !== userId\) \{\s*keepPendingForOwner\(\);\s*return \{ ok: false, error: 'identity_changed' \};\s*\}/g,'')],
+ ['S10',unsub,x=>{const g=x.indexOf('if (!userId) {');const u=x.indexOf('await subscription.unsubscribe()',g);const d=x.indexOf('return await confirmUnsubscribeOnServer(endpoint, userId)',g);return g>=0&&u>g&&d>u;},x=>x.replace(/if \(!userId\) \{\s*return \{ ok: false, error: 'unauthorized' \};\s*\}/,'')],
+ ['S11',tests,x=>x.includes('let releaseDelete: (response: Response) => void')&&x.includes('session.userId = USER_B;\\n      releaseDelete(')&&x.includes('expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT)'),x=>x.replace('session.userId = USER_B;\\n      releaseDelete(','releaseDelete(')],
+ ['S12',tests,x=>x.includes('expect(native.unsubscribe).not.toHaveBeenCalled()')&&x.includes('expect(deletes(fetchMock)).toEqual([])'),x=>x.replace('expect(native.unsubscribe).not.toHaveBeenCalled()','')]
+];
+let invalid=false;
+for(const [name,src,check,mutate] of probes){
+const b=check(src),changed=mutate(src),m=check(changed);
+console.log(name,'source='+b,'hypothetical_mutant='+m);
+if(!b||m||changed===src)invalid=true;
+}
+const caseH05=e2e.split("test('PR459-H05:")[1]||'';
+const s13=e2e.match(/const subscribed = page\.waitForResponse\(/g)?.length>=2 && caseH05.includes("expect((await subscribed).status()).toBe(200)") && !caseH05.includes("¡Avisos activados con éxito!") && caseH05.includes("finally {") && caseH05.includes("await deleteSubscription(endpoint)");
+console.log('S13 e2e stable wait='+Boolean(s13));
+if(!s13) invalid=true;
+process.exitCode=invalid?1:0;
+NODE
+node /tmp/pr459-r5-probes.cjs
+```
+
+**Evidencia del autor, no reproducida por el revisor:** `docs/tasks/log/T-382.md` a `8445008a` documenta RED `3 failed | 74 passed`, GREEN `192` focalizados y `3063` generales, M21/M22 RED y GREEN restaurados, E2E `push-user-activation` `2 passed` y T-382 tras ajustar espera `4 passed` dos veces sin retries. Se inspeccionó que test realmente pospone respuesta de fetch y hace cambio de cuenta.
+
+**CI HEAD `8445008a` al consultar:** `typecheck`, `lint`, `build`, `bundle-budget` SUCCESS, Vercel SUCCESS; `audit` FAILURE (log `7 vulnerabilities found, Severity 5 moderate | 2 high (1 ignored)`), `approval-policy` FAILURE previo al comentario de R5; `unit` y `db-tests` en progreso, `e2e-preview` pendiente. No atribuir vulnerabilidades a esta ronda que no modifica dependencias.

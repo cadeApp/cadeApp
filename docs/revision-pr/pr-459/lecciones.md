@@ -37,3 +37,11 @@ H02: `pushManager.subscribe()` está cubierto; `serviceWorker.ready` y `pushMana
 **H06 nuevo:** si no se puede conocer la cuenta que origina una operación cuya fase remota podría fallar, no ejecutar antes una fase irreversible que destruiría el único dato de recuperación. La prueba «no guardar pending sin dueño» no protege que la suscripción nativa siga disponible.
 
 No crear AG global ni modificar `AGENTS.md` sin comprobar el catálogo de otras ramas y la recurrencia del patrón.
+
+## Ronda 5 — cierre técnico y calidad del gate
+
+- **H05:** separar el pending por cuenta y volver a leer sesión tras una operación asíncrona soluciona el caso A→B durante el DELETE. A diferencia de las rondas anteriores, el test de una promesa diferida introduce la mutación directamente en el lapso del efecto.
+- **H06:** una operación irreversible exige identidad comprobable **antes** de actuar, no solo un storage seguro para el error. M22 reintroduce el fallo y el test falla por los efectos prohibidos.
+- **E2E:** preferir esperar un resultado de red estable (POST status 200) en lugar de un texto que desaparece a los 700 ms. El test H05 conserva comprobaciones de base real con fixture y cleanup.
+- **Auditoría de dependencias:** el gate CI puede seguir rojo aunque los bloques de tarea estén corregidos. No confundir «sin bloqueantes de PR por inspección» con «apto para merge».
+- No crear nuevas reglas AG por una sola PR; verificar recurrencia con otra PR antes de modificar `AGENTS.md`.
