@@ -13,3 +13,10 @@ La RPC implementa aparentemente las transiciones del contrato, pero las pruebas 
 - Hacer RED independiente antes de considerar un defecto reproducido; registrar `analisis` cuando la ejecución esté impedida.
 
 No se asignó nuevo número AG sin poder contrastar el máximo en **todas** las ramas remotas. P05 y P08 ya están catalogados; no se proponen cambios inmediatos a `AGENTS.md` por esta sola ronda.
+
+## Cierre de ronda 2
+
+- **H01:** quedó la prueba con `rejected + available:true`, detectando la asignación indebida; el fake conserva el valor recibido. CI GREEN 8/8 del archivo. La evidencia RED puntual procede de la bitácora y no se presenta como reproducción propia.
+- **H02:** la PR #456 aislada demostró en CI una diferencia `ctid` de `(0,74)` a `(0,75)` y dejó la aserción 38 en RED; en la rama real, la misma pgTAP está GREEN. La mutación no contaminó la PR principal.
+- El commit de bitácora posterior al código es exclusivamente documental; la verificación relevante es el SHA de código.
+- No se abre nueva lección AG ni se modifica `AGENTS.md`; basta conservar los patrones P05 y P08 y la evidencia.

@@ -108,3 +108,84 @@ git status --short
 ```
 
 `db-tests` (incluido pgTAP, drift y CC-034 concurrente) se lee del pipeline oficial del SHA de corrección. No iniciar Docker ni Supabase local. Ningún resultado del bloque anterior se afirma como ejecutado por esta revisión.
+
+---
+
+## Evidencia observada — ronda 2 (2026-10-20)
+
+**Código de corrección:** `0870a9ce94378a5cb2d21db5a9b3d4ab5b453860`  
+**Último HEAD al examinar:** `208fbf7e341fb907edc5ebf5ec8d6b9b90476e8c`
+
+### Alcance mecánico
+
+```text
+a412cb19..0870a9ce:
+  src/domain/testing/rpc-fake.ts                     -1
+  src/domain/cc034-admin-reinstate-courier.test.ts   +22
+  supabase/tests/cc034_admin_reinstate_courier.sql   +9/-1
+
+0870a9ce..208fbf7e:
+  docs/tasks/log/T-385.md                            +19
+
+0870a9ce..36f0ab6 (#456 cerrada, NO MERGE):
+  supabase/migrations/20261020113000_cc034_admin_reinstate_courier.sql +2/-0
+```
+
+### H01: contraste RED comunicado con GREEN oficial
+
+**Lo comunicado por el autor (bitácora; no reproducido por el revisor):**
+```text
+Tests 1 failed | 7 passed (8)
+expected false to be true
+Tests 8 passed (8)
+```
+
+**CI verificado por lectura independiente de job `unit` 118514448261, run 39388538108, HEAD `0870a9ce94378a5cb2d21db5a9b3d4ab5b453860`:**
+```text
+src/domain/cc034-admin-reinstate-courier.test.ts (8 tests)
+Test Files 149 passed (149)
+Tests 2907 passed (2907)
+# pass 79
+# pass 6
+```
+
+### H02: mutación real aislada RED en #456
+
+**Fuente:** https://github.com/cadeApp/cadeApp/pull/456 — `36f0ab6f521849aa9602b6b1e81d546c85050f61`, parent directo `0870a9ce94378a5cb2d21db5a9b3d4ab5b453860`. Solo altera función SQL y NO se mergeó.
+
+**Job `db-tests` 118514301969 (run 39388573174):**
+```text
+# Failed test 38: "approved idempotente no hizo UPDATE físico de couriers"
+#         have: (0,75)
+#         want: (0,74)
+supabase/tests/cc034_admin_reinstate_courier.sql (Wstat: 0 Tests: 50 Failed: 1)
+Files=32, Tests=2918
+Result: FAIL
+```
+
+**Job `db-tests` 118514448356 de la PR real (`0870a9ce94378a5cb2d21db5a9b3d4ab5b453860`), run 39388538108:**
+```text
+supabase/tests/cc034_admin_reinstate_courier.sql ....... ok
+Files=32, Tests=2918
+Result: PASS
+[CC-034] Escenario 1 GREEN
+[CC-034] Escenario 2 GREEN
+[CC-034] Escenario 3 GREEN
+[CC-034] Control de mutación RED confirmado: sin "for update" la auditoría se duplica.
+[CC-034] Control de mutación GREEN confirmado: con la migración original vuelve a 1 sola auditoría.
+```
+
+**Nota sobre ejecución:** los extractos anteriores provienen de logs de GitHub Actions, leídos por este revisor. No son salida de una ejecución local de revisor. La rama #456 aporta una mutación independiente del código original, **pero fue creada por el autor**, no por esta revisión.
+
+### Comandos de inspección sugeridos para quien quiera repetir localmente
+
+```bash
+git fetch origin
+git diff --name-status a412cb1913a15aee34d54f7da7eb66c4eab17bcf 0870a9ce94378a5cb2d21db5a9b3d4ab5b453860
+git diff --name-status 0870a9ce94378a5cb2d21db5a9b3d4ab5b453860 208fbf7e341fb907edc5ebf5ec8d6b9b90476e8c
+git diff --check origin/develop...208fbf7e341fb907edc5ebf5ec8d6b9b90476e8c
+pnpm exec vitest run src/domain/cc034-admin-reinstate-courier.test.ts src/server/rpc/admin.test.ts
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+No se ejecutaron aquí por falta de clon y resolución DNS de GitHub. No abrir Docker/Supabase local. No son tareas necesarias solo para documentación.
