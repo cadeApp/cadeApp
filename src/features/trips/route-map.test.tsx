@@ -48,8 +48,17 @@ let mockLoadingStatus = 'LOADED';
 let mockPublicApiKey = 'test-google-maps-api-key';
 let mockPublicMapId = 'test-map-id';
 let mockOnError: (() => void) | null = null;
-// T-377: biblioteca `routes` que devuelve useMapsLibrary; null = todavía no cargó (o no carga nunca).
+// T-377: biblioteca `routes` que resuelve google.maps.importLibrary('routes'); null = la carga nunca termina.
 let mockRoutesLibrary: unknown = null;
+// T-377 (PR453-H02): si no es null, importLibrary('routes') rechaza con este error.
+let mockRoutesImportError: Error | null = null;
+function defaultImportLibrary(name: string): Promise<unknown> {
+  if (name !== 'routes') return Promise.reject(new Error(`biblioteca inesperada: ${name}`));
+  if (mockRoutesImportError) return Promise.reject(mockRoutesImportError);
+  if (mockRoutesLibrary === null) return new Promise(() => {});
+  return Promise.resolve(mockRoutesLibrary);
+}
+const mockImportLibrary = vi.fn(defaultImportLibrary);
 
 vi.mock('@/lib/env.public', () => ({
   publicEnv: {
@@ -74,7 +83,6 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     FAILED: 'FAILED',
   },
   useApiLoadingStatus: () => mockLoadingStatus,
-  useMapsLibrary: (name: string) => (name === 'routes' ? mockRoutesLibrary : null),
   // Como el SDK real: sin mapa cargado (SDK fallido) useMap devuelve null
   useMap: () => (mockLoadingStatus === 'LOADED' ? { fitBounds: mockFitBounds } : null),
   APIProvider: ({
@@ -251,6 +259,16 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
     mockPublicMapId = 'test-map-id';
     mockOnError = null;
     mockRoutesLibrary = null;
+    mockRoutesImportError = null;
+    // mockReset: un test puede cambiar la implementación (cargas pendientes) y no debe heredarse.
+    mockImportLibrary.mockReset();
+    mockImportLibrary.mockImplementation(defaultImportLibrary);
+    // El componente importa `routes` con google.maps.importLibrary, como el SDK real una vez cargado Maps JS.
+    Object.defineProperty(globalThis, 'google', {
+      value: { maps: { importLibrary: mockImportLibrary } },
+      configurable: true,
+      writable: true,
+    });
     mockFitBounds.mockClear();
 
     mockChannel.on.mockReturnValue(mockChannel);
@@ -1468,6 +1486,213 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
       expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
       expect(screen.queryByText(STREET_FALLBACK_TEXT)).toBeNull();
       expect(computeRoutes).not.toHaveBeenCalled();
+    });
+    it('PR453-H01: C06 sin mapa no promete línea recta (puntos faltantes, SDK caído, offline y sin key)', async () => {
+      installRoutesLibrary(async () => ({ routes: [{ path: STREET_PATH }] }));
+      const expectNoMapFooter = () => {
+        expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+        expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+        const footer = screen.getByText('Mapa no disponible');
+        expect(footer.classList.contains('text-primary-dark')).toBe(true);
+        expect(screen.queryByText('Línea recta orientativa')).toBeNull();
+        expect(screen.queryByText('Recorrido orientativo por calles')).toBeNull();
+      };
+
+      const cases: Array<{ trip: TripDetails; setup?: () => void; teardown?: () => void }> = [
+        { trip: { ...baseTrip, pickupLat: null } },
+        { trip: { ...baseTrip, dropoffLng: null } },
+        {
+          trip: makeDropsTrip([
+            { lat: -27.45, lng: -65.62, position: 1 },
+            { lat: null, lng: null, position: 2 },
+            { lat: -27.41, lng: -65.59, position: 3 },
+          ]),
+        },
+        {
+          trip: baseTrip,
+          setup: () => {
+            mockLoadingStatus = 'FAILED';
+          },
+          teardown: () => {
+            mockLoadingStatus = 'LOADED';
+          },
+        },
+        {
+          trip: baseTrip,
+          setup: () => {
+            Object.defineProperty(navigator, 'onLine', { value: false, writable: true, configurable: true });
+          },
+          teardown: () => {
+            Object.defineProperty(navigator, 'onLine', { value: true, writable: true, configurable: true });
+          },
+        },
+        {
+          trip: baseTrip,
+          setup: () => {
+            mockPublicApiKey = '';
+          },
+          teardown: () => {
+            mockPublicApiKey = 'test-google-maps-api-key';
+          },
+        },
+      ];
+
+      for (const { trip, setup, teardown } of cases) {
+        setup?.();
+        const { unmount } = render(<TripMerchantView trip={trip} />);
+        await flushRoutes();
+        expectNoMapFooter();
+        unmount();
+        teardown?.();
+      }
+    });
+
+    it('PR453-H02: si importLibrary("routes") rechaza, recta con aviso y sin unhandledrejection', async () => {
+      const unhandled = vi.fn();
+      process.on('unhandledRejection', unhandled);
+      try {
+        mockRoutesImportError = new Error('REQUEST_DENIED');
+        render(<TripCourierView trip={baseTrip} />);
+        await flushRoutes();
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        expect(mockImportLibrary).toHaveBeenCalledWith('routes');
+        expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+        expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+        expect(screen.getByRole('link', { name: /abrir en google maps/i })).toBeDefined();
+        expect(unhandled).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', unhandled);
+      }
+    });
+
+    it('PR453-H02: una carga de routes que llega tarde (cambio de puntos o desmontaje) no calcula la ruta vieja', async () => {
+      const computeRoutes = vi.fn(async () => ({ routes: [{ path: STREET_PATH }] }));
+      const library = { Route: { computeRoutes } };
+      const pendingImports: Array<(value: unknown) => void> = [];
+      mockImportLibrary.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            pendingImports.push(resolve);
+          })
+      );
+      const movedTrip = { ...baseTrip, dropoffLat: -27.41, dropoffLng: -65.59 };
+
+      const { rerender, unmount } = render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+      rerender(<TripCourierView trip={movedTrip} />);
+      await flushRoutes();
+      expect(pendingImports).toHaveLength(2);
+
+      // La carga de la secuencia vieja termina tarde: no debe disparar computeRoutes.
+      await act(async () => {
+        pendingImports[0]?.(library);
+      });
+      await flushRoutes();
+      expect(computeRoutes).not.toHaveBeenCalled();
+
+      // La de la secuencia vigente sí calcula, una vez y con los puntos nuevos.
+      await act(async () => {
+        pendingImports[1]?.(library);
+      });
+      await flushRoutes();
+      expect(computeRoutes).toHaveBeenCalledTimes(1);
+      const [request] = computeRoutes.mock.calls[0] as unknown as [ComputeRoutesRequestLike];
+      expect(request.destination).toEqual({ lat: -27.41, lng: -65.59 });
+
+      unmount();
+      // Tras desmontar, una carga que llega tarde tampoco calcula.
+      mockImportLibrary.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            pendingImports.push(resolve);
+          })
+      );
+      const { unmount: unmountAgain } = render(<TripCourierView trip={baseTrip} />);
+      await flushRoutes();
+      unmountAgain();
+      await act(async () => {
+        pendingImports[2]?.(library);
+      });
+      await flushRoutes();
+      expect(computeRoutes).toHaveBeenCalledTimes(1);
+    });
+
+    it('PR453-H03: computeRoutes sin respuesta cae a la recta a los 10 s, una sola vez, e ignora la respuesta tardía', async () => {
+      vi.useFakeTimers();
+      try {
+        let resolveLate: ((value: unknown) => void) | undefined;
+        const computeRoutes = installRoutesLibrary(
+          () =>
+            new Promise((resolve) => {
+              resolveLate = resolve;
+            })
+        );
+
+        render(<TripCourierView trip={baseTrip} />);
+        // Con relojes falsos solo corren las microtareas: carga de `routes` y llamada a computeRoutes.
+        await act(async () => {
+          for (let i = 0; i < 6; i += 1) await Promise.resolve();
+        });
+        expect(computeRoutes).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          vi.advanceTimersByTime(9_999);
+        });
+        expect(screen.queryByText(STREET_FALLBACK_TEXT)).toBeNull();
+
+        await act(async () => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+        expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+
+        // La respuesta que llega después del timeout no cambia la vista ni dispara otra llamada.
+        await act(async () => {
+          resolveLate?.({ routes: [{ path: STREET_PATH }] });
+          await Promise.resolve();
+        });
+        expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+        expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+        expect(computeRoutes).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('PR453-H03: un rechazo tardío de computeRoutes tras el timeout tampoco cambia la vista', async () => {
+      vi.useFakeTimers();
+      try {
+        let rejectLate: ((reason: unknown) => void) | undefined;
+        installRoutesLibrary(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectLate = reject;
+            })
+        );
+
+        render(<TripCourierView trip={baseTrip} />);
+        // Con relojes falsos solo corren las microtareas: carga de `routes` y llamada a computeRoutes.
+        await act(async () => {
+          for (let i = 0; i < 6; i += 1) await Promise.resolve();
+        });
+        await act(async () => {
+          vi.advanceTimersByTime(10_000);
+        });
+        expect(screen.getByText(STREET_FALLBACK_TEXT)).toBeDefined();
+
+        await act(async () => {
+          rejectLate?.(new Error('DEADLINE_EXCEEDED'));
+          await Promise.resolve();
+        });
+        expect(screen.getAllByText(STREET_FALLBACK_TEXT)).toHaveLength(1);
+        expect(polylinePaths()).toEqual([STRAIGHT_PATH]);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

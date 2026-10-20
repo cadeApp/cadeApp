@@ -9,7 +9,6 @@ import {
   Polyline,
   useApiLoadingStatus,
   useMap,
-  useMapsLibrary,
   APILoadingStatus,
 } from '@vis.gl/react-google-maps';
 import { AlertTriangle, ExternalLink, Map as MapIcon, MapPin, Store, WifiOff } from 'lucide-react';
@@ -123,6 +122,29 @@ interface StreetRouteResult {
  * por secuencia de puntos (`input` cambia solo si cambia la clave) y se ignoran las respuestas que llegan después de
  * un cambio de puntos o de desmontar. Cualquier falla informa `straight`: el mapa dibuja la línea recta orientativa.
  */
+/** Espera máxima de `Route.computeRoutes` una vez cargada la biblioteca (D2-B de la ronda 1 de #453, sin reintentos). */
+const COMPUTE_ROUTES_TIMEOUT_MS = 10_000;
+
+/**
+ * Carga la biblioteca `routes` con `google.maps.importLibrary`, que ya existe cuando Maps JS está cargado. Se llama de
+ * forma explícita (D1-B de la ronda 1 de #453): `useMapsLibrary` de @vis.gl 1.10.1 no captura el rechazo de la carga
+ * y deja un `unhandledrejection`; acá el rechazo llega a quien llama y termina en la línea recta.
+ */
+function importRoutesLibrary(): Promise<unknown> {
+  const maps = (globalThis as { google?: { maps?: { importLibrary?: unknown } } }).google?.maps;
+  if (!maps || typeof maps.importLibrary !== 'function') {
+    return Promise.reject(new Error('google.maps.importLibrary no disponible'));
+  }
+  const importLibrary = maps.importLibrary as (name: string) => Promise<unknown>;
+  return Promise.resolve(importLibrary.call(maps, 'routes'));
+}
+
+/**
+ * Calcula el recorrido vehicular por calles con `Route.computeRoutes` (biblioteca `routes`, T-377). Una sola llamada
+ * por secuencia de puntos (`input` cambia solo si cambia la clave). Se publica un único resultado por secuencia: lo
+ * que llegue después de un cambio de puntos, de desmontar o de un timeout se ignora. La carga de la biblioteca y el
+ * cálculo tienen cada uno su espera máxima de 10 s; cualquier falla informa `straight` (línea recta orientativa).
+ */
 function StreetRouteLoader({
   input,
   onResult,
@@ -131,49 +153,60 @@ function StreetRouteLoader({
   onResult: (result: StreetRouteResult) => void;
 }) {
   const status = useApiLoadingStatus();
-  const routesLibrary = useMapsLibrary('routes');
-
-  // Si la biblioteca no llega a cargar, se admite el fallback después de una espera acotada.
-  React.useEffect(() => {
-    if (status !== APILoadingStatus.LOADED || routesLibrary) return undefined;
-    const timer = setTimeout(() => {
-      onResult({ key: input.key, status: 'straight', path: null });
-    }, ROUTES_LIBRARY_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [status, routesLibrary, input, onResult]);
 
   React.useEffect(() => {
-    if (status !== APILoadingStatus.LOADED || !routesLibrary) return undefined;
+    if (status !== APILoadingStatus.LOADED) return undefined;
     const straight: StreetRouteResult = { key: input.key, status: 'straight', path: null };
-    const computeRoutes = getComputeRoutes(routesLibrary);
-    const request = buildStreetRouteRequest(input.points);
-    if (!computeRoutes || !request) {
-      onResult(straight);
-      return undefined;
-    }
-
     let active = true;
-    let pending: Promise<unknown>;
-    try {
-      pending = computeRoutes(request);
-    } catch {
-      onResult(straight);
-      return undefined;
-    }
-    pending.then(
-      (result) => {
-        if (!active) return;
-        const path = extractStreetRoutePath(result);
-        onResult(path ? { key: input.key, status: 'street', path } : straight);
+    let settled = false;
+    let computeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (result: StreetRouteResult) => {
+      if (!active || settled) return;
+      settled = true;
+      clearTimeout(libraryTimer);
+      clearTimeout(computeTimer);
+      onResult(result);
+    };
+
+    // Si la biblioteca no llega a cargar, se admite el fallback después de una espera acotada.
+    const libraryTimer = setTimeout(() => finish(straight), ROUTES_LIBRARY_TIMEOUT_MS);
+
+    importRoutesLibrary().then(
+      (routesLibrary) => {
+        if (!active || settled) return;
+        clearTimeout(libraryTimer);
+        const computeRoutes = getComputeRoutes(routesLibrary);
+        const request = buildStreetRouteRequest(input.points);
+        if (!computeRoutes || !request) {
+          finish(straight);
+          return;
+        }
+        let pending: Promise<unknown>;
+        try {
+          pending = computeRoutes(request);
+        } catch {
+          finish(straight);
+          return;
+        }
+        computeTimer = setTimeout(() => finish(straight), COMPUTE_ROUTES_TIMEOUT_MS);
+        pending.then(
+          (result) => {
+            const path = extractStreetRoutePath(result);
+            finish(path ? { key: input.key, status: 'street', path } : straight);
+          },
+          () => finish(straight)
+        );
       },
-      () => {
-        if (active) onResult(straight);
-      }
+      () => finish(straight)
     );
+
     return () => {
       active = false;
+      clearTimeout(libraryTimer);
+      clearTimeout(computeTimer);
     };
-  }, [status, routesLibrary, input, onResult]);
+  }, [status, input, onResult]);
 
   return null;
 }
@@ -475,7 +508,11 @@ export function TripRouteMap({
             {pickupZoneName} → {dropoffZoneName}
           </span>
           <span className="font-medium text-primary-dark">
-            {streetRouteStatus === 'street' ? 'Recorrido orientativo por calles' : 'Línea recta orientativa'}
+            {!isMapAvailable
+              ? 'Mapa no disponible'
+              : streetRouteStatus === 'street'
+                ? 'Recorrido orientativo por calles'
+                : 'Línea recta orientativa'}
           </span>
         </div>
       )}

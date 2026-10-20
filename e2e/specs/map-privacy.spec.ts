@@ -43,9 +43,10 @@ async function setupGoogleMapsMock(
     simulatedUnexpectedHost?: string;
     /**
      * T-377: biblioteca `routes`. `ok` responde una ruta por calles que pasa por un desvío entre cada par de puntos;
-     * `fail` rechaza `Route.computeRoutes`. Sin la opción, `importLibrary('routes')` no trae `Route` (como antes).
+     * `fail` rechaza `Route.computeRoutes`; `reject-import` rechaza la carga misma (`importLibrary('routes')`,
+     * PR453-H02). Sin la opción, `importLibrary('routes')` no trae `Route` (como antes).
      */
-    routes?: 'ok' | 'fail';
+    routes?: 'ok' | 'fail' | 'reject-import';
   } = {}
 ): Promise<GoogleMapsMockController> {
   const interceptedUrls: string[] = [];
@@ -429,6 +430,9 @@ async function setupGoogleMapsMock(
             if (name === 'maps') return Promise.resolve(mapsLib);
             if (name === 'core') return Promise.resolve(coreLib);
             if (name === 'geometry') return Promise.resolve(geometryLib);
+            if (name === 'routes' && routesMode === 'reject-import') {
+              return Promise.reject(new Error('ROUTES_LIBRARY_LOAD_FAILED'));
+            }
             if (name === 'routes' && routesMode !== 'missing') return Promise.resolve(routesLib);
             return Promise.resolve(window.google.maps);
           };
@@ -845,6 +849,35 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
       await expect(failPage.getByRole('link', { name: /abrir en google maps/i })).toBeVisible();
     } finally {
       await failPage.close();
+    }
+
+    // 7. PR453-H02: si falla la carga de `routes` (no el cálculo), Maps JS sigue, recta con aviso y sin unhandledrejection
+    const rejectPage = await page.context().newPage();
+    try {
+      await rejectPage.addInitScript(() => {
+        const store = window as unknown as { __unhandledRejections?: string[] };
+        store.__unhandledRejections = [];
+        window.addEventListener('unhandledrejection', (event) => {
+          store.__unhandledRejections?.push(String(event.reason));
+        });
+      });
+      await setupGoogleMapsMock(rejectPage, { routes: 'reject-import' });
+      await rejectPage.goto(`/trips/${requestId}`);
+      await waitForNoSkeletons(rejectPage);
+
+      await expect(rejectPage.getByText(streetFallbackText)).toBeVisible();
+      await expect(rejectPage.locator('[data-testid="route-map-fallback"]')).toHaveCount(0);
+      await expect(rejectPage.locator('[data-testid="map-pin-pickup"]')).toBeVisible();
+      await expect.poll(async () => (await readPolylinePath(rejectPage)).length).toBe(2);
+      expect(await readPolylinePath(rejectPage)).toEqual([origin, destination]);
+      expect(await readComputeRoutesCalls(rejectPage)).toEqual([]);
+      await expect(rejectPage.getByRole('link', { name: /abrir en google maps/i })).toBeVisible();
+      const unhandled = await rejectPage.evaluate(
+        () => (window as unknown as { __unhandledRejections?: string[] }).__unhandledRejections ?? []
+      );
+      expect(unhandled).toEqual([]);
+    } finally {
+      await rejectPage.close();
     }
   });
 
