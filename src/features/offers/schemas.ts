@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { uuidSchema, type PublicDropSummary } from '@/domain/rpc-contracts';
 import { courierStatusSchema } from '@/domain/schemas';
-import type { PackageType, RecipientPaymentMethod } from '@/domain/schemas';
+import type {
+  DeliveryRequestStatus,
+  OfferStatus,
+  PackageType,
+  RecipientPaymentMethod,
+} from '@/domain/schemas';
 
 export type { PublicDropSummary };
 
@@ -97,7 +102,9 @@ export interface CourierOfferItem {
   readonly amountArs: number;
   readonly etaMinutes: number;
   readonly message: string | null;
-  readonly status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+  readonly status: OfferStatus;
+  /** T-379: estado de la solicitud, o `null` si el repartidor ya no puede leerla (RLS). */
+  readonly requestStatus: DeliveryRequestStatus | null;
   readonly createdAt: string;
   readonly decidedAt: string | null;
   readonly requestExpiresAt: string | null;

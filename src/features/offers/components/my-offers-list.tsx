@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { Card, CardContent } from '@/ui/card';
 import { Button } from '@/ui/button';
@@ -30,6 +31,31 @@ export interface MyOffersListProps {
   initialOffers: CourierOfferItem[];
 }
 
+/** T-379: una oferta aceptada solo está en «Aceptadas» mientras su viaje está activo. */
+function isActiveTrip(offer: CourierOfferItem): boolean {
+  return (
+    offer.status === 'accepted' &&
+    (offer.requestStatus === 'matched' || offer.requestStatus === 'in_transit')
+  );
+}
+
+/**
+ * Etiqueta de «Otras»: el estado de la oferta; si fue aceptada, el de la solicitud. Solo un viaje entregado conserva
+ * el enlace (el repartidor asignado sigue leyendo la solicitud).
+ */
+function otherOfferState(offer: CourierOfferItem): { label: string; tripHref: string | null } {
+  if (offer.status !== 'accepted') {
+    return { label: OFFERS_COPY.offerStatusLabel[offer.status], tripHref: null };
+  }
+  if (offer.requestStatus === 'delivered') {
+    return { label: OFFERS_COPY.requestDeliveredLabel, tripHref: `/trips/${offer.requestId}` };
+  }
+  if (offer.requestStatus === 'cancelled') {
+    return { label: OFFERS_COPY.requestCancelledLabel, tripHref: null };
+  }
+  return { label: OFFERS_COPY.requestUnavailableLabel, tripHref: null };
+}
+
 export function MyOffersList({ initialOffers }: MyOffersListProps) {
   const router = useRouter();
   const [offers, setOffers] = useState<CourierOfferItem[]>(initialOffers);
@@ -38,8 +64,8 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
   const [isWithdrawing, startWithdrawTransition] = useTransition();
 
   const pendingOffers = offers.filter((o) => o.status === 'pending');
-  const acceptedOffers = offers.filter((o) => o.status === 'accepted');
-  const otherOffers = offers.filter((o) => o.status === 'rejected' || o.status === 'withdrawn');
+  const acceptedOffers = offers.filter(isActiveTrip);
+  const otherOffers = offers.filter((o) => o.status !== 'pending' && !isActiveTrip(o));
 
   const handleWithdrawConfirm = () => {
     if (!offerToWithdraw) return;
@@ -114,40 +140,39 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
 
       {/* Ofertas destacadas aceptadas en la pestaña de aceptadas o al tope */}
       {activeTab === 'accepted' && acceptedOffers.length > 0 && (
-        <div className="space-y-3">
+        <ul className="space-y-3">
           {acceptedOffers.map((offer) => (
-            <Card
-              key={offer.offerId}
-              className="space-y-3 border-2 border-primary/50 bg-primary/5 p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <Badge variant="published" className="flex items-center gap-1 text-sm font-bold">
-                  <CheckCircle2 className="h-4 w-4" />
-                  {OFFERS_COPY.acceptedOfferBadge}
-                </Badge>
-                <span className="font-display text-lg font-bold text-primary-dark">
-                  {formatArs(offer.amountArs)}
-                </span>
-              </div>
+            <li key={offer.offerId}>
+              <Card className="space-y-3 border-2 border-primary/50 bg-primary/5 p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <Badge variant="published" className="flex items-center gap-1 text-sm font-bold">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {OFFERS_COPY.acceptedOfferBadge}
+                  </Badge>
+                  <span className="font-display text-lg font-bold text-primary-dark">
+                    {formatArs(offer.amountArs)}
+                  </span>
+                </div>
 
-              <div className="flex items-center gap-2">
-                <MapPin className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
-                <h4 className="font-display text-base font-bold text-foreground">
-                  {offer.pickupZoneName} → {offer.dropoffZoneName}
-                </h4>
-              </div>
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                  <h4 className="font-display text-base font-bold text-foreground">
+                    {offer.pickupZoneName} → {offer.dropoffZoneName}
+                  </h4>
+                </div>
 
-              <Button
-                className="min-h-12 w-full text-sm font-bold"
-                onClick={() => {
-                  router.push(`/trips/${offer.requestId}`);
-                }}
-              >
-                {OFFERS_COPY.goToTripButton}
-              </Button>
-            </Card>
+                <Button
+                  className="min-h-12 w-full text-sm font-bold"
+                  onClick={() => {
+                    router.push(`/trips/${offer.requestId}`);
+                  }}
+                >
+                  {OFFERS_COPY.goToTripButton}
+                </Button>
+              </Card>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
       {/* Lista de ofertas de la pestaña activa */}
@@ -160,66 +185,70 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
               description="Cuando ofertes en pedidos disponibles, van a aparecer acá."
             />
           ) : (
-            <div className="space-y-3">
-              {displayedOffers.map((offer) => (
-                <Card key={offer.offerId} className="space-y-3 p-4 shadow-sm">
-                  <CardContent className="space-y-2.5 p-0">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
-                        <h4 className="font-display text-base font-bold text-foreground">
-                          {offer.pickupZoneName} → {offer.dropoffZoneName}
-                        </h4>
-                      </div>
-                      <Badge
-                        variant={
-                          offer.status === 'pending'
-                            ? 'outline'
-                            : offer.status === 'accepted'
-                              ? 'published'
-                              : 'secondary'
-                        }
-                        className="text-sm font-medium"
-                      >
-                        {offer.status === 'pending'
-                          ? 'Pendiente'
-                          : offer.status === 'accepted'
-                            ? 'Aceptada'
-                            : offer.status === 'withdrawn'
-                              ? 'Retirada'
-                              : 'Rechazada'}
-                      </Badge>
-                    </div>
+            <ul className="space-y-3">
+              {displayedOffers.map((offer) => {
+                const otherState = offer.status === 'pending' ? null : otherOfferState(offer);
+                return (
+                  <li key={offer.offerId}>
+                    <Card className="space-y-3 p-4 shadow-sm">
+                      <CardContent className="space-y-2.5 p-0">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                            <h4 className="font-display text-base font-bold text-foreground">
+                              {offer.pickupZoneName} → {offer.dropoffZoneName}
+                            </h4>
+                          </div>
+                          <Badge
+                            variant={offer.status === 'pending' ? 'outline' : 'secondary'}
+                            className="text-sm font-medium"
+                          >
+                            {otherState ? otherState.label : OFFERS_COPY.offerStatusLabel.pending}
+                          </Badge>
+                        </div>
 
-                    <div className="flex items-center justify-between text-sm text-foreground">
-                      <span className="font-semibold">Ofertaste {formatArs(offer.amountArs)}</span>
-                      <span className="text-muted-foreground">
-                        Llegada en {offer.etaMinutes} min
-                      </span>
-                    </div>
+                        <div className="flex items-center justify-between text-sm text-foreground">
+                          <span className="font-semibold">
+                            Ofertaste {formatArs(offer.amountArs)}
+                          </span>
+                          <span className="text-muted-foreground">
+                            Llegada en {offer.etaMinutes} min
+                          </span>
+                        </div>
 
-                    {offer.message && (
-                      <p className="text-sm italic text-muted-foreground">
-                        &quot;{offer.message}&quot;
-                      </p>
-                    )}
+                        {offer.message && (
+                          <p className="text-sm italic text-muted-foreground">
+                            &quot;{offer.message}&quot;
+                          </p>
+                        )}
 
-                    {offer.status === 'pending' && (
-                      <div className="pt-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setOfferToWithdraw(offer)}
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30 min-h-12 w-full text-sm font-semibold"
-                        >
-                          {OFFERS_COPY.withdrawOfferButton}
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                        {otherState?.tripHref ? (
+                          <Link
+                            href={otherState.tripHref}
+                            className="inline-flex min-h-12 items-center text-sm font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {OFFERS_COPY.viewTripLink}
+                          </Link>
+                        ) : null}
+
+                        {offer.status === 'pending' && (
+                          <div className="pt-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setOfferToWithdraw(offer)}
+                              className="min-h-12 w-full border-destructive/30 text-sm font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              {OFFERS_COPY.withdrawOfferButton}
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </>
       )}

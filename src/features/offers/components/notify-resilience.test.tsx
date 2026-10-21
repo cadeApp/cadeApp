@@ -36,6 +36,7 @@ describe('PR87-R06: mutaciones de ofertas no dependen de notify', () => {
     etaMinutes: 15,
     message: null,
     status: 'pending',
+    requestStatus: 'published',
     createdAt: '2026-09-25T03:00:00Z',
     decidedAt: null,
     requestExpiresAt: '2026-09-25T04:00:00Z',

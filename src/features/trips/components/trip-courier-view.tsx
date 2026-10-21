@@ -88,7 +88,9 @@ export function TripCourierView({
           <span className="font-mono text-sm uppercase tracking-wider text-muted-foreground">
             {trip.code}
           </span>
-          <h1 className="font-display text-xl font-bold text-foreground">Viaje en curso</h1>
+          <h1 className="font-display text-xl font-bold text-foreground">
+            {isDelivered ? 'Viaje finalizado' : 'Viaje en curso'}
+          </h1>
         </div>
         <Badge
           variant={isDelivered ? 'secondary' : 'default'}
@@ -285,9 +287,7 @@ export function TripCourierView({
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={
-                        arr.length > 1
-                          ? `Avisar a ${drop.recipientName} por WhatsApp`
-                          : undefined
+                        arr.length > 1 ? `Avisar a ${drop.recipientName} por WhatsApp` : undefined
                       }
                       className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-3 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
                     >
