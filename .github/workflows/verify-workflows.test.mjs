@@ -247,6 +247,13 @@ test('CI compares generated Supabase types with the committed types against the 
   assert.match(dbTests, /git diff --exit-code -- src\/types\/database\.types\.ts/);
 });
 
+test('db-tests has room for slow Supabase image pulls (#468)', () => {
+  // Los runs verdes tardan 8–10 min; con 10 de límite, una descarga lenta de
+  // imágenes de public.ecr.aws corta el job con todos los pasos en verde.
+  const dbTests = job(workflow('ci.yml'), 'db-tests');
+  assert.match(dbTests, /\n {4}timeout-minutes: 20\n/);
+});
+
 test('bundle budget reports route sizes and checks the 180 KB limit', () => {
   const ci = workflow('ci.yml');
   const budget = workflow('check-bundle-budget.mjs');
