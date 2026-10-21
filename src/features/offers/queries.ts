@@ -31,7 +31,7 @@ function formatApproxDistanceKm(distanceM: number | null): string | null {
 interface RawAvailableRequest {
   id: string;
   created_at: string;
-  approx_distance_m: number | null;
+  route_distance_m: number | null;
   package_type: string;
   recipient_payment_method: string;
   needs_change: boolean;
@@ -62,14 +62,14 @@ interface RawOfferWithRequest {
     | {
         status?: string | null;
         expires_at: string | null;
-        approx_distance_m: number | null;
+        route_distance_m: number | null;
         pickup_zone: { name: string } | { name: string }[] | null;
         dropoff_zone: { name: string } | { name: string }[] | null;
       }
     | {
         status?: string | null;
         expires_at: string | null;
-        approx_distance_m: number | null;
+        route_distance_m: number | null;
         pickup_zone: { name: string } | { name: string }[] | null;
         dropoff_zone: { name: string } | { name: string }[] | null;
       }[]
@@ -99,7 +99,7 @@ export async function getAvailableRequests(): Promise<{
       id,
       created_at,
       drops_count,
-      approx_distance_m,
+      route_distance_m,
       package_type,
       recipient_payment_method,
       needs_change,
@@ -244,7 +244,7 @@ export async function getAvailableRequests(): Promise<{
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
       dropoffZoneName: effectiveDropoffZoneName,
-      approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
+      approxDistanceKm: formatApproxDistanceKm(req.route_distance_m),
       packageType: effectivePackageType,
       recipientPaymentMethod: effectivePaymentMethod,
       needsChange: effectiveNeedsChange,
@@ -361,7 +361,7 @@ export async function getMyOffers(): Promise<CourierOfferItem[]> {
       delivery_requests!offers_request_id_fkey (
         status,
         expires_at,
-        approx_distance_m,
+        route_distance_m,
         pickup_zone:zones!pickup_zone_id(name),
         dropoff_zone:zones!dropoff_zone_id(name)
       )
@@ -406,7 +406,7 @@ export async function getMyOffers(): Promise<CourierOfferItem[]> {
       createdAt: off.created_at,
       decidedAt: off.decided_at,
       requestExpiresAt: req?.expires_at ?? null,
-      approxDistanceKm: formatApproxDistanceKm(req?.approx_distance_m ?? null),
+      approxDistanceKm: formatApproxDistanceKm(req?.route_distance_m ?? null),
     };
   });
 }

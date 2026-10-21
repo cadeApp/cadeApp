@@ -115,7 +115,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     return {
       id,
       created_at: createdAt,
-      approx_distance_m: 1000,
+      approx_distance_m: null, route_distance_m: 1000,
       package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: false,
@@ -309,8 +309,8 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       }
     });
 
-    it('T-363: sin approx_distance_m la vía en vivo devuelve approxDistanceKm null (no inventa 1,0)', async () => {
-      const row = { ...makeRequestRow(1), approx_distance_m: null };
+    it('T-363 / T-388: sin route_distance_m la vía en vivo devuelve approxDistanceKm null (no inventa 1,0)', async () => {
+      const row = { ...makeRequestRow(1), approx_distance_m: null, route_distance_m: null};
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([]);
       const dropsBuilder = createMockQueryBuilder([

@@ -44,7 +44,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
         const data = [
           {
             id: 'req-1',
-            approx_distance_m: 2500,
+            approx_distance_m: null, route_distance_m: 2500,
             package_type: 'chico',
             recipient_payment_method: 'cash',
             needs_change: true,
@@ -152,7 +152,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     const row = {
       id: 'req-1',
       created_at: '2026-09-23T18:00:00.000Z',
-      approx_distance_m: 2500,
+      approx_distance_m: null, route_distance_m: 2500,
       package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: true,
@@ -292,7 +292,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     return {
       id: `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
       created_at: '2026-09-26T12:00:00.000Z',
-      approx_distance_m: 1000,
+      approx_distance_m: null, route_distance_m: 1000,
       package_type: packageType,
       recipient_payment_method: method,
       needs_change: false,
@@ -317,10 +317,10 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     ).toBe(true);
   });
 
-  it('T-363: sin approx_distance_m el feed devuelve approxDistanceKm null (no inventa 1,0) y respeta el contrato en vivo', async () => {
+  it('T-363 / T-388: sin route_distance_m el feed devuelve approxDistanceKm null (no inventa 1,0) y respeta el contrato en vivo', async () => {
     mockFeedRows([
-      { ...feedRow(1, 'chico', 'cash'), approx_distance_m: null },
-      { ...feedRow(2, 'chico', 'cash'), approx_distance_m: 2500 },
+      { ...feedRow(1, 'chico', 'cash'), approx_distance_m: null, route_distance_m: null},
+      { ...feedRow(2, 'chico', 'cash'), approx_distance_m: null, route_distance_m: 2500},
     ]);
 
     const result = await getAvailableRequests();
@@ -413,7 +413,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     const fiftyOneRows = Array.from({ length: 51 }, (_, i) => ({
       id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
       created_at: `2026-09-26T12:${String(59 - i).padStart(2, '0')}:00.000Z`,
-      approx_distance_m: 1000,
+      approx_distance_m: null, route_distance_m: 1000,
       package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: false,
@@ -572,7 +572,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     const reqRow = {
       id: 'req-multi-1',
       created_at: '2026-10-12T10:00:00.000Z',
-      approx_distance_m: 3500,
+      approx_distance_m: null, route_distance_m: 3500,
       package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: true,
@@ -702,7 +702,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
   it('PR318-H05: soporta parent con columnas legacy null y deriva atributos desde primer drop', async () => {
     const reqRow = {
       id: 'req-multi-null-parent',
-      approx_distance_m: 3500,
+      approx_distance_m: null, route_distance_m: 3500,
       package_type: null,
       recipient_payment_method: null,
       needs_change: null,
@@ -816,7 +816,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
   it('PR318-H05: falla cerrado si drops_count > 1 pero delivery_request_drops devuelve vacío', async () => {
     const reqRow = {
       id: 'req-multi-orphan',
-      approx_distance_m: 3500,
+      approx_distance_m: null, route_distance_m: 3500,
       package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: false,
@@ -898,7 +898,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
   it('PR318-H05: falla cerrado si drops_count = 1 pero delivery_request_drops devuelve vacío', async () => {
     const reqRow = {
       id: 'req-single-orphan',
-      approx_distance_m: 2500,
+      approx_distance_m: null, route_distance_m: 2500,
       package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: false,
@@ -993,7 +993,7 @@ describe('T-379: getMyOffers devuelve el estado de la solicitud', () => {
         ? {
             status: request.status,
             expires_at: null,
-            approx_distance_m: 2500,
+            approx_distance_m: null, route_distance_m: 2500,
             pickup_zone: { name: 'Centro' },
             dropoff_zone: { name: 'Barrio Norte' },
           }
@@ -1033,6 +1033,9 @@ describe('T-379: getMyOffers devuelve el estado de la solicitud', () => {
     const result = await getMyOffers();
 
     expect(projection()).toMatch(/delivery_requests!offers_request_id_fkey\s*\(\s*status,/);
+    // T-388: la distancia total sale de route_distance_m (approx_distance_m de la solicitud nunca se escribe).
+    expect(projection()).toMatch(/\broute_distance_m\b/);
+    expect(result[0]?.approxDistanceKm).toBe('2,5');
     expect(result.map((offer) => [offer.offerId, offer.status, offer.requestStatus])).toEqual([
       ['matched', 'accepted', 'matched'],
       ['transit', 'accepted', 'in_transit'],
