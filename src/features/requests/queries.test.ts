@@ -1641,6 +1641,56 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(rpc).not.toHaveBeenCalled();
     });
 
+
+    // T-388 (PR477-H01): cada lector pide la distancia total a delivery_requests.route_distance_m (la que escribe
+    // publish_request) y no a approx_distance_m, que nadie escribe. Las entregas siguen leyendo su approx_distance_m.
+    function expectRouteDistanceProjection(selects: readonly string[]) {
+      const readers = selects.filter((columns) => /\bpickup_zone\b/.test(columns));
+      expect(readers.length).toBeGreaterThan(0);
+      for (const columns of readers) {
+        expect(columns).toMatch(/\broute_distance_m\b/);
+      }
+      for (const columns of selects) {
+        expect(columns).not.toMatch(/\bapprox_distance_m\b/);
+      }
+    }
+    const routeRow = (id: string, status = 'published') => ({
+      ...requestRow(id, status),
+      approx_distance_m: null,
+      route_distance_m: 3500,
+    });
+
+    it('T-388: getMerchantRequests proyecta route_distance_m y la muestra como 3,5 km', async () => {
+      const selects = mockClient([routeRow(requestId)]);
+
+      const result = await getMerchantRequests('merchant-1', { limit: 50 });
+
+      expectRouteDistanceProjection(selects);
+      expect(result.requests[0]?.approxDistanceKm).toBe('3,5');
+    });
+
+    it('T-388: getMerchantHistoryRequests proyecta route_distance_m y la muestra como 3,5 km', async () => {
+      const selects = mockClient([routeRow(requestId, 'delivered')]);
+
+      const result = await getMerchantHistoryRequests('merchant-1', { limit: 50 });
+
+      expectRouteDistanceProjection(selects);
+      expect(result.requests[0]?.approxDistanceKm).toBe('3,5');
+    });
+
+    it('T-388: getMerchantRequestWithOffers proyecta route_distance_m y la muestra como 3,5 km', async () => {
+      const rpc = vi.fn().mockResolvedValue({
+        data: { requestId, notes: null, cashChangeAmount: null },
+        error: null,
+      });
+      const selects = mockClient([routeRow(requestId)], rpc);
+
+      const result = await getMerchantRequestWithOffers(requestId, 'merchant-1');
+
+      expectRouteDistanceProjection(selects);
+      expect(result?.request.approxDistanceKm).toBe('3,5');
+    });
+
     it('H06: getMerchantRequestWithOffers con parent null y 3 drops dispares proyecta drops[] y deriva escalares del primer drop', async () => {
       const testReqId = '33333333-3333-3333-3333-333333333333';
       const parentRowNulls = {
@@ -2976,19 +3026,5 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         getMerchantRequests('merchant-1')
       ).rejects.toThrow('Error al reconciliar solicitudes vencidas: UNAUTHORIZED_ACTOR');
     });
-  });
-});
-
-describe('T-388: los lectores del comercio piden route_distance_m en sus proyecciones', () => {
-  it('lista, historial y detalle seleccionan route_distance_m de delivery_requests', async () => {
-    const { readFileSync } = await import('node:fs');
-    const source = readFileSync('src/features/requests/queries.ts', 'utf-8');
-    const selects = [...source.matchAll(/\.from\('delivery_requests'\)\s*\.select\(\s*`([^`]*)`/g)].map((m) => m[1] ?? '');
-    const readers = selects.filter((projection) => /pickup_zone|dropoff_zone|accepted_offer_id/.test(projection));
-    expect(readers.length).toBeGreaterThanOrEqual(3);
-    for (const projection of readers) {
-      expect(projection).toMatch(/\broute_distance_m\b/);
-      expect(projection).not.toMatch(/\bapprox_distance_m\b/);
-    }
   });
 });

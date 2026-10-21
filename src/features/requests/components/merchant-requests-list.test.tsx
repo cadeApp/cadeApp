@@ -871,12 +871,37 @@ describe('T-381: el conteo de la tarjeta vuelve a coincidir al reingresar al pan
   });
 });
 
-describe('T-388: la lista del comercio usa la etiqueta de distancia compartida', () => {
-  it('muestra «≈ X km», «Menos de 0,5 km» o «Distancia no calculada»', async () => {
-    const { approxDistanceLabel } = await import('@/lib/format');
-    const { readFileSync } = await import('node:fs');
-    const source = readFileSync('src/features/requests/components/merchant-requests-list.tsx', 'utf-8');
-    expect(source).toMatch(/approxDistanceLabel\(req\.approxDistanceKm\)/);
-    expect(approxDistanceLabel('1,5')).toBe('≈ 1,5 km');
+describe('T-388: la lista del comercio muestra la etiqueta de distancia compartida', () => {
+  const metrics: MerchantMetrics = { dispatchedToday: 0, avgRateArs: null, activeCount: 3 };
+  const base: MerchantRequestSummary = {
+    id: 'req-388-a',
+    pickupZoneName: 'San Martín',
+    dropoffZoneName: 'Villa Nueva',
+    approxDistanceKm: '3,5',
+    packageType: 'chico',
+    recipientPaymentMethod: 'cash',
+    needsChange: false,
+    status: 'published',
+    expiresAt: '2026-10-21T12:00:00Z',
+    createdAt: '2026-10-21T10:00:00Z',
+    offersCount: 0,
+    acceptedOfferId: null,
+  };
+
+  it('renderiza «≈ 3,5 km», «Menos de 0,5 km» y «Distancia no calculada»', () => {
+    render(
+      <MerchantRequestsList
+        requests={[
+          base,
+          { ...base, id: 'req-388-b', approxDistanceKm: '0,0' },
+          { ...base, id: 'req-388-c', approxDistanceKm: null },
+        ]}
+        metrics={metrics}
+      />
+    );
+
+    expect(screen.getByText('≈ 3,5 km')).toBeDefined();
+    expect(screen.getByText('Menos de 0,5 km')).toBeDefined();
+    expect(screen.getByText('Distancia no calculada')).toBeDefined();
   });
 });
