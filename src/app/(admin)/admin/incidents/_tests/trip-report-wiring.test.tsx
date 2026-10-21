@@ -3,7 +3,7 @@
 // de T-124 solo autoriza `src/app/trips/[id]/page.tsx` (sin tests al lado) y `src/app/(admin)/admin/incidents/**`.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import * as serverSupabase from '@/server/supabase/server';
 import { getTripDetails } from '@/features/trips/server';
 import { ReportIncidentButton } from '@/features/incidents';
@@ -19,7 +19,9 @@ vi.mock('@/features/trips/server', () => ({
 
 vi.mock('@/features/trips', () => ({
   TripMerchantContainer: () => <div data-testid="merchant-container" />,
-  TripCourierContainer: () => <div data-testid="courier-container" />,
+  TripCourierContainer: ({ incidentAction }: { incidentAction?: React.ReactNode }) => (
+    <div data-testid="courier-container">{incidentAction}</div>
+  ),
 }));
 
 vi.mock('@/features/incidents', () => ({
@@ -144,8 +146,13 @@ describe('PR113-H05: trips/[id]/page.tsx cablea ReportIncidentButton con datos r
           tripStatus: status,
           deliveredAt,
           now: expect.any(Number),
+          variant: 'ghost',
         },
       ]);
+      // T-389: el botón va dentro de la vista del repartidor (por encima de su barra fija), no debajo de ella.
+      expect(
+        within(screen.getByTestId('courier-container')).getByTestId('report-incident-button')
+      ).toBeDefined();
     }
   );
 

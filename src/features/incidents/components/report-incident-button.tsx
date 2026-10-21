@@ -19,6 +19,11 @@ export interface ReportIncidentButtonProps {
    * el reloj local.
    */
   readonly now?: number;
+  /**
+   * T-389: `ghost` es el estilo de «No puedo hacer este viaje», para el viaje del repartidor (va dentro de su vista,
+   * por encima de la barra fija). Por defecto, `outline` (vista del comercio).
+   */
+  readonly variant?: 'outline' | 'ghost';
 }
 
 /**
@@ -34,6 +39,7 @@ export function ReportIncidentButton({
   tripStatus,
   deliveredAt,
   now,
+  variant = 'outline',
 }: ReportIncidentButtonProps) {
   if (!canReportIncident({ actorRole, tripStatus, deliveredAt }, now ?? Date.now())) {
     return null;
@@ -43,7 +49,11 @@ export function ReportIncidentButton({
     <div className="space-y-3">
       <ReportIncidentTrigger
         requestId={requestId}
-        className={cn(buttonVariants({ variant: 'outline' }), 'w-full')}
+        className={cn(
+          buttonVariants({ variant }),
+          'w-full',
+          variant === 'ghost' && 'min-h-12 text-muted-foreground hover:text-destructive'
+        )}
         loadingLabel={REPORT_TRIGGER_COPY.loading}
       >
         <AlertTriangle className="h-5 w-5" aria-hidden="true" />

@@ -105,6 +105,27 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
     deliveredAt: null,
   };
 
+  describe('T-389: «Reportar un problema» dentro de la vista del repartidor', () => {
+    const slot = <button type="button">Reportar un problema</button>;
+    const makeCourierTrip = (status: TripDetails['status']): TripDetails => ({ ...baseTrip, status });
+
+    it('matched: aparece justo después de «No puedo hacer este viaje» y fuera de la barra fija', () => {
+      render(<TripCourierView trip={makeCourierTrip('matched')} onCancelTrip={vi.fn()} incidentAction={slot} />);
+
+      const report = screen.getByRole('button', { name: 'Reportar un problema' });
+      const cancel = screen.getByRole('button', { name: /no puedo hacer este viaje/i });
+      expect(cancel.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(report.closest('.fixed')).toBeNull();
+      // Dentro del contenedor que reserva el espacio de la barra fija (pb-32).
+      expect(report.closest('.pb-32')).not.toBeNull();
+    });
+
+    it('delivered: sin barra fija ni cancelación, el botón sigue apareciendo en la vista', () => {
+      render(<TripCourierView trip={makeCourierTrip('delivered')} incidentAction={slot} />);
+      expect(screen.getByRole('button', { name: 'Reportar un problema' }).closest('.pb-32')).not.toBeNull();
+    });
+  });
+
   const multiDropTrip: TripDetails = {
     ...baseTrip,
     id: 'trip-multi-1',
