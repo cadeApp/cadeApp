@@ -92,13 +92,20 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
     }
     return (
       <div className="mx-auto w-full max-w-lg space-y-4 px-4 py-4">
-        <TripCourierContainer trip={trip} cancellationHistory={cancellationHistory} />
-        <ReportIncidentButton
-          requestId={trip.id}
-          actorRole={profile.role}
-          tripStatus={trip.status}
-          deliveredAt={trip.deliveredAt}
-          now={renderedAt}
+        {/* T-389: el reporte va dentro de la vista del repartidor, para no quedar debajo de su barra fija. */}
+        <TripCourierContainer
+          trip={trip}
+          cancellationHistory={cancellationHistory}
+          incidentAction={
+            <ReportIncidentButton
+              requestId={trip.id}
+              actorRole={profile.role}
+              tripStatus={trip.status}
+              deliveredAt={trip.deliveredAt}
+              now={renderedAt}
+              variant="ghost"
+            />
+          }
         />
       </div>
     );

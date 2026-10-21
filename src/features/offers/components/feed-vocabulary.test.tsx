@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import * as React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PACKAGE_TYPES, RECIPIENT_PAYMENT_METHODS } from '@/domain';
 import type { PackageType, RecipientPaymentMethod } from '@/domain';
 import { RequestCard } from './request-card';
 import { OfferSheet } from './offer-sheet';
 import type { AvailableRequestItem } from '../schemas';
+import { submitOfferAction } from '../actions';
 
 vi.mock('../actions', () => ({
   submitOfferAction: vi.fn(),
@@ -92,4 +93,24 @@ describe('T-343: el feed del repartidor usa el vocabulario canónico', () => {
     }
   });
 
+});
+
+describe('T-389: tiempo estimado de llegada de 5 minutos', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('la hoja ofrece 5 min y lo envía como etaMinutes 5', async () => {
+    vi.mocked(submitOfferAction).mockResolvedValue({ ok: true, data: { offerId: 'offer-389' } } as never);
+    render(<OfferSheet isOpen onClose={vi.fn()} request={makeRequest('chico', 'cash')} minOfferArs={1000} />);
+
+    const eta = screen.getByLabelText(/cuánto llegás a retirar/i) as HTMLSelectElement;
+    expect([...eta.options].map((o) => o.value)).toContain('5');
+    expect([...eta.options].find((o) => o.value === '5')?.textContent).toBe('5 min');
+
+    fireEvent.change(eta, { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /enviar oferta/i }));
+
+    await waitFor(() => expect(submitOfferAction).toHaveBeenCalledWith(expect.objectContaining({ etaMinutes: 5 })));
+  });
 });

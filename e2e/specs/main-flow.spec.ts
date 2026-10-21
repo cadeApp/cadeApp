@@ -671,6 +671,26 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       expect(courierPreMsg).not.toContain(formatArs(acceptedOffer.amountArs));
       expect(courierPreMsg).not.toMatch(/efectivo|transferencia/i);
 
+      // T-389: con la barra fija de «Marcar como retirado», «Reportar un problema» queda debajo de «No puedo hacer este
+      // viaje» y nada lo tapa: al final de la página, el elemento en su centro es el propio botón.
+      const reportButton = courierBrowserPage.getByRole('button', { name: /reportar un problema/i });
+      const cannotDoTrip = courierBrowserPage.getByRole('button', { name: /no puedo hacer este viaje/i });
+      await reportButton.scrollIntoViewIfNeeded();
+      await courierBrowserPage.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect(reportButton).toBeVisible();
+      const [cancelBox, reportBox] = await Promise.all([cannotDoTrip.boundingBox(), reportButton.boundingBox()]);
+      if (!cancelBox || !reportBox) {
+        throw new Error('[E2E Error] No se pudo medir «No puedo hacer este viaje» o «Reportar un problema»');
+      }
+      expect(reportBox.y).toBeGreaterThan(cancelBox.y);
+      const reportOnTop = await reportButton.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return top !== null && (top === el || el.contains(top));
+      });
+      expect(reportOnTop).toBe(true);
+      await courierBrowserPage.evaluate(() => window.scrollTo(0, 0));
+
       // Marcar como retirado -> estado in_transit
       await expect(courierTripPage.markPickedUpButton).toBeVisible();
       await courierTripPage.markPickedUpButton.click();

@@ -35,6 +35,11 @@ export interface TripCourierViewProps {
   onMarkDropDelivered?: (dropId: string) => void;
   onMarkDropFailed?: (dropId: string, reason: string) => void;
   isAdvancing?: boolean;
+  /**
+   * T-389: «Reportar un problema». La page lo arma en el servidor (ventana D05-A) y la vista lo pinta debajo de «No
+   * puedo hacer este viaje», dentro del espacio que reserva la barra fija, para que nunca quede tapado.
+   */
+  incidentAction?: React.ReactNode;
 }
 
 export function TripCourierView({
@@ -44,6 +49,7 @@ export function TripCourierView({
   onMarkDropDelivered,
   onMarkDropFailed,
   isAdvancing = false,
+  incidentAction,
 }: TripCourierViewProps) {
   const [failedModalDrop, setFailedModalDrop] = React.useState<{
     id: string;
@@ -357,6 +363,8 @@ export function TripCourierView({
           </Button>
         </div>
       )}
+
+      {incidentAction ? <div>{incidentAction}</div> : null}
 
       {!isDelivered && (
         <div className="fixed bottom-0 left-0 right-0 z-40 mx-auto max-w-[390px] border-t border-border bg-background/95 p-4 backdrop-blur">
