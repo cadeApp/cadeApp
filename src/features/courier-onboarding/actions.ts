@@ -7,8 +7,16 @@ import { createAdminClient } from '@/server/supabase/admin';
 import { serverEnv } from '@/server/env';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
-import { replaceCourierDocumentInputSchema } from '@/domain/rpc-contracts';
-import { replaceCourierDocumentRpc, type ReplaceCourierDocumentResult } from '@/server/rpc/courier';
+import {
+  addCourierOptionalDocumentInputSchema,
+  replaceCourierDocumentInputSchema,
+} from '@/domain/rpc-contracts';
+import {
+  addCourierOptionalDocumentRpc,
+  replaceCourierDocumentRpc,
+  type AddCourierOptionalDocumentResult,
+  type ReplaceCourierDocumentResult,
+} from '@/server/rpc/courier';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import type { SupabaseRpcCaller } from '@/server/rpc/offers';
 import {
@@ -371,6 +379,65 @@ export async function replaceCourierDocumentAction(
 
   revalidatePath('/courier/profile');
   revalidatePath('/courier/onboarding/status');
+
+  return ok(rpcResult.data);
+}
+
+/**
+ * T-376 / CC-033: alta posterior de la licencia o el seguro que no se cargaron en el onboarding. Exige sesión de
+ * repartidor y el prefijo canónico `courier/<user.id>/<kind>_`; la RPC `add_courier_optional_document` (cliente de
+ * sesión) vuelve a validar estado del repartidor, onboarding completo, documento vigente, Storage e idempotencia.
+ */
+export async function addCourierOptionalDocumentAction(
+  input: unknown
+): Promise<ActionResult<AddCourierOptionalDocumentResult, DomainErrorCode>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'courier') {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const parsed = addCourierOptionalDocumentInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const expectedPrefix = `courier/${user.id}/${parsed.data.kind}_`;
+  if (!parsed.data.storagePath.startsWith(expectedPrefix) || parsed.data.storagePath.includes('..')) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const rpcResult = await addCourierOptionalDocumentRpc(supabase, {
+    kind: parsed.data.kind,
+    storagePath: parsed.data.storagePath,
+    ...(parsed.data.idempotencyKey ? { idempotencyKey: parsed.data.idempotencyKey } : {}),
+  });
+
+  if (!rpcResult.ok) {
+    return rpcResult;
+  }
+
+  revalidatePath('/courier/profile');
 
   return ok(rpcResult.data);
 }

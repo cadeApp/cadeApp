@@ -90,6 +90,21 @@ export const COURIER_ONBOARDING_COPY = {
   btnReplace: 'Reemplazar',
   replacingDocument: 'Reemplazando...',
   documentReplacedSuccess: 'Documento enviado para nueva revisión.',
+
+  // T-376 / CC-033 - Alta posterior de licencia o seguro desde el perfil
+  optionalDocumentHint:
+    'Podés subirlo ahora: queda en revisión y, cuando el admin lo valide, suma respaldo a tus ofertas.',
+  optionalDocumentAddTitle: (title: string) => `Subir ${title.toLowerCase()}`,
+  optionalDocumentSubtitle: 'Seleccioná una foto clara: JPG, PNG o WebP.',
+  optionalDocumentSubmitted: 'Documento enviado. Queda en revisión hasta que el admin lo valide.',
+  optionalDocumentErrors: {
+    network: 'No pudimos enviarlo por un problema de conexión. Volvé a seleccionar el archivo para reintentar.',
+    invalidState: 'Este documento ya no se puede cargar desde acá. Actualizá la página para ver su estado.',
+    unauthorized: 'Tu cuenta no puede cargar documentos en este momento.',
+    notFound: 'No encontramos el archivo subido. Volvé a seleccionarlo para reintentar.',
+    generic: 'No pudimos enviar el documento. Volvé a intentar en unos momentos.',
+    unsupportedType: 'Ese formato no se admite. Subí una foto JPG, PNG o WebP.',
+  },
 } as const;
 
 export const DOCUMENT_REJECTION_REASONS: Record<import('@/domain/schemas').DocumentRejectionCode, string> = {

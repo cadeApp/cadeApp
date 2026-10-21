@@ -159,6 +159,10 @@ export function ApplicantsQueue({
                                 : ADMIN_COPY.queue.uploadedFeminine}
                             </Badge>
                           ) : null}
+                          {a.status === 'approved' &&
+                          (a.licenseStatus === 'submitted' || a.insuranceStatus === 'submitted') ? (
+                            <Badge variant="declared">{ADMIN_COPY.queue.optionalDocumentInReview}</Badge>
+                          ) : null}
                           {a.documentsSummary.hasInsurance ? (
                             <Badge
                               variant={

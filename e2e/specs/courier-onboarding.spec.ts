@@ -6,6 +6,7 @@ import {
   createAuthenticatedClient,
   generateTotp,
   seedDeliveryRequestInState,
+  seedOffersForFirstRequest,
   type UserCredentials,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
@@ -1658,6 +1659,128 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove([storagePath]);
       await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id).eq('kind', 'avatar');
       await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier.id);
+    }
+  });
+});
+
+test.describe('T-376 / CC-033: alta desde el perfil del seguro no cargado', () => {
+  test('un repartidor aprobado sin seguro lo sube, queda «En revisión», el admin lo verifica y el comercio ve «Seguro verificado»', async ({
+    page,
+    browser,
+    stagingContext,
+    loginAsCourier,
+    loginAsMerchant,
+  }, testInfo) => {
+    test.setTimeout(180_000);
+    // Repartidor 1 de la fixture: aprobado, moto, licencia y seguro «No cargado», doc_level 0.
+    const courier = stagingContext.courierUsers?.[1];
+    const requestId = stagingContext.createdRequestIds[0];
+    if (!courier || !requestId || !courier.displayName) {
+      throw new Error('[E2E Precondition Error] Se requieren el repartidor 1 y la solicitud sembrada');
+    }
+    const admin = createAdminClient();
+
+    // 1. Sube el seguro desde el perfil: queda «En revisión manual», sin «Validado por admin».
+    await loginAsCourier(1, page);
+    await page.waitForURL(/\/courier\/feed/);
+    await page.goto('/courier/profile');
+    await waitForNoSkeletons(page);
+    const insuranceInput = page.locator('#file-input-insurance');
+    await expect(insuranceInput).toBeAttached();
+    await insuranceInput.setInputFiles({ name: 'seguro.png', mimeType: 'image/png', buffer: DUMMY_2X2_PNG });
+    const insuranceCard = page.locator('[data-slot="document-replacement-card"][data-kind="insurance"]');
+    await expect(insuranceCard.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.optionalDocumentSubmitted)).toBeVisible();
+    await expect(insuranceCard.getByText('Validado por admin')).toHaveCount(0);
+
+    // Oráculo en la base: documento vigente en revisión, estado del seguro submitted y nivel sin cambios.
+    const { data: courierRow, error: courierErr } = await admin
+      .from('couriers')
+      .select('status, insurance_status, doc_level')
+      .eq('profile_id', courier.id)
+      .single();
+    if (courierErr) throw new Error(`[E2E Inspect Error] ${courierErr.message}`);
+    expect(courierRow).toEqual({ status: 'approved', insurance_status: 'submitted', doc_level: 0 });
+    const { data: docs, error: docsErr } = await admin
+      .from('courier_documents')
+      .select('id, status, is_current')
+      .eq('courier_id', courier.id)
+      .eq('kind', 'insurance');
+    if (docsErr) throw new Error(`[E2E Inspect Error] ${docsErr.message}`);
+    expect(docs).toHaveLength(1);
+    const insuranceDoc = docs?.[0];
+    if (!insuranceDoc) throw new Error('[E2E Error] No se creó el documento de seguro');
+    expect(insuranceDoc).toMatchObject({ status: 'submitted', is_current: true });
+
+    // 2. El comercio ve la oferta del repartidor 1 todavía sin «Seguro verificado».
+    await seedOffersForFirstRequest(stagingContext);
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== 'string' || baseURL.length === 0) {
+      throw new Error('[E2E Error] Falta baseURL para el contexto del comercio');
+    }
+    const merchantContext = await browser.newContext({ baseURL });
+    try {
+      const merchantPage = await merchantContext.newPage();
+      await loginAsMerchant(merchantPage);
+      await merchantPage.waitForURL(/\/merchant\/dashboard/);
+      await merchantPage.goto(`/merchant/requests/${requestId}`);
+      await waitForNoSkeletons(merchantPage);
+      const courierHeading = merchantPage.getByRole('heading', { level: 4, name: courier.displayName, exact: true });
+      const courierOffer = merchantPage.locator('div.rounded-xl.border-border.bg-card').filter({ has: courierHeading });
+      await expect(courierOffer).toHaveCount(1);
+      await expect(courierOffer.getByText('Seguro verificado')).toHaveCount(0);
+
+      // 3. El admin entra con MFA, abre el seguro con el visor auditado y lo verifica desde la pantalla existente.
+      //    (La señal «Documento opcional en revisión» de la cola la cubren los tests unitarios: la lista de aprobados
+      //    de Develop es compartida y paginada, así que este repartidor puede no estar en la primera página.)
+      const adminUser = await seedAdminUser(stagingContext);
+      const { secret: totpSecret } = await enrollAdminTotpFactor(adminUser);
+      const adminContext = await browser.newContext({ baseURL });
+      try {
+        const adminPage = await adminContext.newPage();
+        await adminPage.goto('/login?redirectTo=%2Fadmin%2Fapplicants%3Ftab%3Dapproved');
+        await waitForNoSkeletons(adminPage);
+        const loginSubmitBtn = adminPage.getByRole('button', { name: /iniciar sesión|ingresar|continuar/i });
+        await waitForFormHydration(loginSubmitBtn);
+        await adminPage.getByLabel(/^email$/i).fill(adminUser.email);
+        await adminPage.getByLabel(/^contraseña$/i).fill(adminUser.password);
+        await loginSubmitBtn.click();
+        await adminPage.waitForURL((url) => url.pathname.includes('/login/mfa'), { timeout: 15000 });
+        await waitForNoSkeletons(adminPage);
+        await adminPage.locator('#totp-code').fill(generateTotp(totpSecret));
+        await adminPage.getByRole('button', { name: new RegExp(ADMIN_COPY.mfa.verifyButton, 'i') }).click();
+        await adminPage.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+
+        await adminPage.goto(`/admin/applicants/${courier.id}`);
+        await waitForNoSkeletons(adminPage);
+        await adminPage.getByRole('tab', { name: new RegExp(ADMIN_COPY.documentKind.insurance, 'i') }).click();
+        await adminPage.getByRole('button', { name: /Cargar documento seguro/i }).click();
+        await expect(adminPage.getByText(ADMIN_COPY.detail.viewer.validityQuestion)).toBeVisible();
+        await adminPage.getByRole('button', { name: new RegExp(ADMIN_COPY.detail.verifyDocument, 'i') }).click();
+        await expect
+          .poll(async () => {
+            const { data } = await admin.from('courier_documents').select('status').eq('id', insuranceDoc.id).single();
+            return data?.status;
+          })
+          .toBe('verified');
+        // El visor auditado dejó constancia de la apertura del documento.
+        const { data: views, error: viewsErr } = await admin
+          .from('audit_log')
+          .select('id')
+          .eq('action', 'view_courier_document')
+          .eq('target_id', insuranceDoc.id);
+        if (viewsErr) throw new Error(`[E2E Inspect Error] ${viewsErr.message}`);
+        expect(views?.length ?? 0).toBeGreaterThanOrEqual(1);
+      } finally {
+        await adminContext.close();
+      }
+
+      // 4. Con el seguro verificado, la oferta del repartidor 1 muestra la insignia.
+      await merchantPage.reload();
+      await waitForNoSkeletons(merchantPage);
+      await expect(courierOffer.getByText('Seguro verificado')).toBeVisible();
+    } finally {
+      await merchantContext.close();
     }
   });
 });

@@ -42,6 +42,8 @@ export const ADMIN_COPY = {
     insurance: 'Seguro de Vehículo',
   },
   queue: {
+    /** T-376 / CC-033: un repartidor aprobado subió la licencia o el seguro y espera la validación. */
+    optionalDocumentInReview: 'Documento opcional en revisión',
     title: 'Postulantes',
     description:
       'Bandeja de verificación de documentación y aprobación de repartidores en Aguilares.',

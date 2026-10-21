@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import {
   courierOnboardingAction,
   replaceCourierDocumentAction,
+  addCourierOptionalDocumentAction,
   updateCourierVehicleAction,
   validateCurrentDocumentSet,
   updateCourierPhoneAction,
@@ -2225,4 +2226,108 @@ describe('T-355: updateCourierPhoneAction (edición segura y exclusiva del telé
   });
 });
 
+describe('T-376 / CC-033: addCourierOptionalDocumentAction', () => {
+  const courierId = 'courier-optional-uuid';
+  const KEY = 'b0000000-0000-4000-8000-000000000376';
 
+  function setup({
+    user = { id: courierId } as { id: string } | null,
+    role = 'courier' as string | null,
+    rpcResult = {
+      data: {
+        documentId: 'a0000000-0000-4000-8000-000000000376',
+        kind: 'insurance',
+        status: 'submitted',
+        isCurrent: true,
+        idempotent: false,
+      },
+      error: null,
+    } as { data: unknown; error: unknown },
+  } = {}) {
+    const rpc = vi.fn().mockResolvedValue(rpcResult);
+    const maybeSingle = vi.fn().mockResolvedValue({ data: role ? { role } : null, error: null });
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user }, error: user ? null : new Error('No auth') }),
+      },
+      from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) })),
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+    return { rpc };
+  }
+
+  const path = (kind = 'insurance') => `courier/${courierId}/${kind}_1730000000000.jpg`;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sin sesión devuelve UNAUTHENTICATED y no llama a la RPC', async () => {
+    const { rpc } = setup({ user: null });
+    expect(await addCourierOptionalDocumentAction({ kind: 'insurance', storagePath: path() })).toEqual({
+      ok: false,
+      code: 'UNAUTHENTICATED',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('un perfil que no es repartidor devuelve UNAUTHORIZED_ACTOR', async () => {
+    const { rpc } = setup({ role: 'merchant' });
+    expect(await addCourierOptionalDocumentAction({ kind: 'insurance', storagePath: path() })).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED_ACTOR',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['DNI (sigue por el onboarding)', { kind: 'dni_front', storagePath: path('dni_front') }],
+    ['selfie', { kind: 'selfie', storagePath: path('selfie') }],
+    ['path de otro repartidor', { kind: 'insurance', storagePath: 'courier/otro/insurance_1.jpg' }],
+    ['path de otro tipo', { kind: 'insurance', storagePath: path('license') }],
+    ['path con ..', { kind: 'insurance', storagePath: `courier/${courierId}/insurance_../x.jpg` }],
+    ['clave de idempotencia que no es UUID', { kind: 'insurance', storagePath: path(), idempotencyKey: 'no' }],
+  ])('rechaza %s con VALIDATION_ERROR sin llamar a la RPC', async (_case, input) => {
+    const { rpc } = setup();
+    expect(await addCourierOptionalDocumentAction(input)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('llama a add_courier_optional_document con el cliente de sesión y revalida el perfil', async () => {
+    const { rpc } = setup();
+
+    const result = await addCourierOptionalDocumentAction({
+      kind: 'insurance',
+      storagePath: path(),
+      idempotencyKey: KEY,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        documentId: 'a0000000-0000-4000-8000-000000000376',
+        kind: 'insurance',
+        status: 'submitted',
+        isCurrent: true,
+        idempotent: false,
+      },
+    });
+    expect(rpc).toHaveBeenCalledWith('add_courier_optional_document', {
+      p_payload: { kind: 'insurance', storagePath: path(), idempotencyKey: KEY },
+    });
+    expect(adminAuth.createAdminClient).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith('/courier/profile');
+  });
+
+  it.each(['INVALID_STATE_TRANSITION', 'UNAUTHORIZED_ACTOR', 'NOT_FOUND'])(
+    'propaga %s de la RPC sin revalidar',
+    async (code) => {
+      setup({ rpcResult: { data: null, error: { message: code, code: 'P0001' } } });
+      expect(await addCourierOptionalDocumentAction({ kind: 'license', storagePath: path('license') })).toEqual({
+        ok: false,
+        code,
+      });
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+  );
+});
