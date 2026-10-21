@@ -704,7 +704,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByText(/Todavía no completaste tu legajo de repartidor/i)).toBeDefined();
     });
 
-    it('Hotfix T-325: ajustes muestran "Notificaciones" y enlaces a los documentos legales publicados', () => {
+    it('Hotfix T-325 / T-382: ajustes sin el switch falso de notificaciones y con enlaces a los documentos legales publicados', () => {
       render(
         <CourierProfileView
           profile={{
@@ -722,8 +722,9 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         />
       );
 
-      expect(screen.getByText('Notificaciones')).toBeDefined();
-      expect(screen.getByRole('switch', { name: 'Alternar notificaciones' })).toBeDefined();
+      // T-382: el switch local «Notificaciones» se retira; la entrada única es «Notificaciones y avisos → Configurar».
+      expect(screen.queryByRole('switch', { name: 'Alternar notificaciones' })).toBeNull();
+      expect(screen.queryByText('Notificaciones')).toBeNull();
       expect(screen.queryByText(/sonoras/i)).toBeNull();
       expect(screen.queryByText(/T-311|en publicación/i)).toBeNull();
 

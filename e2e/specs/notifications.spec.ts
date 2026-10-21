@@ -349,3 +349,206 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * T-382: errores claros al activar avisos y estado real en «Configurar».
+ * La API de push del navegador se simula en el contexto de prueba con `addInitScript` (sin ramas de test en la app):
+ * el permiso queda concedido y `PushManager` devuelve una suscripción guardada en localStorage, como haría el
+ * navegador. El alta (`POST /api/push/subscriptions`) y la consulta de estado son reales contra Supabase Develop.
+ */
+test.describe('T-382 — avisos push en «Configurar»', () => {
+  type FakePushMode = 'ok' | 'fail';
+
+  async function installFakePush(page: import('@playwright/test').Page, endpoint: string, mode: FakePushMode) {
+    await page.addInitScript(
+      ({ endpoint: fakeEndpoint, mode: fakeMode }) => {
+        const storageKey = '__t382_fake_push_endpoint';
+        const fakeSubscription = (value: string) => ({
+          endpoint: value,
+          toJSON: () => ({ endpoint: value, keys: { p256dh: 'BT382FakeP256dhKey', auth: 'T382FakeAuth' } }),
+          unsubscribe: async () => {
+            localStorage.removeItem(storageKey);
+            return true;
+          },
+        });
+        Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true });
+        PushManager.prototype.getSubscription = async function getSubscription() {
+          const stored = localStorage.getItem(storageKey);
+          return (stored ? fakeSubscription(stored) : null) as unknown as PushSubscription;
+        };
+        PushManager.prototype.subscribe = async function subscribe() {
+          if (fakeMode === 'fail') {
+            throw new DOMException('Registration failed - push service error', 'AbortError');
+          }
+          localStorage.setItem(storageKey, fakeEndpoint);
+          return fakeSubscription(fakeEndpoint) as unknown as PushSubscription;
+        };
+      },
+      { endpoint, mode }
+    );
+  }
+
+  /** El login termina al salir de /login; se espera a que aterrice en el feed antes de navegar a «Configurar». */
+  async function loginCourierAndOpenSettings(
+    page: import('@playwright/test').Page,
+    login: (index: number, page: import('@playwright/test').Page) => Promise<unknown>,
+    index: number
+  ) {
+    await login(index, page);
+    await page.waitForURL(/\/courier\/feed/);
+    await page.goto('/courier/profile/notifications');
+    await expect(page.getByRole('heading', { name: '¿Te avisamos al instante?' })).toBeVisible();
+  }
+
+  function fakeEndpointFor(runId: string) {
+    return `https://fcm.googleapis.com/fcm/send/t382-${runId.replace(/[^a-z0-9]/gi, '')}`;
+  }
+
+  async function deleteSubscription(endpoint: string) {
+    const { error } = await createAdminClient().from('push_subscriptions').delete().eq('endpoint', endpoint);
+    if (error) throw new Error(`[E2E Cleanup Error] push_subscriptions: ${error.message}`);
+  }
+
+  test('el perfil ya no tiene el switch falso y conserva «Notificaciones y avisos»', async ({ page, loginAsCourier }) => {
+    await loginAsCourier(0, page);
+    await page.goto('/courier/profile');
+    await waitForNoSkeletons(page);
+
+    await expect(page.getByRole('link', { name: /Notificaciones y avisos/i })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Alternar notificaciones' })).toHaveCount(0);
+  });
+
+  test('si el navegador no tiene servicio push, «Activar avisos» lo explica en vez de culpar al servidor', async ({
+    page,
+    loginAsCourier,
+    stagingContext,
+  }) => {
+    const endpoint = fakeEndpointFor(stagingContext.testRunId);
+    await installFakePush(page, endpoint, 'fail');
+    let subscriptionPosts = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/push/subscriptions') {
+        subscriptionPosts += 1;
+      }
+    });
+
+    await loginCourierAndOpenSettings(page, loginAsCourier, 0);
+    const activate = page.getByRole('button', { name: /^Activar avisos$/i });
+    await expect(activate).toBeVisible();
+    await activate.click();
+
+    // Next agrega su propio `alert` (anunciador de rutas): se filtra por el texto del mensaje.
+    const alert = page.getByRole('alert').filter({ hasText: 'Usar los servicios de Google para mensajes push' });
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText('Chrome');
+    await expect(page.getByText(/No se pudo confirmar la suscripción con el servidor/i)).toHaveCount(0);
+    await expect(page.getByText(/Avisos activados/i)).toHaveCount(0);
+    expect(subscriptionPosts).toBe(0);
+  });
+
+  test('la cuenta A ve sus avisos activos; la cuenta B en el mismo navegador no; un error de red no muestra «activados»', async ({
+    page,
+    loginAsCourier,
+    stagingContext,
+  }) => {
+    const endpoint = fakeEndpointFor(stagingContext.testRunId);
+    await installFakePush(page, endpoint, 'ok');
+
+    try {
+      // 1. Cuenta A activa los avisos con el gesto del usuario: alta real en el servidor.
+      await loginCourierAndOpenSettings(page, loginAsCourier, 0);
+      // El alta se confirma por la respuesta del POST: el mensaje de éxito dura 700 ms antes de volver atrás.
+      const subscribed = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/push/subscriptions' && response.request().method() === 'POST'
+      );
+      await page.getByRole('button', { name: /^Activar avisos$/i }).click();
+      expect((await subscribed).status()).toBe(200);
+      // Tras el éxito, el prompt vuelve a la pantalla anterior (el feed): se espera antes de navegar.
+      await page.waitForURL(/\/courier\/feed/);
+
+      // 2. Al volver a «Configurar», el estado viene del servidor para la cuenta A.
+      await page.goto('/courier/profile/notifications');
+      await expect(page.getByText('Avisos activados en este navegador')).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Desactivar avisos$/i })).toBeVisible();
+
+      // 3. Falla de red en la consulta de estado: nunca «activados», aunque el navegador y el storage digan que sí.
+      await page.route('**/api/push/subscriptions/status', (route) => route.abort('internetdisconnected'));
+      await page.goto('/courier/profile/notifications');
+      await expect(page.getByText(/No se pudo comprobar el estado/)).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Reintentar$/i })).toBeVisible();
+      await expect(page.getByText('Avisos activados en este navegador')).toHaveCount(0);
+      await page.unroute('**/api/push/subscriptions/status');
+
+      // 4. La sesión cambia a la cuenta B sin logout: mismo navegador, misma suscripción y mismo storage.
+      expect(await page.evaluate(() => localStorage.getItem('cadeapp_push_enabled'))).toBe('true');
+      await page.context().clearCookies();
+      await loginAsCourier(1, page);
+      await page.waitForURL(/\/courier\/feed/);
+      const statusResponse = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === '/api/push/subscriptions/status'
+      );
+      await page.goto('/courier/profile/notifications');
+      expect(await (await statusResponse).json()).toEqual({ active: false });
+      await expect(page.getByRole('button', { name: /^Activar avisos$/i })).toBeVisible();
+      await expect(page.getByText(/Avisos activados/i)).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^Desactivar avisos$/i })).toHaveCount(0);
+    } finally {
+      await deleteSubscription(endpoint);
+    }
+  });
+  test('PR459-H05: la baja pendiente de A no la ve ni la consume B en el mismo navegador; A la completa al volver', async ({
+    page,
+    loginAsCourier,
+    stagingContext,
+  }) => {
+    const courierA = stagingContext.courierUsers?.[0];
+    if (!courierA) throw new Error('[E2E Error] Se necesita el repartidor A sembrado');
+    const endpoint = fakeEndpointFor(`${stagingContext.testRunId}h05`);
+    await installFakePush(page, endpoint, 'ok');
+    const admin = createAdminClient();
+    async function ownersOf(target: string) {
+      const { data, error } = await admin.from('push_subscriptions').select('user_id').eq('endpoint', target);
+      if (error) throw new Error(`[E2E Inspect Error] push_subscriptions: ${error.message}`);
+      return (data ?? []).map((row) => row.user_id);
+    }
+
+    try {
+      // 1. A activa los avisos (alta real) y después los desactiva con el DELETE caído: queda la baja pendiente.
+      await loginCourierAndOpenSettings(page, loginAsCourier, 0);
+      // El alta se confirma por la respuesta del POST: el mensaje de éxito dura 700 ms antes de volver atrás.
+      const subscribed = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/push/subscriptions' && response.request().method() === 'POST'
+      );
+      await page.getByRole('button', { name: /^Activar avisos$/i }).click();
+      expect((await subscribed).status()).toBe(200);
+      await page.waitForURL(/\/courier\/feed/);
+      await page.goto('/courier/profile/notifications');
+      await page.route('**/api/push/subscriptions', (route) =>
+        route.request().method() === 'DELETE' ? route.abort('internetdisconnected') : route.continue()
+      );
+      await page.getByRole('button', { name: /^Desactivar avisos$/i }).click();
+      await expect(page.getByRole('button', { name: 'Reintentar baja' })).toBeVisible();
+      expect(await ownersOf(endpoint)).toEqual([courierA.id]);
+
+      // 2. La sesión cambia a B sin logout ni limpiar el storage: B no ve la baja de A ni avisos activos.
+      await page.context().clearCookies();
+      await loginCourierAndOpenSettings(page, loginAsCourier, 1);
+      await expect(page.getByRole('button', { name: /^Activar avisos$/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Reintentar baja' })).toHaveCount(0);
+      await expect(page.getByText(/Avisos activados/i)).toHaveCount(0);
+      expect(await ownersOf(endpoint)).toEqual([courierA.id]);
+
+      // 3. Vuelve A: sigue su baja pendiente y la completa contra el servidor real.
+      await page.unroute('**/api/push/subscriptions');
+      await page.context().clearCookies();
+      await loginCourierAndOpenSettings(page, loginAsCourier, 0);
+      await page.getByRole('button', { name: 'Reintentar baja' }).click();
+      await expect(page.getByText('Avisos desactivados en este navegador.')).toBeVisible();
+      expect(await ownersOf(endpoint)).toEqual([]);
+    } finally {
+      await deleteSubscription(endpoint);
+    }
+  });
+});
