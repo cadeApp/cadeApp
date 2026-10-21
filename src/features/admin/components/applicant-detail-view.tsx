@@ -37,7 +37,7 @@ import {
   type RejectDocumentFormInput,
 } from '../schemas';
 import { ADMIN_COPY } from '../copy';
-import type { ApplicantDetail, ApplicantDocumentDetail } from '../types';
+import type { ApplicantDetail, ApplicantDocumentDetail, DocumentContentType } from '../types';
 
 interface ApplicantDetailViewProps {
   readonly applicant: ApplicantDetail;
@@ -79,6 +79,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
 
   // Estado del visor documental
   const [signedUrl, setSignedUrl] = React.useState<string | null>(null);
+  const [contentType, setContentType] = React.useState<DocumentContentType>('image');
   const [expiresIn, setExpiresIn] = React.useState<number>(0);
   const [loadingDoc, setLoadingDoc] = React.useState(false);
   const [zoomLevel, setZoomLevel] = React.useState(1);
@@ -118,6 +119,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
   // Reset del visor al cambiar de documento
   React.useEffect(() => {
     setSignedUrl(null);
+    setContentType('image');
     setExpiresIn(0);
     setZoomLevel(1);
     setRotation(0);
@@ -153,6 +155,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
       }
 
       setSignedUrl(res.data.signedUrl);
+      setContentType(res.data.contentType);
       setExpiresIn(res.data.expiresInSeconds);
       notify.success(ADMIN_COPY.detail.success.documentLoaded);
     } catch {
@@ -473,8 +476,8 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                           </CardDescription>
                         </div>
 
-                        {/* Controles de visor de documento */}
-                        {isSelected && signedUrl ? (
+                        {/* Controles de visor de documento (zoom y rotación solo aplican a fotos) */}
+                        {isSelected && signedUrl && contentType === 'image' ? (
                           <div className="flex items-center gap-1.5">
                             <Button
                               variant="outline"
@@ -528,18 +531,39 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                             <div className="mb-2 text-sm font-mono text-muted-foreground">
                               {ADMIN_COPY.detail.viewer.expiry(expiresIn)}
                             </div>
-                            <div className="overflow-auto max-h-96 w-full flex items-center justify-center p-4">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={signedUrl}
-                                alt={ADMIN_COPY.detail.viewer.imageAlt(ADMIN_COPY.documentKind[doc.documentType])}
-                                className={cn(
-                                  'max-h-96 max-w-full rounded-md border border-border bg-card object-contain shadow-md',
-                                  ZOOM_CLASSES[zoomLevel],
-                                  ROTATION_CLASSES[rotation]
-                                )}
-                              />
-                            </div>
+                            {contentType === 'pdf' ? (
+                              // T-387: el visor de PDF del navegador no funciona con `sandbox`; el PDF se sirve desde
+                              // Storage, de otro origen, así que no accede a la app. La URL vence a los 60 s.
+                              <div className="flex w-full flex-col items-center gap-2">
+                                <iframe
+                                  src={signedUrl}
+                                  title={ADMIN_COPY.detail.viewer.pdfTitle(ADMIN_COPY.documentKind[doc.documentType])}
+                                  referrerPolicy="no-referrer"
+                                  className="h-96 w-full rounded-md border border-border bg-card shadow-md"
+                                />
+                                <a
+                                  href={signedUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                                >
+                                  {ADMIN_COPY.detail.viewer.openPdf}
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="overflow-auto max-h-96 w-full flex items-center justify-center p-4">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={signedUrl}
+                                  alt={ADMIN_COPY.detail.viewer.imageAlt(ADMIN_COPY.documentKind[doc.documentType])}
+                                  className={cn(
+                                    'max-h-96 max-w-full rounded-md border border-border bg-card object-contain shadow-md',
+                                    ZOOM_CLASSES[zoomLevel],
+                                    ROTATION_CLASSES[rotation]
+                                  )}
+                                />
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="text-center space-y-4 max-w-sm">

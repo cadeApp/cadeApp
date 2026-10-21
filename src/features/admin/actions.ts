@@ -16,7 +16,7 @@ import {
   adminUpdateSettingRpc,
   adminVerifyDocumentRpc,
 } from '@/server/rpc/admin';
-import type { ViewDocumentResult } from './types';
+import type { DocumentContentType, ViewDocumentResult } from './types';
 import { sanitizeAdminRedirect } from './redirect';
 import {
   adminMfaSchema,
@@ -160,6 +160,14 @@ export async function verifyAdminMfaAction(
 }
 
 /**
+ * T-387: el tipo de contenido sale del path guardado, que las RPC de CC-025 y CC-033 ya validaron
+ * (`png|jpe?g|webp|pdf`), nunca de un dato del cliente.
+ */
+function documentContentType(storagePath: string): DocumentContentType {
+  return /\.pdf$/i.test(storagePath) ? 'pdf' : 'image';
+}
+
+/**
  * Genera una URL firmada de 60 segundos para visualizar un documento confidencial
  * del repartidor (DNI, selfie, licencia, seguro) y registra una fila inmutable en audit_log.
  */
@@ -221,6 +229,7 @@ export async function viewCourierDocumentAction(
   return ok({
     signedUrl: signedData.signedUrl,
     expiresInSeconds: 60,
+    contentType: documentContentType(doc.storage_path),
   });
 }
 

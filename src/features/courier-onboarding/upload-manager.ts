@@ -1,4 +1,5 @@
 import type { CourierDocumentKind } from '@/domain/schemas';
+import { compressImage } from '@/lib/image-compression';
 
 export const COURIER_DOCUMENT_KINDS = [
   'dni_front',
@@ -21,6 +22,91 @@ export const REQUIRED_COURIER_DOCUMENT_KINDS = [
 ] as const;
 
 export const OPTIONAL_COURIER_DOCUMENT_KINDS = ['license', 'insurance'] as const;
+
+/** Fotos que acepta cualquier documento del repartidor. */
+export const IMAGE_DOCUMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+export const PDF_MIME_TYPE = 'application/pdf' as const;
+
+/** T-387: mismo límite que el bucket `courier-docs`; el PDF no pasa por la compresión de imágenes. */
+export const DOCUMENT_PDF_MAX_BYTES = 10 * 1024 * 1024;
+
+/** Los primeros bytes de todo PDF (`%PDF-`). */
+const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46, 0x2d] as const;
+
+/** T-387: licencia y seguro admiten PDF; DNI, selfie y avatar siguen solo con fotos. */
+export function acceptsPdf(kind: CourierDocumentKind): boolean {
+  return (OPTIONAL_COURIER_DOCUMENT_KINDS as readonly CourierDocumentKind[]).includes(kind);
+}
+
+export function acceptedDocumentMimeTypes(kind: CourierDocumentKind): readonly string[] {
+  return acceptsPdf(kind) ? [...IMAGE_DOCUMENT_MIME_TYPES, PDF_MIME_TYPE] : IMAGE_DOCUMENT_MIME_TYPES;
+}
+
+export type DocumentFileCheck =
+  | { readonly ok: true; readonly isPdf: boolean }
+  | { readonly ok: false; readonly reason: 'unsupported_type' | 'too_large' | 'invalid_pdf' };
+
+/** Lee los primeros bytes con `FileReader`, que (a diferencia de `Blob.arrayBuffer`) existe en Safari < 14. */
+function readHead(file: File, length: number): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const { result } = reader;
+      resolve(result instanceof ArrayBuffer ? new Uint8Array(result) : new Uint8Array());
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('No se pudo leer el archivo'));
+    reader.readAsArrayBuffer(file.slice(0, length));
+  });
+}
+
+async function hasPdfSignature(file: File): Promise<boolean> {
+  try {
+    const head = await readHead(file, PDF_SIGNATURE.length);
+    return PDF_SIGNATURE.every((byte, index) => head[index] === byte);
+  } catch {
+    // Un archivo que no se puede leer no se sube.
+    return false;
+  }
+}
+
+/**
+ * T-387: valida el archivo antes de subirlo. El MIME lo informa el navegador según la extensión, así que un PDF se
+ * acepta solo si además empieza con `%PDF-` y no supera el límite del bucket.
+ */
+export async function validateDocumentFile(kind: CourierDocumentKind, file: File): Promise<DocumentFileCheck> {
+  if (!acceptedDocumentMimeTypes(kind).includes(file.type)) {
+    return { ok: false, reason: 'unsupported_type' };
+  }
+  if (file.type !== PDF_MIME_TYPE) {
+    return { ok: true, isPdf: false };
+  }
+  if (file.size > DOCUMENT_PDF_MAX_BYTES) {
+    return { ok: false, reason: 'too_large' };
+  }
+  if (!(await hasPdfSignature(file))) {
+    return { ok: false, reason: 'invalid_pdf' };
+  }
+  return { ok: true, isPdf: true };
+}
+
+/**
+ * T-387: deja listo para subir un archivo ya validado. Lo comparten el registro inicial, el alta desde el perfil y el
+ * reemplazo: el PDF se sube tal cual y solo las fotos pasan por la compresión.
+ */
+export async function prepareValidatedDocument(
+  file: File,
+  check: Extract<DocumentFileCheck, { ok: true }>,
+  onCompressing?: (compressing: boolean) => void
+): Promise<File> {
+  if (check.isPdf) return file;
+  onCompressing?.(true);
+  try {
+    return await compressImage(file);
+  } finally {
+    onCompressing?.(false);
+  }
+}
 
 export type DocumentUploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 

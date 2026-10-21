@@ -70,9 +70,13 @@ export interface ApplicantDetail {
   readonly documents: readonly ApplicantDocumentDetail[];
 }
 
+/** T-387: cómo se muestra el documento firmado; lo decide el servidor por el path guardado. */
+export type DocumentContentType = 'image' | 'pdf';
+
 export interface ViewDocumentResult {
   readonly signedUrl: string;
   readonly expiresInSeconds: number;
+  readonly contentType: DocumentContentType;
 }
 
 export interface AdminMerchantListItem {

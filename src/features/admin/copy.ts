@@ -117,6 +117,9 @@ export const ADMIN_COPY = {
         'Hacé clic para generar un enlace temporal firmado de 60 segundos y registrar el evento en auditoría.',
       validityQuestion: '¿El documento es legible y válido?',
       imageAlt: (label: string) => `Documento ${label}`,
+      // T-387: el PDF se muestra embebido, con un enlace para los navegadores que no lo embeben.
+      pdfTitle: (label: string) => `Documento ${label} (PDF)`,
+      openPdf: 'Abrir PDF en otra pestaña',
     },
     rejectDialogTitle: 'Rechazar comprobante',
     rejectDialogDescription: (docLabel: string) =>

@@ -85,6 +85,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
       ok: true,
       data: {
         signedUrl: 'https://example.com/signed/dni_front.webp',
+        contentType: 'image',
         expiresInSeconds: 60,
       },
     });
@@ -110,6 +111,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
       ok: true,
       data: {
         signedUrl: 'https://example.com/signed/dni_front.webp',
+        contentType: 'image',
         expiresInSeconds: 60,
       },
     });
@@ -141,6 +143,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
       ok: true,
       data: {
         signedUrl: 'https://example.com/signed/dni_front.webp',
+        contentType: 'image',
         expiresInSeconds: 60,
       },
     });
@@ -268,6 +271,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
       ok: true,
       data: {
         signedUrl: 'https://example.com/signed/dni_front.webp',
+        contentType: 'image',
         expiresInSeconds: 60,
       },
     });
@@ -300,6 +304,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
       ok: true,
       data: {
         signedUrl: 'https://example.com/signed/dni_front.webp',
+        contentType: 'image',
         expiresInSeconds: 60,
       },
     });
@@ -377,6 +382,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
       ok: true,
       data: {
         signedUrl: 'https://example.com/signed/license.webp',
+        contentType: 'image',
         expiresInSeconds: 60,
       },
     });
@@ -594,5 +600,94 @@ describe('T-376 / CC-033: señal de documento opcional en revisión en la cola d
       />
     );
     expect(screen.queryByText('Documento opcional en revisión')).toBeNull();
+  });
+});
+
+describe('T-387: visor auditado de un PDF', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const pdfApplicant: ApplicantDetail = {
+    ...mockApplicant,
+    status: 'approved',
+    insuranceStatus: 'submitted',
+    documents: [
+      {
+        id: 'd0000000-0000-0000-0000-000000000387',
+        documentType: 'insurance',
+        storagePath: 'courier/a0000000-0000-0000-0000-000000000001/insurance_1730000000387.pdf',
+        status: 'submitted',
+        uploadedAt: '2026-10-20T10:05:00.000Z',
+      },
+    ],
+  };
+
+  const SIGNED_PDF = 'https://example.com/signed/insurance_1730000000387.pdf?token=t';
+
+  async function loadPdf() {
+    vi.mocked(viewCourierDocumentAction).mockResolvedValue({
+      ok: true,
+      data: { signedUrl: SIGNED_PDF, expiresInSeconds: 60, contentType: 'pdf' },
+    });
+    render(<ApplicantDetailView applicant={pdfApplicant} />);
+    fireEvent.click(screen.getByRole('button', { name: /cargar documento seguro/i }));
+    await screen.findByText(/URL temporal expira en:/i);
+  }
+
+  it('muestra el PDF embebido en un iframe sin referrer, no como imagen', async () => {
+    await loadPdf();
+
+    const frame = screen.getByTitle(/documento seguro de vehículo/i);
+    expect(frame.tagName).toBe('IFRAME');
+    expect(frame.getAttribute('src')).toBe(SIGNED_PDF);
+    expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
+    expect(screen.queryByRole('img', { name: /documento seguro/i })).toBeNull();
+  });
+
+  it('ofrece abrir el PDF en otra pestaña sin opener ni referrer', async () => {
+    await loadPdf();
+
+    const link = screen.getByRole('link', { name: /abrir pdf en otra pestaña/i });
+    expect(link.getAttribute('href')).toBe(SIGNED_PDF);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('oculta zoom y rotación, que solo aplican a fotos, y mantiene verificar y rechazar', async () => {
+    await loadPdf();
+
+    expect(screen.queryByRole('button', { name: /aumentar zoom/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /rotar 90 grados/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /verificar documento/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /rechazar/i })).toBeDefined();
+  });
+
+  it('una foto sigue mostrándose como imagen con zoom y rotación', async () => {
+    vi.mocked(viewCourierDocumentAction).mockResolvedValue({
+      ok: true,
+      data: { signedUrl: 'https://example.com/signed/insurance.jpg', expiresInSeconds: 60, contentType: 'image' },
+    });
+    render(<ApplicantDetailView applicant={pdfApplicant} />);
+    fireEvent.click(screen.getByRole('button', { name: /cargar documento seguro/i }));
+
+    expect((await screen.findByRole('img', { name: /documento seguro/i })).getAttribute('src')).toBe(
+      'https://example.com/signed/insurance.jpg'
+    );
+    expect(screen.queryByTitle(/documento seguro de vehículo/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /aumentar zoom/i })).toBeDefined();
+  });
+
+  it('un DNI que el backend admitió como PDF también se ve embebido (decisión 2 C de la PR #470)', async () => {
+    vi.mocked(viewCourierDocumentAction).mockResolvedValue({
+      ok: true,
+      data: { signedUrl: 'https://example.com/signed/dni_front.pdf?token=t', expiresInSeconds: 60, contentType: 'pdf' },
+    });
+    render(<ApplicantDetailView applicant={mockApplicant} />);
+    fireEvent.click(screen.getByRole('button', { name: /cargar documento seguro/i }));
+
+    const frame = await screen.findByTitle(/documento dni frente \(pdf\)/i);
+    expect(frame.tagName).toBe('IFRAME');
+    expect(screen.queryByRole('img', { name: /documento dni frente/i })).toBeNull();
   });
 });
