@@ -120,8 +120,9 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(report.closest('.pb-32')).not.toBeNull();
     });
 
-    it('delivered: sin barra fija ni cancelación, el botón sigue apareciendo en la vista', () => {
-      render(<TripCourierView trip={makeCourierTrip('delivered')} incidentAction={slot} />);
+    it('in_transit: sin «No puedo hacer este viaje», el botón aparece igual dentro de la vista', () => {
+      render(<TripCourierView trip={makeCourierTrip('in_transit')} incidentAction={slot} />);
+      expect(screen.queryByRole('button', { name: /no puedo hacer este viaje/i })).toBeNull();
       expect(screen.getByRole('button', { name: 'Reportar un problema' }).closest('.pb-32')).not.toBeNull();
     });
   });
