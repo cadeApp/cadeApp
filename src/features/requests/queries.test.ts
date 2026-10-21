@@ -2979,3 +2979,16 @@ describe('T-112 / T-118: queries de requests e historial', () => {
   });
 });
 
+describe('T-388: los lectores del comercio piden route_distance_m en sus proyecciones', () => {
+  it('lista, historial y detalle seleccionan route_distance_m de delivery_requests', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync('src/features/requests/queries.ts', 'utf-8');
+    const selects = [...source.matchAll(/\.from\('delivery_requests'\)\s*\.select\(\s*`([^`]*)`/g)].map((m) => m[1] ?? '');
+    const readers = selects.filter((projection) => /pickup_zone|dropoff_zone|accepted_offer_id/.test(projection));
+    expect(readers.length).toBeGreaterThanOrEqual(3);
+    for (const projection of readers) {
+      expect(projection).toMatch(/\broute_distance_m\b/);
+      expect(projection).not.toMatch(/\bapprox_distance_m\b/);
+    }
+  });
+});

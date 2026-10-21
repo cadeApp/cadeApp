@@ -16,17 +16,8 @@ import type {
 } from './schemas';
 
 import type { LivePageCursor } from '@/lib/live-contracts';
+import { formatApproxDistanceKm } from '@/lib/format';
 
-// Sin distancia calculada devuelve null: la UI lo dice en vez de inventar un valor (T-363).
-function formatApproxDistanceKm(distanceM: number | null): string | null {
-  if (!distanceM || distanceM <= 0) {
-    return null;
-  }
-  const km = distanceM / 1000;
-  // Redondeo amigable a 0,5 km
-  const rounded = Math.round(km * 2) / 2;
-  return rounded.toFixed(1).replace('.', ',');
-}
 
 interface RawAvailableRequest {
   id: string;

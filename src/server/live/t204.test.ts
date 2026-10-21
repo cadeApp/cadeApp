@@ -1350,3 +1350,13 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     });
   });
 });
+
+describe('T-388: la vía en vivo pide route_distance_m en su proyección', () => {
+  it('lee la distancia total de la solicitud desde route_distance_m', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync('src/server/live/t204.ts', 'utf-8');
+    const requestsSelect = source.slice(source.indexOf(".from('delivery_requests')"), source.indexOf(".from('delivery_request_drops')"));
+    expect(requestsSelect).toMatch(/\broute_distance_m\b/);
+    expect(requestsSelect).not.toMatch(/\bapprox_distance_m\b/);
+  });
+});

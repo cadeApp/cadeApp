@@ -1,4 +1,5 @@
 import 'server-only';
+import { formatApproxDistanceKm } from '@/lib/format';
 import { z } from 'zod';
 import {
   packageTypeSchema,
@@ -25,15 +26,6 @@ export type LiveServerResult<T> =
   | { readonly ok: true; readonly data: T }
   | { readonly ok: false; readonly error: string; readonly status: number };
 
-// Sin distancia calculada devuelve null: la UI lo dice en vez de inventar un valor (T-363).
-function formatApproxDistanceKm(distanceM: number | null): string | null {
-  if (!distanceM || distanceM <= 0) {
-    return null;
-  }
-  const km = distanceM / 1000;
-  const rounded = Math.round(km * 2) / 2;
-  return rounded.toFixed(1).replace('.', ',');
-}
 
 interface RawAvailableRequestRow {
   readonly id: string;

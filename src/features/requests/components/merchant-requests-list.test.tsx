@@ -870,3 +870,13 @@ describe('T-381: el conteo de la tarjeta vuelve a coincidir al reingresar al pan
     }
   });
 });
+
+describe('T-388: la lista del comercio usa la etiqueta de distancia compartida', () => {
+  it('muestra «≈ X km», «Menos de 0,5 km» o «Distancia no calculada»', async () => {
+    const { approxDistanceLabel } = await import('@/lib/format');
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync('src/features/requests/components/merchant-requests-list.tsx', 'utf-8');
+    expect(source).toMatch(/approxDistanceLabel\(req\.approxDistanceKm\)/);
+    expect(approxDistanceLabel('1,5')).toBe('≈ 1,5 km');
+  });
+});

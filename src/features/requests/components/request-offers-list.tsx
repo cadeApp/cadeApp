@@ -1,5 +1,6 @@
 'use client';
 
+import { approxDistanceLabel } from '@/lib/format';
 import * as React from 'react';
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
@@ -312,9 +313,7 @@ export function RequestOffersList({
               </span>
               <span>·</span>
               <span>
-                {request.approxDistanceKm
-                  ? `≈ ${request.approxDistanceKm} km`
-                  : 'Distancia no calculada'}
+                {approxDistanceLabel(request.approxDistanceKm)}
               </span>
               {(request.dropsCount ?? request.drops?.length ?? 1) > 1 && (
                 <Badge variant="outline">

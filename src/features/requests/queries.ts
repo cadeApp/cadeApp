@@ -61,6 +61,7 @@ import type {
 } from './types';
 import type { PackageType, RecipientPaymentMethod, DeliveryRequestStatus } from '@/domain/schemas';
 import type { LivePageCursor } from '@/lib/live-contracts';
+import { formatApproxDistanceKm } from '@/lib/format';
 
 export const historyFilterStatusSchema = z.enum(['all', 'delivered', 'cancelled', 'expired']);
 export type HistoryFilterStatus = z.infer<typeof historyFilterStatusSchema>;
@@ -159,14 +160,8 @@ interface ZoneRow {
   centroid_lng: number | null;
 }
 
-export function formatApproxDistanceKm(distanceM: number | null): string | null {
-  if (!distanceM || distanceM <= 0) {
-    return null;
-  }
-  const km = distanceM / 1000;
-  const rounded = Math.round(km * 2) / 2;
-  return rounded.toFixed(1).replace('.', ',');
-}
+// T-388: el formateador vive en src/lib/format; se reexporta para los importadores existentes.
+export { formatApproxDistanceKm };
 
 export async function getActiveZones(): Promise<ZoneOption[]> {
   const supabase = await createClient();

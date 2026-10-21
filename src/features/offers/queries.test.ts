@@ -1064,3 +1064,31 @@ describe('T-379: getMyOffers devuelve el estado de la solicitud', () => {
     ]);
   });
 });
+
+describe('T-388: el feed pide route_distance_m en su proyección', () => {
+  it('la consulta del feed a delivery_requests selecciona route_distance_m y no approx_distance_m', async () => {
+    const selects: string[] = [];
+    const requestsBuilder = {
+      select: vi.fn((projection: string) => {
+        selects.push(projection);
+        return requestsBuilder;
+      }),
+      eq: vi.fn().mockReturnThis(),
+      gt: vi.fn().mockReturnThis(),
+      or: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      lt: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      then: (resolve: (val: unknown) => void) => resolve({ data: [], error: null }),
+    };
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'courier-388' } }, error: null }) },
+      from: vi.fn(() => requestsBuilder),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    await getAvailableRequests();
+
+    expect(selects[0]).toMatch(/\broute_distance_m\b/);
+    expect(selects[0]).not.toMatch(/\bapprox_distance_m\b/);
+  });
+});

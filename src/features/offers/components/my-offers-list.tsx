@@ -216,6 +216,13 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
                           </span>
                         </div>
 
+                        {/* T-388: sin solicitud visible (RLS) no hay distancia que mostrar, ni siquiera «no calculada». */}
+                        {offer.requestStatus !== null ? (
+                          <p className="text-sm text-muted-foreground">
+                            {OFFERS_COPY.approxDistance(offer.approxDistanceKm)}
+                          </p>
+                        ) : null}
+
                         {offer.message && (
                           <p className="text-sm italic text-muted-foreground">
                             &quot;{offer.message}&quot;
