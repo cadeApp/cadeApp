@@ -79,3 +79,40 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 Para instalar el harness: copiar el bloque JavaScript íntegro a `/tmp/pr470-r1-check.cjs`. No declarar estos comandos ejecutados hasta obtener su salida real. No levantar Docker/Supabase local, no modificar CI ni adulterar pruebas. La implementación funcional y E2E de PDF pertenecen a otra PR después de mergear esta ficha.
+
+
+---
+
+## Ronda 2 — verificación de `f638abb48775f92293d01d5d15804ab84e46dbde` (ejecutada)
+
+Se leyeron por **conector GitHub** los blobs de `docs/tasks/T-387.md` y `docs/implementation-plan.md` del SHA exacto de autor, más `vehicle-form.tsx` del mismo ref. En la sesión del revisor se evaluaron con JavaScript estos controles estáticos:
+
+```javascript
+const sec = (txt, title) => txt.match(new RegExp("## "+title+"\\n([\\s\\S]*?)(?=\\n## |$)"))?.[1] || "";
+const row = plan.split("\n").find(l => /^\|\s*T-387\s*\|/.test(l));
+const first = sec(task,"DoD").match(/^- \[[ x]\] (.*)$/m)?.[1]?.trim();
+const allowed = [...sec(task,"Archivos permitidos").matchAll(/`([^`]+)`/g)].map(m => m[1]);
+const H01 = first === row.split("|")[6].trim();
+const H02 = allowed.includes("src/features/courier-onboarding/components/vehicle-form.tsx")
+  && /registro inicial|alta inicial/i.test(sec(task,"DoD")) && /handleOptionalUpload/.test(vehicle);
+const H03 = allowed.length === 18 && allowed.every(x => !/[{}]/.test(x))
+  && allowed.includes("src/features/courier-onboarding/components/document-upload-card.tsx")
+  && allowed.includes("src/features/courier-onboarding/components/document-replacement-card.tsx");
+const H04 = task.includes("10.485.760 bytes") && row.includes("10 MiB");
+```
+
+Donde `task`, `plan` y `vehicle` son los textos reales devueltos por GitHub para ese SHA, no fixtures inventados. **Resultados observados:** `H01=true`, `H02=true`, `H03=true`, `H04=true`, y `allowed.length=18`.
+
+Mutaciones independientes en memoria con el **mismo oráculo** (sin tocar repo):
+- H01: agregar «MUTACION» al primer DoD → `false / RED`.
+- H02: quitar de `task` la entrada permitida `vehicle-form.tsx` → `false / RED`.
+- H03: sustituir permiso literal por `components/{document-upload-card,document-replacement-card}.tsx` → `false / RED`.
+- H04: cambiar `10 MiB` a `10 MB` en fila de plan → `false / RED`.
+
+Estos resultados verifican **texto de especificación**, no conducta de aplicación. **No se ejecutó Vitest, Playwright ni CI en el entorno de la revisión** por falta de checkout y DNS. El arnés anterior en esta misma evidencia conserva la receta completa para reproducir la comprobación en un clon.
+
+### H05 — comprobación adicional por enumeración de E2E
+
+En `T-387.md:102-107` el listado E2E de registro inicial solo requiere que el selector ofrezca PDF. El E2E de perfil sí solicita subir PDF, auditoría y verificación. No hay un criterio E2E que haga el reemplazo PDF desde `DocumentReplacementCard mode=replace`, ni que envíe archivo inicial por `VehicleForm` y verifique Storage + DB. **H05 abierto por inspección**; no se presenta como falla ejecutada de un test. Su cierre exige especificar ambos recorridos y, en la futura implementación, mutaciones RED que ataquen realmente el tratamiento PDF.
+
+Si se autoriza la nueva ronda, confirmar `git ls-remote origin refs/heads/docs/T-387-ficha`, no evaluar solo el SHA del commit del revisor, y ejecutar `node docs/revision-pr/analizar.mjs verificacion` con el checkout correcto.
