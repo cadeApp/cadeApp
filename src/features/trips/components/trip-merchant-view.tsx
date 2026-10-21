@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import type { TripDetails } from '../types';
 import { TripRouteMap } from './trip-route-map';
 import { Button } from '@/ui/button';
@@ -15,6 +16,7 @@ import { formatArs } from '@/lib/format';
 import { formatVehicleType, formatRecipientPaymentMethod } from '../format';
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   Bike,
   CheckCircle2,
@@ -87,12 +89,21 @@ export function TripMerchantView({
 
   return (
     <div className="mx-auto max-w-[390px] space-y-4 p-4 pb-24">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-2">
+        <Link
+          href="/merchant/dashboard"
+          aria-label="Volver al panel"
+          className="inline-flex h-12 min-h-12 w-12 min-w-12 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        </Link>
+        <div className="min-w-0 flex-1">
           <span className="font-mono text-sm uppercase tracking-wider text-muted-foreground">
             {trip.code}
           </span>
-          <h1 className="font-display text-xl font-bold text-foreground">Viaje en curso</h1>
+          <h1 className="font-display text-xl font-bold text-foreground">
+            {isDelivered ? 'Viaje finalizado' : 'Viaje en curso'}
+          </h1>
         </div>
         <Badge
           variant={isDelivered ? 'secondary' : 'default'}
@@ -269,9 +280,7 @@ export function TripMerchantView({
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={
-                    dropsList.length > 1
-                      ? `Avisar a ${drop.recipientName} por WhatsApp`
-                      : undefined
+                    dropsList.length > 1 ? `Avisar a ${drop.recipientName} por WhatsApp` : undefined
                   }
                   className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-4 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
                 >

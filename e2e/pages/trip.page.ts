@@ -32,8 +32,9 @@ export class TripPage extends BasePage {
    * de esta cabecera, así que un drop entregado no cuenta como viaje entregado.
    */
   get tripHeader(): Locator {
+    // T-379: el título es «Viaje en curso» mientras está activo y «Viaje finalizado» una vez entregado.
     return this.page
-      .getByRole('heading', { level: 1, name: /^viaje en curso$/i })
+      .getByRole('heading', { level: 1, name: /^viaje (en curso|finalizado)$/i })
       .locator('xpath=../..');
   }
 

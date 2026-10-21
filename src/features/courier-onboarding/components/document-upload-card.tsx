@@ -4,7 +4,7 @@ import * as React from 'react';
 import { AlertCircle, Camera, CheckCircle2, RotateCw, type LucideIcon } from 'lucide-react';
 import { Card } from '@/ui/card';
 import { COURIER_ONBOARDING_COPY } from '../copy';
-import type { CourierDocumentKind } from '../upload-manager';
+import { IMAGE_DOCUMENT_MIME_TYPES, type CourierDocumentKind } from '../upload-manager';
 
 export type DocumentUploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
@@ -20,6 +20,10 @@ export interface DocumentUploadCardProps {
   icon?: LucideIcon;
   /** Texto personalizado para la acción en estado idle (por defecto 'Subir'). */
   actionLabel?: string;
+  /** Tipos que ofrece el selector; por defecto, solo fotos. T-387: licencia y seguro suman PDF. */
+  acceptedTypes?: readonly string[];
+  /** T-387: motivo concreto del error (por ejemplo, un PDF inválido); por defecto, el aviso genérico de reintento. */
+  errorMessage?: string;
   onFileSelected: (file: File) => void;
 }
 
@@ -37,6 +41,8 @@ export function DocumentUploadCard({
   fileName,
   icon: IdleIcon = Camera,
   actionLabel,
+  acceptedTypes = IMAGE_DOCUMENT_MIME_TYPES,
+  errorMessage,
   onFileSelected,
 }: DocumentUploadCardProps) {
   const inputId = `file-input-${kind}`;
@@ -51,7 +57,7 @@ export function DocumentUploadCard({
         : status === 'uploading'
           ? COURIER_ONBOARDING_COPY.btnUploading
           : status === 'error'
-            ? COURIER_ONBOARDING_COPY.uploadErrorRetry
+            ? (errorMessage ?? COURIER_ONBOARDING_COPY.uploadErrorRetry)
             : subtitle;
 
   return (
@@ -127,7 +133,7 @@ export function DocumentUploadCard({
         id={inputId}
         type="file"
         aria-label={title}
-        accept="image/jpeg,image/png,image/webp"
+        accept={acceptedTypes.join(',')}
         className="sr-only"
         aria-describedby={statusId}
         onChange={(e) => {

@@ -626,6 +626,49 @@ export const adminSuspendCourierOutputSchema = z.object({
   deactivatedAt: isoTimestampSchema,
 });
 
+// CC-035: register_push_subscription (registra la suscripción y reasigna el endpoint a la cuenta logueada)
+const pushKeySchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[A-Za-z0-9_-]+$/);
+export const registerPushSubscriptionInputSchema = z.object({
+  endpoint: z
+    .string()
+    .max(2048)
+    .regex(/^https:\/\/\S+$/),
+  p256dh: pushKeySchema,
+  auth: pushKeySchema,
+  platform: z.literal('web').nullable().optional(),
+});
+/** Nunca incluye al dueño anterior del endpoint (CC-035, matriz de exposición). */
+export const registerPushSubscriptionOutputSchema = z
+  .object({
+    subscriptionId: uuidSchema,
+    created: z.boolean(),
+    reassigned: z.boolean(),
+  })
+  .strict()
+  .refine((output) => !(output.created && output.reassigned), {
+    message: 'una suscripción recién creada no puede venir reasignada',
+  });
+
+// CC-034: admin_reinstate_courier (reactivar un suspendido o reconsiderar un rechazado)
+export const adminReinstateCourierInputSchema = z.object({
+  courierId: uuidSchema,
+  reason: z.string().trim().min(1).max(500),
+});
+export const adminReinstateCourierOutputSchema = z
+  .object({
+    courierId: uuidSchema,
+    previousStatus: z.enum(['suspended', 'rejected', 'approved']),
+    status: z.literal('approved'),
+    idempotent: z.boolean(),
+  })
+  .refine((output) => (output.previousStatus === 'approved') === output.idempotent, {
+    message: 'previousStatus approved solo en la ruta idempotente',
+  });
+
 // 16. admin_verify_document
 export const adminVerifyDocumentInputSchema = z.object({
   documentId: uuidSchema,
@@ -653,6 +696,23 @@ export const replaceCourierDocumentOutputSchema = z.object({
   kind: courierDocumentKindSchema,
   status: documentReviewStatusSchema,
   replacedDocumentId: uuidSchema.nullable(),
+  isCurrent: z.boolean(),
+  idempotent: z.boolean(),
+});
+
+// CC-033: alta posterior de licencia o seguro opcionales.
+export const addCourierOptionalDocumentInputSchema = z.object({
+  kind: z.enum(['license', 'insurance']),
+  storagePath: z.string().trim().min(1).max(500),
+  idempotencyKey: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    .optional(),
+});
+export const addCourierOptionalDocumentOutputSchema = z.object({
+  documentId: uuidSchema,
+  kind: z.enum(['license', 'insurance']),
+  status: documentReviewStatusSchema,
   isCurrent: z.boolean(),
   idempotent: z.boolean(),
 });
@@ -1362,6 +1422,16 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  register_push_subscription: {
+    inputSchema: registerPushSubscriptionInputSchema,
+    outputSchema: registerPushSubscriptionOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   /**
    * CC-016: solo el comercio dueño de la solicitud. Solicitud inexistente o ajena responden igual
    * (`NOT_FOUND`) para no confirmar que el id existe.
@@ -1418,6 +1488,19 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  admin_reinstate_courier: {
+    inputSchema: adminReinstateCourierInputSchema,
+    outputSchema: adminReinstateCourierOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'NOT_FOUND',
+      'REASON_REQUIRED',
+      'INVALID_STATE_TRANSITION',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_verify_document: {
     inputSchema: adminVerifyDocumentInputSchema,
     outputSchema: adminVerifyDocumentOutputSchema,
@@ -1434,6 +1517,17 @@ export const RPC_CONTRACTS = {
   replace_courier_document: {
     inputSchema: replaceCourierDocumentInputSchema,
     outputSchema: replaceCourierDocumentOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  add_courier_optional_document: {
+    inputSchema: addCourierOptionalDocumentInputSchema,
+    outputSchema: addCourierOptionalDocumentOutputSchema,
     errorCodes: [
       'UNAUTHENTICATED',
       'UNAUTHORIZED_ACTOR',
@@ -1603,10 +1697,13 @@ export const ALL_RPC_NAMES = [
   'get_trip_details',
   'get_request_offer_couriers',
   'get_merchant_request_private_fields',
+  'register_push_subscription',
   'admin_decide_courier',
   'admin_suspend_courier',
+  'admin_reinstate_courier',
   'admin_verify_document',
   'replace_courier_document',
+  'add_courier_optional_document',
   'admin_set_subscription',
   'admin_update_setting',
   'admin_resolve_incident',

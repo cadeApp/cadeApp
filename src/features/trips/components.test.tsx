@@ -66,6 +66,14 @@ function asHtmlElement(el: Element | null | undefined): HTMLElement {
   return el;
 }
 
+function expectAccessibleBackArrow(back: HTMLElement) {
+  expect(back.querySelector('svg.lucide-arrow-left')).not.toBeNull();
+  const tokens = back.className.split(/\s+/);
+  for (const token of ['h-12', 'w-12', 'min-h-12', 'min-w-12', 'focus-visible:ring-2']) {
+    expect(tokens).toContain(token);
+  }
+}
+
 describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   const baseTrip: TripDetails = {
     id: 'req-uuid-1',
@@ -170,6 +178,13 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   // C06: Vista de Viaje del Comercio
   // =========================================================================
   describe('C06: TripMerchantView', () => {
+    it('T-378: tiene una flecha para volver al panel del comercio', () => {
+      render(<TripMerchantView trip={baseTrip} />);
+      const back = screen.getByRole('link', { name: 'Volver al panel' });
+      expect(back.getAttribute('href')).toBe('/merchant/dashboard');
+      expectAccessibleBackArrow(back);
+    });
+
     it('muestra el stepper con estados: Asignada, Retirado y Entregado', () => {
       render(<TripMerchantView trip={baseTrip} />);
 
@@ -563,6 +578,13 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   // R07: Vista de Viaje del Repartidor
   // =========================================================================
   describe('R07: TripCourierView', () => {
+    it('T-378: tiene una flecha para volver a las solicitudes del repartidor', () => {
+      render(<TripCourierView trip={baseTrip} />);
+      const back = screen.getByRole('link', { name: 'Volver a solicitudes' });
+      expect(back.getAttribute('href')).toBe('/courier/feed');
+      expectAccessibleBackArrow(back);
+    });
+
     it('muestra contacto real del comercio con WhatsApp de coordinación', () => {
       render(<TripCourierView trip={baseTrip} />);
 
@@ -1066,5 +1088,57 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       });
       expect(mockRouterPush).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('T-379: título del viaje según su estado', () => {
+  const trip: TripDetails = {
+    id: 'req-uuid-379',
+    code: 'REQ-0379',
+    status: 'matched',
+    merchantId: 'merchant-1',
+    merchantName: 'Kiosco Centro',
+    merchantPhone: '3865222222',
+    courierId: 'courier-1',
+    courierName: 'Carlos Benítez',
+    courierPhone: '3865111111',
+    vehicleType: 'moto',
+    licensePlate: 'AB 123 CD',
+    avatarUrl: null,
+    amountArs: 1800,
+    pickupAddress: 'San Martín 450, Centro',
+    pickupZoneName: 'Centro',
+    dropoffAddress: 'Belgrano 1220, Aguilares',
+    dropoffZoneName: 'Barrio Sur',
+    deliveryNotes: null,
+    recipientName: 'Laura Gómez',
+    recipientPhone: '3865123456',
+    recipientPaymentMethod: 'cash',
+    needsChange: false,
+    cashChangeAmount: null,
+    createdAt: '2026-10-20T10:00:00Z',
+    matchedAt: '2026-10-20T10:05:00Z',
+    pickedUpAt: null,
+    deliveredAt: null,
+  };
+
+  it.each([
+    ['matched', 'Viaje en curso'],
+    ['in_transit', 'Viaje en curso'],
+    ['delivered', 'Viaje finalizado'],
+  ] as const)('con estado %s, las vistas de repartidor y comercio dicen «%s»', (status, title) => {
+    const current: TripDetails = {
+      ...trip,
+      status,
+      pickedUpAt: status === 'matched' ? null : '2026-10-20T10:10:00Z',
+      deliveredAt: status === 'delivered' ? '2026-10-20T10:30:00Z' : null,
+    };
+
+    const courier = render(<TripCourierView trip={current} />);
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(title);
+    courier.unmount();
+
+    render(<TripMerchantView trip={current} />);
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(title);
   });
 });

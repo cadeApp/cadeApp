@@ -90,7 +90,7 @@ jobs:
   db-tests:
     name: db-tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -215,6 +215,19 @@ jobs:
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_concurrency.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_concurrency.mjs --mutation-check
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_backfill.mjs
+
+            # CC-033: alta opcional posterior, serialización con suspensión y mutación de orden de locks.
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc033_concurrency.mjs
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc033_concurrency.mjs --mutation-check
+
+            # Reactivar o reconsiderar repartidores CC-034 (T-385): carreras reactivar/suspender y control RED->GREEN
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc034_concurrency.mjs
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc034_concurrency.mjs --mutation-check
+
+            # Registro de suscripciones push CC-035 (T-386): carreras alta/alta y reasignar/reasignar y control RED->GREEN
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc035_concurrency.mjs
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc035_concurrency.mjs --mutation-check
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc035_concurrency.mjs --mutation-lock-check
 
             # Huérfanos de courier-docs CC-030 (T-370): carreras writer/reclamo y controles RED->GREEN
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc030_orphan_concurrency.mjs

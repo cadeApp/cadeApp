@@ -5,6 +5,7 @@ import * as adminSupabase from '@/server/supabase/admin';
 import * as adminRpc from '@/server/rpc/admin';
 import {
   decideCourierAction,
+  reinstateCourierAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
   viewCourierDocumentAction,
@@ -27,6 +28,7 @@ vi.mock('@/server/supabase/admin', () => ({
 
 vi.mock('@/server/rpc/admin', () => ({
   adminDecideCourierRpc: vi.fn(),
+  adminReinstateCourierRpc: vi.fn(),
   adminSuspendCourierRpc: vi.fn(),
   adminVerifyDocumentRpc: vi.fn(),
   adminSetSubscriptionRpc: vi.fn(),
@@ -452,6 +454,59 @@ describe('Admin Actions (T-122 DoD & PR106-H13)', () => {
           target_id: VALID_DOC_ID,
         })
       );
+    });
+
+    describe('T-387: tipo de contenido del documento firmado', () => {
+      function mockDocumentWithPath(storagePath: string) {
+        const mockCreateSignedUrl = vi.fn().mockResolvedValue({
+          data: { signedUrl: 'https://supabase.local/storage/v1/object/sign/courier-docs/doc?token=abc' },
+          error: null,
+        });
+        const mockAdminSupabase = {
+          from: vi.fn((table: string) => {
+            if (table === 'courier_documents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockReturnValue({
+                      maybeSingle: vi.fn().mockResolvedValue({
+                        data: { id: VALID_DOC_ID, courier_id: VALID_COURIER_ID, kind: 'insurance', storage_path: storagePath },
+                        error: null,
+                      }),
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'audit_log') {
+              return { insert: vi.fn().mockResolvedValue({ error: null }) };
+            }
+            return {};
+          }),
+          storage: { from: vi.fn().mockReturnValue({ createSignedUrl: mockCreateSignedUrl }) },
+        };
+        vi.mocked(adminSupabase.createAdminClient).mockReturnValue(
+          mockAdminSupabase as unknown as ReturnType<typeof adminSupabase.createAdminClient>
+        );
+      }
+
+      it.each([
+        ['courier/c/insurance_1730000000000.pdf', 'pdf'],
+        ['courier/c/license_1730000000000.PDF', 'pdf'],
+        // Decisión 2 C de la PR #470: un DNI que el backend ya admitió como PDF también se muestra como PDF.
+        ['courier/c/dni_front_1730000000000.pdf', 'pdf'],
+        ['courier/c/insurance_1730000000000.jpg', 'image'],
+        ['courier/c/insurance_1730000000000.jpeg', 'image'],
+        ['courier/c/license_1730000000000.png', 'image'],
+        ['courier/c/dni_front_1730000000000.webp', 'image'],
+      ] as const)('%s se sirve como %s, según el path guardado y no según el cliente', async (storagePath, expected) => {
+        setupAal2Admin();
+        mockDocumentWithPath(storagePath);
+
+        const result = await viewCourierDocumentAction({ documentId: VALID_DOC_ID, courierId: VALID_COURIER_ID });
+
+        expect(result).toMatchObject({ ok: true, data: { contentType: expected, expiresInSeconds: 60 } });
+      });
     });
   });
 
@@ -999,5 +1054,127 @@ describe('T-369: acciones admin de créditos de publicación', () => {
     await upsertPublicationPlanAction(planInput);
     expect(adminRpc.adminUpsertPublicationPlanRpc).toHaveBeenCalledWith(client, planInput);
     expect(revalidatePath).toHaveBeenCalledWith('/admin/merchants/plans');
+  });
+});
+
+describe('T-380: reinstateCourierAction y mapeo de INVALID_STATE_TRANSITION (CC-034)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const reinstateInput = {
+    courierId: VALID_COURIER_ID,
+    reason: 'Se revisó el reclamo y no hubo falta del repartidor.',
+  };
+
+  it('rechaza courierId no UUID y motivo vacío, de solo espacios o de más de 500 caracteres sin autenticar', async () => {
+    mockSession({ role: 'admin' });
+    const invalidInputs = [
+      { ...reinstateInput, courierId: 'no-es-uuid' },
+      { ...reinstateInput, reason: '' },
+      { ...reinstateInput, reason: '    ' },
+      { ...reinstateInput, reason: 'x'.repeat(501) },
+    ];
+    for (const input of invalidInputs) {
+      expect(await reinstateCourierAction(input)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    expect(serverSupabase.createClient).not.toHaveBeenCalled();
+    expect(adminRpc.adminReinstateCourierRpc).not.toHaveBeenCalled();
+  });
+
+  it('acepta un motivo de exactamente 500 caracteres', async () => {
+    const client = mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminReinstateCourierRpc).mockResolvedValue({
+      ok: true,
+      data: { courierId: VALID_COURIER_ID, previousStatus: 'suspended', status: 'approved', idempotent: false },
+    });
+    const reason = 'x'.repeat(500);
+    const result = await reinstateCourierAction({ ...reinstateInput, reason });
+    expect(result.ok).toBe(true);
+    expect(adminRpc.adminReinstateCourierRpc).toHaveBeenCalledWith(client, {
+      courierId: VALID_COURIER_ID,
+      reason,
+    });
+  });
+
+  it.each([
+    [{ user: null }, 'UNAUTHENTICATED'],
+    [{ role: 'courier' }, 'UNAUTHORIZED_ACTOR'],
+    [{ role: 'admin', aal: 'aal1' as const }, 'AAL2_REQUIRED'],
+  ])('sin admin con AAL2 (%o) devuelve %s y no llama a la RPC', async (session, code) => {
+    mockSession(session);
+    expect(await reinstateCourierAction(reinstateInput)).toEqual({ ok: false, code });
+    expect(adminRpc.adminReinstateCourierRpc).not.toHaveBeenCalled();
+  });
+
+  it('llama a adminReinstateCourierRpc con el cliente de sesión AAL2 (nunca createAdminClient) y revalida postulantes', async () => {
+    const client = mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminReinstateCourierRpc).mockResolvedValue({
+      ok: true,
+      data: { courierId: VALID_COURIER_ID, previousStatus: 'suspended', status: 'approved', idempotent: false },
+    });
+
+    const result = await reinstateCourierAction(reinstateInput);
+
+    expect(result).toEqual({ ok: true, data: { success: true, idempotent: false } });
+    expect(adminRpc.adminReinstateCourierRpc).toHaveBeenCalledWith(client, reinstateInput);
+    expect(adminRpc.adminDecideCourierRpc).not.toHaveBeenCalled();
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/applicants');
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/applicants/${VALID_COURIER_ID}`);
+  });
+
+  it('trata idempotent: true (ya aprobado, doble clic o reintento) como éxito', async () => {
+    mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminReinstateCourierRpc).mockResolvedValue({
+      ok: true,
+      data: { courierId: VALID_COURIER_ID, previousStatus: 'approved', status: 'approved', idempotent: true },
+    });
+
+    expect(await reinstateCourierAction(reinstateInput)).toEqual({
+      ok: true,
+      data: { success: true, idempotent: true },
+    });
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/applicants/${VALID_COURIER_ID}`);
+  });
+
+  it.each([
+    'REASON_REQUIRED',
+    'INVALID_STATE_TRANSITION',
+    'UNAUTHORIZED_ACTOR',
+    'AAL2_REQUIRED',
+    'NOT_FOUND',
+    'UNAUTHENTICATED',
+    'VALIDATION_ERROR',
+  ] as const)('mapea %s de la RPC sin convertirlo en INTERNAL_ERROR', async (code) => {
+    mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminReinstateCourierRpc).mockResolvedValue({ ok: false, code });
+
+    expect(await reinstateCourierAction(reinstateInput)).toEqual({ ok: false, code });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('un error no contemplado de la RPC sigue siendo INTERNAL_ERROR', async () => {
+    mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminReinstateCourierRpc).mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+
+    expect(await reinstateCourierAction(reinstateInput)).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+
+  it('decideCourierAction mapea INVALID_STATE_TRANSITION (antes caía en INTERNAL_ERROR)', async () => {
+    mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminDecideCourierRpc).mockResolvedValue({
+      ok: false,
+      code: 'INVALID_STATE_TRANSITION',
+    });
+
+    const result = await decideCourierAction({
+      courierId: VALID_COURIER_ID,
+      decision: 'approved',
+      reason: 'Documentación completa',
+    });
+
+    expect(result).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

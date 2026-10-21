@@ -3,9 +3,16 @@
 import * as React from 'react';
 import { ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/ui/badge';
-import { compressImage } from '@/lib/image-compression';
-import { uploadCourierDocument, type CourierDocumentKind } from '../upload-manager';
-import { replaceCourierDocumentAction } from '../actions';
+import {
+  acceptedDocumentMimeTypes,
+  acceptsPdf,
+  prepareValidatedDocument,
+  uploadCourierDocument,
+  validateDocumentFile,
+  type CourierDocumentKind,
+} from '../upload-manager';
+import { addCourierOptionalDocumentAction, replaceCourierDocumentAction } from '../actions';
+import type { ActionResult, DomainErrorCode } from '@/domain/errors';
 import { COURIER_ONBOARDING_COPY, getSafeRejectionMessage } from '../copy';
 import { DocumentUploadCard, type DocumentUploadStatus } from './document-upload-card';
 import type { DocumentReviewStatus } from '../schemas';
@@ -18,6 +25,26 @@ export interface DocumentReplacementCardProps {
   rejectionCode?: string | null;
   rejectionMessage?: string | null;
   onReplaced?: (result: { kind: CourierDocumentKind; status: DocumentReviewStatus }) => void;
+  /**
+   * T-376 / CC-033: `replace` reemplaza un documento rechazado (`replace_courier_document`); `add` sube la licencia o el
+   * seguro que no se cargaron en el onboarding (`add_courier_optional_document`) y se muestra solo con estado `none`.
+   */
+  mode?: 'replace' | 'add';
+}
+
+/** T-376: un mensaje por causa de falla del alta de un documento opcional. */
+function addErrorMessage(code: DomainErrorCode): string {
+  switch (code) {
+    case 'INVALID_STATE_TRANSITION':
+      return COURIER_ONBOARDING_COPY.optionalDocumentErrors.invalidState;
+    case 'UNAUTHORIZED_ACTOR':
+    case 'UNAUTHENTICATED':
+      return COURIER_ONBOARDING_COPY.optionalDocumentErrors.unauthorized;
+    case 'NOT_FOUND':
+      return COURIER_ONBOARDING_COPY.optionalDocumentErrors.notFound;
+    default:
+      return COURIER_ONBOARDING_COPY.optionalDocumentErrors.generic;
+  }
 }
 
 /**
@@ -43,6 +70,7 @@ export function DocumentReplacementCard({
   rejectionCode,
   rejectionMessage,
   onReplaced,
+  mode = 'replace',
 }: DocumentReplacementCardProps) {
   const [currentStatus, setCurrentStatus] = React.useState<DocumentReviewStatus>(initialStatus);
   const [uploadStatus, setUploadStatus] = React.useState<DocumentUploadStatus>('idle');
@@ -56,10 +84,32 @@ export function DocumentReplacementCard({
 
   const safeReason = rejectionMessage || getSafeRejectionMessage(rejectionCode);
 
+  // PR471-H02: una sola selección a la vez. «Subiendo» se marca antes de leer la firma del PDF (primer await), así el
+  // input queda deshabilitado y una segunda selección no arranca otro intento ni otro objeto en Storage.
+  const inFlightRef = React.useRef(false);
+
   const handleFileSelected = async (file: File) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setUploadStatus('uploading');
+    try {
+      await processSelectedFile(file);
+    } finally {
+      inFlightRef.current = false;
+    }
+  };
+
+  const processSelectedFile = async (file: File) => {
     setErrorMessage(null);
     setSuccessMessage(null);
     setSelectedFileName(file.name);
+
+    const check = await validateDocumentFile(kind, file);
+    if (!check.ok) {
+      setUploadStatus('error');
+      setErrorMessage(COURIER_ONBOARDING_COPY.documentFileErrorMessage(check.reason, acceptsPdf(kind)));
+      return;
+    }
     // Identificador único del archivo seleccionado (nombre, tamaño, tipo y última modificación)
     const fingerprint = `${file.name}-${file.size}-${file.type}-${file.lastModified}`;
     const previousAttempt = pendingAttemptRef.current;
@@ -118,14 +168,13 @@ export function DocumentReplacementCard({
 
       // 2. Subida a Supabase Storage SOLO si no fue confirmada previamente para este intento (PR358-R01)
       if (!attempt.uploadConfirmed) {
-        setIsCompressing(true);
-        const compressed = await compressImage(file);
-        setIsCompressing(false);
+        // T-387: el PDF se sube tal cual; solo las fotos pasan por la compresión.
+        const upload = await prepareValidatedDocument(file, check, setIsCompressing);
 
         const { storagePath } = await uploadCourierDocument({
           courierId: resolvedCourierId,
           kind,
-          file: compressed,
+          file: upload,
           timestamp: attempt.timestamp,
         });
 
@@ -133,19 +182,39 @@ export function DocumentReplacementCard({
         attempt.uploadConfirmed = true;
       }
 
-      // 3. Invocación transaccional de la RPC replace_courier_document con la clave e intento estables
-      const result = await replaceCourierDocumentAction({
+      // 3. Invocación transaccional de la RPC con la clave e intento estables (reemplazo o alta, según el modo)
+      const submission = {
         kind,
         storagePath: attempt.storagePath,
         idempotencyKey: attempt.idempotencyKey,
-      });
+      };
+      let result: ActionResult<{ status: DocumentReviewStatus }, DomainErrorCode>;
+      if (mode === 'add') {
+        try {
+          result = await addCourierOptionalDocumentAction(submission);
+        } catch {
+          // Sin respuesta del servidor: el mismo intento (clave y archivo ya subido) se puede reintentar.
+          setUploadStatus('error');
+          setErrorMessage(COURIER_ONBOARDING_COPY.optionalDocumentErrors.network);
+          return;
+        }
+      } else {
+        result = await replaceCourierDocumentAction(submission);
+      }
 
       if (!result.ok) {
+        // PR464-H02: NOT_FOUND = el objeto no está en Storage; el próximo intento tiene que volver a subirlo con otro
+        // path y otra clave. Con errores inciertos (red, INTERNAL_ERROR) se conserva el intento para no duplicar.
+        if (mode === 'add' && result.code === 'NOT_FOUND') {
+          pendingAttemptRef.current = null;
+        }
         setUploadStatus('error');
         setErrorMessage(
-          result.code === 'INVALID_STATE_TRANSITION'
-            ? 'El documento ya no está en estado rechazado.'
-            : 'Error al enviar el documento para revisión.'
+          mode === 'add'
+            ? addErrorMessage(result.code)
+            : result.code === 'INVALID_STATE_TRANSITION'
+              ? 'El documento ya no está en estado rechazado.'
+              : 'Error al enviar el documento para revisión.'
         );
         return;
       }
@@ -159,7 +228,9 @@ export function DocumentReplacementCard({
       setSuccessMessage(
         authoritativeStatus === 'verified'
           ? 'Documento validado exitosamente.'
-          : COURIER_ONBOARDING_COPY.documentReplacedSuccess
+          : mode === 'add'
+            ? COURIER_ONBOARDING_COPY.optionalDocumentSubmitted
+            : COURIER_ONBOARDING_COPY.documentReplacedSuccess
       );
       onReplaced?.({ kind, status: authoritativeStatus });
     } catch (err) {
@@ -219,6 +290,39 @@ export function DocumentReplacementCard({
     );
   }
 
+  if (mode === 'add') {
+    if (currentStatus !== 'none') {
+      return null;
+    }
+    return (
+      <div
+        data-slot="document-replacement-card"
+        data-kind={kind}
+        data-status="none"
+        className="rounded-lg border border-border/60 bg-muted/20 p-3.5 space-y-3"
+      >
+        <p className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.optionalDocumentHint}</p>
+
+        {errorMessage && (
+          <p role="alert" className="text-sm font-semibold text-destructive">
+            {errorMessage}
+          </p>
+        )}
+
+        <DocumentUploadCard
+          kind={kind}
+          title={COURIER_ONBOARDING_COPY.optionalDocumentAddTitle(title)}
+          subtitle={COURIER_ONBOARDING_COPY.optionalDocumentSubtitle}
+          status={uploadStatus}
+          compressing={isCompressing}
+          fileName={selectedFileName}
+          acceptedTypes={acceptedDocumentMimeTypes(kind)}
+          onFileSelected={handleFileSelected}
+        />
+      </div>
+    );
+  }
+
   if (currentStatus !== 'rejected') {
     return null;
   }
@@ -256,11 +360,16 @@ export function DocumentReplacementCard({
       <DocumentUploadCard
         kind={kind}
         title={`Reemplazar ${title.toLowerCase()}`}
-        subtitle="Seleccioná un archivo claro para enviar a nueva revisión"
+        subtitle={
+          acceptsPdf(kind)
+            ? COURIER_ONBOARDING_COPY.replacementSubtitlePhotoOrPdf
+            : 'Seleccioná un archivo claro para enviar a nueva revisión'
+        }
         status={uploadStatus}
         compressing={isCompressing}
         fileName={selectedFileName}
         actionLabel={COURIER_ONBOARDING_COPY.btnReplace}
+        acceptedTypes={acceptedDocumentMimeTypes(kind)}
         onFileSelected={handleFileSelected}
       />
     </div>

@@ -1292,6 +1292,10 @@ export type Database = {
         }
         Returns: Json
       }
+      add_courier_optional_document: {
+        Args: { p_payload: Json }
+        Returns: Json
+      }
       admin_decide_courier: {
         Args: { p_courier_id: string; p_decision: string; p_reason?: string }
         Returns: Json
@@ -1340,6 +1344,10 @@ export type Database = {
           p_operation_key: string
           p_plan_id: string
         }
+        Returns: Json
+      }
+      admin_reinstate_courier: {
+        Args: { p_courier_id: string; p_reason: string }
         Returns: Json
       }
       admin_resolve_incident: {
@@ -1447,6 +1455,7 @@ export type Database = {
         Args: { p_limit?: number }
         Returns: Json
       }
+      register_push_subscription: { Args: { p_payload: Json }; Returns: Json }
       replace_courier_document: { Args: { p_payload: Json }; Returns: Json }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }

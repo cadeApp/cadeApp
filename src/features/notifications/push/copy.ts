@@ -18,9 +18,27 @@ export const PUSH_COPY = {
     statusSubscriptionError:
       'No se pudo confirmar la suscripción con el servidor. Reintentá en unos momentos.',
     statusGenericError: 'No se pudo activar el permiso de avisos.',
+    statusPushServiceUnavailable:
+      'Tu navegador no permitió activar los avisos. En Brave, activá «Usar los servicios de Google para mensajes push» en la configuración de privacidad y reiniciá el navegador. También podés probar con Chrome.',
+    statusPermissionBlocked:
+      'El navegador tiene bloqueados los avisos para este sitio. Tocá el ícono junto a la dirección, permití las notificaciones y volvé a intentar.',
+    statusSessionExpired: 'Tu sesión venció. Volvé a iniciar sesión y activá los avisos de nuevo.',
+    statusNetworkError: 'No hay conexión. Revisá tu internet y reintentá.',
+    statusConfigError:
+      'Los avisos no están disponibles por un problema de configuración. Igual vas a ver todo al abrir la app.',
+    statusActive: 'Avisos activados en este navegador',
+    statusCheckFailed: 'No se pudo comprobar el estado de los avisos.',
+    statusDeactivated: 'Avisos desactivados en este navegador.',
+    statusDeactivateError: 'No se pudieron desactivar los avisos. Reintentá en unos momentos.',
+    statusDeactivatePending:
+      'Este navegador ya no recibe avisos, pero el servidor todavía no confirmó la baja. Reintentá para completarla.',
     btnActivate: 'Activar avisos',
     btnActivating: 'Solicitando...',
     btnActivated: '¡Avisos activados!',
+    btnDeactivate: 'Desactivar avisos',
+    btnDeactivating: 'Desactivando...',
+    btnRetryDeactivate: 'Reintentar baja',
+    btnRetry: 'Reintentar',
     btnDismiss: 'Ahora no',
   },
   profileLink: {

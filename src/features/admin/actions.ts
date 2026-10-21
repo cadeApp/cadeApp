@@ -9,24 +9,27 @@ import {
   adminGrantPublicationCreditsRpc,
   adminListPublicationPlansRpc,
   adminRegisterPlanPeriodRpc,
+  adminReinstateCourierRpc,
   adminUpsertPublicationPlanRpc,
   adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
   adminUpdateSettingRpc,
   adminVerifyDocumentRpc,
 } from '@/server/rpc/admin';
-import type { ViewDocumentResult } from './types';
+import type { DocumentContentType, ViewDocumentResult } from './types';
 import { sanitizeAdminRedirect } from './redirect';
 import {
   adminMfaSchema,
   viewCourierDocumentSchema,
   decideCourierSchema,
   suspendCourierSchema,
+  reinstateCourierSchema,
   verifyCourierDocumentSchema,
   type AdminMfaInput,
   type ViewCourierDocumentInput,
   type DecideCourierInput,
   type SuspendCourierInput,
+  type ReinstateCourierInput,
   type VerifyCourierDocumentInput,
   setMerchantSubscriptionSchema,
   updatePlatformSettingSchema,
@@ -157,6 +160,14 @@ export async function verifyAdminMfaAction(
 }
 
 /**
+ * T-387: el tipo de contenido sale del path guardado, que las RPC de CC-025 y CC-033 ya validaron
+ * (`png|jpe?g|webp|pdf`), nunca de un dato del cliente.
+ */
+function documentContentType(storagePath: string): DocumentContentType {
+  return /\.pdf$/i.test(storagePath) ? 'pdf' : 'image';
+}
+
+/**
  * Genera una URL firmada de 60 segundos para visualizar un documento confidencial
  * del repartidor (DNI, selfie, licencia, seguro) y registra una fila inmutable en audit_log.
  */
@@ -218,6 +229,7 @@ export async function viewCourierDocumentAction(
   return ok({
     signedUrl: signedData.signedUrl,
     expiresInSeconds: 60,
+    contentType: documentContentType(doc.storage_path),
   });
 }
 
@@ -250,12 +262,45 @@ export async function decideCourierAction(
     if (rpcResult.code === 'REASON_REQUIRED') return err('REASON_REQUIRED');
     if (rpcResult.code === 'UNAUTHORIZED_ACTOR') return err('UNAUTHORIZED_ACTOR');
     if (rpcResult.code === 'NOT_FOUND') return err('NOT_FOUND');
+    if (rpcResult.code === 'INVALID_STATE_TRANSITION') return err('INVALID_STATE_TRANSITION');
     return err('INTERNAL_ERROR');
   }
 
   revalidatePath('/admin/applicants');
   revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
   return ok({ success: true });
+}
+
+/**
+ * CC-034: reactiva a un repartidor suspendido o reconsidera uno rechazado (vuelve a `approved` sin disponibilidad).
+ * El motivo es obligatorio. `idempotent: true` (ya estaba aprobado: doble clic o reintento) es éxito.
+ */
+export async function reinstateCourierAction(
+  input: ReinstateCourierInput
+): Promise<ActionResult<{ success: true; idempotent: boolean }, DomainErrorCode>> {
+  const parsed = reinstateCourierSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  // Cliente de sesión con AAL2, nunca createAdminClient: la RPC vuelve a exigir admin con MFA.
+  const rpcResult = await adminReinstateCourierRpc(authResult.data.supabase, {
+    courierId: parsed.data.courierId,
+    reason: parsed.data.reason,
+  });
+
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath('/admin/applicants');
+  revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
+  return ok({ success: true, idempotent: rpcResult.data.idempotent });
 }
 
 /**

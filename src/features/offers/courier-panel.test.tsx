@@ -184,6 +184,43 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     });
   });
 
+  it('T-378: el error bajo el piso se ve en rojo y marca el monto como inválido', async () => {
+    const mockOnSubmit = vi.fn().mockResolvedValue({
+      ok: false,
+      code: 'OFFER_BELOW_MINIMUM',
+      message: 'La oferta es menor al monto mínimo permitido.',
+    });
+
+    render(
+      <OfferSheet
+        isOpen={true}
+        onClose={vi.fn()}
+        request={sampleRequest}
+        minOfferArs={1000}
+        onSubmitOffer={mockOnSubmit}
+      />
+    );
+
+    const input = screen.getByLabelText(/monto de la oferta/i);
+    fireEvent.change(input, { target: { value: '999' } });
+    fireEvent.click(screen.getByRole('button', { name: /enviar oferta/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/menor al monto mínimo permitido/i);
+    expect(alert.className).toContain('text-destructive');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.className).toContain('border-destructive');
+  });
+
+  it('T-378: los componentes de ofertas no usan el color «danger», que no existe en el tema', () => {
+    const dir = path.join(__dirname, 'components');
+    const offenders = fs
+      .readdirSync(dir)
+      .filter((file) => file.endsWith('.tsx') && !file.endsWith('.test.tsx'))
+      .filter((file) => /\b(?:text|bg|border|ring)-danger\b/.test(fs.readFileSync(path.join(dir, file), 'utf8')));
+    expect(offenders).toEqual([]);
+  });
+
   it('DoD 3: Se valida que no viajen coordenadas ni mapa en el DOM ni en la red', () => {
     const { container } = render(
       <CourierFeed
@@ -260,6 +297,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       etaMinutes: 15,
       message: null,
       status: 'accepted',
+      requestStatus: 'matched',
       createdAt: '2026-09-23T10:00:00Z',
       decidedAt: '2026-09-23T10:05:00Z',
       requestExpiresAt: null,

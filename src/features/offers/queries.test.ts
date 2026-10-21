@@ -977,3 +977,87 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     );
   });
 });
+
+describe('T-379: getMyOffers devuelve el estado de la solicitud', () => {
+  function rawOffer(id: string, status: string, request: { status: string } | null) {
+    return {
+      id,
+      request_id: `req-${id}`,
+      amount_ars: 1500,
+      eta_minutes: 15,
+      message: null,
+      status,
+      created_at: '2026-10-20T10:00:00Z',
+      decided_at: null,
+      delivery_requests: request
+        ? {
+            status: request.status,
+            expires_at: null,
+            approx_distance_m: 2500,
+            pickup_zone: { name: 'Centro' },
+            dropoff_zone: { name: 'Barrio Norte' },
+          }
+        : null,
+    };
+  }
+
+  function mockOffers(rows: unknown[]) {
+    let projection = '';
+    const builder = {
+      select: vi.fn((value: string) => {
+        projection = value;
+        return builder;
+      }),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      then: (resolve: (val: unknown) => void) => resolve({ data: rows, error: null }),
+    };
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'courier-1' } }, error: null }),
+      },
+      from: vi.fn((table: string) => (table === 'offers' ? builder : {})),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    return () => projection;
+  }
+
+  it('lee delivery_requests.status en el mismo select y lo devuelve por oferta aceptada', async () => {
+    const projection = mockOffers([
+      rawOffer('matched', 'accepted', { status: 'matched' }),
+      rawOffer('transit', 'accepted', { status: 'in_transit' }),
+      rawOffer('delivered', 'accepted', { status: 'delivered' }),
+      rawOffer('cancelled', 'accepted', { status: 'cancelled' }),
+      rawOffer('hidden', 'accepted', null),
+    ]);
+
+    const result = await getMyOffers();
+
+    expect(projection()).toMatch(/delivery_requests!offers_request_id_fkey\s*\(\s*status,/);
+    expect(result.map((offer) => [offer.offerId, offer.status, offer.requestStatus])).toEqual([
+      ['matched', 'accepted', 'matched'],
+      ['transit', 'accepted', 'in_transit'],
+      ['delivered', 'accepted', 'delivered'],
+      ['cancelled', 'accepted', 'cancelled'],
+      ['hidden', 'accepted', null],
+    ]);
+  });
+
+  it('cubre los seis valores de offer_status, incluidos expired y cancelled', async () => {
+    mockOffers(
+      ['pending', 'accepted', 'rejected', 'withdrawn', 'expired', 'cancelled'].map((status) =>
+        rawOffer(status, status, { status: 'published' })
+      )
+    );
+
+    const result = await getMyOffers();
+
+    expect(result.map((offer) => offer.status)).toEqual([
+      'pending',
+      'accepted',
+      'rejected',
+      'withdrawn',
+      'expired',
+      'cancelled',
+    ]);
+  });
+});

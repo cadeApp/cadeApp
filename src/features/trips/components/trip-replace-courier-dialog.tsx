@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from '@/ui/alert-dialog';
 import { Button } from '@/ui/button';
+import { Textarea } from '@/ui/textarea';
 
 export const REPLACE_COURIER_COPY = {
   eyebrow: 'Cambiar de repartidor',
@@ -33,6 +34,8 @@ export const REPLACE_COURIER_COPY = {
   confirm: 'Sí, sacar y republicar',
   confirming: 'Republicando...',
   viewCredits: 'Ver mis créditos y planes',
+  reasonLabel: 'Motivo del cambio de repartidor',
+  reasonPlaceholder: 'Contá brevemente por qué lo sacás...',
 } as const;
 
 const COPY = REPLACE_COURIER_COPY;
@@ -40,8 +43,11 @@ const COPY = REPLACE_COURIER_COPY;
 export interface TripReplaceCourierDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** `republish_request` desde `matched` (D-C2a): consume otro crédito si el comercio publica con créditos. */
-  onConfirmReplace: () => void;
+  /**
+   * `republish_request` desde `matched` (D-C2a): consume otro crédito si el comercio publica con créditos. La RPC
+   * exige motivo en ese estado (`REASON_REQUIRED`), por eso se pide en la segunda confirmación (T-378).
+   */
+  onConfirmReplace: (reason: string) => void;
   /** `report_no_show` con republicación: vuelve a reserva el crédito de la solicitud, sin cobro nuevo. */
   onReportNoShow: () => void;
   isPending?: boolean;
@@ -65,10 +71,15 @@ export function TripReplaceCourierDialog({
   creditsExhausted = false,
 }: TripReplaceCourierDialogProps) {
   const [step, setStep] = useState<0 | 1>(0);
+  const [reason, setReason] = useState('');
+  const trimmedReason = reason.trim();
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && isPending) return;
-    if (!nextOpen) setStep(0);
+    if (!nextOpen) {
+      setStep(0);
+      setReason('');
+    }
     onOpenChange(nextOpen);
   };
 
@@ -110,7 +121,24 @@ export function TripReplaceCourierDialog({
                 {isPending ? COPY.reporting : COPY.noShowButton}
               </Button>
             </div>
-          ) : null}
+          ) : (
+            <div className="space-y-1.5">
+              <label htmlFor="replace-courier-reason" className="text-sm font-semibold text-foreground">
+                {COPY.reasonLabel}
+              </label>
+              <Textarea
+                id="replace-courier-reason"
+                value={reason}
+                maxLength={500}
+                required
+                aria-required="true"
+                placeholder={COPY.reasonPlaceholder}
+                onChange={(event) => setReason(event.target.value)}
+                disabled={isPending}
+                className="min-h-[80px] text-sm"
+              />
+            </div>
+          )}
 
           {errorMessage ? (
             <div role="alert" className="space-y-1 text-sm font-medium text-destructive">
@@ -158,9 +186,9 @@ export function TripReplaceCourierDialog({
                 type="button"
                 variant="destructive"
                 isPending={isPending}
-                disabled={isPending}
+                disabled={isPending || trimmedReason === ''}
                 aria-busy={isPending ? 'true' : 'false'}
-                onClick={onConfirmReplace}
+                onClick={() => onConfirmReplace(trimmedReason)}
                 className="min-h-[48px]"
               >
                 {isPending ? COPY.confirming : COPY.confirm}

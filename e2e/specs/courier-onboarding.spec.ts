@@ -6,6 +6,7 @@ import {
   createAuthenticatedClient,
   generateTotp,
   seedDeliveryRequestInState,
+  seedOffersForFirstRequest,
   type UserCredentials,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
@@ -22,6 +23,59 @@ const DUMMY_2X2_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==',
   'base64'
 );
+
+/**
+ * T-387 / PR471-H01: PDF válido de una página armado en memoria (catálogo, Pages, Page, Contents, fuente, xref con
+ * offsets reales, trailer y startxref), sin librerías. Es el archivo que se sube en los tres caminos con PDF.
+ */
+function buildOnePagePdf(label: string): Buffer {
+  const stream = `BT /F1 18 Tf 72 720 Td (${label}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(body, 'latin1'));
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(body, 'latin1');
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(body, 'latin1');
+}
+
+/**
+ * T-387 / PR471-H01: estructura mínima de un PDF de una página: árbol de páginas con `/Count 1`, `startxref` que
+ * apunta a la tabla `xref` y una entrada por objeto con el offset real de cada `n 0 obj`.
+ */
+function expectOnePagePdf(bytes: Buffer): void {
+  const text = bytes.toString('latin1');
+  expect(text.startsWith('%PDF-')).toBe(true);
+  expect(text).toMatch(/\/Type \/Pages\b[^>]*\/Count 1\b/);
+  const startxref = Number(/startxref\n(\d+)\n%%EOF\n?$/.exec(text)?.[1]);
+  expect(Number.isInteger(startxref)).toBe(true);
+  expect(text.slice(startxref, startxref + 4)).toBe('xref');
+  const entries = [...text.slice(startxref).matchAll(/^(\d{10}) 00000 n $/gm)].map((m) => Number(m[1]));
+  expect(entries.length).toBeGreaterThan(0);
+  entries.forEach((offset, index) => {
+    expect(text.slice(offset).startsWith(`${index + 1} 0 obj`)).toBe(true);
+  });
+}
+
+/** T-387 / PR471-H01: lo que quedó en Storage es exactamente el PDF elegido (sin compresión ni conversión). */
+async function expectStoredPdf(storagePath: string, sent: Buffer): Promise<void> {
+  const { data, error } = await createAdminClient().storage.from(COURIER_DOCS_BUCKET).download(storagePath);
+  if (error || !data) throw new Error(`[E2E Inspect Error] No se pudo descargar ${storagePath}: ${error?.message}`);
+  const stored = Buffer.from(await data.arrayBuffer());
+  expect(stored.equals(sent)).toBe(true);
+  expectOnePagePdf(stored);
+}
 
 /**
  * T-302: E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado
@@ -474,6 +528,19 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await expect(plateInput).toBeVisible();
       await plateInput.fill('AB 123 CD');
 
+      // T-387: en el registro inicial, licencia y seguro ofrecen PDF; la licencia se sube como PDF real a Storage.
+      const onboardingLicensePdf = buildOnePagePdf('T-387 licencia registro');
+      expectOnePagePdf(onboardingLicensePdf);
+      await expect(page.locator('#file-input-license')).toHaveAttribute('accept', /application\/pdf/);
+      await expect(page.locator('#file-input-insurance')).toHaveAttribute('accept', /application\/pdf/);
+      await page.locator('#file-input-license').setInputFiles({
+        name: 'licencia.pdf',
+        mimeType: 'application/pdf',
+        buffer: onboardingLicensePdf,
+      });
+      await expect(page.locator('[data-slot="document-upload-card"]').filter({ has: page.locator('#file-input-license') }))
+        .toHaveAttribute('data-status', 'success', { timeout: 20000 });
+
       // Aceptar los tres consentimientos obligatorios
       const consentTosCheckbox = page.getByRole('checkbox', {
         name: new RegExp(COURIER_ONBOARDING_COPY.consentTosLink, 'i'),
@@ -521,12 +588,18 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         .eq('courier_id', courier.id);
 
       expect(docsErr).toBeNull();
-      expect(docsRows).toHaveLength(4);
+      // DNI frente y dorso, selfie y avatar del paso 2, más la licencia en PDF del paso 3 (T-387).
+      expect(docsRows).toHaveLength(5);
 
       for (const row of docsRows ?? []) {
         expect(row.status).toBe('submitted');
         expect(row.is_current).toBe(true);
-        expect(row.storage_path).toBe(uploadedDocs[row.kind]);
+        if (row.kind === 'license') {
+          expect(row.storage_path).toMatch(new RegExp(`^courier/${courier.id}/license_\\d+\\.pdf$`));
+          await expectStoredPdf(row.storage_path, onboardingLicensePdf);
+        } else {
+          expect(row.storage_path).toBe(uploadedDocs[row.kind]);
+        }
       }
 
       const { data: courierRow, error: courierErr } = await dbAdmin
@@ -981,11 +1054,14 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       const replaceLicenseInput = page.locator('#file-input-license');
       await expect(replaceLicenseInput).toBeAttached();
 
-      // 5. Subir nuevo archivo para la licencia
+      // 5. Subir la licencia corregida en PDF (T-387): el reemplazo admite PDF y lo sube sin compresión
+      const replacementLicensePdf = buildOnePagePdf('T-387 licencia corregida');
+      expectOnePagePdf(replacementLicensePdf);
+      await expect(replaceLicenseInput).toHaveAttribute('accept', /application\/pdf/);
       await replaceLicenseInput.setInputFiles({
-        name: 'licencia_corregida.png',
-        mimeType: 'image/png',
-        buffer: DUMMY_2X2_PNG,
+        name: 'licencia_corregida.pdf',
+        mimeType: 'application/pdf',
+        buffer: replacementLicensePdf,
       });
 
       // La tarjeta transiciona a «En revisión manual» con mensaje de éxito confirmado
@@ -1070,6 +1146,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await expect(page.getByText(ADMIN_COPY.detail.viewer.validityQuestion)).toBeVisible();
       await expect(rejectDocBtn).toBeEnabled();
       await expect(verifyDocBtn).toBeEnabled();
+      // T-387: la versión vigente es un PDF y se ve embebida, no como imagen.
+      await expect(page.getByTitle(ADMIN_COPY.detail.viewer.pdfTitle(ADMIN_COPY.documentKind.license))).toBeVisible();
 
       // 7. Verificación estricta en base de datos:
       const { data: licenseRows } = await dbAdmin
@@ -1085,8 +1163,9 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       expect(licenseRows?.[0]?.status).toBe('submitted');
       expect(licenseRows?.[0]?.rejection_code).toBeNull();
       expect(licenseRows?.[0]?.storage_path).toMatch(
-        new RegExp(`^courier/${courier.id}/license_\\d+\\.jpg$`)
+        new RegExp(`^courier/${courier.id}/license_\\d+\\.pdf$`)
       );
+      await expectStoredPdf(licenseRows?.[0]?.storage_path ?? '', replacementLicensePdf);
 
       // El documento anterior pasó a histórico (is_current = false) conservando estado rejected
       expect(licenseRows?.[1]?.is_current).toBe(false);
@@ -1658,6 +1737,150 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove([storagePath]);
       await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id).eq('kind', 'avatar');
       await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier.id);
+    }
+  });
+});
+
+test.describe('T-376 / CC-033 y T-387: alta desde el perfil del seguro no cargado, en PDF', () => {
+  test('un repartidor aprobado sin seguro lo sube en PDF, queda «En revisión», el admin lo ve embebido, lo verifica y el comercio ve «Seguro verificado»', async ({
+    page,
+    browser,
+    stagingContext,
+    loginAsCourier,
+    loginAsMerchant,
+  }, testInfo) => {
+    test.setTimeout(180_000);
+    // Repartidor 1 de la fixture: aprobado, moto, licencia y seguro «No cargado», doc_level 0.
+    const courier = stagingContext.courierUsers?.[1];
+    const requestId = stagingContext.createdRequestIds[0];
+    if (!courier || !requestId || !courier.displayName) {
+      throw new Error('[E2E Precondition Error] Se requieren el repartidor 1 y la solicitud sembrada');
+    }
+    const admin = createAdminClient();
+
+    // 1. Sube el seguro en PDF desde el perfil (T-387): queda «En revisión manual», sin «Validado por admin».
+    await loginAsCourier(1, page);
+    await page.waitForURL(/\/courier\/feed/);
+    await page.goto('/courier/profile');
+    await waitForNoSkeletons(page);
+    const insuranceInput = page.locator('#file-input-insurance');
+    await expect(insuranceInput).toBeAttached();
+    const insurancePdf = buildOnePagePdf('T-387 poliza');
+    expectOnePagePdf(insurancePdf);
+    await expect(insuranceInput).toHaveAttribute('accept', /application\/pdf/);
+    await insuranceInput.setInputFiles({
+      name: 'poliza.pdf',
+      mimeType: 'application/pdf',
+      buffer: insurancePdf,
+    });
+    const insuranceCard = page.locator('[data-slot="document-replacement-card"][data-kind="insurance"]');
+    await expect(insuranceCard.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.optionalDocumentSubmitted)).toBeVisible();
+    await expect(insuranceCard.getByText('Validado por admin')).toHaveCount(0);
+
+    // Oráculo en la base: documento vigente en revisión, estado del seguro submitted y nivel sin cambios.
+    const { data: courierRow, error: courierErr } = await admin
+      .from('couriers')
+      .select('status, insurance_status, doc_level')
+      .eq('profile_id', courier.id)
+      .single();
+    if (courierErr) throw new Error(`[E2E Inspect Error] ${courierErr.message}`);
+    expect(courierRow).toEqual({ status: 'approved', insurance_status: 'submitted', doc_level: 0 });
+    const { data: docs, error: docsErr } = await admin
+      .from('courier_documents')
+      .select('id, status, is_current, storage_path')
+      .eq('courier_id', courier.id)
+      .eq('kind', 'insurance');
+    if (docsErr) throw new Error(`[E2E Inspect Error] ${docsErr.message}`);
+    expect(docs).toHaveLength(1);
+    const insuranceDoc = docs?.[0];
+    if (!insuranceDoc) throw new Error('[E2E Error] No se creó el documento de seguro');
+    expect(insuranceDoc).toMatchObject({ status: 'submitted', is_current: true });
+    // T-387: el PDF se guardó como PDF, sin pasar por la compresión de imágenes.
+    expect(insuranceDoc.storage_path).toMatch(new RegExp(`^courier/${courier.id}/insurance_\\d+\\.pdf$`));
+    await expectStoredPdf(insuranceDoc.storage_path, insurancePdf);
+
+    // 2. El comercio ve la oferta del repartidor 1 todavía sin «Seguro verificado».
+    await seedOffersForFirstRequest(stagingContext);
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== 'string' || baseURL.length === 0) {
+      throw new Error('[E2E Error] Falta baseURL para el contexto del comercio');
+    }
+    const merchantContext = await browser.newContext({ baseURL });
+    try {
+      const merchantPage = await merchantContext.newPage();
+      await loginAsMerchant(merchantPage);
+      await merchantPage.waitForURL(/\/merchant\/dashboard/);
+      await merchantPage.goto(`/merchant/requests/${requestId}`);
+      await waitForNoSkeletons(merchantPage);
+      const courierHeading = merchantPage.getByRole('heading', { level: 4, name: courier.displayName, exact: true });
+      const courierOffer = merchantPage.locator('div.rounded-xl.border-border.bg-card').filter({ has: courierHeading });
+      await expect(courierOffer).toHaveCount(1);
+      await expect(courierOffer.getByText('Seguro verificado')).toHaveCount(0);
+
+      // 3. El admin entra con MFA, abre el seguro con el visor auditado y lo verifica desde la pantalla existente.
+      //    (La señal «Documento opcional en revisión» de la cola la cubren los tests unitarios: la lista de aprobados
+      //    de Develop es compartida y paginada, así que este repartidor puede no estar en la primera página.)
+      const adminUser = await seedAdminUser(stagingContext);
+      const { secret: totpSecret } = await enrollAdminTotpFactor(adminUser);
+      const adminContext = await browser.newContext({ baseURL });
+      try {
+        const adminPage = await adminContext.newPage();
+        await adminPage.goto('/login?redirectTo=%2Fadmin%2Fapplicants%3Ftab%3Dapproved');
+        await waitForNoSkeletons(adminPage);
+        const loginSubmitBtn = adminPage.getByRole('button', { name: /iniciar sesión|ingresar|continuar/i });
+        await waitForFormHydration(loginSubmitBtn);
+        await adminPage.getByLabel(/^email$/i).fill(adminUser.email);
+        await adminPage.getByLabel(/^contraseña$/i).fill(adminUser.password);
+        await loginSubmitBtn.click();
+        await adminPage.waitForURL((url) => url.pathname.includes('/login/mfa'), { timeout: 15000 });
+        await waitForNoSkeletons(adminPage);
+        await adminPage.locator('#totp-code').fill(generateTotp(totpSecret));
+        await adminPage.getByRole('button', { name: new RegExp(ADMIN_COPY.mfa.verifyButton, 'i') }).click();
+        await adminPage.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+
+        await adminPage.goto(`/admin/applicants/${courier.id}`);
+        await waitForNoSkeletons(adminPage);
+        await adminPage.getByRole('tab', { name: new RegExp(ADMIN_COPY.documentKind.insurance, 'i') }).click();
+        await adminPage.getByRole('button', { name: /Cargar documento seguro/i }).click();
+        await expect(adminPage.getByText(ADMIN_COPY.detail.viewer.validityQuestion)).toBeVisible();
+        // T-387: el PDF se ve embebido con la URL firmada de Storage, no como imagen.
+        const pdfFrame = adminPage.getByTitle(ADMIN_COPY.detail.viewer.pdfTitle(ADMIN_COPY.documentKind.insurance));
+        await expect(pdfFrame).toBeVisible();
+        await expect(pdfFrame).toHaveAttribute('src', /\/storage\/v1\/object\/sign\/courier-docs\/courier\/.+\.pdf\?token=/);
+        await expect(pdfFrame).toHaveAttribute('referrerpolicy', 'no-referrer');
+        await expect(adminPage.getByRole('link', { name: ADMIN_COPY.detail.viewer.openPdf })).toHaveAttribute(
+          'rel',
+          'noopener noreferrer'
+        );
+        await expect(
+          adminPage.getByRole('img', { name: ADMIN_COPY.detail.viewer.imageAlt(ADMIN_COPY.documentKind.insurance) })
+        ).toHaveCount(0);
+        await adminPage.getByRole('button', { name: new RegExp(ADMIN_COPY.detail.verifyDocument, 'i') }).click();
+        await expect
+          .poll(async () => {
+            const { data } = await admin.from('courier_documents').select('status').eq('id', insuranceDoc.id).single();
+            return data?.status;
+          })
+          .toBe('verified');
+        // El visor auditado dejó constancia de la apertura del documento.
+        const { data: views, error: viewsErr } = await admin
+          .from('audit_log')
+          .select('id')
+          .eq('action', 'view_courier_document')
+          .eq('target_id', insuranceDoc.id);
+        if (viewsErr) throw new Error(`[E2E Inspect Error] ${viewsErr.message}`);
+        expect(views?.length ?? 0).toBeGreaterThanOrEqual(1);
+      } finally {
+        await adminContext.close();
+      }
+
+      // 4. Con el seguro verificado, la oferta del repartidor 1 muestra la insignia.
+      await merchantPage.reload();
+      await waitForNoSkeletons(merchantPage);
+      await expect(courierOffer.getByText('Seguro verificado')).toBeVisible();
+    } finally {
+      await merchantContext.close();
     }
   });
 });

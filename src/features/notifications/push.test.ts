@@ -8,8 +8,28 @@ import {
   unsubscribeFromPush,
   isPushSupported,
   getNotificationPermission,
+  getPushSubscriptionStatus,
   PENDING_UNSUB_STORAGE_KEY,
+  PUSH_STORAGE_KEY,
+  pendingUnsubStorageKey,
 } from './push';
+import { PUSH_COPY } from './push/copy';
+
+// T-382 (PR459-H05): la baja pendiente es de la cuenta logueada; la sesión del navegador se controla por test.
+const session = vi.hoisted(() => ({ userId: 'user-a' as string | null }));
+const USER_A = 'user-a';
+const USER_B = 'user-b';
+
+vi.mock('@/lib/supabase/browser', () => ({
+  createClient: () => ({
+    auth: {
+      getSession: async () => ({
+        data: { session: session.userId ? { user: { id: session.userId } } : null },
+        error: null,
+      }),
+    },
+  }),
+}));
 
 vi.mock('@/lib/env.public', () => ({
   publicEnv: {
@@ -20,6 +40,7 @@ vi.mock('@/lib/env.public', () => ({
 
 describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
   beforeEach(() => {
+    session.userId = USER_A;
     localStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -332,7 +353,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 
       const firstResult = await unsubscribeFromPush();
       expect(firstResult.ok, 'Fallo 500 de DELETE debe provocar ok: false').toBe(false);
-      expect(localStorage.getItem('cadeapp_pending_unsub_endpoint')).toBe(targetEndpoint);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(targetEndpoint);
 
       // Segundo intento: navegador ya no tiene suscripción nativa, pero reconcilia con endpoint retenido
       Object.defineProperty(globalThis.navigator, 'serviceWorker', {
@@ -361,7 +382,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
           body: JSON.stringify({ endpoint: targetEndpoint }),
         })
       );
-      expect(localStorage.getItem('cadeapp_pending_unsub_endpoint')).toBeNull();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
     });
   });
 
@@ -458,7 +479,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       const firstResult = await unsubscribeFromPush();
       expect(firstResult.ok).toBe(false);
       expect(firstResult.error).toBe('network_error');
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(SUB_ENDPOINT);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(SUB_ENDPOINT);
 
       mockServiceWorker({ getSubscription: vi.fn().mockResolvedValue(null) });
       const mockFetchRetry = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
@@ -473,7 +494,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
           body: JSON.stringify({ endpoint: SUB_ENDPOINT }),
         })
       );
-      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBeNull();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
     });
 
     it('PR120-H16: endpoint pendiente corrupto en localStorage no llega a fetch, se limpia y devuelve error', async () => {
@@ -815,6 +836,798 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
   });
 });
 
+describe('T-382: errores claros al activar avisos y estado real en «Configurar»', () => {
+  const ENDPOINT = 'https://push.example.com/sub/t382-secret-capability';
 
+  function subscription(endpoint = ENDPOINT) {
+    return {
+      endpoint,
+      unsubscribe: vi.fn().mockResolvedValue(true),
+      toJSON: () => ({ endpoint, keys: { p256dh: 'p256dh-secret', auth: 'auth-secret' } }),
+    };
+  }
 
+  function setPermission(permission: NotificationPermission) {
+    const notification = { permission, requestPermission: vi.fn().mockResolvedValue(permission) };
+    Object.defineProperty(window, 'Notification', { value: notification, writable: true, configurable: true });
+    vi.stubGlobal('Notification', notification);
+  }
 
+  function setPushManager(pushManager: Record<string, unknown>) {
+    Object.defineProperty(window, 'PushManager', { value: class MockPushManager {}, writable: true, configurable: true });
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+      value: { ready: Promise.resolve({ pushManager }) },
+      writable: true,
+      configurable: true,
+    });
+  }
+
+  function browserError(name: string, message: string) {
+    const error = new Error(message);
+    error.name = name;
+    return error;
+  }
+
+  function jsonResponse(body: unknown, status = 200) {
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  /** fetch por URL: la consulta de estado y el alta/baja tienen respuestas independientes. */
+  function routeFetch(handlers: {
+    status?: () => Promise<Response>;
+    subscriptions?: () => Promise<Response>;
+  }) {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/push/subscriptions/status') {
+        return handlers.status ? handlers.status() : jsonResponse({ active: false });
+      }
+      if (url === '/api/push/subscriptions') {
+        return handlers.subscriptions ? handlers.subscriptions() : jsonResponse({ ok: true });
+      }
+      throw new Error(`fetch inesperado: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  function consoleText(spy: ReturnType<typeof vi.spyOn>) {
+    return JSON.stringify(spy.mock.calls);
+  }
+
+  beforeEach(() => {
+    session.userId = USER_A;
+    localStorage.clear();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  describe('subscribeToPush distingue la causa de la falla', () => {
+    it('excepción de pushManager.subscribe (navegador sin servicio push) → push_service_unavailable, sin llamar al servidor', async () => {
+      setPermission('granted');
+      setPushManager({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockRejectedValue(browserError('AbortError', 'Registration failed - push service error')),
+      });
+      const fetchMock = routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await subscribeToPush();
+
+      expect(result).toEqual({ ok: false, error: 'push_service_unavailable' });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith('[push] subscribe failed', {
+        code: 'push_service_unavailable',
+        name: 'AbortError',
+        message: 'Registration failed - push service error',
+      });
+    });
+
+    it('NotAllowedError de pushManager.subscribe (Edge con el permiso bloqueado) → permission_blocked', async () => {
+      setPermission('granted');
+      setPushManager({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockRejectedValue(browserError('NotAllowedError', 'Registration failed - permission denied')),
+      });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await subscribeToPush();
+
+      expect(result).toEqual({ ok: false, error: 'permission_blocked' });
+      expect(consoleError).toHaveBeenCalledWith('[push] subscribe failed', {
+        code: 'permission_blocked',
+        name: 'NotAllowedError',
+        message: 'Registration failed - permission denied',
+      });
+    });
+
+    it.each([
+      ['401', 'unauthorized', () => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401))],
+      ['500', 'backend_error', () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500))],
+      ['red', 'network_error', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ])('respuesta %s del servidor → %s, y la consola no lleva endpoint ni claves', async (_case, code, response) => {
+      setPermission('granted');
+      setPushManager({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockResolvedValue(subscription()),
+      });
+      routeFetch({ subscriptions: response });
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await subscribeToPush();
+
+      expect(result).toEqual({ ok: false, error: code });
+      expect(consoleError).toHaveBeenCalledWith('[push] subscribe failed', expect.objectContaining({ code }));
+      const logged = consoleText(consoleError);
+      expect(logged).not.toContain(ENDPOINT);
+      expect(logged).not.toContain('p256dh-secret');
+      expect(logged).not.toContain('auth-secret');
+      expect(localStorage.getItem(PUSH_STORAGE_KEY)).not.toBe('true');
+    });
+
+    it('alta correcta: ok, sin errores en consola', async () => {
+      setPermission('granted');
+      setPushManager({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockResolvedValue(subscription()),
+      });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await subscribeToPush();
+
+      expect(result.ok).toBe(true);
+      expect(consoleError).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getPushSubscriptionStatus consulta la cuenta logueada', () => {
+    it('manda el endpoint solo en el cuerpo del POST y devuelve active con la respuesta del servidor', async () => {
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      const fetchMock = routeFetch({ status: () => Promise.resolve(jsonResponse({ active: true })) });
+
+      expect(await getPushSubscriptionStatus()).toBe('active');
+      expect(fetchMock).toHaveBeenCalledWith('/api/push/subscriptions/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: ENDPOINT }),
+      });
+    });
+
+    it('entre cuentas: con PUSH_STORAGE_KEY en true pero el servidor en active: false, queda inactive', async () => {
+      localStorage.setItem(PUSH_STORAGE_KEY, 'true');
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      routeFetch({ status: () => Promise.resolve(jsonResponse({ active: false })) });
+
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+    });
+
+    it.each([
+      ['500', () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500))],
+      ['401', () => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401))],
+      ['red', () => Promise.reject(new TypeError('Failed to fetch'))],
+      ['respuesta malformada', () => Promise.resolve(jsonResponse({ active: 'yes' }))],
+    ])('consulta fallida (%s) → unknown, aunque el storage diga true', async (_case, status) => {
+      localStorage.setItem(PUSH_STORAGE_KEY, 'true');
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      routeFetch({ status });
+
+      expect(await getPushSubscriptionStatus()).toBe('unknown');
+    });
+
+    it('sin permiso concedido o sin suscripción del navegador → inactive sin consultar al servidor', async () => {
+      setPermission('default');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      const fetchMock = routeFetch({ status: () => Promise.resolve(jsonResponse({ active: true })) });
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null) });
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PushPermissionPrompt en «Configurar»', () => {
+    function renderPrompt() {
+      return render(React.createElement(PushPermissionPrompt, { embedded: true, onDismiss: vi.fn() }));
+    }
+
+    it.each([
+      [
+        'navegador sin servicio push',
+        () => ({ subscribe: vi.fn().mockRejectedValue(browserError('AbortError', 'Registration failed - push service error')) }),
+        undefined,
+        /Usar los servicios de Google para mensajes push.*Chrome/s,
+      ],
+      [
+        'permiso bloqueado (NotAllowedError)',
+        () => ({ subscribe: vi.fn().mockRejectedValue(browserError('NotAllowedError', 'Registration failed - permission denied')) }),
+        undefined,
+        /ícono junto a la dirección/,
+      ],
+      [
+        'sesión vencida',
+        () => ({ subscribe: vi.fn().mockResolvedValue(subscription()) }),
+        () => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401)),
+        /sesión venció/,
+      ],
+      [
+        'error del servidor',
+        () => ({ subscribe: vi.fn().mockResolvedValue(subscription()) }),
+        () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500)),
+        /No se pudo confirmar la suscripción con el servidor/,
+      ],
+      [
+        'sin conexión',
+        () => ({ subscribe: vi.fn().mockResolvedValue(subscription()) }),
+        () => Promise.reject(new TypeError('Failed to fetch')),
+        /No hay conexión/,
+      ],
+    ])('al fallar el alta por %s muestra su propio mensaje', async (_case, manager, subscriptions, message) => {
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null), ...manager() });
+      routeFetch({ subscriptions });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: /^Activar avisos$/i }));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toMatch(message);
+      for (const other of [/Usar los servicios de Google/, /ícono junto a la dirección/, /sesión venció/, /con el servidor/, /No hay conexión/]) {
+        if (other.source !== message.source && !message.source.includes(other.source)) {
+          expect(alert.textContent).not.toMatch(other);
+        }
+      }
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+    });
+
+    it('con avisos activos en la cuenta muestra «Avisos activados en este navegador» y permite desactivarlos', async () => {
+      setPermission('granted');
+      const sub = subscription();
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(sub) });
+      const fetchMock = routeFetch({ status: () => Promise.resolve(jsonResponse({ active: true })) });
+
+      renderPrompt();
+
+      expect(await screen.findByText('Avisos activados en este navegador')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /^Activar avisos$/i })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /Desactivar avisos/i }));
+
+      expect(await screen.findByRole('button', { name: /^Activar avisos$/i })).toBeTruthy();
+      expect(screen.queryByText('Avisos activados en este navegador')).toBeNull();
+      expect(sub.unsubscribe).toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/push/subscriptions',
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    });
+
+    it('con PUSH_STORAGE_KEY en true pero la cuenta en active: false, no muestra «activados» y ofrece activar', async () => {
+      localStorage.setItem(PUSH_STORAGE_KEY, 'true');
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      const fetchMock = routeFetch({ status: () => Promise.resolve(jsonResponse({ active: false })) });
+
+      renderPrompt();
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/push/subscriptions/status', expect.anything()));
+      expect(await screen.findByRole('button', { name: /^Activar avisos$/i })).toBeTruthy();
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+      expect(screen.queryByRole('button', { name: /Desactivar avisos/i })).toBeNull();
+    });
+
+    it('con la consulta fallida muestra «No se pudo comprobar el estado» con reintento, nunca «activados»', async () => {
+      localStorage.setItem(PUSH_STORAGE_KEY, 'true');
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      let statusResponse: () => Promise<Response> = () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500));
+      routeFetch({ status: () => statusResponse() });
+
+      renderPrompt();
+
+      expect(await screen.findByText(/No se pudo comprobar el estado/)).toBeTruthy();
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+
+      statusResponse = () => Promise.resolve(jsonResponse({ active: true }));
+      fireEvent.click(screen.getByRole('button', { name: /Reintentar/i }));
+
+      expect(await screen.findByText('Avisos activados en este navegador')).toBeTruthy();
+      expect(screen.queryByText(/No se pudo comprobar el estado/)).toBeNull();
+    });
+  });
+  describe('PR459 ronda 1: baja pendiente, errores previos al alta y diagnóstico sanitizado', () => {
+    function renderPrompt() {
+      return render(React.createElement(PushPermissionPrompt, { embedded: true, onDismiss: vi.fn() }));
+    }
+
+    function deleteBodies(fetchMock: ReturnType<typeof routeFetch>) {
+      return fetchMock.mock.calls
+        .filter(([url, init]) => String(url) === '/api/push/subscriptions' && init?.method === 'DELETE')
+        .map(([, init]) => JSON.parse(String(init?.body)));
+    }
+
+    it('H01: si el DELETE falla tras la baja nativa, muestra «baja pendiente» (también al reabrir) y «Reintentar baja» completa la baja con el mismo endpoint', async () => {
+      setPermission('granted');
+      let nativeSubscription: ReturnType<typeof subscription> | null = subscription();
+      const getSubscription = vi.fn(async () => nativeSubscription);
+      if (nativeSubscription) {
+        nativeSubscription.unsubscribe.mockImplementation(async () => {
+          nativeSubscription = null;
+          return true;
+        });
+      }
+      setPushManager({ getSubscription });
+      const deleteResponses = [jsonResponse({ error: 'Database error' }, 500), jsonResponse({ ok: true })];
+      const fetchMock = routeFetch({
+        status: () => Promise.resolve(jsonResponse({ active: true })),
+        subscriptions: () => Promise.resolve(deleteResponses.shift() ?? jsonResponse({ ok: true })),
+      });
+
+      const first = renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: /^Desactivar avisos$/i }));
+
+      expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeTruthy();
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Desactivar avisos$/i })).toBeNull();
+      expect(screen.getByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate })).toBeTruthy();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+
+      // Se cierra y se vuelve a abrir «Configurar»: el navegador ya no tiene suscripción, la baja sigue pendiente.
+      first.unmount();
+      renderPrompt();
+      const retry = await screen.findByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate });
+      expect(screen.getByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeTruthy();
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+
+      fireEvent.click(retry);
+
+      expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivated)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /^Activar avisos$/i })).toBeTruthy();
+      expect(screen.queryByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeNull();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
+      expect(deleteBodies(fetchMock)).toEqual([{ endpoint: ENDPOINT }, { endpoint: ENDPOINT }]);
+    });
+
+    it('H01: si el reintento vuelve a fallar, conserva la baja pendiente y el botón para reintentar', async () => {
+      setPermission('granted');
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null) });
+      const fetchMock = routeFetch({
+        subscriptions: () => Promise.reject(new TypeError('Failed to fetch')),
+      });
+
+      renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate }));
+
+      await waitFor(() => expect(deleteBodies(fetchMock)).toEqual([{ endpoint: ENDPOINT }]));
+      expect(await screen.findByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate })).toBeTruthy();
+      expect(screen.getByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeTruthy();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+    });
+
+    it('H01: si la baja falla sin dejar pendiente, muestra un error recuperable y no inventa una baja pendiente', async () => {
+      setPermission('granted');
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), 'no-es-un-endpoint');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      routeFetch({ status: () => Promise.resolve(jsonResponse({ active: true })) });
+
+      renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: /^Desactivar avisos$/i }));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toBe(PUSH_COPY.prompt.statusDeactivateError);
+      expect(screen.queryByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeNull();
+      expect(screen.queryByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate })).toBeNull();
+    });
+
+    it.each([
+      ['serviceWorker.ready rechaza con NotAllowedError', 'permission_blocked', 'ready', browserError('NotAllowedError', 'Registration denied')],
+      ['pushManager.getSubscription rechaza con AbortError', 'push_service_unavailable', 'getSubscription', browserError('AbortError', 'push service error')],
+      ['el rechazo no es un Error (otro realm) pero se llama NotAllowedError', 'permission_blocked', 'getSubscription', { name: 'NotAllowedError', message: 'blocked' }],
+    ] as const)('H02: %s → %s, sin llamar al servidor ni marcar el storage', async (_case, code, where, failure) => {
+      setPermission('granted');
+      Object.defineProperty(window, 'PushManager', { value: class MockPushManager {}, writable: true, configurable: true });
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready:
+            where === 'ready'
+              ? Promise.reject(failure)
+              : Promise.resolve({ pushManager: { getSubscription: vi.fn().mockRejectedValue(failure) } }),
+        },
+        writable: true,
+        configurable: true,
+      });
+      const fetchMock = routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await subscribeToPush();
+
+      expect(result).toEqual({ ok: false, error: code });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(localStorage.getItem(PUSH_STORAGE_KEY)).toBeNull();
+      expect(consoleError).toHaveBeenCalledWith('[push] subscribe failed', expect.objectContaining({ code }));
+    });
+
+    it('H02: en «Configurar», una falla de getSubscription antes del alta muestra el mensaje del navegador, no el del servidor', async () => {
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockRejectedValue(browserError('AbortError', 'push service error')) });
+      const fetchMock = routeFetch({});
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: /^Activar avisos$/i }));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toBe(PUSH_COPY.prompt.statusPushServiceUnavailable);
+      expect(alert.textContent).not.toMatch(/servidor/i);
+      expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/push/subscriptions')).toBe(false);
+    });
+
+    it('H03: una excepción del navegador con endpoint y claves en el mensaje se registra sanitizada (código, name y message útil)', async () => {
+      setPermission('granted');
+      const leaky = browserError(
+        'AbortError',
+        'Registration failed for https://fcm.googleapis.com/fcm/send/abc-SECRET-capability p256dh=BLeakedP256dh auth=LeakedAuthSecret'
+      );
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null), subscribe: vi.fn().mockRejectedValue(leaky) });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(await subscribeToPush()).toEqual({ ok: false, error: 'push_service_unavailable' });
+
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      const [, details] = consoleError.mock.calls[0] as [string, { code: string; name: string; message: string }];
+      expect(details.code).toBe('push_service_unavailable');
+      expect(details.name).toBe('AbortError');
+      expect(details.message).toMatch(/Registration failed/);
+      const logged = consoleText(consoleError);
+      for (const secret of ['fcm.googleapis.com', 'abc-SECRET-capability', 'BLeakedP256dh', 'LeakedAuthSecret']) {
+        expect(logged).not.toContain(secret);
+      }
+    });
+
+    it('H03: un rechazo de fetch cuyo mensaje repite el endpoint y las claves de la suscripción no los filtra', async () => {
+      setPermission('granted');
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null), subscribe: vi.fn().mockResolvedValue(subscription()) });
+      routeFetch({
+        subscriptions: () =>
+          Promise.reject(new TypeError(`Failed to fetch ${ENDPOINT} with p256dh-secret and auth-secret`)),
+      });
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(await subscribeToPush()).toEqual({ ok: false, error: 'network_error' });
+
+      const [, details] = consoleError.mock.calls[0] as [string, { code: string; name: string; message: string }];
+      expect(details).toEqual(expect.objectContaining({ code: 'network_error', name: 'TypeError' }));
+      expect(details.message).toMatch(/Failed to fetch/);
+      const logged = consoleText(consoleError);
+      for (const secret of [ENDPOINT, 'p256dh-secret', 'auth-secret']) {
+        expect(logged).not.toContain(secret);
+      }
+    });
+  });
+  describe('PR459 ronda 2: name sanitizado y baja pendiente sin soporte nativo', () => {
+    function renderPrompt() {
+      return render(React.createElement(PushPermissionPrompt, { embedded: true, onDismiss: vi.fn() }));
+    }
+
+    function calls(fetchMock: ReturnType<typeof routeFetch>, method: string) {
+      return fetchMock.mock.calls
+        .filter(([url, init]) => String(url) === '/api/push/subscriptions' && init?.method === method)
+        .map(([, init]) => JSON.parse(String(init?.body)));
+    }
+
+    function removePushManager() {
+      Reflect.deleteProperty(window, 'PushManager');
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: { ready: new Promise(() => undefined) },
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    function rejectingServiceWorker(where: 'ready' | 'getSubscription') {
+      Object.defineProperty(window, 'PushManager', { value: class MockPushManager {}, writable: true, configurable: true });
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready:
+            where === 'ready'
+              ? Promise.reject(browserError('InvalidStateError', 'no active worker'))
+              : Promise.resolve({
+                  pushManager: { getSubscription: vi.fn().mockRejectedValue(browserError('AbortError', 'gone')) },
+                }),
+        },
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    it('H03: un name de excepción con endpoint y claves se registra sanitizado; los nombres estándar siguen legibles', async () => {
+      setPermission('granted');
+      const leaky = browserError(
+        'AbortError endpoint=https://push.example.com/secret-capability p256dh=BLeakyNameP256dh auth=LeakyNameAuth',
+        'boom'
+      );
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null), subscribe: vi.fn().mockRejectedValue(leaky) });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(await subscribeToPush()).toEqual({ ok: false, error: 'push_service_unavailable' });
+
+      const logged = consoleText(consoleError);
+      for (const secret of ['push.example.com', 'secret-capability', 'BLeakyNameP256dh', 'LeakyNameAuth']) {
+        expect(logged).not.toContain(secret);
+      }
+      const [, details] = consoleError.mock.calls[0] as [string, { code: string; name: string; message: string }];
+      expect(details.code).toBe('push_service_unavailable');
+      expect(details.message).toBe('boom');
+      // PR459-H03 (ronda 3): un name que no es un nombre estándar exacto se reemplaza por un marcador.
+      expect(details.name).toBe('[nombre no estándar]');
+    });
+
+    it.each([
+      ['sin PushManager', () => removePushManager()],
+      ['serviceWorker.ready rechazado', () => rejectingServiceWorker('ready')],
+      ['getSubscription rechazado', () => rejectingServiceWorker('getSubscription')],
+    ])('H04 (%s): con baja pendiente muestra «Reintentar baja» y el reintento hace el DELETE con el endpoint en el body', async (_case, setup) => {
+      setPermission('granted');
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
+      setup();
+      const fetchMock = routeFetch({ subscriptions: () => Promise.resolve(jsonResponse({ ok: true })) });
+
+      expect(await getPushSubscriptionStatus()).toBe('pending_unsubscribe');
+
+      renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate }));
+
+      expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivated)).toBeTruthy();
+      expect(calls(fetchMock, 'DELETE')).toEqual([{ endpoint: ENDPOINT }]);
+      expect(calls(fetchMock, 'POST')).toEqual([]);
+      expect(fetchMock.mock.calls.every(([url]) => !String(url).includes(ENDPOINT))).toBe(true);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
+    });
+
+    it.each([
+      ['sin PushManager, DELETE 500', () => removePushManager(), () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500))],
+      ['ready rechazado, sin red', () => rejectingServiceWorker('ready'), () => Promise.reject(new TypeError('Failed to fetch'))],
+      ['getSubscription rechazado, DELETE 401', () => rejectingServiceWorker('getSubscription'), () => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401))],
+    ])('H04 (%s): si el reintento falla, conserva la baja pendiente y el botón', async (_case, setup, response) => {
+      setPermission('granted');
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
+      setup();
+      const fetchMock = routeFetch({ subscriptions: response });
+
+      const result = await unsubscribeFromPush();
+
+      expect(result.ok).toBe(false);
+      expect(calls(fetchMock, 'DELETE')).toEqual([{ endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+      expect(await getPushSubscriptionStatus()).toBe('pending_unsubscribe');
+    });
+
+    it('H04: sin baja pendiente, un navegador sin PushManager degrada como siempre (inactivo, sin DELETE)', async () => {
+      setPermission('granted');
+      removePushManager();
+      const fetchMock = routeFetch({});
+
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+  describe('PR459 ronda 3: nombres de error por lista blanca y baja pendiente ligada a la cuenta', () => {
+    function renderPrompt() {
+      return render(React.createElement(PushPermissionPrompt, { embedded: true, onDismiss: vi.fn() }));
+    }
+
+    function deletes(fetchMock: ReturnType<typeof routeFetch>) {
+      return fetchMock.mock.calls
+        .filter(([url, init]) => String(url) === '/api/push/subscriptions' && init?.method === 'DELETE')
+        .map(([, init]) => JSON.parse(String(init?.body)));
+    }
+
+    it.each([
+      ['un secreto alfanumérico entero', 'BAlnumSecretToken123'],
+      ['un nombre estándar con algo pegado', 'AbortErrorSecretSuffix'],
+    ])('H03: un name que es %s no se registra; los estándar sí', async (_case, name) => {
+      setPermission('granted');
+      setPushManager({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockRejectedValue(browserError(name, 'boom')),
+      });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(await subscribeToPush()).toEqual({ ok: false, error: 'push_service_unavailable' });
+      expect(consoleText(consoleError)).not.toContain(name);
+      const [, details] = consoleError.mock.calls[0] as [string, { code: string; name: string }];
+      expect(details).toEqual(expect.objectContaining({ code: 'push_service_unavailable', name: '[nombre no estándar]' }));
+    });
+
+    it('H03: el nombre exacto NotAllowedError sigue clasificando como permiso bloqueado y se registra legible', async () => {
+      setPermission('granted');
+      setPushManager({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockRejectedValue(browserError('NotAllowedError', 'denied')),
+      });
+      routeFetch({});
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(await subscribeToPush()).toEqual({ ok: false, error: 'permission_blocked' });
+      expect(consoleError).toHaveBeenCalledWith(
+        '[push] subscribe failed',
+        expect.objectContaining({ code: 'permission_blocked', name: 'NotAllowedError' })
+      );
+    });
+
+    it('H05: la baja pendiente de A no se le muestra a B, el DELETE de B (200 sin filas) no la borra y A la completa al volver', async () => {
+      setPermission('granted');
+      let native: ReturnType<typeof subscription> | null = subscription();
+      native.unsubscribe.mockImplementation(async () => {
+        native = null;
+        return true;
+      });
+      setPushManager({ getSubscription: vi.fn(async () => native) });
+      const deleteResponses = [
+        jsonResponse({ error: 'Database error' }, 500), // A: falla la baja en el servidor
+        jsonResponse({ ok: true }), // A al volver: se confirma
+      ];
+      const fetchMock = routeFetch({
+        status: () => Promise.resolve(jsonResponse({ active: true })),
+        subscriptions: () => Promise.resolve(deleteResponses.shift() ?? jsonResponse({ ok: true })),
+      });
+
+      // A desactiva y el servidor no confirma: queda pendiente para A.
+      const asA = renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: /^Desactivar avisos$/i }));
+      expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivatePending)).toBeTruthy();
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+      asA.unmount();
+
+      // Cambia la sesión a B sin limpiar el storage: B no ve ni puede consumir la baja de A.
+      session.userId = USER_B;
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+      const asB = renderPrompt();
+      expect(await screen.findByRole('button', { name: /^Activar avisos$/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate })).toBeNull();
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+      // Aunque B llame a la baja y el servidor responda 200 (cero filas, por RLS), la baja pendiente de A queda.
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+      asB.unmount();
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }]);
+
+      // Vuelve A: ve la baja pendiente y la completa.
+      session.userId = USER_A;
+      renderPrompt();
+      fireEvent.click(await screen.findByRole('button', { name: PUSH_COPY.prompt.btnRetryDeactivate }));
+      expect(await screen.findByText(PUSH_COPY.prompt.statusDeactivated)).toBeTruthy();
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }, { endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
+    });
+
+    it('H05: si B falla su propia baja, no pisa la baja pendiente de A', async () => {
+      setPermission('granted');
+      const OTHER = 'https://push.example.com/sub/t382-account-b';
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
+      session.userId = USER_B;
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription(OTHER)) });
+      routeFetch({ subscriptions: () => Promise.reject(new TypeError('Failed to fetch')) });
+
+      expect((await unsubscribeFromPush()).ok).toBe(false);
+
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_B))).toBe(OTHER);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+    });
+
+    it('H05: sin identidad comprobable no se atribuye ni se guarda una baja pendiente', async () => {
+      setPermission('granted');
+      session.userId = null;
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription()) });
+      routeFetch({ subscriptions: () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500)) });
+
+      expect((await unsubscribeFromPush()).ok).toBe(false);
+
+      expect(Object.keys(localStorage).filter((key) => key.startsWith(PENDING_UNSUB_STORAGE_KEY))).toEqual([]);
+    });
+
+    it('H05: una baja pendiente con el formato viejo (sin dueño) no se atribuye a nadie ni la borra otra cuenta', async () => {
+      setPermission('granted');
+      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, ENDPOINT);
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null) });
+      const fetchMock = routeFetch({ subscriptions: () => Promise.resolve(jsonResponse({ ok: true })) });
+
+      expect(await getPushSubscriptionStatus()).toBe('inactive');
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(deletes(fetchMock)).toEqual([]);
+      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(ENDPOINT);
+    });
+  });
+  describe('PR459 ronda 4: identidad durante el DELETE y sin identidad', () => {
+    function deletes(fetchMock: ReturnType<typeof routeFetch>) {
+      return fetchMock.mock.calls
+        .filter(([url, init]) => String(url) === '/api/push/subscriptions' && init?.method === 'DELETE')
+        .map(([, init]) => JSON.parse(String(init?.body)));
+    }
+
+    it('H05: si la sesión cambia a B con el DELETE en vuelo, el 200 (sin filas para B) no borra la baja pendiente de A; A la confirma al volver', async () => {
+      setPermission('granted');
+      localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(null) });
+      let releaseDelete: (response: Response) => void = () => undefined;
+      const deleteResponses: Array<() => Promise<Response>> = [
+        () =>
+          new Promise<Response>((resolve) => {
+            releaseDelete = resolve;
+          }),
+        () => Promise.resolve(jsonResponse({ ok: true })),
+      ];
+      const fetchMock = routeFetch({ subscriptions: () => (deleteResponses.shift() ?? (() => Promise.resolve(jsonResponse({ ok: true }))))() });
+
+      const retry = unsubscribeFromPush();
+      await waitFor(() => expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }]));
+      session.userId = USER_B;
+      releaseDelete(jsonResponse({ ok: true }));
+
+      const result = await retry;
+      expect(result.ok).toBe(false);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_B))).toBeNull();
+
+      session.userId = USER_A;
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }, { endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
+    });
+
+    it.each([
+      ['500', () => Promise.resolve(jsonResponse({ error: 'Database error' }, 500))],
+      ['401', () => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401))],
+    ])('H06: sin identidad comprobable no desuscribe ni hace DELETE (el servidor respondería %s); error recuperable', async (_case, response) => {
+      setPermission('granted');
+      session.userId = null;
+      const native = subscription();
+      setPushManager({ getSubscription: vi.fn().mockResolvedValue(native) });
+      const fetchMock = routeFetch({ subscriptions: response });
+
+      expect(await unsubscribeFromPush()).toEqual({ ok: false, error: 'unauthorized' });
+
+      expect(native.unsubscribe).not.toHaveBeenCalled();
+      expect(deletes(fetchMock)).toEqual([]);
+      expect(Object.keys(localStorage).filter((key) => key.startsWith(PENDING_UNSUB_STORAGE_KEY))).toEqual([]);
+    });
+
+    it('H06: con identidad A y DELETE 500 queda la baja pendiente de A; con la sesión de A de vuelta, el 200 la confirma', async () => {
+      setPermission('granted');
+      let native: ReturnType<typeof subscription> | null = subscription();
+      native.unsubscribe.mockImplementation(async () => {
+        native = null;
+        return true;
+      });
+      setPushManager({ getSubscription: vi.fn(async () => native) });
+      const responses = [jsonResponse({ error: 'Database error' }, 500), jsonResponse({ ok: true })];
+      const fetchMock = routeFetch({ subscriptions: () => Promise.resolve(responses.shift() ?? jsonResponse({ ok: true })) });
+
+      expect((await unsubscribeFromPush()).ok).toBe(false);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+
+      session.userId = null;
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBe(ENDPOINT);
+
+      session.userId = USER_A;
+      expect(await unsubscribeFromPush()).toEqual({ ok: true });
+      expect(deletes(fetchMock)).toEqual([{ endpoint: ENDPOINT }, { endpoint: ENDPOINT }]);
+      expect(localStorage.getItem(pendingUnsubStorageKey(USER_A))).toBeNull();
+    });
+  });
+});

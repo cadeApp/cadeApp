@@ -18,11 +18,16 @@ import { Button } from '@/ui/button';
 import { Input } from '@/ui/input';
 import { Card } from '@/ui/card';
 import { BrandLogo } from '@/ui/brand-logo';
-import { compressImage } from '@/lib/image-compression';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import { StepIndicator } from './step-indicator';
 import { DocumentUploadCard, type DocumentUploadStatus } from './document-upload-card';
-import { type CourierDocumentKind, uploadCourierDocument } from '../upload-manager';
+import {
+  acceptedDocumentMimeTypes,
+  prepareValidatedDocument,
+  uploadCourierDocument,
+  validateDocumentFile,
+  type CourierDocumentKind,
+} from '../upload-manager';
 import { courierOnboardingAction, updateCourierVehicleAction } from '../actions';
 import { ARGENTINA_PLATE_REGEX } from '../schemas';
 import type { VehicleType } from '@/domain/schemas';
@@ -104,6 +109,8 @@ export function VehicleForm({
   const [compressingOptional, setCompressingOptional] = React.useState<
     Partial<Record<OptionalDocumentKind, boolean>>
   >({});
+  const [optionalErrors, setOptionalErrors] = React.useState<Partial<Record<OptionalDocumentKind, string>>>({});
+  const optionalUploadAttempts = React.useRef<Partial<Record<OptionalDocumentKind, number>>>({});
   const [optionalFileNames, setOptionalFileNames] = React.useState<
     Partial<Record<OptionalDocumentKind, string>>
   >({});
@@ -133,18 +140,40 @@ export function VehicleForm({
     !isEditing && requiresPlate && OPTIONAL_DOCS.some((doc) => optionalStatuses[doc.kind] === 'uploading');
 
   const handleOptionalUpload = async (kind: OptionalDocumentKind, file: File) => {
+    // PR471-H02: «subiendo» se marca antes del primer await (la lectura de la firma del PDF), para que el formulario
+    // no se pueda enviar sin este archivo mientras se valida. Cada selección tiene su número: un resultado de una
+    // selección anterior no pisa el de la nueva.
+    const attempt = (optionalUploadAttempts.current[kind] ?? 0) + 1;
+    optionalUploadAttempts.current[kind] = attempt;
+    const isCurrent = () => optionalUploadAttempts.current[kind] === attempt;
+
     setOptionalFileNames((prev) => ({ ...prev, [kind]: file.name }));
-    setCompressingOptional((prev) => ({ ...prev, [kind]: true }));
+    setOptionalErrors((prev) => ({ ...prev, [kind]: undefined }));
     setOptionalStatuses((prev) => ({ ...prev, [kind]: 'uploading' }));
+
+    // T-387: misma validación que el perfil y el reemplazo; un archivo rechazado no se sube.
+    const check = await validateDocumentFile(kind, file);
+    if (!isCurrent()) return;
+    if (!check.ok) {
+      setOptionalErrors((prev) => ({
+        ...prev,
+        [kind]: COURIER_ONBOARDING_COPY.documentFileErrorMessage(check.reason, true),
+      }));
+      setOptionalStatuses((prev) => ({ ...prev, [kind]: 'error' }));
+      return;
+    }
 
     // PR237-H01: el último path exitoso se conserva hasta que el reemplazo devuelva uno nuevo.
     try {
-      const compressed = await compressImage(file);
-      setCompressingOptional((prev) => ({ ...prev, [kind]: false }));
-      const res = await uploadCourierDocument({ courierId, kind, file: compressed });
+      const prepared = await prepareValidatedDocument(file, check, (compressing) => {
+        if (isCurrent()) setCompressingOptional((prev) => ({ ...prev, [kind]: compressing }));
+      });
+      const res = await uploadCourierDocument({ courierId, kind, file: prepared });
+      if (!isCurrent()) return;
       setOptionalDocs((prev) => ({ ...prev, [kind]: res.storagePath }));
       setOptionalStatuses((prev) => ({ ...prev, [kind]: 'success' }));
     } catch {
+      if (!isCurrent()) return;
       // Opcional, pero no silencioso: la tarjeta muestra el error y permite reintentar.
       setCompressingOptional((prev) => ({ ...prev, [kind]: false }));
       setOptionalStatuses((prev) => ({ ...prev, [kind]: 'error' }));
@@ -419,6 +448,8 @@ export function VehicleForm({
                   status={optionalStatuses[doc.kind] || 'idle'}
                   compressing={compressingOptional[doc.kind]}
                   fileName={optionalFileNames[doc.kind]}
+                  acceptedTypes={acceptedDocumentMimeTypes(doc.kind)}
+                  errorMessage={optionalErrors[doc.kind]}
                   onFileSelected={(file) => void handleOptionalUpload(doc.kind, file)}
                 />
               ))}
