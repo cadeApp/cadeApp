@@ -18,11 +18,16 @@ import { Button } from '@/ui/button';
 import { Input } from '@/ui/input';
 import { Card } from '@/ui/card';
 import { BrandLogo } from '@/ui/brand-logo';
-import { compressImage } from '@/lib/image-compression';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import { StepIndicator } from './step-indicator';
 import { DocumentUploadCard, type DocumentUploadStatus } from './document-upload-card';
-import { type CourierDocumentKind, uploadCourierDocument } from '../upload-manager';
+import {
+  acceptedDocumentMimeTypes,
+  prepareValidatedDocument,
+  uploadCourierDocument,
+  validateDocumentFile,
+  type CourierDocumentKind,
+} from '../upload-manager';
 import { courierOnboardingAction, updateCourierVehicleAction } from '../actions';
 import { ARGENTINA_PLATE_REGEX } from '../schemas';
 import type { VehicleType } from '@/domain/schemas';
@@ -104,6 +109,7 @@ export function VehicleForm({
   const [compressingOptional, setCompressingOptional] = React.useState<
     Partial<Record<OptionalDocumentKind, boolean>>
   >({});
+  const [optionalErrors, setOptionalErrors] = React.useState<Partial<Record<OptionalDocumentKind, string>>>({});
   const [optionalFileNames, setOptionalFileNames] = React.useState<
     Partial<Record<OptionalDocumentKind, string>>
   >({});
@@ -134,14 +140,26 @@ export function VehicleForm({
 
   const handleOptionalUpload = async (kind: OptionalDocumentKind, file: File) => {
     setOptionalFileNames((prev) => ({ ...prev, [kind]: file.name }));
-    setCompressingOptional((prev) => ({ ...prev, [kind]: true }));
+    setOptionalErrors((prev) => ({ ...prev, [kind]: undefined }));
+
+    // T-387: misma validación que el perfil y el reemplazo; un archivo rechazado no se sube.
+    const check = await validateDocumentFile(kind, file);
+    if (!check.ok) {
+      setOptionalErrors((prev) => ({
+        ...prev,
+        [kind]: COURIER_ONBOARDING_COPY.documentFileErrorMessage(check.reason, true),
+      }));
+      setOptionalStatuses((prev) => ({ ...prev, [kind]: 'error' }));
+      return;
+    }
     setOptionalStatuses((prev) => ({ ...prev, [kind]: 'uploading' }));
 
     // PR237-H01: el último path exitoso se conserva hasta que el reemplazo devuelva uno nuevo.
     try {
-      const compressed = await compressImage(file);
-      setCompressingOptional((prev) => ({ ...prev, [kind]: false }));
-      const res = await uploadCourierDocument({ courierId, kind, file: compressed });
+      const prepared = await prepareValidatedDocument(file, check, (compressing) =>
+        setCompressingOptional((prev) => ({ ...prev, [kind]: compressing }))
+      );
+      const res = await uploadCourierDocument({ courierId, kind, file: prepared });
       setOptionalDocs((prev) => ({ ...prev, [kind]: res.storagePath }));
       setOptionalStatuses((prev) => ({ ...prev, [kind]: 'success' }));
     } catch {
@@ -419,6 +437,8 @@ export function VehicleForm({
                   status={optionalStatuses[doc.kind] || 'idle'}
                   compressing={compressingOptional[doc.kind]}
                   fileName={optionalFileNames[doc.kind]}
+                  acceptedTypes={acceptedDocumentMimeTypes(doc.kind)}
+                  errorMessage={optionalErrors[doc.kind]}
                   onFileSelected={(file) => void handleOptionalUpload(doc.kind, file)}
                 />
               ))}

@@ -455,6 +455,59 @@ describe('Admin Actions (T-122 DoD & PR106-H13)', () => {
         })
       );
     });
+
+    describe('T-387: tipo de contenido del documento firmado', () => {
+      function mockDocumentWithPath(storagePath: string) {
+        const mockCreateSignedUrl = vi.fn().mockResolvedValue({
+          data: { signedUrl: 'https://supabase.local/storage/v1/object/sign/courier-docs/doc?token=abc' },
+          error: null,
+        });
+        const mockAdminSupabase = {
+          from: vi.fn((table: string) => {
+            if (table === 'courier_documents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockReturnValue({
+                      maybeSingle: vi.fn().mockResolvedValue({
+                        data: { id: VALID_DOC_ID, courier_id: VALID_COURIER_ID, kind: 'insurance', storage_path: storagePath },
+                        error: null,
+                      }),
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'audit_log') {
+              return { insert: vi.fn().mockResolvedValue({ error: null }) };
+            }
+            return {};
+          }),
+          storage: { from: vi.fn().mockReturnValue({ createSignedUrl: mockCreateSignedUrl }) },
+        };
+        vi.mocked(adminSupabase.createAdminClient).mockReturnValue(
+          mockAdminSupabase as unknown as ReturnType<typeof adminSupabase.createAdminClient>
+        );
+      }
+
+      it.each([
+        ['courier/c/insurance_1730000000000.pdf', 'pdf'],
+        ['courier/c/license_1730000000000.PDF', 'pdf'],
+        // Decisión 2 C de la PR #470: un DNI que el backend ya admitió como PDF también se muestra como PDF.
+        ['courier/c/dni_front_1730000000000.pdf', 'pdf'],
+        ['courier/c/insurance_1730000000000.jpg', 'image'],
+        ['courier/c/insurance_1730000000000.jpeg', 'image'],
+        ['courier/c/license_1730000000000.png', 'image'],
+        ['courier/c/dni_front_1730000000000.webp', 'image'],
+      ] as const)('%s se sirve como %s, según el path guardado y no según el cliente', async (storagePath, expected) => {
+        setupAal2Admin();
+        mockDocumentWithPath(storagePath);
+
+        const result = await viewCourierDocumentAction({ documentId: VALID_DOC_ID, courierId: VALID_COURIER_ID });
+
+        expect(result).toMatchObject({ ok: true, data: { contentType: expected, expiresInSeconds: 60 } });
+      });
+    });
   });
 
   describe('3. Autenticación MFA con Zod adminMfaSchema (verifyAdminMfaAction)', () => {

@@ -95,7 +95,9 @@ export const COURIER_ONBOARDING_COPY = {
   optionalDocumentHint:
     'Podés subirlo ahora: queda en revisión y, cuando el admin lo valide, suma respaldo a tus ofertas.',
   optionalDocumentAddTitle: (title: string) => `Subir ${title.toLowerCase()}`,
-  optionalDocumentSubtitle: 'Seleccioná una foto clara: JPG, PNG o WebP.',
+  optionalDocumentSubtitle: 'Seleccioná una foto clara o un PDF: JPG, PNG, WebP o PDF.',
+  // T-387: el reemplazo de licencia o seguro también admite PDF.
+  replacementSubtitlePhotoOrPdf: 'Seleccioná una foto clara o un PDF para enviar a nueva revisión',
   optionalDocumentSubmitted: 'Documento enviado. Queda en revisión hasta que el admin lo valide.',
   optionalDocumentErrors: {
     network: 'No pudimos enviarlo por un problema de conexión. Volvé a seleccionar el archivo para reintentar.',
@@ -103,7 +105,26 @@ export const COURIER_ONBOARDING_COPY = {
     unauthorized: 'Tu cuenta no puede cargar documentos en este momento.',
     notFound: 'No encontramos el archivo subido. Volvé a seleccionarlo para reintentar.',
     generic: 'No pudimos enviar el documento. Volvé a intentar en unos momentos.',
-    unsupportedType: 'Ese formato no se admite. Subí una foto JPG, PNG o WebP.',
+  },
+  // T-387: validación del archivo antes de subirlo (alta y reemplazo).
+  documentFileErrors: {
+    unsupportedPhoto: 'Ese formato no se admite. Subí una foto JPG, PNG o WebP.',
+    unsupportedPhotoOrPdf: 'Ese formato no se admite. Subí una foto JPG, PNG o WebP, o un PDF.',
+    pdfTooLarge: 'El PDF supera los 10 MB. Elegí un archivo más liviano.',
+    invalidPdf: 'Ese archivo no es un PDF válido. Elegí otro o subí una foto.',
+  },
+  /** T-387: un mensaje por causa de rechazo del archivo, antes de subirlo. */
+  documentFileErrorMessage(reason: 'unsupported_type' | 'too_large' | 'invalid_pdf', allowsPdf: boolean): string {
+    switch (reason) {
+      case 'too_large':
+        return COURIER_ONBOARDING_COPY.documentFileErrors.pdfTooLarge;
+      case 'invalid_pdf':
+        return COURIER_ONBOARDING_COPY.documentFileErrors.invalidPdf;
+      case 'unsupported_type':
+        return allowsPdf
+          ? COURIER_ONBOARDING_COPY.documentFileErrors.unsupportedPhotoOrPdf
+          : COURIER_ONBOARDING_COPY.documentFileErrors.unsupportedPhoto;
+    }
   },
 } as const;
 

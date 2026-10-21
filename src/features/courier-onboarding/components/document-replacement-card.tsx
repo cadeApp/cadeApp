@@ -3,8 +3,14 @@
 import * as React from 'react';
 import { ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/ui/badge';
-import { compressImage } from '@/lib/image-compression';
-import { uploadCourierDocument, type CourierDocumentKind } from '../upload-manager';
+import {
+  acceptedDocumentMimeTypes,
+  acceptsPdf,
+  prepareValidatedDocument,
+  uploadCourierDocument,
+  validateDocumentFile,
+  type CourierDocumentKind,
+} from '../upload-manager';
 import { addCourierOptionalDocumentAction, replaceCourierDocumentAction } from '../actions';
 import type { ActionResult, DomainErrorCode } from '@/domain/errors';
 import { COURIER_ONBOARDING_COPY, getSafeRejectionMessage } from '../copy';
@@ -25,12 +31,6 @@ export interface DocumentReplacementCardProps {
    */
   mode?: 'replace' | 'add';
 }
-
-/**
- * T-376 (PR464-H01): el alta admite solo las fotos que acepta el selector y que el visor del admin puede mostrar. El
- * PDF de punta a punta (selector, subida y visor auditado) es el issue #465.
- */
-const ADD_ACCEPTED_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/webp'];
 
 /** T-376: un mensaje por causa de falla del alta de un documento opcional. */
 function addErrorMessage(code: DomainErrorCode): string {
@@ -89,9 +89,10 @@ export function DocumentReplacementCard({
     setSuccessMessage(null);
     setSelectedFileName(file.name);
 
-    if (mode === 'add' && !ADD_ACCEPTED_TYPES.includes(file.type)) {
+    const check = await validateDocumentFile(kind, file);
+    if (!check.ok) {
       setUploadStatus('error');
-      setErrorMessage(COURIER_ONBOARDING_COPY.optionalDocumentErrors.unsupportedType);
+      setErrorMessage(COURIER_ONBOARDING_COPY.documentFileErrorMessage(check.reason, acceptsPdf(kind)));
       return;
     }
     // Identificador único del archivo seleccionado (nombre, tamaño, tipo y última modificación)
@@ -152,14 +153,13 @@ export function DocumentReplacementCard({
 
       // 2. Subida a Supabase Storage SOLO si no fue confirmada previamente para este intento (PR358-R01)
       if (!attempt.uploadConfirmed) {
-        setIsCompressing(true);
-        const compressed = await compressImage(file);
-        setIsCompressing(false);
+        // T-387: el PDF se sube tal cual; solo las fotos pasan por la compresión.
+        const upload = await prepareValidatedDocument(file, check, setIsCompressing);
 
         const { storagePath } = await uploadCourierDocument({
           courierId: resolvedCourierId,
           kind,
-          file: compressed,
+          file: upload,
           timestamp: attempt.timestamp,
         });
 
@@ -301,6 +301,7 @@ export function DocumentReplacementCard({
           status={uploadStatus}
           compressing={isCompressing}
           fileName={selectedFileName}
+          acceptedTypes={acceptedDocumentMimeTypes(kind)}
           onFileSelected={handleFileSelected}
         />
       </div>
@@ -344,11 +345,16 @@ export function DocumentReplacementCard({
       <DocumentUploadCard
         kind={kind}
         title={`Reemplazar ${title.toLowerCase()}`}
-        subtitle="Seleccioná un archivo claro para enviar a nueva revisión"
+        subtitle={
+          acceptsPdf(kind)
+            ? COURIER_ONBOARDING_COPY.replacementSubtitlePhotoOrPdf
+            : 'Seleccioná un archivo claro para enviar a nueva revisión'
+        }
         status={uploadStatus}
         compressing={isCompressing}
         fileName={selectedFileName}
         actionLabel={COURIER_ONBOARDING_COPY.btnReplace}
+        acceptedTypes={acceptedDocumentMimeTypes(kind)}
         onFileSelected={handleFileSelected}
       />
     </div>
