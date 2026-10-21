@@ -115,7 +115,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     return {
       id,
       created_at: createdAt,
-      approx_distance_m: 1000,
+      approx_distance_m: null, route_distance_m: 1000,
       package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: false,
@@ -309,8 +309,47 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       }
     });
 
-    it('T-363: sin approx_distance_m la vía en vivo devuelve approxDistanceKm null (no inventa 1,0)', async () => {
-      const row = { ...makeRequestRow(1), approx_distance_m: null };
+    it('T-388: pide route_distance_m (no approx_distance_m) a delivery_requests y la muestra como 3,5 km', async () => {
+      const row = { ...makeRequestRow(1), approx_distance_m: null, route_distance_m: 3500 };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+
+      const projection = String(reqBuilder._calls.select[0]?.[0] ?? '');
+      expect(projection).toMatch(/\broute_distance_m\b/);
+      expect(projection).not.toMatch(/\bapprox_distance_m\b/);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.data[0]?.approxDistanceKm).toBe('3,5');
+      }
+    });
+
+    it('T-363 / T-388: sin route_distance_m la vía en vivo devuelve approxDistanceKm null (no inventa 1,0)', async () => {
+      const row = { ...makeRequestRow(1), approx_distance_m: null, route_distance_m: null};
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([]);
       const dropsBuilder = createMockQueryBuilder([

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatArs, formatDate, formatPhone, whatsappLink } from './index';
+import {
+  approxDistanceLabel,
+  formatApproxDistanceKm,
+  formatArs,
+  formatDate,
+  formatPhone,
+  whatsappLink,
+} from './index';
 
 describe('T-008 · DoD Formateadores únicos en src/lib/format/', () => {
   describe('formatArs (montos en pesos argentinos enteros sin decimales)', () => {
@@ -50,5 +57,24 @@ describe('T-008 · DoD Formateadores únicos en src/lib/format/', () => {
         'https://wa.me/5493865123456?text=Hola%2C%20soy%20el%20repartidor%20de%20cadeApp'
       );
     });
+  });
+});
+
+describe('T-388: distancia aproximada (D15) con una sola regla de formato', () => {
+  it('metros a km redondeados a 0,5, distinguiendo sin cálculo (null) de calculado en 0', () => {
+    expect(formatApproxDistanceKm(null)).toBeNull();
+    expect(formatApproxDistanceKm(undefined)).toBeNull();
+    expect(formatApproxDistanceKm(-500)).toBeNull();
+    expect(formatApproxDistanceKm(Number.NaN)).toBeNull();
+    expect(formatApproxDistanceKm(0)).toBe('0,0');
+    expect(formatApproxDistanceKm(500)).toBe('0,5');
+    expect(formatApproxDistanceKm(1200)).toBe('1,0');
+    expect(formatApproxDistanceKm(3500)).toBe('3,5');
+  });
+
+  it('la etiqueta es «≈ X km», «Menos de 0,5 km» o «Distancia no calculada»', () => {
+    expect(approxDistanceLabel('3,5')).toBe('≈ 3,5 km');
+    expect(approxDistanceLabel('0,0')).toBe('Menos de 0,5 km');
+    expect(approxDistanceLabel(null)).toBe('Distancia no calculada');
   });
 });

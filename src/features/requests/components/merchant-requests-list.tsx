@@ -1,5 +1,6 @@
 'use client';
 
+import { approxDistanceLabel } from '@/lib/format';
 import * as React from 'react';
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
@@ -237,9 +238,7 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
                     {/* Metadatos operativos */}
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                       <span>
-                        {req.approxDistanceKm
-                          ? `${req.approxDistanceKm} km`
-                          : 'Distancia no calculada'}
+                        {approxDistanceLabel(req.approxDistanceKm)}
                       </span>
                       <span>·</span>
                       <span>{packagesText}</span>

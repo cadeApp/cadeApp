@@ -191,3 +191,36 @@ describe('T-379: matriz de pestañas de MyOffersList', () => {
     expect(within(item).queryByRole('link')).toBeNull();
   });
 });
+
+describe('T-388: «Mis ofertas» muestra la distancia de la solicitud visible', () => {
+  const pendingOffer: CourierOfferItem = {
+    offerId: 'offer-388',
+    requestId: 'req-388',
+    pickupZoneName: 'San Martín',
+    dropoffZoneName: 'Villa Nueva',
+    amountArs: 1500,
+    etaMinutes: 5,
+    message: null,
+    status: 'pending',
+    requestStatus: 'published',
+    createdAt: '2026-10-21T10:00:00Z',
+    decidedAt: null,
+    requestExpiresAt: null,
+    approxDistanceKm: null,
+  };
+
+  it.each([
+    ['3,5', '≈ 3,5 km'],
+    ['0,0', 'Menos de 0,5 km'],
+    [null, 'Distancia no calculada'],
+  ] as const)('con approxDistanceKm %s muestra «%s»', (km, label) => {
+    render(<MyOffersList initialOffers={[{ ...pendingOffer, approxDistanceKm: km }]} />);
+    expect(screen.getByText(label)).toBeDefined();
+  });
+
+  it('si la RLS no deja ver la solicitud no muestra ninguna etiqueta de distancia', () => {
+    render(<MyOffersList initialOffers={[{ ...pendingOffer, approxDistanceKm: null, requestStatus: null }]} />);
+    expect(screen.queryByText('Distancia no calculada')).toBeNull();
+    expect(screen.queryByText(/≈ .* km|Menos de 0,5 km/)).toBeNull();
+  });
+});

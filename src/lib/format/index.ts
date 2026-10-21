@@ -128,3 +128,23 @@ export function whatsappLink(rawPhone: string, message?: string): string {
 
   return `${baseUrl}?text=${encodeURIComponent(message)}`;
 }
+
+/**
+ * T-388: distancia aproximada que calcula el servidor (D15), en metros, como km con coma redondeados a 0,5.
+ * `null` significa que el servidor no la pudo calcular; `0` (puntos iguales) es una distancia calculada y devuelve
+ * «0,0», que la etiqueta muestra como «Menos de 0,5 km».
+ */
+export function formatApproxDistanceKm(distanceM: number | null | undefined): string | null {
+  if (distanceM === null || distanceM === undefined || !Number.isFinite(distanceM) || distanceM < 0) {
+    return null;
+  }
+  const rounded = Math.round((distanceM / 1000) * 2) / 2;
+  return rounded.toFixed(1).replace('.', ',');
+}
+
+/** T-388: etiqueta única de la distancia aproximada para todas las vistas (feed, ofertas y comercio). */
+export function approxDistanceLabel(km: string | null): string {
+  if (km === null) return 'Distancia no calculada';
+  if (km === '0,0') return 'Menos de 0,5 km';
+  return `≈ ${km} km`;
+}

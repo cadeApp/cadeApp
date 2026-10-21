@@ -596,8 +596,8 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     // 4. Solo zonas nominales presentes en la tarjeta
     await expect(card.getByText(/→/)).toBeVisible();
 
-    // T-363: la distancia refleja el dato real de la solicitud. Sin approx_distance_m se declara
-    // «Distancia no calculada»; antes el feed inventaba «≈ 1,0 km» y esta aserción dependía de ese valor.
+    // T-363 / T-388: la distancia refleja el dato real de la solicitud (route_distance_m, la que escribe la
+    // publicación). Sin ella se declara «Distancia no calculada»; nunca se inventa un valor.
     const courier = stagingContext.courierUsers?.[0];
     if (!courier) {
       throw new Error('[E2E Precondition Error] Se requiere el courier sembrado');
@@ -605,12 +605,12 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     const courierClient = await createAuthenticatedClient(courier);
     const { data: distanceRow, error: distanceErr } = await courierClient
       .from('delivery_requests')
-      .select('approx_distance_m')
+      .select('route_distance_m')
       .eq('id', requestId)
       .single();
     expect(distanceErr).toBeNull();
-    // La semilla publica sin approx_distance_m: precondición explícita, sin ramas condicionales
-    expect(distanceRow?.approx_distance_m).toBeNull();
+    // La semilla publica sin route_distance_m: precondición explícita, sin ramas condicionales
+    expect(distanceRow?.route_distance_m).toBeNull();
     await expect(card.getByText('Distancia no calculada')).toBeVisible();
     await expect(card.getByText(/km/i)).toHaveCount(0);
   });
@@ -971,6 +971,89 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
   // ---------------------------------------------------------------------------
   // 7. T-363: viaje sin coordenadas con proveedor disponible (caso de #351)
   // ---------------------------------------------------------------------------
+  test('T-388: una solicitud publicada entre barrios con centroide muestra en el feed la distancia que calculó el servidor', async ({
+    page,
+    courierPage,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    await setupGoogleMapsMock(page);
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier sembrados');
+    }
+
+    // Dos barrios activos con centroide (T-326): la distancia sale de los centroides, sin pines.
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const { data: zones, error: zonesErr } = await merchantClient
+      .from('zones')
+      .select('id, name')
+      .in('name', ['San Martín', 'Villa Nueva'])
+      .eq('active', true);
+    expect(zonesErr).toBeNull();
+    const pickupZoneId = zones?.find((z) => z.name === 'San Martín')?.id;
+    const dropoffZoneId = zones?.find((z) => z.name === 'Villa Nueva')?.id;
+    if (!pickupZoneId || !dropoffZoneId) {
+      throw new Error('[E2E Precondition Error] Faltan los barrios San Martín y Villa Nueva activos');
+    }
+
+    const requestId = randomUUID();
+    trackEntityForCleanup(stagingContext, 'request', requestId);
+    const { error: publishErr } = await merchantClient.rpc('create_and_publish_multi_drop', {
+      p_payload: {
+        requestId,
+        pickupZoneId,
+        pickupAddress: `Alberdi 150 T388 ${stagingContext.testRunId}`,
+        pickupLat: null,
+        pickupLng: null,
+        fixedPriceArs: null,
+        autoAssign: false,
+        drops: [
+          {
+            dropoffZoneId,
+            dropoffAddress: `Mitre 450 T388 ${stagingContext.testRunId}`,
+            dropoffLat: null,
+            dropoffLng: null,
+            recipientName: 'Cliente T388',
+            recipientPhone: '3865123456',
+            recipientConsentDeclared: true,
+            packageType: 'chico',
+            recipientPaymentMethod: 'transfer',
+            needsChange: false,
+            cashChangeAmount: null,
+            notes: null,
+          },
+        ],
+      },
+    });
+    expect(publishErr).toBeNull();
+
+    // Oráculo: la distancia total que guardó la publicación, leída como el repartidor (grant de CC-023).
+    const courierClient = await createAuthenticatedClient(courier);
+    const { data: row, error: rowErr } = await courierClient
+      .from('delivery_requests')
+      .select('route_distance_m')
+      .eq('id', requestId)
+      .single();
+    expect(rowErr).toBeNull();
+    const routeDistanceM = row?.route_distance_m ?? null;
+    expect(routeDistanceM).not.toBeNull();
+    expect((routeDistanceM ?? 0) % 500).toBe(0);
+    const expectedKm = (Math.round(((routeDistanceM ?? 0) / 1000) * 2) / 2).toFixed(1).replace('.', ',');
+
+    await loginAsCourier(0, page);
+    await page.waitForURL(/\/courier\/feed/);
+    await waitForNoSkeletons(page);
+    const card = courierPage.requestCardById(requestId);
+    await expect(card).toBeVisible();
+    await expect(card.getByText(`≈ ${expectedKm} km`)).toBeVisible();
+    await expect(card.getByText('Distancia no calculada')).toHaveCount(0);
+    // D3/D15: solo barrios y distancia aproximada; ni mapa ni coordenadas en el feed.
+    await expect(page.locator('[data-testid="trip-route-map"]')).toHaveCount(0);
+    expect(await card.innerText()).not.toMatch(/-27\.\d{3,}|-65\.\d{3,}/);
+  });
+
   test('T-363: sin coordenadas el viaje explica el fallback, no inventa distancia y Google Maps usa las direcciones escritas', async ({
     page,
     stagingContext,
