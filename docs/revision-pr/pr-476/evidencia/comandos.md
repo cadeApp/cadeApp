@@ -101,3 +101,31 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 **No afirmar GREEN→RED→GREEN hasta correrlos y guardar sus resultados en una ronda nueva.** Un resultado sintáctico o «sin objetivo» nunca prueba la cobertura. Para el E2E, solo vale el log del job real de Preview asociado al SHA.
+
+## Ronda 2 — Evidencia de la revisión remota (2026-10-21)
+
+**HEAD del autor:** `0dd703d81b27eda5ccddf50fd4afda69584bf36f` — único archivo cambiado desde el HEAD de ronda 1: `docs/tasks/log/T-389.md` (+24 líneas, registro append-only). **Sin nuevos comandos locales ni mutaciones independientes ejecutadas.**
+
+1. **Fuente de declaración local del autor:** `docs/tasks/log/T-389.md`, último encabezado. Dice `CI=true`, 2 reintentos, `7 passed / 1 flaky / 1 failed` en `main-flow.spec.ts`, y `Flujo 5` en verde. No hay log completo de Playwright asociado a ese comando; no representarlo como comprobación de la revisión.
+2. **Test de T-389:** fuente del `main-flow.spec.ts` en HEAD: `const reportButton = ...`, `cancelBox, reportBox`, `expect(reportBox.y).toBeGreaterThan(cancelBox.y)`, `document.elementFromPoint(...)`, `expect(reportOnTop).toBe(true)`; está dentro de `Flujo 5`. Este control **sí apunta al comportamiento real**; el test se ejecutó según el autor, no por el revisor.
+3. **T-360:** bitácora refiere timeout en `e2e/pages/login.page.ts` antes de visitar la vista de viaje, mientras el archivo muestra la espera `expect.poll(...)` hasta salir de `/login`. Esto permite separar el sitio del fallo, no confirmar el motivo.
+4. **Workflow oficial del nuevo HEAD:** [39667810822](https://github.com/cadeApp/cadeApp/actions/runs/39667810822), `e2e-preview: cancelled` durante Playwright; status `e2e-preview=error`. Una corrida paralela con job `skipped` y workflow `success` no sirve como prueba.
+5. **CI GitHub Actions en HEAD de autor:** `typecheck`, `lint`, `unit`, `build`, `audit`, `bundle-budget`, `db-tests` `success`. `approval-policy=failure` por informe todavía con bloqueo.
+6. **Registro de seguimiento QA:** https://github.com/cadeApp/cadeApp/issues/479.
+7. **Documentación:** `hallazgos.jsonl` mantiene `verificado_en_sha: null`, estado `parcial`, ya que no se puede confundir la afirmación de ejecución local con verificación independiente.
+
+### Comandos de inspección reproducibles (si se tiene `gh` autorizado)
+
+```bash
+# Solo lectura: no disparar workflows.
+gh api repos/cadeApp/cadeApp/compare/6a52d8fd805ddd70dc9c9b92aa9194bb00eaa54e...0dd703d81b27eda5ccddf50fd4afda69584bf36f \
+  --jq '.files[] | [.filename, .status, (.changes|tostring)] | @tsv'
+gh api repos/cadeApp/cadeApp/commits/0dd703d81b27eda5ccddf50fd4afda69584bf36f/check-runs \
+  --jq '.check_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv'
+gh api repos/cadeApp/cadeApp/commits/0dd703d81b27eda5ccddf50fd4afda69584bf36f/status \
+  --jq '.statuses[] | [.context, .state, .target_url] | @tsv'
+gh run view 39667810822 --repo cadeApp/cadeApp
+# Si el run ofrece logs, inspeccionar SOLO el tramo pertinente; no pegar secretos ni fixtures en bitácora.
+```
+
+**Resultado de ejecución de los comandos reproducibles:** no ejecutados mediante CLI local; el revisor consultó el equivalente de solo lectura mediante conector GitHub. No simular resultados RED, GREEN ni merge-tree.

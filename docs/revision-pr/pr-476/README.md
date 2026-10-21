@@ -6,31 +6,38 @@
 | **Tarea** | T-389 (Fase 3) |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-389-trip-report-eta` → `develop` |
-| **Base examinada** | `214404e0a2baca7ba7e4c87c35ef78c3de3d2109` |
-| **HEAD de código examinado** | `2fe4935d233a0ade030f8adc1072304571e9a5d2` |
-| **Tamaño** | 11 archivos, +170 / −12 |
-| **Estado de la ronda 1** | Un bloqueo de evidencia E2E (no un defecto de código demostrado) |
+| **Base cotejada** | `214404e0a2baca7ba7e4c87c35ef78c3de3d2109` |
+| **Código funcional revisado** | `2fe4935d233a0ade030f8adc1072304571e9a5d2` |
+| **Último SHA de autor revisado** | `0dd703d81b27eda5ccddf50fd4afda69584bf36f` |
+| **Resultado ronda 2** | **H01 parcial. Sin bug funcional demostrado; gate oficial aún rojo por cancelación. No mergear.** |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `2fe4935d233a0ade030f8adc1072304571e9a5d2` | 1 pendiente de evidencia | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 1 | `2fe4935d233a0ade030f8adc1072304571e9a5d2` | H01 abierto | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `0dd703d81b27eda5ccddf50fd4afda69584bf36f` | H01 parcial, pendiente gate | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| PR476-H01 | E2E del Preview cancelado y bitácora sin ejecución final | medio · bloqueo de verificación | abierto |
+| PR476-H01 | Evidencia E2E de T-389 mejorada; gate oficial de Preview no verificado en verde | medio · bloqueo de DoD | **parcial** |
 
-Datos: [`hallazgos.jsonl`](hallazgos.jsonl). Evidencias y batería independiente propuesta: [`evidencia/comandos.md`](evidencia/comandos.md).
+Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl). Evidencia: [`evidencia/comandos.md`](evidencia/comandos.md).
 
-## Qué queda por hacer
+## Decisión de Lautaro073: C (2026-10-21)
 
-1. Obtener una corrida **exitosa y atribuible al SHA de código** del gate `e2e-preview`, con evidencia de la prueba de `matched` y la superposición del botón. La corrida 39640417342 fue cancelada durante Playwright; NO es un test rojo.
-2. Registrar enlace, SHA, resultado y resumen en `docs/tasks/log/T-389.md`. No tocar `docs/revision-pr/**` desde el agente autor.
-3. Constatar la finalización de `db-tests` y la política de aprobación. No afirmar mergeable por la sola inspección estática. No es necesario pedir otro CI verde solo por modificar la bitácora.
+- Reconocer **solo como declaración de ejecución del autor** el `Flujo 5` local en verde y la prueba de no-superposición del botón.
+- No modificar la lógica de T-389 ni perseguir una regresión inexistente por una cancelación del gate.
+- Seguir T-360/login flaky y la cancelación del E2E oficial, **sin presuponer causa común**, en el [issue QA #479](https://github.com/cadeApp/cadeApp/issues/479).
+- **Mantener como condición de merge el `e2e-preview=success` real del SHA relevante**, puesto que la ficha de T-389 así lo exige y no se aprobó una excepción a ese DoD.
+- `approval-policy` también seguirá rojo mientras la revisión mantenga el bloqueo; no falsificar aprobación, ni aprobar ni mergear desde la revisión.
 
-## Alcance de la revisión
+## Pendiente concreto
 
-Se contrastaron ficha de T-389 **leída en develop**, diff de los 11 archivos, tests relacionados, comentarios del PR y resultados disponibles de CI. No se pudo clonar el repositorio ni ejecutar mutaciones independientes en este entorno: GitHub solo fue accesible mediante el conector, y la red del contenedor no pudo resolver github.com. Esta limitación consta en la ronda; no se fabricaron ejecuciones.
+Un **run oficial concluyente**, donde el job `e2e-preview` efectivamente ejecute Chromium (y `global-settings`) sobre el SHA correcto y publique `success`; no valen workflows «success» con job E2E `skipped`. La evidencia local resumida no prueba por sí sola el gate completo. En caso de falla real, registrar su etapa y reproducir sin debilitar test, mocks o aserciones.
+
+## Limitación independiente
+
+Ronda 2: inspección de commit, código, bitácora y checks remotos. No hubo clon local disponible, ni trazas originales de las ejecuciones **locales** del autor; no se ejecutaron pruebas o mutaciones nuevas y ningún `verificado_en_sha` se atribuye a ellas. No se tocaron scripts de producción ni tests.
