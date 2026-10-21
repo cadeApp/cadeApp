@@ -25,6 +25,59 @@ const DUMMY_2X2_PNG = Buffer.from(
 );
 
 /**
+ * T-387 / PR471-H01: PDF válido de una página armado en memoria (catálogo, Pages, Page, Contents, fuente, xref con
+ * offsets reales, trailer y startxref), sin librerías. Es el archivo que se sube en los tres caminos con PDF.
+ */
+function buildOnePagePdf(label: string): Buffer {
+  const stream = `BT /F1 18 Tf 72 720 Td (${label}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(body, 'latin1'));
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(body, 'latin1');
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(body, 'latin1');
+}
+
+/**
+ * T-387 / PR471-H01: estructura mínima de un PDF de una página: árbol de páginas con `/Count 1`, `startxref` que
+ * apunta a la tabla `xref` y una entrada por objeto con el offset real de cada `n 0 obj`.
+ */
+function expectOnePagePdf(bytes: Buffer): void {
+  const text = bytes.toString('latin1');
+  expect(text.startsWith('%PDF-')).toBe(true);
+  expect(text).toMatch(/\/Type \/Pages\b[^>]*\/Count 1\b/);
+  const startxref = Number(/startxref\n(\d+)\n%%EOF\n?$/.exec(text)?.[1]);
+  expect(Number.isInteger(startxref)).toBe(true);
+  expect(text.slice(startxref, startxref + 4)).toBe('xref');
+  const entries = [...text.slice(startxref).matchAll(/^(\d{10}) 00000 n $/gm)].map((m) => Number(m[1]));
+  expect(entries.length).toBeGreaterThan(0);
+  entries.forEach((offset, index) => {
+    expect(text.slice(offset).startsWith(`${index + 1} 0 obj`)).toBe(true);
+  });
+}
+
+/** T-387 / PR471-H01: lo que quedó en Storage es exactamente el PDF elegido (sin compresión ni conversión). */
+async function expectStoredPdf(storagePath: string, sent: Buffer): Promise<void> {
+  const { data, error } = await createAdminClient().storage.from(COURIER_DOCS_BUCKET).download(storagePath);
+  if (error || !data) throw new Error(`[E2E Inspect Error] No se pudo descargar ${storagePath}: ${error?.message}`);
+  const stored = Buffer.from(await data.arrayBuffer());
+  expect(stored.equals(sent)).toBe(true);
+  expectOnePagePdf(stored);
+}
+
+/**
  * T-302: E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado
  *
  * Flujo completo y verificación de invariantes críticas:
@@ -476,12 +529,14 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await plateInput.fill('AB 123 CD');
 
       // T-387: en el registro inicial, licencia y seguro ofrecen PDF; la licencia se sube como PDF real a Storage.
+      const onboardingLicensePdf = buildOnePagePdf('T-387 licencia registro');
+      expectOnePagePdf(onboardingLicensePdf);
       await expect(page.locator('#file-input-license')).toHaveAttribute('accept', /application\/pdf/);
       await expect(page.locator('#file-input-insurance')).toHaveAttribute('accept', /application\/pdf/);
       await page.locator('#file-input-license').setInputFiles({
         name: 'licencia.pdf',
         mimeType: 'application/pdf',
-        buffer: Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n'),
+        buffer: onboardingLicensePdf,
       });
       await expect(page.locator('[data-slot="document-upload-card"]').filter({ has: page.locator('#file-input-license') }))
         .toHaveAttribute('data-status', 'success', { timeout: 20000 });
@@ -541,6 +596,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         expect(row.is_current).toBe(true);
         if (row.kind === 'license') {
           expect(row.storage_path).toMatch(new RegExp(`^courier/${courier.id}/license_\\d+\\.pdf$`));
+          await expectStoredPdf(row.storage_path, onboardingLicensePdf);
         } else {
           expect(row.storage_path).toBe(uploadedDocs[row.kind]);
         }
@@ -999,11 +1055,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await expect(replaceLicenseInput).toBeAttached();
 
       // 5. Subir la licencia corregida en PDF (T-387): el reemplazo admite PDF y lo sube sin compresión
+      const replacementLicensePdf = buildOnePagePdf('T-387 licencia corregida');
+      expectOnePagePdf(replacementLicensePdf);
       await expect(replaceLicenseInput).toHaveAttribute('accept', /application\/pdf/);
       await replaceLicenseInput.setInputFiles({
         name: 'licencia_corregida.pdf',
         mimeType: 'application/pdf',
-        buffer: Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n'),
+        buffer: replacementLicensePdf,
       });
 
       // La tarjeta transiciona a «En revisión manual» con mensaje de éxito confirmado
@@ -1107,6 +1165,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       expect(licenseRows?.[0]?.storage_path).toMatch(
         new RegExp(`^courier/${courier.id}/license_\\d+\\.pdf$`)
       );
+      await expectStoredPdf(licenseRows?.[0]?.storage_path ?? '', replacementLicensePdf);
 
       // El documento anterior pasó a histórico (is_current = false) conservando estado rejected
       expect(licenseRows?.[1]?.is_current).toBe(false);
@@ -1706,11 +1765,13 @@ test.describe('T-376 / CC-033 y T-387: alta desde el perfil del seguro no cargad
     await waitForNoSkeletons(page);
     const insuranceInput = page.locator('#file-input-insurance');
     await expect(insuranceInput).toBeAttached();
+    const insurancePdf = buildOnePagePdf('T-387 poliza');
+    expectOnePagePdf(insurancePdf);
     await expect(insuranceInput).toHaveAttribute('accept', /application\/pdf/);
     await insuranceInput.setInputFiles({
       name: 'poliza.pdf',
       mimeType: 'application/pdf',
-      buffer: Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n'),
+      buffer: insurancePdf,
     });
     const insuranceCard = page.locator('[data-slot="document-replacement-card"][data-kind="insurance"]');
     await expect(insuranceCard.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeVisible({ timeout: 20000 });
@@ -1737,6 +1798,7 @@ test.describe('T-376 / CC-033 y T-387: alta desde el perfil del seguro no cargad
     expect(insuranceDoc).toMatchObject({ status: 'submitted', is_current: true });
     // T-387: el PDF se guardó como PDF, sin pasar por la compresión de imágenes.
     expect(insuranceDoc.storage_path).toMatch(new RegExp(`^courier/${courier.id}/insurance_\\d+\\.pdf$`));
+    await expectStoredPdf(insuranceDoc.storage_path, insurancePdf);
 
     // 2. El comercio ve la oferta del repartidor 1 todavía sin «Seguro verificado».
     await seedOffersForFirstRequest(stagingContext);

@@ -2880,6 +2880,130 @@ describe('T-387: PDF de licencia y seguro en el alta y el reemplazo', () => {
     });
   });
 
+  describe('PR471-H02: «subiendo» desde la selección, antes de leer la firma del PDF', () => {
+    /**
+     * Retiene la lectura real de `FileReader` (no se mockean la validación, la subida ni las acciones): la firma del
+     * PDF queda pendiente hasta `release()`, igual que con un archivo grande o un disco lento.
+     */
+    function holdFileReads() {
+      const original = FileReader.prototype.readAsArrayBuffer;
+      const pending: (() => void)[] = [];
+      const spy = vi.spyOn(FileReader.prototype, 'readAsArrayBuffer').mockImplementation(function (
+        this: FileReader,
+        blob: Blob
+      ) {
+        pending.push(() => original.call(this, blob));
+      });
+      return {
+        reads: () => pending.length,
+        release: () => {
+          spy.mockRestore();
+          pending.splice(0).forEach((read) => read());
+        },
+      };
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('registro inicial: mientras se lee el PDF no se puede enviar el formulario; al terminar, el envío lleva el .pdf', async () => {
+      const mockAction = vi.spyOn(actionsModule, 'courierOnboardingAction').mockResolvedValue({
+        ok: true,
+        data: { redirectTo: '/courier/onboarding/status' },
+      });
+      mockUploadCourierDocument.mockResolvedValue({ storagePath: 'courier/c-1/license_1730000000471.pdf' });
+      const reads = holdFileReads();
+
+      render(<VehicleForm courierId="c-1" initialDni="38123456" onSuccess={vi.fn()} />);
+      acceptConsentsWithPlate();
+      const submit = screen.getByRole('button', { name: /Enviar para revisión/i }) as HTMLButtonElement;
+      const { input, card } = uploadCard(/Licencia de conducir/);
+      fireEvent.change(input, { target: { files: [pdfFile()] } });
+
+      // Todavía leyendo la firma: la tarjeta ya está «subiendo» y el formulario no se envía.
+      expect(card.getAttribute('data-status')).toBe('uploading');
+      expect(input.disabled).toBe(true);
+      expect(submit.disabled).toBe(true);
+      fireEvent.submit(submit.closest('form') as HTMLFormElement);
+      expect(mockAction).not.toHaveBeenCalled();
+      expect(mockUploadCourierDocument).not.toHaveBeenCalled();
+
+      reads.release();
+      await waitFor(() => expect(card.getAttribute('data-status')).toBe('success'));
+      fireEvent.click(submit);
+
+      await waitFor(() => expect(mockAction).toHaveBeenCalledTimes(1));
+      const payload = mockAction.mock.calls[0]?.[0] as { documents?: Partial<Record<string, string>> } | undefined;
+      expect(payload?.documents?.license).toBe('courier/c-1/license_1730000000471.pdf');
+    });
+
+    it('registro inicial: si se elige otro archivo mientras se lee el primero, gana el último', async () => {
+      mockUploadCourierDocument.mockImplementation(({ file }: { file: File }) =>
+        Promise.resolve({ storagePath: `courier/c-1/license_${file.name}` })
+      );
+      const reads = holdFileReads();
+      const mockAction = vi.spyOn(actionsModule, 'courierOnboardingAction').mockResolvedValue({
+        ok: true,
+        data: { redirectTo: '/courier/onboarding/status' },
+      });
+
+      render(<VehicleForm courierId="c-1" initialDni="38123456" onSuccess={vi.fn()} />);
+      acceptConsentsWithPlate();
+      const { input, card } = uploadCard(/Licencia de conducir/);
+      fireEvent.change(input, { target: { files: [pdfFile('%PDF-1.4 vieja', 'vieja.pdf')] } });
+      fireEvent.change(input, { target: { files: [pdfFile('%PDF-1.4 nueva', 'nueva.pdf')] } });
+      expect(reads.reads()).toBe(2);
+
+      reads.release();
+      await waitFor(() => expect(card.getAttribute('data-status')).toBe('success'));
+      fireEvent.click(screen.getByRole('button', { name: /Enviar para revisión/i }));
+
+      await waitFor(() => expect(mockAction).toHaveBeenCalledTimes(1));
+      const payload = mockAction.mock.calls[0]?.[0] as { documents?: Partial<Record<string, string>> } | undefined;
+      expect(payload?.documents?.license).toBe('courier/c-1/license_nueva.pdf');
+    });
+
+    it.each(['add', 'replace'] as const)(
+      '%s: mientras se lee el PDF el input está deshabilitado y una segunda selección no arranca otro intento',
+      async (mode) => {
+        mockUploadCourierDocument.mockResolvedValue({ storagePath: 'courier/courier-387/license_1730000000472.pdf' });
+        const okData = { ...okResult('license').data, replacedDocumentId: null };
+        const addAction = vi
+          .spyOn(actionsModule, 'addCourierOptionalDocumentAction')
+          .mockResolvedValue(okResult('license'));
+        const replaceAction = vi
+          .spyOn(actionsModule, 'replaceCourierDocumentAction')
+          .mockResolvedValue({ ok: true, data: okData });
+        const reads = holdFileReads();
+
+        render(
+          <DocumentReplacementCard
+            mode={mode}
+            courierId="courier-387"
+            kind="license"
+            title="Licencia de conducir"
+            initialStatus={mode === 'add' ? 'none' : 'rejected'}
+            rejectionCode="illegible"
+          />
+        );
+        const input = screen.getByLabelText(
+          mode === 'add' ? /^Subir licencia de conducir$/i : /Reemplazar licencia de conducir/i
+        ) as HTMLInputElement;
+        fireEvent.change(input, { target: { files: [pdfFile()] } });
+
+        expect(input.disabled).toBe(true);
+        fireEvent.change(input, { target: { files: [pdfFile('%PDF-1.4 otra', 'otra.pdf')] } });
+        expect(reads.reads()).toBe(1);
+
+        reads.release();
+        await waitFor(() => expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined());
+        expect(mockUploadCourierDocument).toHaveBeenCalledTimes(1);
+        expect((mode === 'add' ? addAction : replaceAction).mock.calls).toHaveLength(1);
+      }
+    );
+  });
+
   it('DocumentUploadCard sigue ofreciendo solo fotos si no se le pasan tipos', () => {
     render(
       <DocumentUploadCard kind="selfie" title="Selfie con el DNI" subtitle="Foto" status="idle" onFileSelected={() => undefined} />

@@ -84,7 +84,22 @@ export function DocumentReplacementCard({
 
   const safeReason = rejectionMessage || getSafeRejectionMessage(rejectionCode);
 
+  // PR471-H02: una sola selección a la vez. «Subiendo» se marca antes de leer la firma del PDF (primer await), así el
+  // input queda deshabilitado y una segunda selección no arranca otro intento ni otro objeto en Storage.
+  const inFlightRef = React.useRef(false);
+
   const handleFileSelected = async (file: File) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setUploadStatus('uploading');
+    try {
+      await processSelectedFile(file);
+    } finally {
+      inFlightRef.current = false;
+    }
+  };
+
+  const processSelectedFile = async (file: File) => {
     setErrorMessage(null);
     setSuccessMessage(null);
     setSelectedFileName(file.name);

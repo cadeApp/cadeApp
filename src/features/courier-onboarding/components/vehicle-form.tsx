@@ -110,6 +110,7 @@ export function VehicleForm({
     Partial<Record<OptionalDocumentKind, boolean>>
   >({});
   const [optionalErrors, setOptionalErrors] = React.useState<Partial<Record<OptionalDocumentKind, string>>>({});
+  const optionalUploadAttempts = React.useRef<Partial<Record<OptionalDocumentKind, number>>>({});
   const [optionalFileNames, setOptionalFileNames] = React.useState<
     Partial<Record<OptionalDocumentKind, string>>
   >({});
@@ -139,11 +140,20 @@ export function VehicleForm({
     !isEditing && requiresPlate && OPTIONAL_DOCS.some((doc) => optionalStatuses[doc.kind] === 'uploading');
 
   const handleOptionalUpload = async (kind: OptionalDocumentKind, file: File) => {
+    // PR471-H02: «subiendo» se marca antes del primer await (la lectura de la firma del PDF), para que el formulario
+    // no se pueda enviar sin este archivo mientras se valida. Cada selección tiene su número: un resultado de una
+    // selección anterior no pisa el de la nueva.
+    const attempt = (optionalUploadAttempts.current[kind] ?? 0) + 1;
+    optionalUploadAttempts.current[kind] = attempt;
+    const isCurrent = () => optionalUploadAttempts.current[kind] === attempt;
+
     setOptionalFileNames((prev) => ({ ...prev, [kind]: file.name }));
     setOptionalErrors((prev) => ({ ...prev, [kind]: undefined }));
+    setOptionalStatuses((prev) => ({ ...prev, [kind]: 'uploading' }));
 
     // T-387: misma validación que el perfil y el reemplazo; un archivo rechazado no se sube.
     const check = await validateDocumentFile(kind, file);
+    if (!isCurrent()) return;
     if (!check.ok) {
       setOptionalErrors((prev) => ({
         ...prev,
@@ -152,17 +162,18 @@ export function VehicleForm({
       setOptionalStatuses((prev) => ({ ...prev, [kind]: 'error' }));
       return;
     }
-    setOptionalStatuses((prev) => ({ ...prev, [kind]: 'uploading' }));
 
     // PR237-H01: el último path exitoso se conserva hasta que el reemplazo devuelva uno nuevo.
     try {
-      const prepared = await prepareValidatedDocument(file, check, (compressing) =>
-        setCompressingOptional((prev) => ({ ...prev, [kind]: compressing }))
-      );
+      const prepared = await prepareValidatedDocument(file, check, (compressing) => {
+        if (isCurrent()) setCompressingOptional((prev) => ({ ...prev, [kind]: compressing }));
+      });
       const res = await uploadCourierDocument({ courierId, kind, file: prepared });
+      if (!isCurrent()) return;
       setOptionalDocs((prev) => ({ ...prev, [kind]: res.storagePath }));
       setOptionalStatuses((prev) => ({ ...prev, [kind]: 'success' }));
     } catch {
+      if (!isCurrent()) return;
       // Opcional, pero no silencioso: la tarjeta muestra el error y permite reintentar.
       setCompressingOptional((prev) => ({ ...prev, [kind]: false }));
       setOptionalStatuses((prev) => ({ ...prev, [kind]: 'error' }));
