@@ -61,6 +61,7 @@ import type {
 } from './types';
 import type { PackageType, RecipientPaymentMethod, DeliveryRequestStatus } from '@/domain/schemas';
 import type { LivePageCursor } from '@/lib/live-contracts';
+import { formatApproxDistanceKm } from '@/lib/format';
 
 export const historyFilterStatusSchema = z.enum(['all', 'delivered', 'cancelled', 'expired']);
 export type HistoryFilterStatus = z.infer<typeof historyFilterStatusSchema>;
@@ -159,14 +160,8 @@ interface ZoneRow {
   centroid_lng: number | null;
 }
 
-export function formatApproxDistanceKm(distanceM: number | null): string | null {
-  if (!distanceM || distanceM <= 0) {
-    return null;
-  }
-  const km = distanceM / 1000;
-  const rounded = Math.round(km * 2) / 2;
-  return rounded.toFixed(1).replace('.', ',');
-}
+// T-388: el formateador vive en src/lib/format; se reexporta para los importadores existentes.
+export { formatApproxDistanceKm };
 
 export async function getActiveZones(): Promise<ZoneOption[]> {
   const supabase = await createClient();
@@ -253,7 +248,7 @@ export async function getMerchantDefaultPickup(
 
 interface RawMerchantRequest {
   id: string;
-  approx_distance_m: number | null;
+  route_distance_m: number | null;
   package_type: string | null;
   recipient_payment_method: string | null;
   needs_change: boolean | null;
@@ -417,7 +412,7 @@ function mapRawMerchantRequests(
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
       dropoffZoneName,
-      approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
+      approxDistanceKm: formatApproxDistanceKm(req.route_distance_m),
       packageType,
       recipientPaymentMethod,
       needsChange,
@@ -460,7 +455,7 @@ export async function getMerchantHistoryRequests(
       `
       id,
       drops_count,
-      approx_distance_m,
+      route_distance_m,
       package_type,
       recipient_payment_method,
       needs_change,
@@ -666,7 +661,7 @@ export async function getMerchantRequests(
       `
       id,
       drops_count,
-      approx_distance_m,
+      route_distance_m,
       package_type,
       recipient_payment_method,
       needs_change,
@@ -917,7 +912,7 @@ export async function getMerchantRequestWithOffers(
       `
       id,
       drops_count,
-      approx_distance_m,
+      route_distance_m,
       package_type,
       recipient_payment_method,
       needs_change,
@@ -1039,7 +1034,7 @@ export async function getMerchantRequestWithOffers(
     id: requestData.id,
     pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
     dropoffZoneName,
-    approxDistanceKm: formatApproxDistanceKm(requestData.approx_distance_m),
+    approxDistanceKm: formatApproxDistanceKm(requestData.route_distance_m),
     packageType,
     recipientPaymentMethod,
     needsChange,

@@ -337,6 +337,7 @@ export function OfferSheet({
               onChange={(e) => setEtaMinutes(Number(e.target.value))}
               className="min-h-12 w-full rounded-lg border border-input bg-card px-3 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
+              <option value={5}>5 min</option>
               <option value={10}>10 min</option>
               <option value={15}>15 min</option>
               <option value={20}>20 min</option>

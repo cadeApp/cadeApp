@@ -1,4 +1,5 @@
 import 'server-only';
+import { formatApproxDistanceKm } from '@/lib/format';
 import { z } from 'zod';
 import {
   packageTypeSchema,
@@ -25,20 +26,11 @@ export type LiveServerResult<T> =
   | { readonly ok: true; readonly data: T }
   | { readonly ok: false; readonly error: string; readonly status: number };
 
-// Sin distancia calculada devuelve null: la UI lo dice en vez de inventar un valor (T-363).
-function formatApproxDistanceKm(distanceM: number | null): string | null {
-  if (!distanceM || distanceM <= 0) {
-    return null;
-  }
-  const km = distanceM / 1000;
-  const rounded = Math.round(km * 2) / 2;
-  return rounded.toFixed(1).replace('.', ',');
-}
 
 interface RawAvailableRequestRow {
   readonly id: string;
   readonly created_at: string;
-  readonly approx_distance_m: number | null;
+  readonly route_distance_m: number | null;
   readonly package_type: string;
   readonly recipient_payment_method: string;
   readonly needs_change: boolean;
@@ -88,7 +80,7 @@ export async function getAvailableRequestsLiveServer(
       id,
       created_at,
       drops_count,
-      approx_distance_m,
+      route_distance_m,
       package_type,
       recipient_payment_method,
       needs_change,
@@ -233,7 +225,7 @@ export async function getAvailableRequestsLiveServer(
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
       dropoffZoneName: effectiveDropoffZoneName,
-      approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
+      approxDistanceKm: formatApproxDistanceKm(req.route_distance_m),
       packageType: effectivePackageType,
       recipientPaymentMethod: effectivePaymentMethod,
       needsChange: effectiveNeedsChange,

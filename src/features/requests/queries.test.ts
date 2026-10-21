@@ -226,7 +226,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         const num = String(idx + 1).padStart(4, '0');
         return {
           id: `00000000-0000-4000-8000-00000000${num}`,
-          approx_distance_m: 1500,
+          approx_distance_m: null, route_distance_m: 1500,
           package_type: 'chico',
           recipient_payment_method: 'cash',
           needs_change: false,
@@ -268,6 +268,8 @@ describe('T-112 / T-118: queries de requests e historial', () => {
 
       const result = await getMerchantHistoryRequests('merchant-1', { limit: 50 });
       expect(result.requests).toHaveLength(50);
+      // T-388: la distancia total sale de route_distance_m.
+      expect(result.requests[0]?.approxDistanceKm).toBe('1,5');
       expect(result.nextCursor).toEqual({
         createdAt: fiftyOneRows[49]!.created_at,
         id: fiftyOneRows[49]!.id,
@@ -284,7 +286,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       // Ítem #55 entregado que sin filtro habría quedado fuera del lote 1..50
       const deliveredPage2Row = {
         id: '11111111-2222-4333-8444-555555555500',
-        approx_distance_m: 2000,
+        approx_distance_m: null, route_distance_m: 2000,
         package_type: 'mediano',
         recipient_payment_method: 'transfer',
         needs_change: false,
@@ -392,7 +394,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const todayIso = new Date().toISOString();
       const allSixtyRows = Array.from({ length: 60 }, (_, idx) => ({
         id: `req-${idx + 1}`,
-        approx_distance_m: 1200,
+        approx_distance_m: null, route_distance_m: 1200,
         package_type: 'sobre',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -450,6 +452,9 @@ describe('T-112 / T-118: queries de requests e historial', () => {
 
       const result = await getMerchantRequests('merchant-1', { limit: 50 });
       expect(result.requests).toHaveLength(50);
+      // T-388: la distancia total sale de route_distance_m.
+      // 1200 m se muestran redondeados a 0,5 km.
+      expect(result.requests[0]?.approxDistanceKm).toBe('1,0');
       expect(result.metrics.activeCount).toBe(55); // 55 activas reales (no truncado a 50)
       expect(result.metrics.dispatchedToday).toBe(5); // los 5 entregados en posiciones 56..60 se contabilizan
       expect(result.metrics.avgRateArs).toBeNull(); // nunca $0 inventado cuando no hay ofertas aceptadas
@@ -460,7 +465,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const rows = [
         {
           id: 'req-1',
-          approx_distance_m: 1000,
+          approx_distance_m: null, route_distance_m: 1000,
           package_type: 'chico',
           recipient_payment_method: 'cash',
           needs_change: false,
@@ -474,7 +479,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         },
         {
           id: 'req-2',
-          approx_distance_m: 2000,
+          approx_distance_m: null, route_distance_m: 2000,
           package_type: 'mediano',
           recipient_payment_method: 'transfer',
           needs_change: false,
@@ -538,7 +543,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const callLog: string[] = [];
       const terminalRows = Array.from({ length: 51 }, (_, idx) => ({
         id: `00000000-0000-4000-8000-${String(idx + 1).padStart(12, '0')}`,
-        approx_distance_m: 1400,
+        approx_distance_m: null, route_distance_m: 1400,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -601,7 +606,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const historyRows = [
         {
           id: 'req-delivered-1',
-          approx_distance_m: 1800,
+          approx_distance_m: null, route_distance_m: 1800,
           package_type: 'mediano',
           recipient_payment_method: 'cash',
           needs_change: false,
@@ -615,7 +620,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         },
         {
           id: 'req-cancelled-2',
-          approx_distance_m: null,
+          approx_distance_m: null, route_distance_m: null,
           package_type: 'sobre',
           recipient_payment_method: 'transfer',
           needs_change: false,
@@ -681,7 +686,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const borderNow = new Date('2026-09-25T01:30:00.000Z');
       const reqTodayAguilares = {
         id: 'req-today-ar',
-        approx_distance_m: 1500,
+        approx_distance_m: null, route_distance_m: 1500,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -695,7 +700,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       };
       const reqYesterdayAguilares = {
         id: 'req-yesterday-ar',
-        approx_distance_m: 1500,
+        approx_distance_m: null, route_distance_m: 1500,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -782,7 +787,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         const isRow501 = num === 501;
         return {
           id: `req-${String(num).padStart(4, '0')}`,
-          approx_distance_m: 1400,
+          approx_distance_m: null, route_distance_m: 1400,
           package_type: 'chico',
           recipient_payment_method: 'cash',
           needs_change: false,
@@ -864,7 +869,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const mixedRows = [
         {
           id: 'req-active-1',
-          approx_distance_m: 1200,
+          approx_distance_m: null, route_distance_m: 1200,
           package_type: 'chico',
           recipient_payment_method: 'cash',
           needs_change: false,
@@ -878,7 +883,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         },
         {
           id: 'req-term-1',
-          approx_distance_m: 1500,
+          approx_distance_m: null, route_distance_m: 1500,
           package_type: 'mediano',
           recipient_payment_method: 'transfer',
           needs_change: false,
@@ -892,7 +897,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         },
         {
           id: 'req-active-2',
-          approx_distance_m: 1800,
+          approx_distance_m: null, route_distance_m: 1800,
           package_type: 'grande',
           recipient_payment_method: 'cash',
           needs_change: false,
@@ -906,7 +911,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         },
         {
           id: 'req-term-2',
-          approx_distance_m: 1100,
+          approx_distance_m: null, route_distance_m: 1100,
           package_type: 'sobre',
           recipient_payment_method: 'cash',
           needs_change: false,
@@ -986,7 +991,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
     const courierUuid = (i: number) => `10000000-0000-0000-0000-${String(i).padStart(12, '0')}`;
     const mockRequestRow = {
       id: validUuid,
-      approx_distance_m: 1500,
+      approx_distance_m: null, route_distance_m: 1500,
       package_type: 'small',
       recipient_payment_method: 'cash',
       needs_change: false,
@@ -1067,6 +1072,8 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         amountArs: 2000,
       });
       expect(result?.nextOffersCursor).toBeNull();
+      // T-388: la distancia total sale de route_distance_m.
+      expect(result?.request.approxDistanceKm).toBe('1,5');
     });
 
     it('pagina ofertas con limit(51), retorna 50 ítems y nextOffersCursor con datos de fila 50', async () => {
@@ -1493,7 +1500,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
     const requestId = '33333333-3333-4333-8333-333333333333';
     const requestRow = (id: string, status = 'published') => ({
       id,
-      approx_distance_m: 1500,
+      approx_distance_m: null, route_distance_m: 1500,
       package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: true,
@@ -1634,11 +1641,61 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(rpc).not.toHaveBeenCalled();
     });
 
+
+    // T-388 (PR477-H01): cada lector pide la distancia total a delivery_requests.route_distance_m (la que escribe
+    // publish_request) y no a approx_distance_m, que nadie escribe. Las entregas siguen leyendo su approx_distance_m.
+    function expectRouteDistanceProjection(selects: readonly string[]) {
+      const readers = selects.filter((columns) => /\bpickup_zone\b/.test(columns));
+      expect(readers.length).toBeGreaterThan(0);
+      for (const columns of readers) {
+        expect(columns).toMatch(/\broute_distance_m\b/);
+      }
+      for (const columns of selects) {
+        expect(columns).not.toMatch(/\bapprox_distance_m\b/);
+      }
+    }
+    const routeRow = (id: string, status = 'published') => ({
+      ...requestRow(id, status),
+      approx_distance_m: null,
+      route_distance_m: 3500,
+    });
+
+    it('T-388: getMerchantRequests proyecta route_distance_m y la muestra como 3,5 km', async () => {
+      const selects = mockClient([routeRow(requestId)]);
+
+      const result = await getMerchantRequests('merchant-1', { limit: 50 });
+
+      expectRouteDistanceProjection(selects);
+      expect(result.requests[0]?.approxDistanceKm).toBe('3,5');
+    });
+
+    it('T-388: getMerchantHistoryRequests proyecta route_distance_m y la muestra como 3,5 km', async () => {
+      const selects = mockClient([routeRow(requestId, 'delivered')]);
+
+      const result = await getMerchantHistoryRequests('merchant-1', { limit: 50 });
+
+      expectRouteDistanceProjection(selects);
+      expect(result.requests[0]?.approxDistanceKm).toBe('3,5');
+    });
+
+    it('T-388: getMerchantRequestWithOffers proyecta route_distance_m y la muestra como 3,5 km', async () => {
+      const rpc = vi.fn().mockResolvedValue({
+        data: { requestId, notes: null, cashChangeAmount: null },
+        error: null,
+      });
+      const selects = mockClient([routeRow(requestId)], rpc);
+
+      const result = await getMerchantRequestWithOffers(requestId, 'merchant-1');
+
+      expectRouteDistanceProjection(selects);
+      expect(result?.request.approxDistanceKm).toBe('3,5');
+    });
+
     it('H06: getMerchantRequestWithOffers con parent null y 3 drops dispares proyecta drops[] y deriva escalares del primer drop', async () => {
       const testReqId = '33333333-3333-3333-3333-333333333333';
       const parentRowNulls = {
         id: testReqId,
-        approx_distance_m: 2500,
+        approx_distance_m: null, route_distance_m: 2500,
         package_type: null, // parent null
         recipient_payment_method: null, // parent null
         needs_change: null, // parent null
@@ -1759,7 +1816,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const testReqId = '44444444-4444-4444-4444-444444444444';
       const parentRow = {
         id: testReqId,
-        approx_distance_m: 2000,
+        approx_distance_m: null, route_distance_m: 2000,
         package_type: null,
         recipient_payment_method: null,
         needs_change: null,
@@ -1856,7 +1913,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const testReqId = '55555555-5555-4555-8555-555555555555';
       const parentRow = {
         id: testReqId,
-        approx_distance_m: 3000,
+        approx_distance_m: null, route_distance_m: 3000,
         package_type: null,
         recipient_payment_method: null,
         needs_change: null,
@@ -1950,7 +2007,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const testReqId = '66666666-6666-4666-8666-666666666666';
       const parentRow = {
         id: testReqId,
-        approx_distance_m: 2000,
+        approx_distance_m: null, route_distance_m: 2000,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -2013,7 +2070,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const testReqId = '77777777-7777-4777-8777-777777777777';
       const parentRow = {
         id: testReqId,
-        approx_distance_m: 2000,
+        approx_distance_m: null, route_distance_m: 2000,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -2060,7 +2117,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const testReqId = '88888888-8888-4888-8888-888888888888';
       const parentRow = {
         id: testReqId,
-        approx_distance_m: 2000,
+        approx_distance_m: null, route_distance_m: 2000,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -2136,7 +2193,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const testReqId = '99999999-9999-4999-8999-999999999999';
       const parentRow = {
         id: testReqId,
-        approx_distance_m: 2000,
+        approx_distance_m: null, route_distance_m: 2000,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -2199,7 +2256,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const testReqId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
       const requestData = {
         id: testReqId,
-        approx_distance_m: 2000,
+        approx_distance_m: null, route_distance_m: 2000,
         package_type: null,
         recipient_payment_method: null,
         needs_change: null,
@@ -2291,7 +2348,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const testReqId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
       const requestData = {
         id: testReqId,
-        approx_distance_m: 2000,
+        approx_distance_m: null, route_distance_m: 2000,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -2350,7 +2407,8 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       created_at: string;
       accepted_offer_id: string | null;
       drops_count: number;
-      approx_distance_m: number;
+      approx_distance_m: null;
+      route_distance_m: number;
       package_type: string;
       recipient_payment_method: string;
       needs_change: boolean;
@@ -2502,7 +2560,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         created_at: overrides.created_at ?? '2026-10-15T09:00:00.000Z',
         accepted_offer_id: overrides.accepted_offer_id ?? null,
         drops_count: overrides.drops_count ?? 1,
-        approx_distance_m: overrides.approx_distance_m ?? 1200,
+        approx_distance_m: null, route_distance_m: overrides.route_distance_m ?? 1200,
         package_type: overrides.package_type ?? 'chico',
         recipient_payment_method: overrides.recipient_payment_method ?? 'cash',
         needs_change: overrides.needs_change ?? false,
@@ -2970,4 +3028,3 @@ describe('T-112 / T-118: queries de requests e historial', () => {
     });
   });
 });
-

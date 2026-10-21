@@ -25,9 +25,11 @@ export interface TripCourierContainerProps {
   trip: TripDetails;
   /** T-373: primera página del historial (CC-032). Solo se ve si el repartidor tiene cancelaciones propias. */
   cancellationHistory?: CancellationHistoryResult;
+  /** T-389: «Reportar un problema», armado en el servidor por la page; la vista lo pinta en su lugar. */
+  incidentAction?: React.ReactNode;
 }
 
-export function TripCourierContainer({ trip, cancellationHistory }: TripCourierContainerProps) {
+export function TripCourierContainer({ trip, cancellationHistory, incidentAction }: TripCourierContainerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -110,6 +112,7 @@ export function TripCourierContainer({ trip, cancellationHistory }: TripCourierC
         onMarkDropDelivered={handleMarkDropDelivered}
         onMarkDropFailed={handleMarkDropFailed}
         isAdvancing={isPending}
+        incidentAction={incidentAction}
       />
       {cancellationHistory ? (
         <CancellationHistoryCard requestId={trip.id} viewer="courier" result={cancellationHistory} />

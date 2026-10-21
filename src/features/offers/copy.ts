@@ -1,3 +1,5 @@
+import { approxDistanceLabel } from '@/lib/format';
+
 import type { PackageType, RecipientPaymentMethod } from '@/domain/schemas';
 
 export const OFFERS_COPY = {
@@ -49,7 +51,7 @@ export const OFFERS_COPY = {
     to_agree: 'A coordinar',
   } satisfies Record<RecipientPaymentMethod, string>,
   // Sin distancia calculada se dice explícitamente; nunca se muestra un valor inventado (T-363).
-  approxDistance: (km: string | null) => (km ? `≈ ${km} km` : 'Distancia no calculada'),
+  approxDistance: (km: string | null) => approxDistanceLabel(km),
 
   // Paquetes: una etiqueta por valor canónico (PACKAGE_TYPES)
   packageLabels: {

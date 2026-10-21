@@ -317,3 +317,21 @@ describe('T-124: formulario de ReportIncidentButton (C06/R07)', () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 });
+
+describe('T-389: variante ghost para el viaje del repartidor', () => {
+  it('ghost mantiene texto e ícono y usa el estilo de «No puedo hacer este viaje»', () => {
+    renderButton({ variant: 'ghost' });
+    const trigger = screen.getByRole('button', { name: /reportar un problema/i });
+    expect(trigger.querySelector('svg')).not.toBeNull();
+    expect(trigger.className).toMatch(/\bw-full\b/);
+    expect(trigger.className).toMatch(/\btext-muted-foreground\b/);
+    expect(trigger.className).toMatch(/\bmin-h-12\b/);
+    expect(trigger.className).not.toMatch(/\bborder-input\b/);
+  });
+
+  it('sin variante sigue siendo outline (vista del comercio)', () => {
+    renderButton();
+    const trigger = screen.getByRole('button', { name: /reportar un problema/i });
+    expect(trigger.className).not.toMatch(/\btext-muted-foreground\b/);
+  });
+});

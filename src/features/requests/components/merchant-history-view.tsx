@@ -1,5 +1,6 @@
 'use client';
 
+import { approxDistanceLabel } from '@/lib/format';
 import * as React from 'react';
 import Link from 'next/link';
 import { History, ChevronRight } from 'lucide-react';
@@ -229,9 +230,7 @@ export function MerchantHistoryView({
                           </p>
                           <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
                             <span>
-                              {req.approxDistanceKm
-                                ? `≈ ${req.approxDistanceKm} km`
-                                : 'Distancia no calculada'}
+                              {approxDistanceLabel(req.approxDistanceKm)}
                             </span>
                             <span>·</span>
                             <span className="capitalize">{packageLabel}</span>
