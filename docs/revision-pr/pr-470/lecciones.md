@@ -14,3 +14,10 @@ No modificar `AGENTS.md` a partir de una única ficha.
 
 - **P08 / AG-37:** añadir un tercer camino al alcance y mencionarlo en el DoD no prueba que se recorra end-to-end. «`accept` ofrece PDF» es un test de UI de selección, no de subida real. Toda matriz de flujos debe incluir una aserción positiva de persistencia por flujo (Storage + DB) y, si corresponde, verificación administrativa. Esta ronda comprobó literalmente los permisos, pero el barrido posterior de las viñetas E2E detectó la omisión.
 - H01–H04 sí fueron cerrados con controles estáticos independientes y mutaciones en memoria, sin presentarlos como Vitest ni Playwright. El problema nuevo es de **especificación de prueba**, no de funcionalidad implementada.
+
+
+## Ronda 3 — cierre de cobertura (sin ID AG nuevo)
+
+- **P08 / AG-37:** la forma correcta de cerrar una matriz de tres caminos no es agregar únicamente una aserción de selector `accept`, sino exigir persistencia real y vigencia para alta inicial, perfil y reemplazo. En `5f4187c8` el autor agregó los dos recorridos omitidos y la revisión verificó que el texto cubre ambos con una batería independiente de 6 mutaciones en memoria.
+- **No confundir especificación con ejecución:** esta PR es documental; los futuros Playwright de PDF se deberán escribir y correr en la PR de implementación T-387, usando Preview/Supabase Develop cuando corresponda.
+- **CI:** `approval-policy` no lee comentarios, analiza el body en sección `### Informe de revisión de agy`. Publicar solo un comentario correcto deja el gate rojo; un informe no bloqueante debe quedar también en el cuerpo de PR.
