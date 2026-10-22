@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(66);
+select plan(67);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -104,10 +104,10 @@ begin
     (pg_temp.req_m2_pub_id(), 'Mitre 500', 'Avellaneda 600', 'Destinatario M2 Pub', '3865333333');
 
   -- Ofertas
-  insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
+  insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, message, status)
   values
-    (pg_temp.offer_c1_id(), pg_temp.req_m1_matched_id(), pg_temp.courier_approved_1_id(), 1500, 15, 'accepted'),
-    (pg_temp.offer_c2_id(), pg_temp.req_m1_pub_id(), pg_temp.courier_approved_2_id(), 1600, 20, 'pending');
+    (pg_temp.offer_c1_id(), pg_temp.req_m1_matched_id(), pg_temp.courier_approved_1_id(), 1500, 15, null, 'accepted'),
+    (pg_temp.offer_c2_id(), pg_temp.req_m1_pub_id(), pg_temp.courier_approved_2_id(), 1600, 20, 'mensaje original c2', 'pending');
 
   -- Vincular oferta aceptada
   update public.delivery_requests set accepted_offer_id = pg_temp.offer_c1_id() where id = pg_temp.req_m1_matched_id();
@@ -487,11 +487,12 @@ select throws_ok(
   'merchant cannot backdate consent acceptance'
 );
 
--- 46. H20: the legitimate edit to a pending own offer remains possible.
+-- 46. CC-036: a courier can no longer edit even its own pending offer directly; offers only change by RPC.
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
-select lives_ok(
+select throws_ok(
   'update public.offers set message = ''still available'' where id = pg_temp.offer_c2_id()',
-  'courier can edit its own pending offer'
+  '42501'::char(5), null::text,
+  'CC-036: courier cannot edit its own pending offer directly'
 );
 
 -- 47. H06: merchant cannot move offer lifecycle outside the T-006 RPC.
@@ -515,25 +516,31 @@ select is(
   'merchant cannot delete its own request'
 );
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
-delete from public.offers where id = pg_temp.offer_c2_id();
+-- CC-036: DELETE revoked, so the direct delete raises 42501 instead of silently deleting 0 rows.
+select throws_ok(
+  'delete from public.offers where id = pg_temp.offer_c2_id()',
+  '42501'::char(5), null::text,
+  'CC-036: courier cannot delete its own offer directly'
+);
 select is(
   (select count(*) from public.offers where id = pg_temp.offer_c2_id()),
   1::bigint,
   'courier cannot delete its own offer'
 );
 
--- 50. H20: lives_ok alone would also accept an UPDATE that changed zero rows.
+-- 50. CC-036: the rejected direct edit (46) left the message unchanged.
 select is(
   (select message from public.offers where id = pg_temp.offer_c2_id()),
-  'still available',
-  'courier pending offer edit persisted'
+  'mensaje original c2',
+  'CC-036: rejected direct edit kept the original offer message'
 );
 
 -- 51-55. Legitimate inserts still work with the stricter initial-state checks.
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
-select lives_ok(
+select throws_ok(
   'insert into public.offers (request_id, courier_id, amount_ars, eta_minutes) values (pg_temp.req_m2_pub_id(), pg_temp.courier_approved_1_id(), 1500, 15)',
-  'approved courier can create a pending offer'
+  '42501'::char(5), null::text,
+  'CC-036: approved courier cannot create an offer directly (only submit_offer)'
 );
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select lives_ok(
