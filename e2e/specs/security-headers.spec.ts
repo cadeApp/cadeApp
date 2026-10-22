@@ -147,15 +147,17 @@ test.describe('T-391 — Cabeceras de seguridad (SEC-05)', () => {
       const merchantPage = await merchantContext.newPage();
       const merchantCsp = collectCspMessages(merchantPage);
       const { merchantPage: merchant } = await loginAsMerchant(merchantPage);
+      await merchant.gotoNewRequest();
+      await waitForNoSkeletons(merchantPage);
+
+      // El mapa se abre a pedido: se espera la respuesta real de Google y el mapa interactivo en el DOM.
       const mapsResponse = merchantPage.waitForResponse(
         (response) => /maps\.googleapis\.com/.test(response.url()) && response.ok(),
         { timeout: 30000 }
       );
-      await merchant.gotoNewRequest();
-      await waitForNoSkeletons(merchantPage);
-
-      // El mapa real de Google cargó: respondió su API y el mapa interactivo quedó en el DOM.
+      await merchantPage.getByRole('button', { name: /fijar en mapa interactivo/i }).first().click();
       await mapsResponse;
+      await expect(merchantPage.getByTestId('map-container').first()).toBeVisible({ timeout: 30000 });
       await expect(merchantPage.getByRole('region', { name: 'Map' }).first()).toBeVisible({ timeout: 30000 });
 
       expect(courierCsp.enforced).toEqual([]);
