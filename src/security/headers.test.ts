@@ -70,6 +70,17 @@ describe('T-391: cabeceras de seguridad', () => {
     expect(csp).not.toContain('wss://');
   });
 
+  it.each([
+    ['ftp://abcd1234.supabase.co', false],
+    ['javascript:alert(1)', false],
+    ['http://abcd1234.supabase.co', false],
+    ['ftp://127.0.0.1:54321', true],
+  ])('rechaza el esquema de %s (desarrollo: %s)', (supabaseUrl, isDevelopment) => {
+    const csp = buildReportOnlyCsp({ supabaseUrl, isDevelopment });
+
+    expect(csp).not.toMatch(/ftp:|javascript:|null|wss?:\/\/|http:\/\//);
+  });
+
   it('next.config aplica las cabeceras a todas las rutas y no anuncia el framework', async () => {
     expect(nextConfig.poweredByHeader).toBe(false);
     const rules = (await nextConfig.headers?.()) ?? [];

@@ -29,20 +29,27 @@ export const PERMISSIONS_POLICY = 'camera=(), microphone=(), payment=(), usb=(),
 
 export const HSTS = 'max-age=63072000; includeSubDomains';
 
-/** Origen https y wss de Supabase, o `null` si la URL falta o no es válida. */
-function supabaseOrigins(supabaseUrl: string | undefined): { https: string; wss: string } | null {
+/**
+ * Origen http(s) y ws(s) de Supabase, o `null` si la URL falta, no es válida o usa otro esquema. Solo se admite
+ * `https:`; `http:` únicamente en desarrollo local.
+ */
+function supabaseOrigins(
+  supabaseUrl: string | undefined,
+  isDevelopment: boolean
+): { https: string; wss: string } | null {
   if (!supabaseUrl) return null;
   try {
     const url = new URL(supabaseUrl);
-    const wssProtocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
-    return { https: url.origin, wss: `${wssProtocol}//${url.host}` };
+    if (url.protocol === 'https:') return { https: url.origin, wss: `wss://${url.host}` };
+    if (url.protocol === 'http:' && isDevelopment) return { https: url.origin, wss: `ws://${url.host}` };
+    return null;
   } catch {
     return null;
   }
 }
 
 export function buildReportOnlyCsp({ supabaseUrl, isDevelopment }: SecurityHeadersOptions): string {
-  const supabase = supabaseOrigins(supabaseUrl);
+  const supabase = supabaseOrigins(supabaseUrl, isDevelopment);
   const supabaseHttp = supabase ? [supabase.https] : [];
   const supabaseRealtime = supabase ? [supabase.wss] : [];
 
