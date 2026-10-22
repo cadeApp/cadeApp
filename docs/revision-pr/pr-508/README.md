@@ -1,7 +1,7 @@
 # PR #508 — T-393 · Revisión independiente
 
 **PR:** https://github.com/cadeApp/cadeApp/pull/508 · **Rama:** `feat/T-393-partial-delivery` → develop
-**Estado:** H01 y H02 corregidos por el autor e inspeccionados; **pendiente de verificación independiente RED→GREEN/E2E**. H03 es mejora no bloqueante.
+**Estado:** H01 y H02 corregidos por el autor e inspeccionados; **pendiente de verificación independiente RED→GREEN/E2E**. H03 también fue corregida por el autor, pendiente de verificación independiente.
 **HEAD documental observado:** `4699ab55176e978c40ca98f494c52dbd5e4d121e`; último SHA de **código** examinado: `455adc155103cc7d624c40fe3e8db25f23c19fae`.
 
 | Ronda | SHA de código | Resultado |
