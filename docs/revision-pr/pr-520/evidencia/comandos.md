@@ -81,3 +81,16 @@ grep -E -e 'Test Files' -e 'Tests' "$TMP/green-before.log" "$TMP/red.log" "$TMP/
 ## Archivos locales de esta revisión
 
 No se corrió ni se dejó un worktree local: estas evidencias provienen de GitHub y la inspección de los diffs. No imprimir ni abrir `.env*`, credenciales ni tokens.
+
+## Ronda 2 — verificación del merge y equivalencia de código
+
+- PR #519: `merged=true`; `merge_commit_sha = ef9df1c8e59a947cee6f1d26e80458dfea269fcf`.
+- PR #520: HEAD `edbe8c33efcb5cebfc2577e90131a2ff9e8360fc` no-Draft, `mergeable=true`.
+- Commit `edbe8c33`: padres `9a5de5021f5192c8ccb4d10198eb3cd32704d270` y `ef9df1c8e59a947cee6f1d26e80458dfea269fcf`.
+- Comparación de `c8e546c` a `edbe8c33`: solo cinco archivos nuevos `docs/revision-pr/pr-520/**` y `docs/tasks/log/T-411.md`; sin código funcional.
+- Suite `unit` `119961383318` de `edbe8c33`: `Test Files 165 passed`, `Tests 3261 passed`.
+- Checks `typecheck`, `lint`, `audit`, `build`, `bundle-budget`: success en el HEAD de la ronda.
+- Job actual `db-tests` `119961383361`: en curso al redactar. Para cualquier conclusión posterior, citar su log y `Files=/Tests=/Result:`.
+- `approval-policy`: exige sección `### Informe de revisión de agy` con el formato completo en **cuerpo** de la PR, no solo en comentario.
+
+**Sin ejecución local propia de pruebas.** No se abrió Supabase remoto; no se dispararon workflows manuales.
