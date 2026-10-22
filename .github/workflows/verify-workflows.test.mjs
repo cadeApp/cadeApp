@@ -565,6 +565,8 @@ test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () 
     );
     assert.ok(body.includes(`\n      APP_URL: ${appUrl}\n`), `${name}: APP_URL ${appUrl}`);
     if (condition) assert.ok(body.includes(`\n    if: ${condition}\n`), `${name}: if ${condition}`);
+    // PR509-H01: sin condición declarada, el job no tiene ningún `if` (ni de una línea ni de bloque).
+    else assert.doesNotMatch(body, /^ {4}if\s*:/m, `${name}: el job no tiene if`);
 
     const call = step(body, 'Call /api/cron/health');
     assert.ok(
@@ -596,15 +598,15 @@ test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () 
   }
 });
 
-test('T-392: no health-cron job gates itself on vars from its own environment', () => {
+test('T-392: health-cron jobs run on every schedule, with no job-level if', () => {
   // `jobs.<id>.if` se evalúa antes de entrar al environment: ahí `vars` no tiene las variables del environment, así
-  // que un `if` sobre ellas saltea el job en silencio en cada corrida. Ningún job del health-cron lleva `if` sobre
-  // `vars`.
+  // que un `if` sobre ellas saltea el job en silencio en cada corrida. Cualquier otro `if` de job (por evento, de una
+  // línea o de bloque) también puede saltearlo en el `schedule`: los jobs del health-cron no llevan ninguno.
   const healthCron = workflow('health-cron.yml');
   for (const name of ['staging', 'production']) {
     const body = job(healthCron, name).replace(/\r\n/g, '\n');
     assert.ok(body.includes('\n    environment: '), `${name}: usa un environment`);
-    assert.ok(!/\n {4}if: [^\n]*\bvars\./.test(body), `${name}: el if del job no puede leer vars`);
+    assert.doesNotMatch(body, /^ {4}if\s*:/m, `${name}: el job no tiene if`);
   }
 });
 
