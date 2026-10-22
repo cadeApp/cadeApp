@@ -14,6 +14,7 @@ import {
 } from '@/lib/whatsapp';
 import { formatArs } from '@/lib/format';
 import { formatVehicleType, formatRecipientPaymentMethod } from '../format';
+import { summarizeDropOutcome, type DropOutcomeSummary } from '../drop-outcome';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -24,6 +25,7 @@ import {
   MessageCircle,
   Phone,
   User,
+  XCircle,
 } from 'lucide-react';
 
 export interface TripMerchantViewProps {
@@ -34,6 +36,26 @@ export interface TripMerchantViewProps {
   /** D-C2b: abre el diálogo de «sacar al repartidor» (solo con la solicitud asignada). */
   onReplaceCourier?: () => void;
 }
+
+type BadgeVariant = 'default' | 'secondary' | 'partial' | 'destructive' | 'delivered' | 'outline';
+
+/** T-393: etiqueta del encabezado según el resultado real de las entregas, no solo el estado de la solicitud. */
+function headerBadge(
+  status: TripDetails['status'],
+  summary: DropOutcomeSummary
+): { label: string; variant: BadgeVariant } {
+  if (status === 'in_transit') return { label: 'En camino', variant: 'default' };
+  if (status !== 'delivered') return { label: 'Asignado', variant: 'default' };
+  if (summary.outcome === 'partial') return { label: 'Entrega parcial', variant: 'partial' };
+  if (summary.outcome === 'none_delivered') return { label: 'No entregado', variant: 'destructive' };
+  return { label: 'Entregado', variant: 'secondary' };
+}
+
+const DROP_STATUS_BADGE = {
+  delivered: { label: 'Entregada', variant: 'delivered' },
+  failed: { label: 'No entregada', variant: 'destructive' },
+  pending: { label: 'Pendiente', variant: 'outline' },
+} as const satisfies Record<string, { label: string; variant: BadgeVariant }>;
 
 export function TripMerchantView({
   trip,
@@ -86,6 +108,10 @@ export function TripMerchantView({
         ];
 
   const singleDrop = dropsList.length === 1 ? dropsList[0] : null;
+  const isMultiDrop = dropsList.length > 1;
+  const outcome = summarizeDropOutcome(trip.drops, trip.status);
+  const badge = headerBadge(trip.status, outcome);
+  const deliveredSummary = `${outcome.delivered} de ${outcome.total} entregadas`;
 
   return (
     <div className="mx-auto max-w-[390px] space-y-4 p-4 pb-24">
@@ -104,12 +130,12 @@ export function TripMerchantView({
           <h1 className="font-display text-xl font-bold text-foreground">
             {isDelivered ? 'Viaje finalizado' : 'Viaje en curso'}
           </h1>
+          {isDelivered && isMultiDrop && (
+            <p className="text-sm text-muted-foreground">{deliveredSummary}</p>
+          )}
         </div>
-        <Badge
-          variant={isDelivered ? 'secondary' : 'default'}
-          className="rounded-full text-sm font-medium"
-        >
-          {isDelivered ? 'Entregado' : isInTransit ? 'En camino' : 'Asignado'}
+        <Badge variant={badge.variant} className="rounded-full text-sm font-medium">
+          {badge.label}
         </Badge>
       </div>
 
@@ -133,8 +159,19 @@ export function TripMerchantView({
         <div
           className={`flex items-center gap-1.5 font-medium ${isDelivered ? 'text-foreground' : 'text-muted-foreground'}`}
         >
-          <CheckCircle2 className={`h-4 w-4 ${isDelivered ? 'text-primary' : 'text-muted'}`} />
-          <span>Entregado</span>
+          {isDelivered && outcome.outcome === 'none_delivered' ? (
+            <>
+              <XCircle className="h-4 w-4 text-destructive" aria-hidden="true" />
+              <span>No entregado</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className={`h-4 w-4 ${isDelivered ? 'text-primary' : 'text-muted'}`} />
+              <span>
+                {isDelivered && outcome.outcome === 'partial' ? deliveredSummary : 'Entregado'}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -240,8 +277,11 @@ export function TripMerchantView({
           courierName: trip.courierName,
           sender: 'merchant',
           tripStatus: trip.status,
-          dropStatus: dropsList.length > 1 ? drop.status : undefined,
+          // PR508-H01: con una sola entrega no realizada, el aviso también usa el estado de esa entrega.
+          dropStatus: dropsList.length > 1 || drop.status === 'failed' ? drop.status : undefined,
         });
+        const dropBadge = DROP_STATUS_BADGE[drop.status];
+        const showDropBadge = isMultiDrop || drop.status === 'failed';
         let dropCustomerWaUrl: string | null = null;
         if (drop.recipientPhone) {
           try {
@@ -255,9 +295,16 @@ export function TripMerchantView({
           <Card key={drop.id} className="border-primary/20 bg-primary/5 shadow-card">
             <CardContent className="space-y-3 p-4">
               <div>
-                <h2 className="text-sm font-bold text-foreground">
-                  Avisale a tu cliente{dropsList.length > 1 ? ` (Entrega ${drop.position})` : ''}
-                </h2>
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="text-sm font-bold text-foreground">
+                    Avisale a tu cliente{dropsList.length > 1 ? ` (Entrega ${drop.position})` : ''}
+                  </h2>
+                  {showDropBadge && (
+                    <Badge variant={dropBadge.variant} className="shrink-0 rounded-full text-sm">
+                      {dropBadge.label}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Destinatario: <strong className="text-foreground">{drop.recipientName}</strong> ·{' '}
                   {drop.dropoffZoneName}
@@ -268,6 +315,11 @@ export function TripMerchantView({
                     <strong className="text-foreground">
                       {formatRecipientPaymentMethod(drop.recipientPaymentMethod)}
                     </strong>
+                  </p>
+                )}
+                {drop.status === 'failed' && drop.failedReason && (
+                  <p className="text-sm font-semibold text-destructive">
+                    Motivo: {drop.failedReason}
                   </p>
                 )}
               </div>
