@@ -72,3 +72,59 @@ No se ejecutó el script contra un clon local: el ambiente disponible no resolvi
 5. T-405: auditoría por `target_id`, lectura con RLS y enlaces filtrados; no SELECT directo a merchant_plan_periods.
 6. T-406: conjunto exacto open+reviewing/resolved/dismissed para tres pestañas.
 7. T-407: `gte` inicio local y `lt` siguiente inicio local; prueba microsegundos.
+
+## Ronda 2 — HEAD `be515ec74e9f0da54e4f5f709c247250251db840` — lectura 2026-10-21
+
+- GitHub compare `60e1f249...be515ec7`: 11 archivos cambiados (10 fichas + plan), **0 cambios a `docs/revision-pr/pr-489/**`**. PR mantiene 16 archivos contra develop porque la carpeta de revisión se agregó en R1.
+- `docs/tasks/log/T-312.md` está en PR #491, rama `feat/T-312-release-checklist`, SHA `81d3266e`, **no en develop**. CC-036/T-390/T-391 están en PR #497, SHA `74ba30a0`, **no mergeados**.
+- Comprobación propia ejecutada con GitHub connector, contenido de las 10 fichas del SHA: igualdad primer DoD con celda 6 del plan = `10/10`; mutar en memoria el PRIMER ítem de `## DoD` de cada ficha = `10/10` detectadas (sin tocar archivos). Un intento preliminar atacó inadvertidamente un checkbox anterior al DoD en T-408: detectó 9/10. Se descartó como fallo del *harness*, corrigió el ancla a `## DoD` y se repitió: 10/10. **No ocultar esta discrepancia**.
+- Job CI `119569612551` del SHA R2: `tools/verify-fichas.test.ts (7 tests) ✅`; `Test Files 155 passed (155)`; `Tests 3170 passed (3170)`. URL: https://github.com/cadeApp/cadeApp/actions/runs/39700774152 .
+- El estado de `db-tests` se consultó y estaba en progreso durante el análisis, por lo que no se declara como verde; este PR no edita SQL.
+
+### Harness reproducible (en /tmp, no dentro del repo)
+Ejecutar desde la raíz de un checkout del SHA `be515ec74e9f0da54e4f5f709c247250251db840`, creando solo este archivo fuera del repo:
+
+```bash
+cat > /tmp/pr489-r2-check.mjs <<'NODE'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const ids = Array.from({length: 10}, (_,i) => 'T-' + (400+i));
+const plan = fs.readFileSync('docs/implementation-plan.md','utf8').replace(/\r\n/g,'\n');
+const byId = new Map(plan.split('\n').filter(l=>/^\|\s*T-\d+/.test(l)).map(l=>{
+  const id = l.match(/^\|\s*(T-\d+)/)[1];
+  return [id, l.split('|').map(s=>s.trim())[6]];
+}));
+const getDoD = text => {
+  const s=text.match(/(?:^|\n)## DoD\n([\s\S]*?)(?=\n## |$)/);
+  assert.ok(s, 'No ## DoD');
+  const m=s[1].match(/^- \[[ x]\] (.+)$/m);
+  assert.ok(m, 'Falta primer ítem del DoD');
+  return {block:s[1], first:m[1].trim()};
+};
+let ok=0, reds=0;
+for (const id of ids) {
+  const raw=fs.readFileSync('docs/tasks/'+id+'.md','utf8').replace(/\r\n/g,'\n');
+  const expected=byId.get(id);
+  assert.ok(expected,'Sin fila '+id);
+  const {block,first}=getDoD(raw);
+  if (first===expected) ok++;
+  const tampered=block.replace(/^- \[[ x]\] (.+)$/m,(_,s)=>'- [ ] MUTADO_'+s);
+  const mutated=tampered.match(/^- \[[ x]\] (.+)$/m)?.[1]?.trim();
+  if (mutated!==expected) reds++;
+}
+console.log('BASE '+ok+'/'+ids.length+' DoD=plan');
+console.log('MUTATIONS '+reds+'/'+ids.length+' independent red');
+assert.equal(ok,ids.length);
+assert.equal(reds,ids.length);
+NODE
+node /tmp/pr489-r2-check.mjs
+```
+
+Esperado (comprobado por comparación de contenido en la revisión): `BASE 10/10 DoD=plan` y `MUTATIONS 10/10 independent red`. **El script como archivo Node no se ejecutó en un checkout**, porque el repositorio se inspeccionó por API; no confundir su salida esperada con log de ejecución local.
+
+### Validaciones futuras de las fichas
+- T-408 SEC-01: pgTAP WRITE directo como admin aal1 y aal2 denegados en tablas RPC-owned, mientras RPC admin en aal2 inserta auditoría.
+- T-408 SEC-02: pgTAP revokes INSERT/UPDATE/DELETE/TRUNCATE y trigger anti-UPDATE/DELETE; acción viewCourierDocumentAction service-role inserta audit.
+- T-408 SEC-11: probar que el comercio con SELECT de merchants NO obtiene `admin_notes`; evidencia de notes con autor verificable antes de migrar.
+- T-405: añadir `action` a filtro SQL **antes** de limit 5; pruebas con merchant_profile_update/admin_grant_publication_credits intercaladas.
+- T-409: comprobar que al dividir en tasks hijas los paths nuevos están autorizados en sus PR separados; no crear docs/contracts/** sin CC.
