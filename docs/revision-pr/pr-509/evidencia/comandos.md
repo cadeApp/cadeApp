@@ -85,3 +85,60 @@ git merge-tree --write-tree origin/develop HEAD
 ```
 
 No se ejecutaron comandos del repositorio en esta sesión: el contenedor no pudo resolver GitHub para clonar. No se corrió Docker, Supabase remoto, secrets ni despliegues.
+
+
+## Ronda 2 — harness independiente completo
+
+Este script se copia a `/tmp` en un checkout del SHA revisado y no edita el YAML. Evaluar el control exactamente como está en los dos tests.
+
+```bash
+cat > /tmp/pr509-round2.mjs <<'JS'
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const yaml = readFileSync('.github/workflows/health-cron.yml', 'utf8');
+function job(source, name) {
+  const s=source.replace(/\r\n/g,'\n');
+  const start=s.indexOf('\n  '+name+':\n');
+  assert.notEqual(start,-1,'missing job '+name);
+  const next=s.slice(start+1).search(/\n {2}[\w-]+:\n/);
+  return next===-1?s.slice(start):s.slice(start,start+next+1);
+}
+function control(source, kind) {
+  for(const name of ['staging','production']) {
+    const b=job(source,name);
+    assert.ok(b.includes('\n    environment: '));
+    if(kind==='r1') assert.ok(!/\n {4}if: [^\n]*\bvars\./.test(b));
+    else assert.doesNotMatch(b,/^ {4}if\s*:/m);
+  }
+}
+function mut(name, insert) {
+  const anchor='    name: health-cron-'+name+'\n';
+  assert.ok(yaml.includes(anchor));
+  return yaml.replace(anchor,anchor+insert);
+}
+const variants=[
+  ['original',yaml,true,true],
+  ['M1-vars',mut('production',"    if: vars.PRODUCTION_APP_URL != ''\n"),false,false],
+  ['M2-event',mut('production',"    if: github.event_name == 'workflow_dispatch'\n"),true,false],
+  ['M3-block',mut('production',"    if: >-\n      vars.PRODUCTION_APP_URL != ''\n"),true,false],
+  ['M4-staging',mut('staging',"    if: github.event_name == 'workflow_dispatch'\n"),true,false],
+  ['M5-false',mut('production',"    if: false\n"),true,false],
+  ['M6-step',yaml.replace('      - name: Call /api/cron/health\n','      - name: Call /api/cron/health\n        if: false\n'),true,true]
+];
+for(const [name,source,expectedOld,expectedNew] of variants) {
+  const marks=[];
+  for(const [tag,expect] of [['r1',expectedOld],['r2',expectedNew]]) {
+    let ok=true;try{control(source,tag)}catch{ok=false}
+    assert.equal(ok,expect,name+' '+tag);marks.push(tag+':'+(ok?'GREEN':'RED'));
+  }
+  console.log(name,marks.join(' / '));
+}
+JS
+node /tmp/pr509-round2.mjs
+```
+
+Resultado obtenido al ejecutar esas reglas sobre contenido obtenido del conector: original GREEN/GREEN; M1 RED/RED; M2–M5 GREEN/RED; M6 GREEN/GREEN. El script no hace mutaciones sobre archivos.
+
+### Evidencia externa del runner
+
+CI: https://github.com/cadeApp/cadeApp/actions/runs/39728704163 — job unit 3180/3180 Vitest, 81/81 tests workflow y 6/6 extras. Typecheck, lint, build, audit, bundle-budget success. db-tests en ejecución al momento de elaborar la ronda. No se debe sustituir ese resultado por uno inventado.
