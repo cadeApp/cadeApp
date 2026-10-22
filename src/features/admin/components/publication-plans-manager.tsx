@@ -190,7 +190,6 @@ function PlanForm({ plan, onDone }: { readonly plan: PublicationPlanItem | null;
   const form = useForm<PublicationPlanFormInput>({
     resolver: zodResolver(publicationPlanFormSchema),
     defaultValues: {
-      code: plan?.code ?? '',
       name: plan?.name ?? '',
       kind: plan?.kind ?? 'quota',
       monthlyCredits: plan?.monthlyCredits === null || plan === null ? '' : String(plan.monthlyCredits),
@@ -207,7 +206,6 @@ function PlanForm({ plan, onDone }: { readonly plan: PublicationPlanItem | null;
     try {
       const res = await upsertPublicationPlanAction({
         planId: plan?.id ?? null,
-        code: data.code,
         name: data.name,
         kind: data.kind,
         monthlyCredits: data.kind === 'quota' ? Number(data.monthlyCredits) : null,
@@ -253,7 +251,6 @@ function PlanForm({ plan, onDone }: { readonly plan: PublicationPlanItem | null;
       </DialogHeader>
       <form onSubmit={onSubmit} noValidate className="mt-4 space-y-4">
         {field('name', COPY.dialog.name, <Input id={`${idPrefix}-name`} {...form.register('name')} />)}
-        {field('code', COPY.dialog.code, <Input id={`${idPrefix}-code`} autoComplete="off" {...form.register('code')} />)}
         <fieldset className="space-y-2">
           <legend className="text-sm font-semibold text-foreground">{COPY.dialog.kind}</legend>
           <div className="grid grid-cols-2 gap-3">
