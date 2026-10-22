@@ -7,6 +7,7 @@ vi.mock('server-only', () => ({}));
 type Result = { data: unknown; error: { message: string } | null };
 const tables: Record<string, Result> = {};
 const selects: Record<string, string> = {};
+const filters: Record<string, Array<[string, unknown]>> = {};
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> | undefined }> = [];
 let rpcResult: Result = { data: { items: [], nextCursor: null }, error: null };
 
@@ -17,7 +18,8 @@ function builder(table: string) {
       selects[table] = columns;
       return chain;
     },
-    eq() {
+    eq(column: string, value: unknown) {
+      (filters[table] ??= []).push([column, value]);
       return chain;
     },
     order() {
@@ -103,6 +105,7 @@ function seedDelivered() {
 beforeEach(() => {
   for (const key of Object.keys(tables)) delete tables[key];
   for (const key of Object.keys(selects)) delete selects[key];
+  for (const key of Object.keys(filters)) delete filters[key];
   rpcCalls.length = 0;
   rpcResult = { data: { items: [], nextCursor: null }, error: null };
 });
@@ -154,6 +157,32 @@ describe('T-410: getAdminTripDetail', () => {
         actorRole: 'courier',
       },
     ]);
+  });
+
+  it('PR510-H03: cada lectura filtra por la solicitud pedida y la oferta por su id', async () => {
+    seedDelivered();
+    await getAdminTripDetail(REQUEST_ID);
+
+    expect(filters).toEqual({
+      delivery_requests: [['id', REQUEST_ID]],
+      delivery_request_drops: [['request_id', REQUEST_ID]],
+      request_cancellation_reasons: [['request_id', REQUEST_ID]],
+      incidents: [['request_id', REQUEST_ID]],
+      offers: [['id', '00000000-0000-4000-8000-0000000380a1']],
+    });
+  });
+
+  it('sin oferta aceptada no consulta offers y el repartidor queda en null', async () => {
+    seedDelivered();
+    tables.delivery_requests = {
+      data: { ...(tables.delivery_requests?.data as object), accepted_offer_id: null },
+      error: null,
+    };
+
+    const trip = await getAdminTripDetail(REQUEST_ID);
+
+    expect(trip?.courier).toBeNull();
+    expect(filters.offers).toBeUndefined();
   });
 
   it('id inválido, solicitud inexistente o borrador: null', async () => {

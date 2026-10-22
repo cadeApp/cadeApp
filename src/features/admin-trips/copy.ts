@@ -60,6 +60,7 @@ export const ADMIN_TRIPS_COPY = {
       pending: 'Pendiente',
       delivered: 'Entregada',
       failed: 'No entregada',
+      notDelivered: 'Sin entregar',
     },
     reason: (text: string) => `Motivo: ${text}`,
     incidentsTitle: 'Incidentes',

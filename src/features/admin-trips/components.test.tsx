@@ -177,6 +177,33 @@ describe('T-410: AdminTripDetailView', () => {
   });
 });
 
+describe('PR510-H01: entregas legacy y solicitudes cerradas sin entregar', () => {
+  it('una solicitud legacy entregada sin filas de entregas muestra su única entrega como entregada', () => {
+    render(<AdminTripDetailView trip={{ ...detail, drops: [] }} />);
+
+    const drop = screen.getByRole('heading', { level: 3, name: /Entrega 1/ }).closest('li');
+    if (!(drop instanceof HTMLElement)) throw new Error('sin entrega');
+    expect(within(drop).getByText('Entregada')).toBeDefined();
+    expect(screen.getByText(/1 de 1 entregadas/)).toBeDefined();
+  });
+
+  it('una entrega pendiente de una solicitud cancelada se muestra como «Sin entregar»', () => {
+    render(
+      <AdminTripDetailView
+        trip={{
+          ...detail,
+          status: 'cancelled',
+          timeline: { ...detail.timeline, deliveredAt: null, cancelledAt: '2026-10-22T05:00:00Z' },
+          drops: [{ position: 1, zoneName: 'Centro', status: 'pending', deliveredAt: null, failedReason: null }],
+        }}
+      />
+    );
+
+    expect(screen.getByText('Sin entregar')).toBeDefined();
+    expect(screen.queryByText('Pendiente')).toBeNull();
+  });
+});
+
 describe('T-410: skeletons', () => {
   it('lista y detalle anuncian la carga y tienen la forma final', () => {
     const { unmount } = render(<AdminTripsListSkeleton />);

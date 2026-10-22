@@ -6,8 +6,15 @@ import { Badge } from '@/ui/badge';
 import { Card } from '@/ui/card';
 import { cn } from '@/ui/cn';
 import { ADMIN_TRIPS_COPY } from '../copy';
-import { buildTripTimeline, tripDeliverySummary, type TimelineTone } from '../problems';
-import type { AdminTripDetail, AdminTripDrop } from '../types';
+import {
+  buildTripTimeline,
+  dropDisplayStatus,
+  tripDeliverySummary,
+  tripDropsForDisplay,
+  type DropDisplayStatus,
+  type TimelineTone,
+} from '../problems';
+import type { AdminTripDetail } from '../types';
 import { AdminTripStatusBadge } from './admin-trip-status-badge';
 
 const COPY = ADMIN_TRIPS_COPY.detail;
@@ -18,7 +25,8 @@ const DROP_BADGE = {
   delivered: 'delivered',
   failed: 'destructive',
   pending: 'outline',
-} as const satisfies Record<AdminTripDrop['status'], 'delivered' | 'destructive' | 'outline'>;
+  notDelivered: 'cancelled',
+} as const satisfies Record<DropDisplayStatus, 'delivered' | 'destructive' | 'outline' | 'cancelled'>;
 
 const TONE_DOT: Record<TimelineTone, string> = {
   default: 'bg-border',
@@ -71,15 +79,11 @@ export interface AdminTripDetailViewProps {
  */
 export function AdminTripDetailView({ trip }: AdminTripDetailViewProps) {
   const timeline = buildTripTimeline(trip);
+  const drops = tripDropsForDisplay(trip);
   const deliveries = tripDeliverySummary({
     status: trip.status,
-    dropsCount: Math.max(trip.drops.length, 1),
-    deliveredDrops:
-      trip.drops.length > 0
-        ? trip.drops.filter((drop) => drop.status === 'delivered').length
-        : trip.status === 'delivered'
-          ? 1
-          : 0,
+    dropsCount: drops.length,
+    deliveredDrops: drops.filter((drop) => drop.status === 'delivered').length,
   });
 
   return (
@@ -109,17 +113,18 @@ export function AdminTripDetailView({ trip }: AdminTripDetailViewProps) {
         <div className="space-y-6 lg:col-span-2">
           <Card className="space-y-3 p-4 sm:p-6">
             <h2 className="text-lg font-bold text-foreground">{COPY.dropsTitle}</h2>
-            {trip.drops.length === 0 ? null : (
-              <ol className="space-y-3">
-                {trip.drops.map((drop) => (
+            <ol className="space-y-3">
+              {drops.map((drop) => {
+                const display = dropDisplayStatus(drop, trip.status);
+                return (
                   <li key={drop.position} className="space-y-1 rounded-lg border border-border p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="text-base font-semibold text-foreground">
                         {COPY.dropTitle(drop.position)}
                         {drop.zoneName ? <span className="font-normal text-muted-foreground"> · {drop.zoneName}</span> : null}
                       </h3>
-                      <Badge variant={DROP_BADGE[drop.status]} className="text-sm">
-                        {COPY.dropStatus[drop.status]}
+                      <Badge variant={DROP_BADGE[display]} className="text-sm">
+                        {COPY.dropStatus[display]}
                       </Badge>
                     </div>
                     {drop.status === 'failed' && drop.failedReason ? (
@@ -133,9 +138,9 @@ export function AdminTripDetailView({ trip }: AdminTripDetailViewProps) {
                       </time>
                     ) : null}
                   </li>
-                ))}
-              </ol>
-            )}
+                );
+              })}
+            </ol>
           </Card>
 
           <Card className="space-y-3 p-4 sm:p-6">

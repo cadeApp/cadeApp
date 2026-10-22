@@ -47,6 +47,37 @@ export function tripDeliverySummary(
   return null;
 }
 
+/**
+ * PR510-H01: entregas a mostrar en el detalle. Una solicitud legacy sin filas en `delivery_request_drops` cuenta como
+ * una entrega (igual que `admin_list_trips`), con el resultado que indica el estado de la solicitud.
+ */
+export function tripDropsForDisplay(detail: AdminTripDetail): AdminTripDetail['drops'] {
+  if (detail.drops.length > 0) return detail.drops;
+  const delivered = detail.status === 'delivered';
+  return [
+    {
+      position: 1,
+      zoneName: '',
+      status: delivered ? 'delivered' : 'pending',
+      deliveredAt: delivered ? detail.timeline.deliveredAt : null,
+      failedReason: null,
+    },
+  ];
+}
+
+export type DropDisplayStatus = 'pending' | 'delivered' | 'failed' | 'notDelivered';
+
+/** Una entrega todavía pendiente en una solicitud cancelada o vencida ya no se va a hacer: «Sin entregar». */
+export function dropDisplayStatus(
+  drop: Pick<AdminTripDetail['drops'][number], 'status'>,
+  requestStatus: AdminTripDetail['status']
+): DropDisplayStatus {
+  if (drop.status === 'pending' && (requestStatus === 'cancelled' || requestStatus === 'expired')) {
+    return 'notDelivered';
+  }
+  return drop.status;
+}
+
 export type TimelineTone = 'default' | 'success' | 'warning' | 'danger';
 
 export interface TimelineEntry {

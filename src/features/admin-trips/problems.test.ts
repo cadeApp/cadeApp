@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildTripTimeline, tripDeliverySummary, tripProblemBadges } from './problems';
+import {
+  buildTripTimeline,
+  dropDisplayStatus,
+  tripDeliverySummary,
+  tripDropsForDisplay,
+  tripProblemBadges,
+} from './problems';
 import type { AdminTripDetail, AdminTripListItem } from './types';
 
 const base: AdminTripListItem = {
@@ -150,5 +156,42 @@ describe('T-410: buildTripTimeline', () => {
     if (!release) throw new Error('fixture sin evento');
     const entries = buildTripTimeline({ ...detail, events: [{ ...release, actorName: null }] });
     expect(entries.some((entry) => entry.title === 'El repartidor soltó el viaje')).toBe(true);
+  });
+});
+
+describe('PR510-H01: tripDropsForDisplay y dropDisplayStatus', () => {
+  const legacy: AdminTripDetail = {
+    id: base.id,
+    code: base.code,
+    status: 'delivered',
+    createdAt: '2026-10-22T03:00:00Z',
+    merchant: { id: base.merchantId, name: 'Comercio', phone: null },
+    courier: null,
+    timeline: { publishedAt: null, matchedAt: null, pickedUpAt: null, deliveredAt: '2026-10-22T04:00:00Z', cancelledAt: null },
+    drops: [],
+    events: [],
+    incidents: [],
+  };
+
+  it('legacy entregada: una entrega entregada con la hora de la solicitud', () => {
+    expect(tripDropsForDisplay(legacy)).toEqual([
+      { position: 1, zoneName: '', status: 'delivered', deliveredAt: '2026-10-22T04:00:00Z', failedReason: null },
+    ]);
+  });
+
+  it('legacy sin cerrar: una entrega pendiente', () => {
+    expect(tripDropsForDisplay({ ...legacy, status: 'in_transit' })[0]?.status).toBe('pending');
+  });
+
+  it('con entregas reales las devuelve tal cual', () => {
+    const drops = [{ position: 1, zoneName: 'Centro', status: 'failed' as const, deliveredAt: null, failedReason: 'x' }];
+    expect(tripDropsForDisplay({ ...legacy, drops })).toBe(drops);
+  });
+
+  it('pendiente en una solicitud cancelada o vencida es «Sin entregar»; el resto conserva su estado', () => {
+    expect(dropDisplayStatus({ status: 'pending' }, 'cancelled')).toBe('notDelivered');
+    expect(dropDisplayStatus({ status: 'pending' }, 'expired')).toBe('notDelivered');
+    expect(dropDisplayStatus({ status: 'pending' }, 'in_transit')).toBe('pending');
+    expect(dropDisplayStatus({ status: 'failed' }, 'cancelled')).toBe('failed');
   });
 });
