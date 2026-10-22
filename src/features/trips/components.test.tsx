@@ -296,6 +296,76 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(textCarla).not.toContain('ya fue entregado');
     });
 
+    describe('T-393: resultado real de las entregas', () => {
+      const closedTrip = (statuses: ('delivered' | 'failed')[]): TripDetails => {
+        const drops = (multiDropTrip.drops ?? []).slice(0, statuses.length).map((drop, idx) => {
+          const status = statuses[idx] ?? 'delivered';
+          return {
+            ...drop,
+            status,
+            deliveredAt: status === 'delivered' ? '2026-09-24T10:15:00Z' : null,
+            failedReason: status === 'failed' ? 'El destinatario no responde' : null,
+          };
+        });
+        return {
+          ...multiDropTrip,
+          status: 'delivered',
+          deliveredAt: '2026-09-24T10:30:00Z',
+          dropsCount: drops.length,
+          drops,
+        };
+      };
+
+      it('entrega parcial: etiqueta «Entrega parcial», resumen «1 de 2 entregadas» y nunca «Entregado»', () => {
+        render(<TripMerchantView trip={closedTrip(['delivered', 'failed'])} />);
+
+        expect(screen.getByText('Viaje finalizado')).toBeDefined();
+        expect(screen.getByText('Entrega parcial')).toBeDefined();
+        expect(screen.getAllByText('1 de 2 entregadas').length).toBeGreaterThan(0);
+        expect(screen.queryByText('Entregado')).toBeNull();
+      });
+
+      it('entrega parcial: cada entrega muestra su estado y la no entregada su motivo', () => {
+        render(<TripMerchantView trip={closedTrip(['delivered', 'failed'])} />);
+
+        const first = asHtmlElement(screen.getByText(/Avisale a tu cliente \(Entrega 1\)/).closest('div.rounded-xl, [class*="shadow-card"]'));
+        expect(within(first).getByText('Entregada')).toBeDefined();
+        expect(within(first).queryByText(/^Motivo:/)).toBeNull();
+
+        const second = asHtmlElement(screen.getByText(/Avisale a tu cliente \(Entrega 2\)/).closest('div.rounded-xl, [class*="shadow-card"]'));
+        expect(within(second).getByText('No entregada')).toBeDefined();
+        expect(within(second).getByText('Motivo: El destinatario no responde')).toBeDefined();
+      });
+
+      it('ninguna entregada: etiqueta «No entregado» y el último paso sin el check de entregado', () => {
+        render(<TripMerchantView trip={closedTrip(['failed', 'failed'])} />);
+
+        expect(screen.getAllByText('No entregado').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('0 de 2 entregadas').length).toBeGreaterThan(0);
+        expect(screen.queryByText('Entregado')).toBeNull();
+        expect(screen.getAllByText('No entregada')).toHaveLength(2);
+      });
+
+      it('todas entregadas: sigue diciendo «Entregado» y muestra «2 de 2 entregadas»', () => {
+        render(<TripMerchantView trip={closedTrip(['delivered', 'delivered'])} />);
+
+        expect(screen.getAllByText('Entregado').length).toBeGreaterThan(0);
+        expect(screen.getByText('2 de 2 entregadas')).toBeDefined();
+        expect(screen.queryByText('Entrega parcial')).toBeNull();
+        expect(screen.getAllByText('Entregada')).toHaveLength(2);
+      });
+
+      it('en curso: cada entrega muestra «Pendiente», «Entregada» o «No entregada»', () => {
+        render(<TripMerchantView trip={multiDropTrip} />);
+
+        expect(screen.getByText('En camino')).toBeDefined();
+        expect(screen.getByText('Entregada')).toBeDefined();
+        expect(screen.getByText('Pendiente')).toBeDefined();
+        expect(screen.getByText('No entregada')).toBeDefined();
+        expect(screen.getByText('Motivo: No respondió al timbre')).toBeDefined();
+      });
+    });
+
     it('T-361: si el cliente tiene teléfono inválido o ausente, muestra botón deshabilitado sin crash (comercio)', () => {
       const tripInvalidPhone: TripDetails = {
         ...baseTrip,
