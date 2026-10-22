@@ -236,8 +236,10 @@ select lives_ok(
   $$ select public.submit_offer(pg_temp.req_2_id(), 1700, 20, 'reoferta') $$,
   'submit_offer reoferta después de retirar'
 );
+-- Las dos ofertas se crean en la misma transacción (mismo created_at): se lee la activa por estado.
 select is(
-  (select amount_ars from public.offers where id = pg_temp.offer_of(pg_temp.req_2_id(), pg_temp.courier_a_id())),
+  (select amount_ars from public.offers
+   where request_id = pg_temp.req_2_id() and courier_id = pg_temp.courier_a_id() and status = 'pending'),
   1700,
   'la reoferta guarda el monto nuevo'
 );
