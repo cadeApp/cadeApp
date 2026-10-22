@@ -526,6 +526,34 @@ export function isoTimestampToEpochMicros(iso: string): bigint {
   );
 }
 
+// CC-038: misma base que app_private.publication_plan_code_base, con la misma tabla del translate de tildes.
+const PLAN_CODE_ACCENTS = 'áàäâãéèëêíìïîóòöôõúùüûñç';
+const PLAN_CODE_PLAIN = 'aaaaaeeeeiiiiooooouuuunc';
+
+function publicationPlanCodeBase(name: string): string {
+  const plain = Array.from(name.toLowerCase(), (char) => {
+    const index = PLAN_CODE_ACCENTS.indexOf(char);
+    return index === -1 ? char : PLAN_CODE_PLAIN.charAt(index);
+  }).join('');
+  const base = plain
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32)
+    .replace(/-+$/, '');
+  return base.length < 2 ? 'plan' : base;
+}
+
+// CC-038: la base libre se usa tal cual; si no, sigue al mayor sufijo «base-N» (la base sola cuenta como 1).
+function nextPublicationPlanCode(base: string, codes: readonly string[]): string {
+  if (!codes.includes(base)) return base;
+  const pattern = new RegExp(`^${base}-([0-9]{1,7})$`);
+  const max = codes.reduce((acc, code) => {
+    const match = pattern.exec(code);
+    return match ? Math.max(acc, Number(match[1])) : acc;
+  }, 1);
+  return `${base}-${max + 1}`;
+}
+
 // CC-037: keyset de admin_list_trips (created_at DESC, id DESC) con precisión de microsegundos.
 function compareTripKeysetDesc(
   a: { readonly createdAt: string; readonly requestId: string },
@@ -3382,11 +3410,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     // CC-029 (T-369): catálogo, acreditación, períodos y lecturas de créditos de publicación.
     admin_upsert_publication_plan: (rawInput) =>
       executeRpc('admin_upsert_publication_plan', rawInput, true, (input) => {
-        const duplicate = [...plans.values()].find((p) => p.code === input.code && p.id !== input.planId);
-        if (duplicate) return err('VALIDATION_ERROR');
         let plan: FakePublicationPlanRecord;
         if (input.planId === null) {
-          plan = { id: nextCreditId(), code: input.code, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
+          const code = nextPublicationPlanCode(
+            publicationPlanCodeBase(input.name),
+            [...plans.values()].map((p) => p.code)
+          );
+          plan = { id: nextCreditId(), code, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
           plans.set(plan.id, plan);
         } else {
           const existing = plans.get(input.planId);
@@ -3397,7 +3427,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           ) {
             return err('PLAN_IN_USE');
           }
-          plan = { ...existing, code: input.code, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
+          plan = { ...existing, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
           plans.set(plan.id, plan);
         }
         return ok({

@@ -567,7 +567,6 @@ export const ADMIN_COPY = {
       createTitle: 'Nuevo plan',
       editTitle: (name: string) => `Editar ${name}`,
       description: 'El tipo y el cupo no se pueden cambiar si el plan ya tiene períodos: en ese caso creá otro plan.',
-      code: 'Código',
       name: 'Nombre',
       kind: 'Tipo',
       monthlyCredits: 'Créditos por mes',

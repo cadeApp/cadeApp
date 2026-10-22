@@ -43,13 +43,23 @@ describe('T-369 / CC-029 — catálogo de planes (admin)', () => {
     expect(screen.getByText('Todavía no hay planes. Creá el primero.')).toBeTruthy();
   });
 
+  it('CC-038: el diálogo no pide código; lo genera el sistema', () => {
+    renderManager({ plans: [PLAN] });
+    fireEvent.click(screen.getByRole('button', { name: 'Nuevo plan' }));
+    expect(within(screen.getByRole('dialog')).queryByLabelText('Código')).toBeNull();
+    cleanup();
+
+    renderManager({ plans: [PLAN] });
+    fireEvent.click(screen.getByRole('button', { name: 'Editar el plan Plan 40' }));
+    expect(within(screen.getByRole('dialog')).queryByLabelText('Código')).toBeNull();
+  });
+
   it('crear: un plan con cupo exige créditos y el ilimitado los manda en null', async () => {
     mocks.upsert.mockResolvedValue({ ok: true, data: { ...UNLIMITED, planId: UNLIMITED.id } });
     renderManager({ plans: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Nuevo plan' }));
     const dialog = screen.getByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('Nombre'), { target: { value: 'Ilimitado' } });
-    fireEvent.change(within(dialog).getByLabelText('Código'), { target: { value: 'ilimitado' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
     expect(await within(dialog).findByText('Un plan con cupo lleva entre 1 y 100.000 créditos por mes.')).toBeTruthy();
     expect(mocks.upsert).not.toHaveBeenCalled();
@@ -60,7 +70,6 @@ describe('T-369 / CC-029 — catálogo de planes (admin)', () => {
     await waitFor(() =>
       expect(mocks.upsert).toHaveBeenCalledWith({
         planId: null,
-        code: 'ilimitado',
         name: 'Ilimitado',
         kind: 'unlimited',
         monthlyCredits: null,
@@ -83,6 +92,7 @@ describe('T-369 / CC-029 — catálogo de planes (admin)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
     expect((await within(dialog).findByRole('alert')).textContent).toBe(getDomainErrorMessage('PLAN_IN_USE'));
     expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({ planId: PLAN.id, monthlyCredits: 50 }));
+    expect(mocks.upsert.mock.calls[0]?.[0]).not.toHaveProperty('code');
     expect(mocks.refresh).not.toHaveBeenCalled();
   });
 

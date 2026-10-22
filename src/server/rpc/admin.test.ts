@@ -949,7 +949,6 @@ describe('T-369 / CC-029 · wrappers admin de créditos de publicación', () => 
     const { client, rpc } = caller({ data: null, error: { message: 'PLAN_IN_USE', code: 'P0001' } });
     const input = {
       planId: PLAN_ID,
-      code: 'plan-40',
       name: 'Plan 40',
       kind: 'quota',
       monthlyCredits: 40,
@@ -965,7 +964,7 @@ describe('T-369 / CC-029 · wrappers admin de créditos de publicación', () => 
     await expect(adminUpsertPublicationPlanRpc(client, input)).resolves.toEqual({ ok: false, code: 'PLAN_IN_USE' });
     expect(rpc).toHaveBeenCalledWith('admin_upsert_publication_plan', {
       p_plan_id: PLAN_ID,
-      p_code: 'plan-40',
+      p_code: null,
       p_name: 'Plan 40',
       p_kind: 'quota',
       p_monthly_credits: 40,

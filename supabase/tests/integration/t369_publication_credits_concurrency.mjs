@@ -13,6 +13,7 @@
  *   5. Misma operationKey en dos sesiones: un solo lote / período, una sola auditoría.
  *   6. Primera compra concurrente (decisión 2-A): una sola fila de beneficio.
  *   7. Cambio de gracia vs alta de período (H03), en ambos órdenes.
+ *   8. CC-038 (T-411): dos altas de plan simultáneas con el mismo nombre terminan con códigos distintos.
  *
  * --mutation-check: en la base efímera reemplaza temporalmente funciones por versiones sin el control (sin tocar las
  * aserciones), exige que la invariante contable falle y restaura (GREEN). Incluye los controles pgTAP de H02–H05.
@@ -675,6 +676,38 @@ async function scenarioRegisterThenGrace() {
   }
 }
 
+/** Invariantes de E8; el control de mutación CC038 exige que falle alguna de estas mismas aserciones. */
+const E8_LABEL = 'E8 altas de plan con el mismo nombre';
+const E8_INVARIANTS = {
+  ok: `${E8_LABEL}: las dos altas responden sin error`,
+  codes: `${E8_LABEL}: una queda con la base y la otra con base-2`,
+};
+
+/**
+ * 8. CC-038 (T-411): dos altas simultáneas con el mismo nombre y sin código. Un lock de tabla frena los insert; el
+ * advisory lock de la RPC tiene que serializar el cálculo del código para que la segunda vea la primera.
+ */
+async function scenarioSamePlanName() {
+  const name = `CC038 ${crypto.randomBytes(3).toString('hex')}`;
+  const base = name.toLowerCase().replace(' ', '-');
+  const expr = `public.admin_upsert_publication_plan(null, null, '${name}', 'quota', 5, 10000, true, 1)`;
+  const blocker = await holdLock('E8_BLOCKER', 'lock table public.publication_plans in exclusive mode;');
+  const sessions = await openSessions(['E8_S1', 'E8_S2']);
+  try {
+    for (const s of sessions) s.start(adminId, 'aal2', expr);
+    await waitLockWaiting(sessions);
+    await blocker.release();
+    const results = await Promise.all(sessions.map((s) => s.result()));
+    assertNoDeadlock(sessions, E8_LABEL);
+    for (const r of results) if (r.ok) created.plans.push(r.data.planId);
+    assert.ok(results.every((r) => r.ok), E8_INVARIANTS.ok);
+    assert.deepEqual(results.map((r) => r.data.code).sort(), [base, `${base}-2`], E8_INVARIANTS.codes);
+  } finally {
+    closeAll([...sessions, blocker.session]);
+  }
+  console.log(`${TAG} ${E8_LABEL}: OK (${base} y ${base}-2)`);
+}
+
 async function runAll() {
   console.log(`${TAG} Iniciando runner multisesión contra ${dbContainer}`);
   setup();
@@ -687,7 +720,8 @@ async function runAll() {
     await scenarioFirstPurchase();
     await scenarioGraceThenRegister();
     await scenarioRegisterThenGrace();
-    console.log(`${TAG} TODOS LOS ESCENARIOS MULTISESIÓN OK (8/8)`);
+    await scenarioSamePlanName();
+    console.log(`${TAG} TODOS LOS ESCENARIOS MULTISESIÓN OK (9/9)`);
   } finally {
     cleanup();
   }
@@ -800,6 +834,20 @@ async function runMutationChecks() {
       await scenarioGraceThenRegister();
       console.log(`${TAG} H03 (carrera) GREEN tras restaurar: el plan empieza al fin legacy con la gracia nueva`);
     }
+
+    // CC038: sin el advisory lock, las dos altas calculan el mismo código y la segunda choca con la unicidad.
+    {
+      const restore = mutate('public.admin_upsert_publication_plan(uuid,text,text,text,integer,integer,boolean,integer)', [
+        ["perform pg_advisory_xact_lock(hashtext('cc038:publication-plan-code'));", ''],
+      ]);
+      try {
+        await expectInvariantFailure('CC038', scenarioSamePlanName, Object.values(E8_INVARIANTS));
+      } finally {
+        restore();
+      }
+      await scenarioSamePlanName();
+      console.log(`${TAG} CC038 GREEN tras restaurar: base y base-2`);
+    }
   } finally {
     cleanup();
   }
@@ -828,7 +876,7 @@ async function runMutationChecks() {
     [['values (p_merchant_id, v_pct, v_lot.id)', 'select p_merchant_id, v_pct, v_lot.id where v_pct > 0']],
     'H05: la primera compra con 0 % devuelve launchDiscountPct = 0'
   );
-  console.log(`${TAG} CONTROLES DE MUTACIÓN COMPLETOS (H01, H02, H03 secuencial y carrera, H04, H05)`);
+  console.log(`${TAG} CONTROLES DE MUTACIÓN COMPLETOS (H01, H02, H03 secuencial y carrera, H04, H05, CC038)`);
 }
 
 const main = process.argv.includes('--mutation-check') ? runMutationChecks : runAll;

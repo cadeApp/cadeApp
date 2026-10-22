@@ -949,7 +949,6 @@ describe('T-369: acciones admin de créditos de publicación', () => {
   const registerInput = { merchantId: MERCHANT_ID, planId: PLAN_ID, isPurchase: true, operationKey: OPERATION_KEY, note: null };
   const planInput = {
     planId: null,
-    code: 'plan-40',
     name: 'Plan 40',
     kind: 'quota' as const,
     monthlyCredits: 40,
@@ -1047,7 +1046,7 @@ describe('T-369: acciones admin de créditos de publicación', () => {
 
     vi.mocked(adminRpc.adminUpsertPublicationPlanRpc).mockResolvedValue({
       ok: true,
-      data: { ...planInput, planId: PLAN_ID },
+      data: { ...planInput, code: 'plan-40', planId: PLAN_ID },
     });
     await upsertPublicationPlanAction({ ...planInput, kind: 'unlimited', monthlyCredits: 40 });
     expect(adminRpc.adminUpsertPublicationPlanRpc).not.toHaveBeenCalled();

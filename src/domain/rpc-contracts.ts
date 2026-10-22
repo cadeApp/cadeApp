@@ -958,10 +958,10 @@ export const publicationBalanceSchema = z.object({
 });
 export type PublicationBalance = z.infer<typeof publicationBalanceSchema>;
 
+// CC-038: el código del plan no viaja; la RPC lo genera desde el nombre y no lo cambia al editar.
 export const adminUpsertPublicationPlanInputSchema = z
   .object({
     planId: uuidSchema.nullable(),
-    code: z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,39}$/),
     name: z.string().trim().min(2).max(80),
     kind: publicationPlanKindSchema,
     monthlyCredits: z.number().int().min(1).max(100_000).nullable(),
