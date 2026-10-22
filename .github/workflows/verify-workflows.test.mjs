@@ -550,10 +550,11 @@ test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () 
       condition: null,
     },
     {
+      // T-392: URL fija como staging; con `vars.PRODUCTION_APP_URL` en el `if` el job se salteaba siempre.
       name: 'production',
       environment: 'production',
-      appUrl: '${{ vars.PRODUCTION_APP_URL }}',
-      condition: "vars.PRODUCTION_APP_URL != ''",
+      appUrl: 'https://cadeapp.online',
+      condition: null,
     },
   ];
   for (const { name, environment, appUrl, condition } of jobs) {
@@ -592,6 +593,18 @@ test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () 
       curl.endsWith(' "$APP_URL/api/cron/health"'),
       `${name}: el llamado termina en "$APP_URL/api/cron/health"`
     );
+  }
+});
+
+test('T-392: no health-cron job gates itself on vars from its own environment', () => {
+  // `jobs.<id>.if` se evalúa antes de entrar al environment: ahí `vars` no tiene las variables del environment, así
+  // que un `if` sobre ellas saltea el job en silencio en cada corrida. Ningún job del health-cron lleva `if` sobre
+  // `vars`.
+  const healthCron = workflow('health-cron.yml');
+  for (const name of ['staging', 'production']) {
+    const body = job(healthCron, name).replace(/\r\n/g, '\n');
+    assert.ok(body.includes('\n    environment: '), `${name}: usa un environment`);
+    assert.ok(!/\n {4}if: [^\n]*\bvars\./.test(body), `${name}: el if del job no puede leer vars`);
   }
 });
 
