@@ -132,3 +132,67 @@ Esperado (comprobado por comparación de contenido en la revisión): `BASE 10/10
 ### Actualización de estados del SHA be515ec7
 - CI #39700774152 terminó `success`, con todos sus jobs en verde. `unit`: 155 archivos / 3170 tests, incluidos 7/7 verify-fichas. `db-tests`: `Files=34, Tests=3019`, `Result: PASS` (job 119569612666); finalizó el control de tipos sin diff. Estas evidencias pertenecen al SHA `be515ec7`, no a los commits de informe.
 - `e2e-preview` context `error`: run #39700908423, `repository_dispatch`, job e2e-preview `cancelled`, no aserción roja. No rerun manual durante la revisión.
+
+## Ronda 3 — HEAD `3a70d5561624d30382bbb48b407ceaea9514c1a0` (21/10/2026 Argentina)
+
+### Comparación y CI
+- Compare `c3715379ae4174842a3733ec3fd6274be8f7d11e..3a70d5561624d30382bbb48b407ceaea9514c1a0`: un commit del autor; 4 archivos cambiados únicamente: T-405, T-408, T-409, implementation-plan. Carpeta `docs/revision-pr/pr-489/**` sin alteraciones.
+- `develop` avanzó a `3db48fbcf9fdebf58648411f8e312a2d94298af3` por merge de PR #497. PR #491 (T-312) aún abierta.
+- CI run `39705887020` para `3a70d5561624d30382bbb48b407ceaea9514c1a0`: todos sus jobs terminados success. Unit: `tools/verify-fichas.test.ts (7 tests)` y `Test Files 155 passed`, `Tests 3170 passed`. DB: job `119585708030` muestra `Files=34, Tests=3019`, `Result: PASS` y paso de control `git diff --exit-code -- src/types/database.types.ts`.
+- Vercel success en el SHA. Run e2e-preview `39706002645` tuvo `conclusion=cancelled`; status GitHub `error`, sin evidencia de aserción E2E.
+- Approval-policy fallo previo: logs de jobs `119585709059` y `119587843306` indican literalmente `Falta el informe completo de revisar-pr sin bloqueantes.`; el script exige sección `### Informe de revisión de agy` y `Resultado: SIN BLOQUEANTES` en el cuerpo de la PR. El revisor añadió ese informe sin engañar sobre tests locales.
+
+### Verificaciones independientes sobre la documentación
+- Lee `docs/tasks/T-400.md` ... `T-409.md` y `docs/implementation-plan.md` del SHA `3a70d5561624d30382bbb48b407ceaea9514c1a0`; todas las 10 primeras entradas de `## DoD` coinciden con la columna DoD (celda 6) de su fila del plan.
+- Cada ítem fue mutado **solo en memoria**, alterando el primer `- [ ]` dentro de `## DoD`, no otro checkbox: 10/10 controles detectaron el cambio. En la rama no se aplicó ninguna mutación.
+- Para H13–H18 se extrajo `## DoD` y se verificaron cláusulas específicas:
+  H13 SEC-01, AAL1/AAL2 con RPC auditada; H14 SEC-11, grants, backfill, select *; H15 SEC-02, revoke/trigger/TRUNCATE; H16 plan action SQL; H17 PR separadas; H18 Realtime y CHECK. Mutar la cláusula correspondiente exclusivamente en memoria hizo fallar la aserción.
+- No se ejecutó un test SQL de bypass contra Supabase para estos futuros CC porque **esta PR no implementa las mitigaciones**; ese trabajo queda para T-408 y sus hijas.
+
+### Script reproducible de control documental para checkout del SHA
+Guardar en `/tmp/pr489-r3-check.mjs` y ejecutar desde raíz del repo. No escribe archivos de proyecto ni altera expectations:
+
+```js
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const root = 'docs/tasks/';
+const normalize = s => s.replace(/\r\n/g, '\n');
+const plan = normalize(fs.readFileSync('docs/implementation-plan.md','utf8'));
+const rows = new Map(
+  plan.split('\n').filter(x => /^\|\s*T-\d+\s*\|/.test(x))
+    .map(line => [line.match(/^\|\s*(T-\d+)/)[1],line.split('|').map(z => z.trim())[6]])
+);
+const load = n => normalize(fs.readFileSync(root + 'T-' + n + '.md','utf8'));
+const dod = n => {
+  const part = load(n).match(/(?:^|\n)## DoD\n([\s\S]*?)(?=\n## |$)/);
+  assert.ok(part, 'Missing DoD '+n);
+  return part[1];
+};
+for (let n=400; n<=409; n++){
+  const s=dod(n), actual=s.match(/^- \[[ x]\] (.+)$/m)?.[1]?.trim();
+  const expected=rows.get('T-'+n);
+  assert.ok(expected, 'Missing plan row '+n);
+  assert.equal(actual,expected,'DoD mismatch '+n);
+  const mutated=s.replace(/^- \[[ x]\] (.+)$/m,(_,v)=>'- [ ] MUTATED_'+v);
+  assert.notEqual(mutated.match(/^- \[[ x]\] (.+)$/m)?.[1]?.trim(),expected,'Blind first DoD '+n);
+}
+const checks=[
+ [408, /- \[ \] \*\*SEC-01, pruebas:\*\*[^\n]*JWT de admin `aal1` y `aal2`[^\n]*UPDATE directo[^\n]*RPC correspondiente con `aal2`[^\n]*Mutación:/m, /- \[ \] \*\*SEC-01, pruebas:\*\*[^\n]*\n/m],
+ [408, /- \[ \] \*\*SEC-11, nota interna aislada:\*\*[^\n]*tabla separada `merchant_admin_notes`[^\n]*Backfill solo con procedencia verificable[^\n]*`select \*`[^\n]*Mutación:/m, /- \[ \] \*\*SEC-11, nota interna aislada:\*\*[^\n]*\n/m],
+ [408, /- \[ \] \*\*SEC-02, `audit_log` inmutable para clientes:\*\*[^\n]*`revoke insert, update, delete, truncate on public\.audit_log from anon, authenticated`[^\n]*trigger `before update or delete`[^\n]*incluido TRUNCATE; mutación:/m, /- \[ \] \*\*SEC-02, `audit_log` inmutable para clientes:\*\*[^\n]*\n/m],
+ [405, /- \[ \] \*\*Últimos movimientos\*\*:[^\n]*`action in \('admin_set_subscription', 'admin_register_plan_period'\)`[^\n]*filtrados en la base \*\*antes\*\* de ordenar y limitar a 5/m, /`action in \('admin_set_subscription', 'admin_register_plan_period'\)`/m],
+ [409, /- \[ \] \*\*Sin escrituras fuera de alcance:\*\*[^\n]*[Cc]ada ficha hija[^\n]*propia PR documental[^\n]*fila del plan y su issue/m, /- \[ \] \*\*Sin escrituras fuera de alcance:\*\*[^\n]*\n/m],
+ [409, /- \[ \] \*\*SEC-12:\*\* su CC exige primero la captura de Realtime[^\n]*regresión del flujo real del cambio en efectivo[^\n]*ningún CHECK de `null`/m, /- \[ \] \*\*SEC-12:\*\*[^\n]*\n/m]
+];
+for(const [n,check,mutation] of checks){
+  const s=dod(n), mutated=s.replace(mutation,'');
+  assert.ok(check.test(s),'Missing requirement '+n);
+  assert.notEqual(mutated,s,'Blind mutation '+n);
+  assert.equal(check.test(mutated),false,'Mutation missed '+n);
+}
+console.log('PASS first-DoD/plan: 10/10; first-DoD mutations: 10/10');
+console.log('PASS H13–H18 documentary controls: 6/6; negative mutations: 6/6');
+```
+
+**Nota:** este script de Node se deja para repetir en checkout real; el revisor ejecutó el mismo contraste sobre los contenidos recuperados vía GitHub (sin clon local). No declarar salida local de `node /tmp/...` como si se hubiera ejecutado.

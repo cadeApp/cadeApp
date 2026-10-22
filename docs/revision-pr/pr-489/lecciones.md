@@ -15,3 +15,9 @@
 - Los objetos de auditoría comparten destinatario: el filtro de `target_id` no equivale al filtro de `action`. Un listado de «planes» puede incluir créditos/perfil si falta ese segundo predicado (PR489-H16).
 - Las fichas paraguas requieren proceso explícito para autorizar creación de CC y fichas hijas sin violar el alcance (PR489-H17).
 - Validar cada mutación con un blanco claro: un primer harness de esta ronda mutó el checkbox de «Checklist de esquema» en lugar del primer DoD de T-408 y detectó solo 9/10; el harness se corrigió y recién ahí dio 10/10. El instrumento mismo necesita revisión.
+
+## Ronda 3
+- El test `verify-fichas` debe conservar equivalencia exacta plan/DoD y no confundir casos de especificación futura con controles ya implementados. El detector propio tiene que fallar al mutar cada condición concreta, no solo al cambiar un encabezado.
+- En PRs de documentación con decisiones de seguridad aceptadas, distinguir inequívocamente `riesgo aceptado` de `riesgo mitigado`; aquí T-408/T-409 solo especifican trabajo futuro.
+- Un `approval-policy` rojo puede deberse al **cuerpo de la PR**, aunque exista un comentario de revisión independiente. Consultar el script del check antes de pedir another ronda o fabricar checks. El informe con secciones obligatorias se añade al cuerpo tras encontrar SIN BLOQUEANTES.
+- La cancelación E2E no es evidencia de regresión ni de éxito: hay que conocer si el check es requerido antes de mergear; no re-ejecutar workflows manualmente durante la revisión.
