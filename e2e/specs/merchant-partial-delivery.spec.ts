@@ -41,12 +41,12 @@ test.describe('T-393 — Comercio: entregas parciales', () => {
     const zoneId = zones?.[0]?.id;
     if (!zoneId) throw new Error('[E2E Error] Se requiere al menos una zona activa');
 
-    // Solicitud publicada de 2 entregas (mismo armado que multi-drop.spec.ts).
+    // Borrador de 2 entregas como fixture (D03 = C); la publicación la hace el comercio con su RPC.
     const { error: reqErr } = await admin.from('delivery_requests').insert({
       id: requestId,
       merchant_id: merchant.id,
       pickup_zone_id: zoneId,
-      status: 'published',
+      status: 'draft',
       drops_count: 2,
     });
     expect(reqErr).toBeNull();
@@ -96,7 +96,17 @@ test.describe('T-393 — Comercio: entregas parciales', () => {
     ]);
     expect(dropContactsErr).toBeNull();
 
-    // Ciclo real por RPC: oferta, aceptación, retiro, una entrega hecha y otra no.
+    // Ciclo real por RPC: publicación del comercio, oferta, aceptación, retiro, una entrega hecha y otra no.
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const { error: publishErr } = await merchantClient.rpc('publish_request', { p_request_id: requestId });
+    expect(publishErr).toBeNull();
+    const { data: published } = await admin
+      .from('delivery_requests')
+      .select('status')
+      .eq('id', requestId)
+      .single();
+    expect(published?.status).toBe('published');
+
     const courierClient = await createAuthenticatedClient(courier);
     const { data: offerData, error: offerErr } = await courierClient.rpc('submit_offer', {
       p_request_id: requestId,
@@ -109,7 +119,6 @@ test.describe('T-393 — Comercio: entregas parciales', () => {
     if (!offerId) throw new Error('[E2E Error] submit_offer no devolvió offerId');
     trackEntityForCleanup(stagingContext, 'offer', offerId);
 
-    const merchantClient = await createAuthenticatedClient(merchant);
     const { error: acceptErr } = await merchantClient.rpc('accept_offer', { p_offer_id: offerId });
     expect(acceptErr).toBeNull();
     const { error: pickupErr } = await courierClient.rpc('mark_picked_up', { p_request_id: requestId });

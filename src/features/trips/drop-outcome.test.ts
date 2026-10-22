@@ -55,6 +55,16 @@ describe('T-393: summarizeDropOutcome', () => {
     });
   });
 
+  it('D02-B: una sola entrega no realizada es none_delivered (se usa el estado real de la entrega)', () => {
+    expect(summarizeDropOutcome(drops('failed'), 'delivered')).toEqual({
+      outcome: 'none_delivered',
+      total: 1,
+      delivered: 0,
+      failed: 1,
+      pending: 0,
+    });
+  });
+
   it('legacy sin drops: el resultado sale del estado de la solicitud', () => {
     expect(summarizeDropOutcome([], 'delivered')).toEqual({
       outcome: 'all_delivered',

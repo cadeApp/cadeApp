@@ -315,7 +315,7 @@ export function TripMerchantView({
                     </strong>
                   </p>
                 )}
-                {isMultiDrop && drop.status === 'failed' && drop.failedReason && (
+                {drop.status === 'failed' && drop.failedReason && (
                   <p className="text-sm font-semibold text-destructive">
                     Motivo: {drop.failedReason}
                   </p>

@@ -355,6 +355,23 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
         expect(screen.getAllByText('Entregada')).toHaveLength(2);
       });
 
+      it('D02-B: una sola entrega no realizada muestra «No entregado» y su motivo', () => {
+        const singleDrop = multiDropTrip.drops?.[2];
+        if (!singleDrop) throw new Error('fixture sin entrega 3');
+        const trip: TripDetails = {
+          ...multiDropTrip,
+          status: 'delivered',
+          deliveredAt: '2026-09-24T10:30:00Z',
+          dropsCount: 1,
+          drops: [{ ...singleDrop, position: 1, failedReason: 'El destinatario no responde' }],
+        };
+        render(<TripMerchantView trip={trip} />);
+
+        expect(screen.getAllByText('No entregado').length).toBeGreaterThan(0);
+        expect(screen.getByText('Motivo: El destinatario no responde')).toBeDefined();
+        expect(screen.queryByText('Entregado')).toBeNull();
+      });
+
       it('en curso: cada entrega muestra «Pendiente», «Entregada» o «No entregada»', () => {
         render(<TripMerchantView trip={multiDropTrip} />);
 
