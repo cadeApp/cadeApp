@@ -90,3 +90,9 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 El revisor no exigirá un nuevo CI completo solo por este commit documental. Para mutaciones RED independientes usar copia temporal en memoria y corroborar la falla de las aserciones, no de imports, luego restaurar; no tocar Docker ni Supabase remoto.
+
+### Confirmación posterior al informe inicial (mismo SHA)
+
+- CI `db-tests` run `39737258624`, job `119686110835` **success** sobre `99ab7a83`.
+- Log: `supabase/tests/cc037_admin_list_trips.sql ... ok`, `Files=36, Tests=3101`, `Result: PASS`; paso `git diff --exit-code -- src/types/database.types.ts` ejecutado sin diferencias, exit 0. El job volvió a correr la suite al final y mantuvo PASS.
+- El estado `in_progress` anotado arriba fue una lectura intermedia de la misma ejecución, no un fallo ni un resultado final distinto.

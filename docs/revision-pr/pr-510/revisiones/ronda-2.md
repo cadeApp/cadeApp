@@ -4,7 +4,7 @@
 **Fecha:** 2026-10-22
 **HEAD de código revisado:** `99ab7a8361be54e551a5986d18d4b865b878d86a`
 **Base:** `develop` @ `17960c76be5e75c1655a4a2eefe6aad02ad95fd8`
-**Resultado: SIN BLOQUEANTES DE CÓDIGO DETECTADOS.** Cierre operativo sujeto a comprobar `db-tests` del SHA revisado (seguía en curso).
+**Resultado: SIN BLOQUEANTES DETECTADOS.** `db-tests` del SHA revisado finalizó PASS y fue confirmado en su log después de la primera lectura.
 **Método:** comparar contra ronda 1, revisar fuentes exactas/test/bitácora, leer logs CI. No hubo clon ni mutaciones independientes: el contenedor no resuelve github.com.
 **No aprobado ni mergeado.**
 
@@ -38,7 +38,7 @@ El autor registra en `docs/tasks/log/T-410.md` sus diez mutaciones RED→GREEN, 
 |---|---|
 | unit | ✅ `3254/3254`, 90,96 % branches del fake |
 | typecheck, lint, build, audit, bundle-budget | ✅ success |
-| db-tests | ⏳ en curso en la consulta al documentar; antes del merge comprobar `cc037_admin_list_trips.sql ... ok`, `Files=`, `Tests=`, `Result: PASS`, verificación de tipos |
+| db-tests | ✅ PASS, `cc037_admin_list_trips.sql ... ok`, `Files=36`, `Tests=3101`, `Result: PASS`; `git diff --exit-code -- src/types/database.types.ts` sin diferencias |
 | approval-policy | ❌ faltaba un informe completo `SIN BLOQUEANTES` antes de esta ronda, no un error de código |
 | e2e-preview | ⚠️ bloqueado por migración no aplicada en Supabase Develop; excepción de rollout registrada |
 
@@ -48,8 +48,8 @@ El PR informa `mergeable=true` sobre `99ab7a83`. No se ejecutó `git merge-tree`
 
 - No debilitar tests, umbrales, RLS, schemas estrictos ni lecturas privadas. No introducir datos del destinatario.
 - Ninguna decisión nueva de producto. No se requiere otro prompt correctivo al agy; los cambios de H01–H03 ya constan en SHA revisado.
-- **Antes de merge:** confirmar resultado final `db-tests` del SHA revisado. `approval-policy` debe reconocer este informe.
+- **Antes de merge:** `db-tests` del SHA revisado **ya confirmado**. `approval-policy` debe reconocer este informe sin bloqueantes; no desactivar el check.
 - **Después de merge y `migrate-develop`, antes de promover:** ejecutar E2E con admin MFA según ficha; detener promoción si falla. Este paso sigue pendiente y debe ser visible para Lautaro073.
 - Repetir las mutaciones independientemente en un clon accesible para elevar H02/H03 a `arreglado-verificado`, si se necesita la certificación estricta. No falsificar ni reutilizar los RED del autor.
 
-**Conclusión:** sin regresiones bloqueantes detectadas en los arreglos de ronda 1, con límites de evidencia anteriores explícitos.
+**Conclusión:** sin regresiones bloqueantes detectadas en los arreglos de ronda 1, con CI unit y db-tests confirmados sobre el SHA revisado; los límites de mutación independiente anteriores quedan explícitos.

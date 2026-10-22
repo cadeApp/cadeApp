@@ -8,7 +8,7 @@
 | Base inspeccionada | `17960c76be5e75c1655a4a2eefe6aad02ad95fd8` |
 | SHA de código revisado | `2270c2f47a2e3fa1e04d159338236771ae73c179` |
 | Tamaño al iniciar ronda | 38 archivos; +3008 / -6 |
-| Resultado | **Ronda 2: SIN BLOQUEANTES DE CÓDIGO DETECTADOS**; db-tests del SHA revisado aún en ejecución al documentar |
+| Resultado | **Ronda 2: SIN BLOQUEANTES DE CÓDIGO DETECTADOS**; db-tests del SHA revisado PASS verificado en log |
 
 ## Rondas
 
@@ -35,7 +35,7 @@
 ## Estado tras ronda 2
 
 - H01 pasa 90,96 % de branches en CI, 3254 tests verdes. H02/H03 tienen correcciones funcionales, verificadas por lectura y tests CI, sin reproducción de mutaciones por revisor.
-- `typecheck`, `lint`, `build`, `audit`, `bundle-budget`, `unit` del SHA `99ab7a83` están en verde. `db-tests` aún en ejecución cuando se redactó; confirmar PASS antes de merge.
+- `typecheck`, `lint`, `build`, `audit`, `bundle-budget`, `unit` del SHA `99ab7a83` están en verde. `db-tests`: **PASS** confirmado por log del SHA revisado (Files=36, Tests=3101, Result: PASS; comparación de tipos sin cambios).
 - `approval-policy` rojo mientras faltaba informe SIN BLOQUEANTES. El comentario de ronda 2 aporta dicho informe.
 - Por decisión registrada en ficha T-410, E2E real se ejecuta después de `migrate-develop` y antes de promover. No está declarado como ejecutado.
 - No aprobado ni mergeado. Ninguna decisión de producto nueva.
