@@ -219,16 +219,16 @@ export const ADMIN_COPY = {
     empty: '—',
     emptyTitle: 'No hay comercios adheridos',
     emptyDescription: 'Cuando un comercio de Aguilares se registre, va a aparecer acá.',
-    editPlan: 'Editar plan',
+    editPlan: 'Abono y piloto',
     editPlanFor: (businessName: string) => `de ${businessName}`,
-    credits: 'Créditos',
+    credits: 'Créditos y plan',
     creditsFor: (businessName: string) => `de ${businessName}`,
     plansLink: 'Catálogo de planes',
     nextButton: 'Siguiente',
     firstPage: 'Volver al inicio',
     paginationLabel: 'Paginación de comercios',
     dialog: {
-      title: (businessName: string) => `Editar plan de ${businessName}`,
+      title: (businessName: string) => `Abono y piloto de ${businessName}`,
       description: 'Elegí qué querés registrar. El cambio queda en la auditoría.',
       modeLabel: 'Tipo de cambio',
       modes: {
@@ -236,7 +236,7 @@ export const ADMIN_COPY = {
         pilot: 'Extender piloto',
       },
       modeHelp: {
-        paid: 'Activa el plan del comercio hasta la fecha indicada.',
+        paid: 'Registra el abono mensual del comercio hasta la fecha indicada. Los planes del catálogo se asignan en «Créditos y plan».',
         pilot: 'Mantiene al comercio en piloto hasta la fecha indicada.',
       },
       dateLabel: {
@@ -248,8 +248,8 @@ export const ADMIN_COPY = {
       save: 'Guardar',
       saving: 'Guardando...',
     },
-    success: 'Plan actualizado.',
-    connectionError: 'Error de conexión al actualizar el plan.',
+    success: 'Abono actualizado.',
+    connectionError: 'Error de conexión al actualizar el abono.',
   },
   settings: {
     title: 'Parámetros',
@@ -304,7 +304,7 @@ export const ADMIN_COPY = {
       },
       carryover_base_pct: {
         label: 'Arrastre inicial',
-        help: 'Porcentaje del cupo sin usar que pasa al mes siguiente en la primera renovación sin cortes.',
+        help: 'Porcentaje de los créditos mensuales sin usar que pasa al mes siguiente en la primera renovación sin cortes.',
         unit: '%',
         unitLabel: 'en porcentaje',
       },
@@ -316,7 +316,7 @@ export const ADMIN_COPY = {
       },
       carryover_cap_pct: {
         label: 'Tope del arrastre',
-        help: 'Porcentaje máximo del cupo que se puede arrastrar. No puede ser menor que el arrastre inicial.',
+        help: 'Porcentaje máximo de los créditos mensuales que se puede arrastrar. No puede ser menor que el arrastre inicial.',
         unit: '%',
         unitLabel: 'en porcentaje',
       },

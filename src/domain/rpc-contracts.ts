@@ -970,7 +970,7 @@ export const adminUpsertPublicationPlanInputSchema = z
     sort: z.number().int().min(0).max(1000),
   })
   .refine((data) => (data.kind === 'quota') === (data.monthlyCredits !== null), {
-    message: 'Un plan con cupo lleva créditos mensuales; uno ilimitado, no.',
+    message: 'Un plan con créditos mensuales lleva la cantidad por mes; uno ilimitado, no.',
     path: ['monthlyCredits'],
   });
 export const adminUpsertPublicationPlanOutputSchema = z.object({
@@ -1075,6 +1075,33 @@ export const adminListPublicationPlansOutputSchema = z.object({
 
 export const getMyPublicationBalanceInputSchema = z.object({}).strict();
 export const getMyPublicationBalanceOutputSchema = publicationBalanceSchema;
+
+// CC-039: oferta comercial para el comercio. De cada plan activo, solo lo comercial (sin código ni datos internos).
+export const publicationOfferPlanSchema = z
+  .object({
+    planId: uuidSchema,
+    name: z.string().min(1),
+    kind: publicationPlanKindSchema,
+    monthlyCredits: z.number().int().positive().nullable(),
+    referencePriceArs: z.number().int().nonnegative().nullable(),
+  })
+  .strict()
+  // PR528-H03: mismo check que publication_plans: un plan con cupo lleva créditos por mes; uno ilimitado, no.
+  .refine((plan) => (plan.kind === 'quota') === (plan.monthlyCredits !== null), {
+    message: 'El tipo del plan no coincide con sus créditos por mes.',
+    path: ['monthlyCredits'],
+  });
+export type PublicationOfferPlan = z.infer<typeof publicationOfferPlanSchema>;
+
+export const getPublicationOfferInputSchema = z.object({}).strict();
+export const getPublicationOfferOutputSchema = z
+  .object({
+    plans: z.array(publicationOfferPlanSchema).max(50),
+    looseCreditReferencePriceArs: z.number().int().nonnegative().nullable(),
+    launchDiscountPct: z.number().int().min(1).max(100).nullable(),
+  })
+  .strict();
+export type PublicationOffer = z.infer<typeof getPublicationOfferOutputSchema>;
 
 export const RPC_CONTRACTS = {
   update_my_merchant_profile: {
@@ -1714,6 +1741,15 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  get_publication_offer: {
+    inputSchema: getPublicationOfferInputSchema,
+    outputSchema: getPublicationOfferOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   get_request_cancellation_history: {
     inputSchema: getRequestCancellationHistoryInputSchema,
     outputSchema: getRequestCancellationHistoryOutputSchema,
@@ -1768,6 +1804,7 @@ export const ALL_RPC_NAMES = [
   'admin_get_merchant_publication_credits',
   'admin_list_publication_plans',
   'get_my_publication_balance',
+  'get_publication_offer',
   'get_request_cancellation_history',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 
