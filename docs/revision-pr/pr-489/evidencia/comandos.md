@@ -128,3 +128,7 @@ Esperado (comprobado por comparación de contenido en la revisión): `BASE 10/10
 - T-408 SEC-11: probar que el comercio con SELECT de merchants NO obtiene `admin_notes`; evidencia de notes con autor verificable antes de migrar.
 - T-405: añadir `action` a filtro SQL **antes** de limit 5; pruebas con merchant_profile_update/admin_grant_publication_credits intercaladas.
 - T-409: comprobar que al dividir en tasks hijas los paths nuevos están autorizados en sus PR separados; no crear docs/contracts/** sin CC.
+
+### Actualización de estados del SHA be515ec7
+- CI #39700774152 terminó `success`, con todos sus jobs en verde. `unit`: 155 archivos / 3170 tests, incluidos 7/7 verify-fichas. `db-tests`: `Files=34, Tests=3019`, `Result: PASS` (job 119569612666); finalizó el control de tipos sin diff. Estas evidencias pertenecen al SHA `be515ec7`, no a los commits de informe.
+- `e2e-preview` context `error`: run #39700908423, `repository_dispatch`, job e2e-preview `cancelled`, no aserción roja. No rerun manual durante la revisión.

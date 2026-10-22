@@ -31,8 +31,8 @@
 | H12 | T-405: Todos y Cancelados explícitos | Inspección |
 
 ## CI del SHA revisado
-- **CI oficial run #39700774152**: `unit` ✅ (155 archivos, 3170/3170 tests; `tools/verify-fichas.test.ts` 7/7), `typecheck` ✅, `lint` ✅, `build` ✅, `audit` ✅, `bundle-budget` ✅. `db-tests` estaba **en progreso** en el corte de lectura; no se declara verde sin revisar job.
-- `e2e-preview` estaba pendiente al inicio; no se le atribuye una ejecución verde o roja sin evidencia.
+- **CI oficial run #39700774152**: `unit` ✅ (155 archivos, 3170/3170 tests; `tools/verify-fichas.test.ts` 7/7), `typecheck` ✅, `lint` ✅, `build` ✅, `audit` ✅, `bundle-budget` ✅, y **`db-tests` ✅** (34 archivos, 3019 pruebas, `Result: PASS`; job `119569612666`, además del control `git diff --exit-code -- src/types/database.types.ts`). Estas pruebas corresponden al SHA revisado, no a los futuros fixes de seguridad de T-408/T-409.
+- **Vercel ✅** en el HEAD revisado. **`e2e-preview` no verificado**: `repository_dispatch` run #39700908423 terminó `cancelled`, y su contexto quedó `error` por cancelación. No se interpreta como falla funcional ni como E2E verde.
 - La PR es solo documentación: los E2E/pgTAP de las futuras tareas aún no deben correr para sus DoD.
 
 ## Hallazgos nuevos
