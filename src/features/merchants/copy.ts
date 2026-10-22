@@ -179,7 +179,7 @@ export const publicationBalanceCopy = {
   periodStarts: (from: string) => `Empieza el ${from}`,
   streak: (months: number, pct: number) =>
     pct > 0
-      ? `${months} meses seguidos · arrastrás el ${pct} % del cupo sin usar`
+      ? `${months} meses seguidos · arrastrás el ${pct} % de los créditos sin usar`
       : `${months} ${months === 1 ? 'mes' : 'meses'} seguidos`,
   lotsTitle: 'Tus créditos',
   lotsTableLabel: 'Créditos por lote',
@@ -200,4 +200,28 @@ export const publicationBalanceCopy = {
   errorTitle: 'No pudimos cargar tu saldo de créditos',
   errorDescription: 'El resto de tu cuenta sigue disponible. Reintentá en unos instantes.',
   retry: 'Reintentar',
+} as const;
+
+/** CC-039 (T-412): planes disponibles en «Mi plan», con pedido por WhatsApp al soporte. */
+export const publicationOfferCopy = {
+  sectionTitle: 'Planes disponibles',
+  description:
+    'Precios de referencia. Elegí una opción y coordinamos el pago por WhatsApp: cadeApp no cobra dentro de la app.',
+  discount: (pct: number) => `Tu primera compra tiene ${pct} % de descuento.`,
+  listLabel: 'Planes disponibles para tu comercio',
+  quota: (credits: number) => `${credits} créditos por mes`,
+  unlimited: 'Publicaciones ilimitadas',
+  pricePerMonth: (price: string) => `${price} por mes`,
+  priceOnRequest: 'Precio a consultar',
+  choosePlan: 'Quiero este plan',
+  choosePlanFor: (name: string) => `: ${name}`,
+  looseTitle: 'Créditos sueltos',
+  loosePrice: (price: string) => `${price} por crédito · no vencen`,
+  buyCredits: 'Comprar créditos',
+  empty: 'Por ahora no hay planes publicados. Escribinos y te contamos las opciones.',
+  errorTitle: 'No pudimos cargar los planes disponibles',
+  errorDescription: 'Tu plan y tus créditos no cambian. Reintentá en unos instantes.',
+  whatsappUnavailable: 'El contacto por WhatsApp no está disponible en este momento.',
+  planMessage: (planName: string) => `Hola cadeApp, quiero contratar el plan «${planName}» para mi comercio.`,
+  creditsMessage: 'Hola cadeApp, quiero comprar créditos sueltos para mi comercio.',
 } as const;

@@ -487,6 +487,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_get_merchant_publication_credits: ['admin'],
   admin_list_publication_plans: ['admin'],
   get_my_publication_balance: ['merchant'],
+  get_publication_offer: ['merchant'],
   get_request_cancellation_history: ['merchant', 'courier', 'admin'],
 };
 
@@ -3665,6 +3666,30 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const currentNow = nowFn();
         reconcileMerchantExpired(actor.userId, currentNow);
         return ok(publicationBalance(merchant, currentNow));
+      }),
+
+    // CC-039: planes activos (sort, id; hasta 50) sin código, precio del crédito suelto y descuento si corresponde.
+    get_publication_offer: (rawInput) =>
+      executeRpc('get_publication_offer', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active' || !merchants.has(actor.userId)) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+        const active = [...plans.values()]
+          .filter((p) => p.active)
+          .sort((a, b) => a.sort - b.sort || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+          .slice(0, 50);
+        const pct = settings.launchDiscountPct ?? 0;
+        return ok({
+          plans: active.map((p) => ({
+            planId: p.id,
+            name: p.name,
+            kind: p.kind,
+            monthlyCredits: p.monthlyCredits,
+            referencePriceArs: p.referencePriceArs,
+          })),
+          looseCreditReferencePriceArs: settings.looseCreditReferencePriceArs ?? null,
+          launchDiscountPct: pct > 0 && !launchDiscounts.has(actor.userId) ? pct : null,
+        });
       }),
 
     // CC-012 / D06-A: la suspensión preventiva deriva el repartidor desde la oferta accepted de la

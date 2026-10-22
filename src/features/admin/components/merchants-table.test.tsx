@@ -70,7 +70,7 @@ describe('T-123: MerchantsTable (A03)', () => {
   it('T-369: cada comercio enlaza a sus créditos y la cabecera al catálogo de planes', () => {
     render(<MerchantsTable result={result} />);
     expect(
-      screen.getByRole('link', { name: 'Créditos de Panadería La Espiga' }).getAttribute('href')
+      screen.getByRole('link', { name: 'Créditos y plan de Panadería La Espiga' }).getAttribute('href')
     ).toBe(`/admin/merchants/${MERCHANT_ID}/credits`);
     expect(screen.getByRole('link', { name: 'Catálogo de planes' }).getAttribute('href')).toBe('/admin/merchants/plans');
   });
@@ -99,7 +99,7 @@ describe('T-123: MerchantsTable (A03)', () => {
   }
 
   async function openPlanDialog(): Promise<HTMLElement> {
-    fireEvent.click(screen.getByRole('button', { name: /editar plan/i }));
+    fireEvent.click(screen.getByRole('button', { name: /abono y piloto/i }));
     return screen.findByRole('dialog');
   }
 
@@ -161,10 +161,10 @@ describe('T-123: MerchantsTable (A03)', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
-  it('cierra «Editar plan» con Escape y devuelve el foco al botón que lo abrió', async () => {
+  it('cierra «Abono y piloto» con Escape y devuelve el foco al botón que lo abrió', async () => {
     render(<MerchantsTable result={result} />);
 
-    const trigger = screen.getByRole('button', { name: /editar plan/i });
+    const trigger = screen.getByRole('button', { name: /abono y piloto/i });
     trigger.focus();
     expect(document.activeElement).toBe(trigger);
 
