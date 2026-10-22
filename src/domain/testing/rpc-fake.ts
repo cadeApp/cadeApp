@@ -480,6 +480,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_update_setting: ['admin'],
   admin_resolve_incident: ['admin'],
   admin_list_incidents: ['admin'],
+  admin_list_trips: ['admin'],
   admin_upsert_publication_plan: ['admin'],
   admin_grant_publication_credits: ['admin'],
   admin_register_plan_period: ['admin'],
@@ -523,6 +524,17 @@ export function isoTimestampToEpochMicros(iso: string): bigint {
     BigInt(fraction.padEnd(6, '0')) -
     BigInt(offsetMinutes) * 60_000_000n
   );
+}
+
+// CC-037: keyset de admin_list_trips (created_at DESC, id DESC) con precisión de microsegundos.
+function compareTripKeysetDesc(
+  a: { readonly createdAt: string; readonly requestId: string },
+  b: { readonly createdAt: string; readonly requestId: string }
+): number {
+  const aMicros = isoTimestampToEpochMicros(a.createdAt);
+  const bMicros = isoTimestampToEpochMicros(b.createdAt);
+  if (aMicros !== bMicros) return aMicros > bMicros ? -1 : 1;
+  return a.requestId < b.requestId ? 1 : a.requestId > b.requestId ? -1 : 0;
 }
 
 function compareIncidentKeysetDesc(
@@ -3702,6 +3714,79 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             reporterName: incident.reporterName,
           })),
           nextCursor: ordered.length > limit && last ? { createdAt: last.createdAt, id: last.incidentId } : null,
+        });
+      }),
+
+    // CC-037: mismo filtro, conteos y keyset que la RPC SQL. El fake no guarda `published_at` ni `cancelled_at`.
+    admin_list_trips: (rawInput) =>
+      executeRpc('admin_list_trips', rawInput, true, (input) => {
+        const limit = input.limit ?? DEFAULT_INCIDENTS_PAGE_SIZE;
+        const cursor = input.cursor ?? null;
+        const cursorKey = cursor ? { createdAt: cursor.createdAt, requestId: cursor.id } : null;
+
+        const rows = [...requests.values()]
+          .filter((request) => request.status !== 'draft')
+          .map((request) => {
+            const reasons = cancellationReasons.filter((row) => row.requestId === request.requestId);
+            const requestIncidents = [...incidents.values()].filter((row) => row.requestId === request.requestId);
+            const legacy = request.drops.length === 0;
+            const offer = request.acceptedOfferId ? offers.get(request.acceptedOfferId) : undefined;
+            const acceptedOffer = offer?.status === 'accepted' ? offer : undefined;
+            return {
+              request,
+              failedDrops: request.drops.filter((drop) => drop.status === 'failed').length,
+              courierReleases: reasons.filter((row) => row.action === 'courier_cancel_match').length,
+              noShowReports: reasons.filter((row) => row.action === 'report_no_show').length,
+              incidentsCount: requestIncidents.length,
+              openIncidents: requestIncidents.filter((row) => row.status === 'open' || row.status === 'reviewing')
+                .length,
+              dropsCount: legacy ? 1 : request.drops.length,
+              deliveredDrops: legacy
+                ? request.status === 'delivered'
+                  ? 1
+                  : 0
+                : request.drops.filter((drop) => drop.status === 'delivered').length,
+              courierId: acceptedOffer?.courierId ?? null,
+            };
+          })
+          .filter(
+            (row) =>
+              input.filter === 'all' ||
+              row.failedDrops > 0 ||
+              row.courierReleases > 0 ||
+              row.noShowReports > 0 ||
+              row.request.status === 'cancelled' ||
+              row.incidentsCount > 0
+          )
+          .sort((a, b) => compareTripKeysetDesc(a.request, b.request))
+          .filter((row) => !cursorKey || compareTripKeysetDesc(row.request, cursorKey) > 0);
+
+        const page = rows.slice(0, limit);
+        const last = page[page.length - 1];
+        return ok({
+          items: page.map((row) => ({
+            id: row.request.requestId,
+            code: `REQ-${row.request.requestId.slice(0, 8).toUpperCase()}`,
+            status: row.request.status,
+            createdAt: row.request.createdAt,
+            publishedAt: null,
+            deliveredAt: row.request.deliveredAt,
+            cancelledAt: null,
+            merchantId: row.request.merchantId,
+            merchantName: merchants.get(row.request.merchantId)?.businessName ?? '',
+            courierId: row.courierId,
+            courierName: row.courierId ? (couriers.get(row.courierId)?.displayName ?? null) : null,
+            dropsCount: row.dropsCount,
+            deliveredDrops: row.deliveredDrops,
+            failedDrops: row.failedDrops,
+            courierReleases: row.courierReleases,
+            noShowReports: row.noShowReports,
+            cancelled: row.request.status === 'cancelled',
+            incidents: row.incidentsCount,
+            openIncidents: row.openIncidents,
+          })),
+          nextCursor:
+            rows.length > limit && last ? { createdAt: last.request.createdAt, id: last.request.requestId } : null,
         });
       }),
   };

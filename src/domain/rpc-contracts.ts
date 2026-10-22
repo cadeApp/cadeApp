@@ -826,6 +826,48 @@ export const adminListIncidentsOutputSchema = z.object({
   nextCursor: incidentsCursorSchema.nullable(),
 });
 
+// 20b. admin_list_trips (CC-037): sección «Viajes» del admin con keyset estable (created_at DESC, id DESC). El filtro
+// «Con problemas» se evalúa en Postgres; la salida nunca trae datos del destinatario ni motivos.
+export const adminTripsFilterSchema = z.enum(['problems', 'all']);
+export type AdminTripsFilter = z.infer<typeof adminTripsFilterSchema>;
+export const adminTripsCursorSchema = z.object({
+  createdAt: isoTimestampSchema,
+  id: uuidSchema,
+});
+export type AdminTripsCursor = z.infer<typeof adminTripsCursorSchema>;
+export const adminListTripsInputSchema = z.object({
+  filter: adminTripsFilterSchema,
+  cursor: adminTripsCursorSchema.nullable().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+export const adminTripListItemSchema = z
+  .object({
+    id: uuidSchema,
+    code: z.string().regex(/^REQ-[0-9A-F]{8}$/),
+    status: deliveryRequestStatusSchema,
+    createdAt: isoTimestampSchema,
+    publishedAt: isoTimestampSchema.nullable(),
+    deliveredAt: isoTimestampSchema.nullable(),
+    cancelledAt: isoTimestampSchema.nullable(),
+    merchantId: uuidSchema,
+    merchantName: z.string(),
+    courierId: uuidSchema.nullable(),
+    courierName: z.string().nullable(),
+    dropsCount: z.number().int().min(1),
+    deliveredDrops: z.number().int().nonnegative(),
+    failedDrops: z.number().int().nonnegative(),
+    courierReleases: z.number().int().nonnegative(),
+    noShowReports: z.number().int().nonnegative(),
+    cancelled: z.boolean(),
+    incidents: z.number().int().nonnegative(),
+    openIncidents: z.number().int().nonnegative(),
+  })
+  .strict();
+export const adminListTripsOutputSchema = z.object({
+  items: z.array(adminTripListItemSchema),
+  nextCursor: adminTripsCursorSchema.nullable(),
+});
+
 // update_my_merchant_profile (CC-028)
 export const updateMyMerchantProfileInputSchema = z
   .object({
@@ -1588,6 +1630,17 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  // CC-037 (T-410): misma precedencia que admin_list_incidents.
+  admin_list_trips: {
+    inputSchema: adminListTripsInputSchema,
+    outputSchema: adminListTripsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   // CC-029 (T-369). Precedencia de las RPC admin: UNAUTHENTICATED → UNAUTHORIZED_ACTOR → AAL2_REQUIRED →
   // VALIDATION_ERROR → NOT_FOUND → IDEMPOTENCY_CONFLICT / PLAN_INACTIVE / PLAN_IN_USE.
   admin_upsert_publication_plan: {
@@ -1708,6 +1761,7 @@ export const ALL_RPC_NAMES = [
   'admin_update_setting',
   'admin_resolve_incident',
   'admin_list_incidents',
+  'admin_list_trips',
   'admin_upsert_publication_plan',
   'admin_grant_publication_credits',
   'admin_register_plan_period',
