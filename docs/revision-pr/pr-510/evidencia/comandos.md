@@ -66,3 +66,27 @@ git ls-remote origin feat/T-410-admin-trips
 ```
 
 Revisar `db-tests` del SHA nuevo por log; **no levantar Supabase/Docker local**. E2E real queda pendiente de `migrate-develop`, antes de promover (decisión expresa en T-410).
+
+---
+
+## Ronda 2 · HEAD `99ab7a8361be54e551a5986d18d4b865b878d86a`
+
+- Consulta GitHub CI run 39737258624; `unit` job 119686111134 **success**, `Test Files 164 passed`, `Tests 3254 passed`, `rpc-fake.ts` branches **90.96 %**. La bitácora había informado 3251 en una corrida previa; el CI del HEAD revisado ejecutó 3254.
+- `typecheck`, `lint`, `build`, `audit`, `bundle-budget`: success en ese run. `db-tests` job 119686110835: seguía in_progress en la consulta. `approval-policy` falló con `Falta el informe completo de revisar-pr sin bloqueantes` y se subsana publicando esta revisión.
+- Análisis directo de `cc037-admin-list-trips.test.ts`, `components/admin-trip-detail.tsx`, `problems.ts`, `problems.test.ts`, `components.test.tsx`, `queries.test.ts` y `queries.ts` en `99ab7a83` confirma el diseño de los controles para H01–H03.
+- La bitácora del autor documenta las mutaciones M6–M15, pero **el revisor no las ejecutó**. `git ls-remote` desde el contenedor devuelve `Could not resolve host: github.com`. No inventar RED ni green local.
+- `mergeable=true` es un dato reportado por GitHub, no sustituto de `git merge-tree --write-tree` local.
+
+### Revalidación independiente posible en clon (NO ejecutada en esta revisión)
+
+```bash
+git fetch origin
+git worktree add /tmp/pr510-99ab 99ab7a8361be54e551a5986d18d4b865b878d86a
+cd /tmp/pr510-99ab
+pnpm install --frozen-lockfile
+pnpm exec vitest run src/domain/cc037-admin-list-trips.test.ts src/features/admin-trips/components.test.tsx src/features/admin-trips/queries.test.ts src/features/admin-trips/problems.test.ts
+pnpm test:coverage
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+El revisor no exigirá un nuevo CI completo solo por este commit documental. Para mutaciones RED independientes usar copia temporal en memoria y corroborar la falla de las aserciones, no de imports, luego restaurar; no tocar Docker ni Supabase remoto.

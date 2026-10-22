@@ -14,3 +14,10 @@
 4. No debilitar tests, exclusions ni thresholds para fabricar verde.
 
 No se asigna un nuevo identificador `AG-NN`: no se comprobó el máximo en todas las ramas remotas; se documentan los patrones P03/P06/P08 del catálogo existente. No proponer cambio a `AGENTS.md` por esta sola PR. H02 y H03 aún deben reproducirse mediante mutación RED independiente.
+
+## Ronda 2
+
+- H01: tests reales del fake + cobertura CI de 88,08 % a 90,96 % sin tocar umbrales. Se evita el proxy de validar solo schema.
+- H02: es importante distinguir entrega legacy sin resultado de una entrega real pendiente después del cierre del viaje. Una etiqueta única mezcla semánticas.
+- H03: las fixtures de otra solicitud y los asserts de `.eq` detectan una lectura sin filtro, pero aún puede endurecerse el mock para rechazar filas que no tengan la columna filtrada.
+- M6–M15 pertenecen a la evidencia del autor; no sustituye una reproducción independiente. H02/H03 quedan honestamente `arreglado-sin-verificar` hasta poder ejecutar mutaciones en un clon.
