@@ -21,7 +21,7 @@ assert.match(f,/showDropoffMap\s*&&/);
 assert.match(f,/<MapPicker/);
 assert.match(m,/data-testid="map-container"/);
 assert.match(s,/waitForResponse/);
-assert.match(s,/maps\.googleapis\.com/);
+assert.ok(s.includes(String.raw`maps\.googleapis\.com`));
 assert.match(s,/fijar en mapa interactivo/i);
 assert.match(s,/getByTestId\('map-container'\)/);
 console.log('Comprobaciones estáticas: OK (no sustituye E2E)');
