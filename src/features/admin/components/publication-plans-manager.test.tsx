@@ -34,7 +34,7 @@ describe('T-369 / CC-029 — catálogo de planes (admin)', () => {
   it('lista los planes con tipo, cupo, precio informativo y estado', () => {
     renderManager({ plans: [PLAN, UNLIMITED] });
     const rows = within(screen.getByRole('table', { name: 'Planes de publicación' })).getAllByRole('row').slice(1);
-    expect(rows[0]?.textContent).toContain('Plan 40plan-40Con cupo40$ 20.000Activo1');
+    expect(rows[0]?.textContent).toContain('Plan 40plan-40Con créditos mensuales40$ 20.000Activo1');
     expect(rows[1]?.textContent).toContain('IlimitadoilimitadoIlimitado——Inactivo2');
   });
 
@@ -54,14 +54,14 @@ describe('T-369 / CC-029 — catálogo de planes (admin)', () => {
     expect(within(screen.getByRole('dialog')).queryByLabelText('Código')).toBeNull();
   });
 
-  it('crear: un plan con cupo exige créditos y el ilimitado los manda en null', async () => {
+  it('crear: un plan con créditos mensuales exige créditos y el ilimitado los manda en null', async () => {
     mocks.upsert.mockResolvedValue({ ok: true, data: { ...UNLIMITED, planId: UNLIMITED.id } });
     renderManager({ plans: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Nuevo plan' }));
     const dialog = screen.getByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('Nombre'), { target: { value: 'Ilimitado' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
-    expect(await within(dialog).findByText('Un plan con cupo lleva entre 1 y 100.000 créditos por mes.')).toBeTruthy();
+    expect(await within(dialog).findByText('Un plan con créditos mensuales lleva entre 1 y 100.000 créditos por mes.')).toBeTruthy();
     expect(mocks.upsert).not.toHaveBeenCalled();
 
     fireEvent.click(within(dialog).getByLabelText('Ilimitado'));

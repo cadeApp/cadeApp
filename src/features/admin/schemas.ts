@@ -247,7 +247,7 @@ export const publicationPlanFormSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['monthlyCredits'],
-        message: 'Un plan con cupo lleva entre 1 y 100.000 créditos por mes.',
+        message: 'Un plan con créditos mensuales lleva entre 1 y 100.000 créditos por mes.',
       });
     }
     const price = Number(data.referencePriceArs);
