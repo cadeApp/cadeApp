@@ -1,0 +1,350 @@
+'use client';
+
+import * as React from 'react';
+import { useState } from 'react';
+import { Badge } from '@/ui/badge';
+import { Button } from '@/ui/button';
+import { Card } from '@/ui/card';
+import { AvailabilitySwitch } from '@/features/availability';
+import { Radio, AlertCircle } from 'lucide-react';
+import { OFFERS_COPY } from '../copy';
+import type { ActiveTripSummary, AvailableRequestItem, CourierStatus } from '../schemas';
+import dynamic from 'next/dynamic';
+import { RequestCard } from './request-card';
+import { ActiveTripCard } from './active-trip-card';
+import type { OfferSheetProps } from './offer-sheet';
+import type { EmptyStateProps } from '@/ui/empty-state';
+import { FeedSkeleton } from './feed-skeleton';
+import { useAvailableRequests } from '../hooks/use-available-requests';
+import { useActiveTrips } from '../hooks/use-active-trips';
+import { useOfflineStatus } from '@/features/notifications';
+import type { CourierDocumentMetadata, StatusViewProps } from '@/features/courier-onboarding';
+
+import type { LivePageCursor } from '@/lib/live-contracts';
+
+// Hotfix T-325: la vista de revisión real se carga solo para `pending`, fuera del First Load JS del feed.
+const StatusView = dynamic<StatusViewProps>(() =>
+  import('@/features/courier-onboarding').then((mod) => mod.StatusView)
+);
+
+const EmptyState = dynamic<EmptyStateProps>(
+  () => import('@/ui/empty-state').then((mod) => mod.EmptyState),
+  { ssr: false }
+);
+
+const OfferSheet = dynamic<OfferSheetProps>(
+  () => import('./offer-sheet').then((mod) => mod.OfferSheet),
+  { ssr: false }
+);
+
+const EMPTY_DOCUMENTS: readonly CourierDocumentMetadata[] = [];
+
+export interface CourierFeedProps {
+  courierStatus: CourierStatus;
+  isAvailable: boolean;
+  requests: AvailableRequestItem[];
+  initialNextCursor?: LivePageCursor | null;
+  minOfferArs: number;
+  isLoading?: boolean;
+  /** Documentos persistidos del repartidor; solo se usan en estado `pending`. */
+  documents?: readonly CourierDocumentMetadata[];
+  /** ID del repartidor autenticado para particionar la caché de viajes activos (T-360). */
+  courierId?: string;
+  /** Viajes activos precargados en SSR (T-360). */
+  initialActiveTrips?: readonly ActiveTripSummary[];
+}
+
+export function CourierFeed({
+  courierStatus,
+  isAvailable: initialAvailable,
+  requests: initialRequests,
+  initialNextCursor,
+  minOfferArs,
+  isLoading = false,
+  documents = EMPTY_DOCUMENTS,
+  courierId,
+  initialActiveTrips,
+}: CourierFeedProps) {
+  const [available, setAvailable] = useState<boolean>(initialAvailable);
+  const [selectedRequest, setSelectedRequest] = useState<AvailableRequestItem | null>(null);
+  const [isOfferSheetOpen, setIsOfferSheetOpen] = useState<boolean>(false);
+  const { isOffline } = useOfflineStatus();
+
+  const {
+    trips: activeTrips,
+    isLoading: isActiveTripsLoading,
+    isError: isActiveTripsError,
+    refetch: refetchActiveTrips,
+  } = useActiveTrips({
+    courierId,
+    initialTrips: initialActiveTrips,
+    courierStatus,
+  });
+
+  const {
+    requests: liveRequests,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isError,
+    refetch,
+  } = useAvailableRequests(initialRequests, initialNextCursor ?? null, {
+    enabled: available && courierStatus === 'approved',
+  });
+  const requests = liveRequests ?? initialRequests;
+
+  // DoD 1: Repartidor en estado pending ve "En revisión" (R03). Hotfix T-325: la misma vista de T-324 con los
+  // documentos persistidos; antes era una lista fija que siempre mostraba licencia y seguro como no cargados.
+  if (courierStatus === 'pending') {
+    return (
+      <div className="flex flex-col items-center justify-start px-4 py-6">
+        <StatusView documents={documents} showFeedButton={false} />
+      </div>
+    );
+  }
+
+  // Estado rechazado
+  if (courierStatus === 'rejected') {
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col items-center justify-center p-4 text-center">
+        <Card className="w-full p-6 sm:p-8">
+          <div className="bg-destructive/10 text-destructive mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="mb-2 font-display text-xl font-bold text-foreground">
+            No pudimos aprobar tu cuenta
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Revisá tu documentación o comunicate con el soporte de cadeApp para más detalles.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  // Estado suspendido
+  if (courierStatus === 'suspended') {
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col items-center justify-center p-4 text-center">
+        <Card className="w-full p-6 sm:p-8">
+          <div className="bg-warning/10 text-warning mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="mb-2 font-display text-xl font-bold text-foreground">
+            Cuenta suspendida temporalmente
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Tu cuenta de repartidor se encuentra suspendida. Contactá al soporte para resolver la
+            situación.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  const handleOpenOfferSheet = (request: AvailableRequestItem) => {
+    if (isOffline) {
+      return;
+    }
+    setSelectedRequest(request);
+    setIsOfferSheetOpen(true);
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
+      {/* Conmutador de disponibilidad (R04) */}
+      <AvailabilitySwitch
+        initialAvailable={available}
+        onAvailabilityChange={(next) => setAvailable(next)}
+      />
+
+      {/* T-360: Sección semántica de viajes activos encima de Solicitudes abiertas */}
+      {isActiveTripsLoading && activeTrips.length === 0 ? (
+        <section aria-labelledby="active-trips-title" className="space-y-3">
+          <h2
+            id="active-trips-title"
+            className="sr-only font-display text-lg font-bold tracking-tight text-foreground"
+          >
+            {OFFERS_COPY.activeTripsTitle}
+          </h2>
+          <div
+            role="status"
+            aria-live="polite"
+            className="h-28 w-full animate-pulse rounded-lg bg-muted"
+          />
+        </section>
+      ) : isActiveTripsError ? (
+        <section aria-labelledby="active-trips-title" className="space-y-3">
+          <div
+            role="alert"
+            className="flex flex-col gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="flex items-center gap-2 text-sm text-destructive">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <div>
+                <p id="active-trips-title" className="font-semibold text-foreground">
+                  {OFFERS_COPY.activeTripsErrorTitle}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {OFFERS_COPY.activeTripsErrorDescription}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void refetchActiveTrips()}
+              className="min-h-[44px] self-end sm:self-center"
+            >
+              {OFFERS_COPY.retryButton}
+            </Button>
+          </div>
+        </section>
+      ) : activeTrips.length > 0 ? (
+        <section aria-labelledby="active-trips-title" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2
+              id="active-trips-title"
+              className="font-display text-lg font-bold tracking-tight text-foreground"
+            >
+              {OFFERS_COPY.activeTripsTitle}
+            </h2>
+            <span className="text-sm font-semibold text-muted-foreground">
+              {activeTrips.length}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {activeTrips.map((trip) => (
+              <ActiveTripCard key={trip.id} trip={trip} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* Encabezado de la lista */}
+      <div className="flex items-center justify-between pt-2">
+        <div className="flex items-center gap-2">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+            {OFFERS_COPY.feedTitle}
+          </h1>
+          {available && (
+            <Badge variant="published" className="flex items-center gap-1 text-sm">
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-dark" />
+              </span>
+              {OFFERS_COPY.liveBadge}
+            </Badge>
+          )}
+        </div>
+        {available && (
+          <span className="text-sm font-semibold text-muted-foreground">{requests.length}</span>
+        )}
+      </div>
+
+      {/* Estado no disponible (R04-no-disponible) */}
+      {!available && (
+        <Card className="border border-dashed border-border p-6 text-center shadow-sm">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <Radio className="h-6 w-6" aria-hidden="true" />
+          </div>
+          <h2 className="mb-1 font-display text-base font-bold text-foreground">
+            {OFFERS_COPY.unavailableAlertTitle}
+          </h2>
+          <p className="text-sm text-muted-foreground">{OFFERS_COPY.unavailableAlertDescription}</p>
+        </Card>
+      )}
+
+      {/* Estado disponible */}
+      {available && (
+        <>
+          {isLoading ? (
+            <FeedSkeleton />
+          ) : isError ? (
+            <div className="space-y-4">
+              <div
+                role="alert"
+                className="flex flex-col gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-5 w-5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-foreground">{OFFERS_COPY.feedErrorTitle}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {OFFERS_COPY.feedErrorDescription}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetch()}
+                  className="self-end sm:self-center"
+                >
+                  {OFFERS_COPY.retryButton}
+                </Button>
+              </div>
+
+              {requests.length > 0 && (
+                <div className={`space-y-3 ${isOffline ? 'opacity-80 grayscale-[20%]' : ''}`}>
+                  {requests.map((req) => (
+                    <RequestCard
+                      key={req.id}
+                      request={req}
+                      onOfferClick={handleOpenOfferSheet}
+                      isOffline={isOffline}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : requests.length === 0 ? (
+            <EmptyState
+              icon={<Radio className="h-8 w-8 text-muted-foreground" />}
+              title={OFFERS_COPY.emptyFeedTitle}
+              description={OFFERS_COPY.emptyFeedDescription}
+            />
+          ) : (
+            <div className={`space-y-3 ${isOffline ? 'opacity-80 grayscale-[20%]' : ''}`}>
+              {requests.map((req) => (
+                <RequestCard
+                  key={req.id}
+                  request={req}
+                  onOfferClick={handleOpenOfferSheet}
+                  isOffline={isOffline}
+                />
+              ))}
+              {hasNextPage && !isError && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void fetchNextPage()}
+                    disabled={isFetchingNextPage || isOffline}
+                  >
+                    {isFetchingNextPage ? OFFERS_COPY.loadingMore : OFFERS_COPY.loadMore}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Bottom Sheet para ofertar (R05) */}
+      {(isOfferSheetOpen || selectedRequest !== null) && (
+        <OfferSheet
+          isOpen={isOfferSheetOpen}
+          onClose={() => {
+            setIsOfferSheetOpen(false);
+            setSelectedRequest(null);
+          }}
+          request={selectedRequest}
+          minOfferArs={minOfferArs}
+          isOffline={isOffline}
+        />
+      )}
+    </div>
+  );
+}

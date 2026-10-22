@@ -1,0 +1,403 @@
+import 'server-only';
+
+import { createClient } from '@/server/supabase/server';
+import {
+  deliveryRequestStatusSchema,
+  packageTypeSchema,
+  recipientPaymentMethodSchema,
+  type PackageType,
+  type RecipientPaymentMethod,
+} from '@/domain/schemas';
+import type {
+  AvailableRequestItem,
+  CourierOfferItem,
+  CourierStatusInfo,
+  PublicDropSummary,
+} from './schemas';
+
+import type { LivePageCursor } from '@/lib/live-contracts';
+import { formatApproxDistanceKm } from '@/lib/format';
+
+
+interface RawAvailableRequest {
+  id: string;
+  created_at: string;
+  route_distance_m: number | null;
+  package_type: string;
+  recipient_payment_method: string;
+  needs_change: boolean;
+  published_at: string | null;
+  expires_at: string | null;
+  fixed_price_ars?: number | null;
+  auto_assign?: boolean;
+  drops_count?: number | null;
+  pickup_zone: { name: string } | { name: string }[] | null;
+  dropoff_zone: { name: string } | { name: string }[] | null;
+}
+
+interface RawUserOffer {
+  request_id: string;
+  amount_ars: number;
+}
+
+interface RawOfferWithRequest {
+  id: string;
+  request_id: string;
+  amount_ars: number;
+  eta_minutes: number;
+  message: string | null;
+  status: string;
+  created_at: string;
+  decided_at: string | null;
+  delivery_requests:
+    | {
+        status?: string | null;
+        expires_at: string | null;
+        route_distance_m: number | null;
+        pickup_zone: { name: string } | { name: string }[] | null;
+        dropoff_zone: { name: string } | { name: string }[] | null;
+      }
+    | {
+        status?: string | null;
+        expires_at: string | null;
+        route_distance_m: number | null;
+        pickup_zone: { name: string } | { name: string }[] | null;
+        dropoff_zone: { name: string } | { name: string }[] | null;
+      }[]
+    | null;
+}
+
+/**
+ * Consulta de solicitudes abiertas disponibles para repartidores.
+ * CUMPLE REGLAS D3 y D15: No solicita ni expone coordenadas (lat/lng), datos
+ * de contacto del destinatario (nombre, teléfono, dirección exacta), indicaciones
+ * ni monto exacto de cambio. Solo el medio de pago y si necesita cambio.
+ */
+export async function getAvailableRequests(): Promise<{
+  requests: AvailableRequestItem[];
+  nextCursor: LivePageCursor | null;
+}> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: requests, error } = await supabase
+    .from('delivery_requests')
+    .select(
+      `
+      id,
+      created_at,
+      drops_count,
+      route_distance_m,
+      package_type,
+      recipient_payment_method,
+      needs_change,
+      published_at,
+      expires_at,
+      fixed_price_ars,
+      auto_assign,
+      pickup_zone:zones!pickup_zone_id(name),
+      dropoff_zone:zones!dropoff_zone_id(name)
+    `
+    )
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(51);
+
+  const rawRequests = requests as unknown as RawAvailableRequest[] | null;
+  if (error || !rawRequests || rawRequests.length === 0) {
+    return { requests: [], nextCursor: null };
+  }
+
+  const hasMore = rawRequests.length > 50;
+  const pageRows = rawRequests.slice(0, 50);
+
+  const requestIds = pageRows.map((r) => r.id);
+  const myOffersMap = new Map<string, number>();
+  const dropsMap = new Map<string, PublicDropSummary[]>();
+
+  if (requestIds.length > 0) {
+    const [offersResult, dropsResult] = await Promise.all([
+      user
+        ? supabase
+            .from('offers')
+            .select('request_id, amount_ars')
+            .eq('courier_id', user.id)
+            .in('request_id', requestIds)
+            .eq('status', 'pending')
+        : Promise.resolve({ data: null }),
+      supabase
+        .from('delivery_request_drops')
+        .select(
+          `
+          request_id,
+          position,
+          package_type,
+          recipient_payment_method,
+          needs_change,
+          approx_distance_m,
+          dropoff_zone:zones!dropoff_zone_id(name)
+        `
+        )
+        .in('request_id', requestIds)
+        .order('position', { ascending: true }),
+    ]);
+
+    if (dropsResult.error) {
+      throw new Error(`Error al consultar entregas del feed: ${dropsResult.error.message}`);
+    }
+
+    const rawUserOffers = offersResult.data as unknown as RawUserOffer[] | null;
+    if (rawUserOffers) {
+      for (const off of rawUserOffers) {
+        myOffersMap.set(off.request_id, off.amount_ars);
+      }
+    }
+
+    if (dropsResult.data) {
+      interface RawDropRow {
+        request_id: string;
+        position: number;
+        package_type: string;
+        recipient_payment_method: string;
+        needs_change: boolean;
+        approx_distance_m: number | null;
+        dropoff_zone: { name: string } | { name: string }[] | null;
+      }
+      for (const d of dropsResult.data as unknown as RawDropRow[]) {
+        const pType = packageTypeSchema.safeParse(d.package_type);
+        if (!pType.success) {
+          throw new Error(
+            `Error al leer el feed: package_type fuera del dominio en la solicitud ${d.request_id}`
+          );
+        }
+        const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
+        if (!pMethod.success) {
+          throw new Error(
+            `Error al leer el feed: recipient_payment_method fuera del dominio en la solicitud ${d.request_id}`
+          );
+        }
+        const dropoffZone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+        const summary: PublicDropSummary = {
+          position: d.position,
+          dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+          packageType: pType.data,
+          recipientPaymentMethod: pMethod.data,
+          needsChange: Boolean(d.needs_change),
+          approxDistanceM: d.approx_distance_m != null ? Number(d.approx_distance_m) : null,
+        };
+        const current = dropsMap.get(d.request_id);
+        if (current) {
+          current.push(summary);
+        } else {
+          dropsMap.set(d.request_id, [summary]);
+        }
+      }
+    }
+  }
+
+  const mapped: AvailableRequestItem[] = [];
+  for (const req of pageRows) {
+    const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
+    const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
+
+    const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const declaredDropsCount = req.drops_count ?? 1;
+    const reqDrops = dropsMap.get(req.id) ?? [];
+
+    if (reqDrops.length === 0) {
+      throw new Error(
+        `Inconsistencia en solicitud ${req.id}: drops_count=${declaredDropsCount} pero no se encontraron entregas`
+      );
+    }
+
+    if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
+      throw new Error(
+        `Inconsistencia en solicitud ${req.id}: drops_count=${declaredDropsCount} pero se encontraron ${reqDrops.length} entregas`
+      );
+    }
+
+    const firstDrop = reqDrops[0];
+    if (!firstDrop) {
+      throw new Error(`Error en solicitud ${req.id}: entrega inicial no encontrada`);
+    }
+
+    const effectiveDrops = reqDrops;
+    const effectivePackageType = firstDrop.packageType;
+    const effectivePaymentMethod = firstDrop.recipientPaymentMethod;
+    const effectiveNeedsChange = firstDrop.needsChange;
+    const effectiveDropoffZoneName = firstDrop.dropoffZoneName;
+
+    mapped.push({
+      id: req.id,
+      pickupZoneName: pickupZone?.name ?? 'Centro',
+      dropoffZoneName: effectiveDropoffZoneName,
+      approxDistanceKm: formatApproxDistanceKm(req.route_distance_m),
+      packageType: effectivePackageType,
+      recipientPaymentMethod: effectivePaymentMethod,
+      needsChange: effectiveNeedsChange,
+      publishedAt: req.published_at ?? new Date().toISOString(),
+      expiresAt: req.expires_at,
+      fixedPriceArs: req.fixed_price_ars ?? null,
+      autoAssign: req.auto_assign ?? false,
+      dropsCount: effectiveDrops.length,
+      drops: effectiveDrops,
+      hasMyOffer: myOfferAmount !== null,
+      myOfferAmountArs: myOfferAmount,
+    });
+  }
+
+  const tail = pageRows.at(-1);
+  const nextCursor: LivePageCursor | null =
+    hasMore && tail ? { createdAt: tail.created_at, id: tail.id } : null;
+
+  return { requests: mapped, nextCursor };
+}
+
+/**
+ * Obtiene el estado y disponibilidad del repartidor en sesión.
+ */
+export async function getCourierStatusAndAvailability(): Promise<CourierStatusInfo> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      status: 'pending',
+      available: false,
+    };
+  }
+
+  const { data: courier, error } = await supabase
+    .from('couriers')
+    .select('status, available')
+    .eq('profile_id', user.id)
+    .maybeSingle<{ status: string; available: boolean }>();
+
+  if (error || !courier) {
+    return {
+      status: 'pending',
+      available: false,
+    };
+  }
+
+  return {
+    status: (courier.status as CourierStatusInfo['status']) ?? 'pending',
+    available: Boolean(courier.available),
+  };
+}
+
+/**
+ * Obtiene el piso de oferta dinámico vigente en ARS desde platform_settings.
+ */
+export async function getPlatformMinOfferArs(): Promise<number> {
+  const supabase = await createClient();
+
+  const { data: setting } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'min_offer_ars')
+    .maybeSingle<{ value: unknown }>();
+
+  if (setting && typeof setting.value === 'number') {
+    return setting.value;
+  }
+  if (setting && typeof setting.value === 'string') {
+    const parsed = parseInt(setting.value, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return 1000;
+}
+
+function parseRequestStatus(value: unknown): CourierOfferItem['requestStatus'] {
+  const parsed = deliveryRequestStatusSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Consulta de ofertas enviadas por el repartidor autenticado (R06).
+ */
+export async function getMyOffers(): Promise<CourierOfferItem[]> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return [];
+  }
+
+  const { data: offers, error } = await supabase
+    .from('offers')
+    .select(
+      `
+      id,
+      request_id,
+      amount_ars,
+      eta_minutes,
+      message,
+      status,
+      created_at,
+      decided_at,
+      delivery_requests!offers_request_id_fkey (
+        status,
+        expires_at,
+        route_distance_m,
+        pickup_zone:zones!pickup_zone_id(name),
+        dropoff_zone:zones!dropoff_zone_id(name)
+      )
+    `
+    )
+    .eq('courier_id', user.id)
+    .order('created_at', { ascending: false });
+
+  const rawOffers = offers as unknown as RawOfferWithRequest[] | null;
+  if (error || !rawOffers) {
+    return [];
+  }
+
+  return rawOffers.map((off) => {
+    const req = Array.isArray(off.delivery_requests)
+      ? off.delivery_requests[0]
+      : off.delivery_requests;
+
+    const pickupZone = req?.pickup_zone
+      ? Array.isArray(req.pickup_zone)
+        ? req.pickup_zone[0]
+        : req.pickup_zone
+      : null;
+
+    const dropoffZone = req?.dropoff_zone
+      ? Array.isArray(req.dropoff_zone)
+        ? req.dropoff_zone[0]
+        : req.dropoff_zone
+      : null;
+
+    return {
+      offerId: off.id,
+      requestId: off.request_id,
+      pickupZoneName: pickupZone?.name ?? 'Centro',
+      dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+      amountArs: off.amount_ars,
+      etaMinutes: off.eta_minutes,
+      message: off.message,
+      status: off.status as CourierOfferItem['status'],
+      // T-379: la RLS solo deja leer la solicitud al repartidor que puede verla; si no, queda null.
+      requestStatus: parseRequestStatus(req?.status),
+      createdAt: off.created_at,
+      decidedAt: off.decided_at,
+      requestExpiresAt: req?.expires_at ?? null,
+      approxDistanceKm: formatApproxDistanceKm(req?.route_distance_m ?? null),
+    };
+  });
+}

@@ -1,0 +1,122 @@
+import { z } from 'zod';
+import { uuidSchema, type PublicDropSummary } from '@/domain/rpc-contracts';
+import { courierStatusSchema } from '@/domain/schemas';
+import type {
+  DeliveryRequestStatus,
+  OfferStatus,
+  PackageType,
+  RecipientPaymentMethod,
+} from '@/domain/schemas';
+
+export type { PublicDropSummary };
+
+export const submitOfferFormSchema = z.object({
+  requestId: uuidSchema,
+  amountArs: z
+    .number({
+      required_error: 'Ingresá el monto de tu oferta.',
+      invalid_type_error: 'El monto debe ser un número entero.',
+    })
+    .int('El monto debe ser un número entero en pesos.')
+    .min(1, 'El monto debe ser mayor a 0.'),
+  etaMinutes: z
+    .number({
+      required_error: 'Seleccioná el tiempo estimado de llegada.',
+      invalid_type_error: 'El tiempo estimado debe ser un número.',
+    })
+    .int()
+    .min(1, 'El tiempo mínimo es 1 minuto.')
+    .max(240, 'El tiempo máximo es 240 minutos (4 horas).'),
+  message: z
+    .string()
+    .trim()
+    .max(280, 'El mensaje no puede superar los 280 caracteres.')
+    .nullable()
+    .optional(),
+});
+
+export type SubmitOfferFormInput = z.infer<typeof submitOfferFormSchema>;
+
+export const withdrawOfferFormSchema = z.object({
+  offerId: uuidSchema,
+});
+
+export type WithdrawOfferFormInput = z.infer<typeof withdrawOfferFormSchema>;
+
+export const acceptOfferFormSchema = z.object({
+  offerId: uuidSchema,
+});
+
+export type AcceptOfferFormInput = z.infer<typeof acceptOfferFormSchema>;
+
+export const takeRequestFormSchema = z.object({
+  requestId: uuidSchema,
+  etaMinutes: z
+    .number({
+      required_error: 'Seleccioná el tiempo estimado de llegada.',
+      invalid_type_error: 'El tiempo estimado debe ser un número.',
+    })
+    .int()
+    .min(1, 'El tiempo mínimo es 1 minuto.')
+    .max(240, 'El tiempo máximo es 240 minutos (4 horas).'),
+  message: z
+    .string()
+    .trim()
+    .max(280, 'El mensaje no puede superar los 280 caracteres.')
+    .nullable()
+    .optional(),
+});
+
+export type TakeRequestFormInput = z.infer<typeof takeRequestFormSchema>;
+
+export interface AvailableRequestItem {
+  readonly id: string;
+  readonly pickupZoneName: string;
+  readonly dropoffZoneName: string;
+  readonly approxDistanceKm: string | null;
+  readonly packageType: PackageType;
+  readonly recipientPaymentMethod: RecipientPaymentMethod;
+  readonly needsChange: boolean;
+  readonly publishedAt: string;
+  readonly expiresAt: string | null;
+  readonly hasMyOffer: boolean;
+  readonly myOfferAmountArs: number | null;
+  readonly fixedPriceArs?: number | null;
+  readonly autoAssign?: boolean;
+  readonly dropsCount?: number;
+  readonly drops?: PublicDropSummary[];
+}
+
+export type CourierStatus = z.infer<typeof courierStatusSchema>;
+
+export interface CourierStatusInfo {
+  readonly status: CourierStatus;
+  readonly available: boolean;
+}
+
+export interface CourierOfferItem {
+  readonly offerId: string;
+  readonly requestId: string;
+  readonly pickupZoneName: string;
+  readonly dropoffZoneName: string;
+  readonly amountArs: number;
+  readonly etaMinutes: number;
+  readonly message: string | null;
+  readonly status: OfferStatus;
+  /** T-379: estado de la solicitud, o `null` si el repartidor ya no puede leerla (RLS). */
+  readonly requestStatus: DeliveryRequestStatus | null;
+  readonly createdAt: string;
+  readonly decidedAt: string | null;
+  readonly requestExpiresAt: string | null;
+  readonly approxDistanceKm: string | null;
+}
+
+export interface ActiveTripSummary {
+  readonly id: string;
+  readonly status: 'matched' | 'in_transit';
+  readonly pickupZoneName: string;
+  readonly dropoffZoneName: string | null;
+  readonly dropsCount: number;
+  readonly amountArs: number;
+  readonly matchedAt: string | null;
+}

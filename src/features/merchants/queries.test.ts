@@ -1,0 +1,349 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as serverSupabase from '@/server/supabase/server';
+import { getActiveZones, getMerchantAccountProfile, getMerchantProfileForEdit, getMyPublicationBalance } from './queries';
+import { getSubscriptionDisplay, type MerchantSubscriptionStatus } from './copy';
+
+vi.mock('@/server/supabase/server', () => ({
+  createClient: vi.fn(),
+}));
+
+describe('T-111 / T-118: queries de merchants y estado de suscripción (C08)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('retorna la lista de zonas activas ordenada', async () => {
+    const mockZones = [
+      { id: 'z1', name: 'Barrio Centro' },
+      { id: 'z2', name: 'Barrio San Martín' },
+    ];
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockResolvedValue({ data: mockZones, error: null }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    const zones = await getActiveZones();
+    expect(zones).toEqual(mockZones);
+  });
+
+  it('PR87-H06: propaga error de Supabase en getActiveZones para activar error.tsx y devuelve [] ante 0 filas sin error', async () => {
+    vi.mocked(serverSupabase.createClient).mockResolvedValueOnce({
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    await expect(getActiveZones()).rejects.toThrow(/Error al consultar zonas/);
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValueOnce({
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    await expect(getActiveZones()).resolves.toEqual([]);
+  });
+
+  it.each(['pilot', 'active', 'expired', 'cancelled'] as const)(
+    'PR87-H02: getMerchantAccountProfile y getSubscriptionDisplay soportan el estado real de DB "%s"',
+    async (status) => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'merchants') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  business_name: 'Panadería La Espiga',
+                  default_pickup_address: 'San Martín 450',
+                  default_pickup_zone_id: 'z1',
+                  notes: 'Timbre blanco',
+                  subscription_status: status,
+                  paid_until: '2026-12-31',
+                  zones: { name: 'Centro' },
+                },
+                error: null,
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { display_name: 'Juan', phone: '3815550123' },
+              error: null,
+            }),
+          };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const profile = await getMerchantAccountProfile();
+      expect(profile).not.toBeNull();
+      expect(profile?.subscriptionStatus).toBe(status);
+      expect(profile?.paidUntil).toBe('2026-12-31');
+
+      const display = getSubscriptionDisplay(status, profile?.paidUntil ?? null);
+      expect(display.headline.length).toBeGreaterThan(5);
+      expect(display.badgeLabel.length).toBeGreaterThan(3);
+      expect(display.untilLabel).toBe('31 de diciembre de 2026');
+    }
+  );
+
+  it('PR87-H02 / H06: lanza error ante fallo DB en getMerchantAccountProfile, devuelve null si no hay comercio y rechaza estados fuera de contrato como "trial"', async () => {
+    vi.mocked(serverSupabase.createClient).mockResolvedValueOnce({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'connection refused' },
+        }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    await expect(getMerchantAccountProfile()).rejects.toThrow(/Error al consultar comercio/);
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValueOnce({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: null,
+          error: null,
+        }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    await expect(getMerchantAccountProfile()).resolves.toBeNull();
+
+    expect(() =>
+      getSubscriptionDisplay('trial' as unknown as MerchantSubscriptionStatus, null)
+    ).toThrow(/Estado de suscripción no soportado/);
+  });
+
+  describe('T-358: getMerchantProfileForEdit (precarga autorizada)', () => {
+    it('retorna el perfil completo del comercio con coordenadas y estado de completitud', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'merchants') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  business_name: 'Panadería La Espiga',
+                  default_pickup_address: 'San Martín 450',
+                  default_pickup_lat: -27.435,
+                  default_pickup_lng: -65.615,
+                  default_pickup_zone_id: 'z1',
+                  notes: 'Al lado de la plaza',
+                },
+                error: null,
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { phone: '3865123456' },
+              error: null,
+            }),
+          };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const profile = await getMerchantProfileForEdit();
+      expect(profile).toEqual({
+        businessName: 'Panadería La Espiga',
+        phone: '3865123456',
+        defaultPickupAddress: 'San Martín 450',
+        defaultPickupZoneId: 'z1',
+        defaultPickupLat: -27.435,
+        defaultPickupLng: -65.615,
+        notes: 'Al lado de la plaza',
+        isComplete: true,
+      });
+    });
+
+    it('identifica correctamente cuando el comercio tiene onboarding incompleto (business_name vacío)', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-new' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'merchants') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  business_name: '',
+                  default_pickup_address: null,
+                  default_pickup_lat: null,
+                  default_pickup_lng: null,
+                  default_pickup_zone_id: null,
+                  notes: null,
+                },
+                error: null,
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { phone: '3865000000' },
+              error: null,
+            }),
+          };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const profile = await getMerchantProfileForEdit();
+      expect(profile).toEqual({
+        businessName: '',
+        phone: '3865000000',
+        defaultPickupAddress: '',
+        defaultPickupZoneId: null,
+        defaultPickupLat: null,
+        defaultPickupLng: null,
+        notes: null,
+        isComplete: false,
+      });
+    });
+
+    it('retorna null si no hay usuario autenticado', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: null },
+            error: null,
+          }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const profile = await getMerchantProfileForEdit();
+      expect(profile).toBeNull();
+    });
+
+    it('PR375-H05: lanza error ante fallo de autenticación para que active error.tsx en lugar de retornar null', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: null },
+            error: { message: 'Auth service unreachable' },
+          }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantProfileForEdit()).rejects.toThrow(
+        /Error de autenticación al obtener perfil de comercio: Auth service unreachable/
+      );
+    });
+
+    it('propaga error de Supabase para que active error.tsx en lugar de mostrar formulario vacío', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: null,
+            error: { message: 'Database timeout' },
+          }),
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantProfileForEdit()).rejects.toThrow(/Error al consultar comercio/);
+    });
+  });
+});
+
+const BALANCE = {
+  merchantId: '20000000-0000-4000-8000-000000000369',
+  mode: 'credits',
+  canPublish: true,
+  subscriptionStatus: 'expired',
+  legacyPaidUntil: null,
+  available: 3,
+  reserved: 1,
+  scheduled: 0,
+  currentPeriod: null,
+  nextPeriod: null,
+  lots: [],
+};
+
+function mockRpc(result: { data: unknown; error: { message: string; code?: string } | null } | Error) {
+  const rpc =
+    result instanceof Error ? vi.fn().mockRejectedValue(result) : vi.fn().mockResolvedValue(result);
+  vi.mocked(serverSupabase.createClient).mockResolvedValue({ rpc } as unknown as Awaited<
+    ReturnType<typeof serverSupabase.createClient>
+  >);
+  return rpc;
+}
+
+describe('T-369 / CC-029 — getMyPublicationBalance', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('llama a get_my_publication_balance con la sesión y devuelve el saldo validado', async () => {
+    const rpc = mockRpc({ data: BALANCE, error: null });
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: true, data: BALANCE });
+    expect(rpc).toHaveBeenCalledWith('get_my_publication_balance');
+  });
+
+  it('mapea los códigos del contrato y todo lo demás a INTERNAL_ERROR', async () => {
+    mockRpc({ data: null, error: { message: 'UNAUTHORIZED_ACTOR', code: 'P0001' } });
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    mockRpc({ data: null, error: { message: 'connection refused' } });
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+
+  it('una respuesta fuera de contrato o una caída de red no se muestran como saldo', async () => {
+    mockRpc({ data: { ...BALANCE, available: -1 }, error: null });
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    mockRpc(new Error('fetch failed'));
+    await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+});

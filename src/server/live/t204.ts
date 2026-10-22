@@ -1,0 +1,415 @@
+import 'server-only';
+import { formatApproxDistanceKm } from '@/lib/format';
+import { z } from 'zod';
+import {
+  packageTypeSchema,
+  recipientPaymentMethodSchema,
+  type PackageType,
+  type RecipientPaymentMethod,
+} from '@/domain/schemas';
+import { createClient } from '@/server/supabase/server';
+import { getTripDetailsRpc } from '@/server/rpc/trips';
+import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
+import type {
+  LiveAvailableRequestItem,
+  LiveFeedResponse,
+  LiveMerchantOfferItem,
+  LiveOffersResponse,
+  LivePageCursor,
+  LiveTripState,
+  PublicDropSummary,
+} from '@/lib/live-contracts';
+
+const LIVE_PAGE_SIZE = 50;
+
+export type LiveServerResult<T> =
+  | { readonly ok: true; readonly data: T }
+  | { readonly ok: false; readonly error: string; readonly status: number };
+
+
+interface RawAvailableRequestRow {
+  readonly id: string;
+  readonly created_at: string;
+  readonly route_distance_m: number | null;
+  readonly package_type: string;
+  readonly recipient_payment_method: string;
+  readonly needs_change: boolean;
+  readonly published_at: string | null;
+  readonly expires_at: string | null;
+  readonly fixed_price_ars?: number | null;
+  readonly auto_assign?: boolean;
+  readonly drops_count?: number | null;
+  readonly pickup_zone?: { name: string } | Array<{ name: string }> | null;
+  readonly dropoff_zone?: { name: string } | Array<{ name: string }> | null;
+}
+
+interface RawOfferRow {
+  readonly id: string;
+  readonly courier_id: string;
+  readonly amount_ars: number;
+  readonly eta_minutes: number;
+  readonly message: string | null;
+  readonly status: string;
+  readonly created_at: string;
+}
+
+/**
+ * 3.1 Consulta de solicitudes disponibles para el repartidor autenticado.
+ * - Requiere sesión activa de usuario.
+ * - Lee delivery_requests en status=published con SOLO columnas públicas de feed.
+ * - Consulta ofertas pendientes del courier para computar hasMyOffer y myOfferAmountArs.
+ * - Jamás lee contactos, direcciones exactas, coordenadas, indicaciones ni monto exacto de cambio (D3).
+ */
+export async function getAvailableRequestsLiveServer(
+  cursor: LivePageCursor | null = null
+): Promise<LiveServerResult<LiveFeedResponse>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return { ok: false, error: 'UNAUTHENTICATED', status: 401 };
+  }
+
+  let query = supabase
+    .from('delivery_requests')
+    .select(
+      `
+      id,
+      created_at,
+      drops_count,
+      route_distance_m,
+      package_type,
+      recipient_payment_method,
+      needs_change,
+      published_at,
+      expires_at,
+      fixed_price_ars,
+      auto_assign,
+      pickup_zone:zones!pickup_zone_id(name),
+      dropoff_zone:zones!dropoff_zone_id(name)
+    `
+    )
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(LIVE_PAGE_SIZE + 1);
+
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+    );
+  }
+
+  const { data: requestsData, error: requestsError } = await query;
+
+  if (requestsError || !requestsData) {
+    return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+  }
+
+  const rows = requestsData as unknown as readonly RawAvailableRequestRow[];
+  if (rows.length === 0) {
+    return { ok: true, data: { data: [], nextCursor: null } };
+  }
+
+  const hasMore = rows.length > LIVE_PAGE_SIZE;
+  const pageRows = rows.slice(0, LIVE_PAGE_SIZE);
+
+  const requestIds = pageRows.map((r) => r.id);
+  const myOffersMap = new Map<string, number>();
+  const dropsMap = new Map<string, PublicDropSummary[]>();
+
+  const [userOffersResult, dropsResult] = await Promise.all([
+    supabase
+      .from('offers')
+      .select('request_id, amount_ars')
+      .eq('courier_id', user.id)
+      .in('request_id', requestIds)
+      .eq('status', 'pending'),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .in('request_id', requestIds)
+      .order('position', { ascending: true }),
+  ]);
+
+  if (userOffersResult.error || dropsResult.error) {
+    return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+  }
+
+  if (userOffersResult.data) {
+    const rawUserOffers = userOffersResult.data as unknown as Array<{
+      readonly request_id: string;
+      readonly amount_ars: number;
+    }>;
+    for (const off of rawUserOffers) {
+      myOffersMap.set(off.request_id, off.amount_ars);
+    }
+  }
+
+  if (dropsResult.data) {
+    interface RawLiveDropRow {
+      readonly request_id: string;
+      readonly position: number;
+      readonly package_type: string;
+      readonly recipient_payment_method: string;
+      readonly needs_change: boolean;
+      readonly approx_distance_m: number | null;
+      readonly dropoff_zone:
+        { readonly name: string } | readonly { readonly name: string }[] | null;
+    }
+    for (const d of dropsResult.data as unknown as readonly RawLiveDropRow[]) {
+      const pType = packageTypeSchema.safeParse(d.package_type);
+      const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
+      if (!pType.success || !pMethod.success) {
+        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+      }
+      const dropoffZone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+      const summary: PublicDropSummary = {
+        position: d.position,
+        dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+        packageType: pType.data,
+        recipientPaymentMethod: pMethod.data,
+        needsChange: Boolean(d.needs_change),
+        approxDistanceM: d.approx_distance_m != null ? Number(d.approx_distance_m) : null,
+      };
+      const list = dropsMap.get(d.request_id);
+      if (list) {
+        list.push(summary);
+      } else {
+        dropsMap.set(d.request_id, [summary]);
+      }
+    }
+  }
+
+  const mapped: LiveAvailableRequestItem[] = [];
+  for (const req of pageRows) {
+    const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
+    const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
+    const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const declaredDropsCount = req.drops_count ?? 1;
+    const reqDrops = dropsMap.get(req.id) ?? [];
+
+    if (reqDrops.length === 0) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    const firstDrop = reqDrops[0];
+    if (!firstDrop) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    const effectiveDrops = reqDrops;
+    const effectivePackageType = firstDrop.packageType;
+    const effectivePaymentMethod = firstDrop.recipientPaymentMethod;
+    const effectiveNeedsChange = firstDrop.needsChange;
+    const effectiveDropoffZoneName = firstDrop.dropoffZoneName;
+
+    mapped.push({
+      id: req.id,
+      pickupZoneName: pickupZone?.name ?? 'Centro',
+      dropoffZoneName: effectiveDropoffZoneName,
+      approxDistanceKm: formatApproxDistanceKm(req.route_distance_m),
+      packageType: effectivePackageType,
+      recipientPaymentMethod: effectivePaymentMethod,
+      needsChange: effectiveNeedsChange,
+      publishedAt: req.published_at ?? new Date().toISOString(),
+      expiresAt: req.expires_at,
+      hasMyOffer: myOfferAmount !== null,
+      myOfferAmountArs: myOfferAmount,
+      fixedPriceArs: req.fixed_price_ars ?? null,
+      autoAssign: req.auto_assign ?? false,
+      dropsCount: effectiveDrops.length,
+      drops: effectiveDrops,
+    });
+  }
+
+  const tail = pageRows.at(-1);
+  const nextCursor: LivePageCursor | null =
+    hasMore && tail ? { createdAt: tail.created_at, id: tail.id } : null;
+
+  return { ok: true, data: { data: mapped, nextCursor } };
+}
+
+/**
+ * 3.2 Consulta de ofertas para una solicitud del comercio.
+ * - Valida UUID antes de consultar.
+ * - Autentica al usuario.
+ * - Verifica propiedad (merchant_id = user.id); si no existe o es ajena, retorna NOT_FOUND.
+ * - Si DB falla -> error controlado.
+ */
+export async function getRequestOffersLiveServer(
+  requestId: string,
+  cursor: LivePageCursor | null = null
+): Promise<LiveServerResult<LiveOffersResponse>> {
+  const parsedId = z.string().uuid().safeParse(requestId);
+  if (!parsedId.success) {
+    return { ok: false, error: 'INVALID_REQUEST_ID', status: 400 };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return { ok: false, error: 'UNAUTHENTICATED', status: 401 };
+  }
+
+  // Verificar pertenencia al comercio actual
+  const { data: requestRecord, error: requestError } = await supabase
+    .from('delivery_requests')
+    .select('id, merchant_id')
+    .eq('id', parsedId.data)
+    .maybeSingle();
+
+  if (requestError) {
+    return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+  }
+
+  const record = requestRecord as { id: string; merchant_id: string } | null;
+  if (!record || record.merchant_id !== user.id) {
+    return { ok: false, error: 'NOT_FOUND', status: 404 };
+  }
+
+  let offersQuery = supabase
+    .from('offers')
+    .select(
+      `
+      id,
+      courier_id,
+      amount_ars,
+      eta_minutes,
+      message,
+      status,
+      created_at
+    `
+    )
+    .eq('request_id', parsedId.data)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(LIVE_PAGE_SIZE + 1);
+
+  if (cursor) {
+    offersQuery = offersQuery.or(
+      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+    );
+  }
+
+  const { data: offersData, error: offersError } = await offersQuery;
+
+  if (offersError) {
+    return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+  }
+
+  const rawOffers = (offersData as unknown as readonly RawOfferRow[] | null) ?? [];
+  const hasMore = rawOffers.length > LIVE_PAGE_SIZE;
+  const pageRows = rawOffers.slice(0, LIVE_PAGE_SIZE);
+
+  // CC-016: el comercio no lee `couriers`/`profiles` por RLS; la identidad y la documentación de quienes
+  // ofertaron llegan por la RPC. Sin esa proyección se falla: nunca se inventa un nivel de documentación.
+  const couriersResult =
+    pageRows.length > 0
+      ? await getRequestOfferCouriersRpc(supabase, { requestId: parsedId.data })
+      : null;
+
+  if (couriersResult && !couriersResult.ok) {
+    return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+  }
+
+  const couriersById = couriersResult?.data ?? null;
+  const mapped: LiveMerchantOfferItem[] = [];
+
+  for (const o of pageRows) {
+    const courier = couriersById?.get(o.courier_id);
+    if (!courier) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    mapped.push({
+      id: o.id,
+      courierId: o.courier_id,
+      courierName: courier.displayName || 'Repartidor',
+      vehicleType: courier.vehicleType,
+      amountArs: o.amount_ars,
+      etaMinutes: o.eta_minutes,
+      message: o.message,
+      licenseStatus: courier.licenseStatus,
+      insuranceStatus: courier.insuranceStatus,
+      docLevel: courier.docLevel,
+      createdAt: o.created_at,
+      status: o.status as LiveMerchantOfferItem['status'],
+    });
+  }
+
+  const tail = pageRows.at(-1);
+  const nextCursor: LivePageCursor | null =
+    hasMore && tail ? { createdAt: tail.created_at, id: tail.id } : null;
+
+  return { ok: true, data: { data: mapped, nextCursor } };
+}
+
+/**
+ * 3.3 Consulta de estado vivo del viaje activo.
+ * - Llama exclusivamente a la función RPC getTripDetailsRpc.
+ * - Desecha cualquier PII, contacto, dirección, teléfono o avatar.
+ * - Retorna SOLO { id: requestId, status } con status en 'matched' | 'in_transit' | 'delivered'.
+ * - NOT_FOUND -> { ok: true, data: null }.
+ */
+export async function getTripLiveStateServer(
+  tripId: string
+): Promise<LiveServerResult<LiveTripState | null>> {
+  const parsedId = z.string().uuid().safeParse(tripId);
+  if (!parsedId.success) {
+    return { ok: false, error: 'INVALID_TRIP_ID', status: 400 };
+  }
+
+  const supabase = await createClient();
+  const rpcResult = await getTripDetailsRpc(supabase, { requestId: parsedId.data });
+  if (!rpcResult.ok) {
+    if (rpcResult.code === 'UNAUTHENTICATED') {
+      return { ok: false, error: 'UNAUTHENTICATED', status: 401 };
+    }
+    if (rpcResult.code === 'NOT_FOUND') {
+      return { ok: true, data: null };
+    }
+    if (rpcResult.code === 'UNAUTHORIZED_ACTOR') {
+      return { ok: false, error: 'UNAUTHORIZED_ACTOR', status: 403 };
+    }
+    if (rpcResult.code === 'INVALID_STATE_TRANSITION') {
+      return { ok: false, error: 'INVALID_STATE_TRANSITION', status: 409 };
+    }
+    return { ok: false, error: rpcResult.code, status: 500 };
+  }
+
+  const status = rpcResult.data.status;
+  if (status !== 'matched' && status !== 'in_transit' && status !== 'delivered') {
+    return { ok: false, error: 'INVALID_STATUS', status: 422 };
+  }
+
+  return {
+    ok: true,
+    data: {
+      id: parsedId.data,
+      status,
+    },
+  };
+}

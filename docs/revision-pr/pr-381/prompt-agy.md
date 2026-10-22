@@ -1,0 +1,29 @@
+# Prompt para agy — PR #381 / CC-025 B0 — Ronda 1 (CON BLOQUEANTES)
+
+**PR:** https://github.com/cadeApp/cadeApp/pull/381 · rama `cc/CC-025-b0-onboarding-atomic` · HEAD funcional `82f1cb179a4a5135a8a6c837faa647baefaa74be` · T-356 / issue #363. **Opción A de B0 ya autorizada; no volver a preguntarla.** Ninguna aprobación ni merge permitidos.
+
+**Paso 0 — imprescindible:** `git fetch origin && git switch cc/CC-025-b0-onboarding-atomic && git pull --ff-only origin cc/CC-025-b0-onboarding-atomic && git status --short`; primero incorporar commit de revisión. Leer `docs/revision-pr/pr-381/revisiones/ronda-1.md`, `evidencia/comandos.md`, `docs/contracts/CC-025.md`, `docs/tasks/T-356.md` desde origin/develop, skills contract-change/revisar-pr, RLS original y schema v1. **NO TOCAR `docs/revision-pr/**`.**
+
+**Archivos autorizados para B0**: `supabase/migrations/20261016033941_cc025_onboarding_atomic.sql` (AÚN NO MERGEADA), `supabase/tests/cc025_onboarding_atomic.sql`, `supabase/tests/integration/cc025_b0_concurrency.mjs`, `docs/contracts/CC-025.md`, `docs/tasks/log/T-356.md`. Si cambia firma RPC, actualizar únicamente `src/types/database.types.ts` con generación reproducible. `.github/workflows/ci.yml` **solo** para incluir test nuevo de B0 de forma aditiva y sin debilitar gates. No migraciones previamente mergeadas, código de PR #376 ni final #364, `src/domain/**`, `AGENTS.md`, `.agents/**`, secretos o dependencias nuevas.
+
+### H01 — Validar convivencia real, sin vender un falso bloqueo global
+La restricción existente solo es `UNIQUE(storage_path)`; la policy original `courier_documents_insert_self` todavía permite `INSERT` directo con `kind` repetido y ruta DIFERENTE. `testCoexistenceDirectInsert` prueba solo la misma ruta, por lo que siempre recibe 23505 y **no mide** bypass real. Agregar control pgTAP/integración con JWT authenticated, mismo `courier_id,kind` pero `storage_path` alternativo; medir state DB luego de llamada RPC y de INSERT directo. Si el INSERT alternativo entra, reportar RED auténtico y proponer barrera de transición compatible; si cambia contrato o permisos para impedirlo, **no implementarlo sin explicitar cómo sigue funcionando viejo UPSERT**. Definir gate de despliegue/versión activa y alcance de garantía (RPC callers vs cualquier REST). Comprobar H01 en concurrencia de dos sesiones no triviales (paths iguales y distintos).
+
+### H02 — Test de mutación serio, no catch-all
+En `cc025_b0_concurrency.mjs`, **eliminar** `catch(err){mutationCaught=true}` como oráculo. Bajo mutación del SQL original remover `FOR UPDATE` (assert literal de reemplazo), sincronizar ambas sesiones con barrera/lock observable `pg_stat_activity` o handshake determinista y verificar:
+1. GREEN baseline real RPC intacta, dos rutas distintas => un lote de 4 y segundo error seguro; mismas rutas => replay idempotente, siempre 4.
+2. RED mutada: sin FOR UPDATE la misma prueba detecta un invariante roto **documental/DB** (`count >4` o dos respuestas positivas incompatibles), no un exit=3 ni timeout genérico.
+3. GREEN al restaurar la migración original y reejecutar mismo test.
+4. Si al mutar la función aún no emerge un defecto reproducible, marcar `NO REPRODUCIDO` y diseñar la prueba que falte; no forzar el PASS.
+No usar sleeps arbitrarios (`pg_sleep`, 200 ms); no inflar una denegación correcta como regresión.
+
+### H03 — Elegibilidad del courier bajo lock
+SQL `submit_courier_onboarding_documents`: al tomar `couriers(profile_id) FOR UPDATE` leer `status` y denegar estados `rejected`/`suspended` con error seguro `UNAUTHORIZED_ACTOR` o código que refleje el contrato, antes de tocar documentos. No bloquear por error los reintentos `pending` ni `approved` si correspondiese según flujo real. Añadir pgTAP actor auténtico con perfil activo pero courier rejected/suspended, y verificar que los conteos/status existentes no cambien. RED mutando **la guarda de estado en SQL de producción**, mismos tests intactos; restaurar GREEN. El writer viejo también tenía bypass directo y esta RPC no debe perpetuarlo.
+
+### H04 — Revalidación concurrente de perfiles/consentimientos
+Hoy el SELECT de `profiles.role,consent_status` es ANTERIOR al lock courier. Reorganizar: `couriers FOR UPDATE` primero (orden ya acordado en CC-025), luego `profiles FOR SHARE` o alternativa compatible para volver a leer actor/consent con snapshot actual y mantenerlo mientras inserta; auditar orden global y ausencia de 40P01. Test real: con sesión A reteniendo courier lock, sesión B llama RPC, una sesión admin cambia consentimiento a pending y COMMIT mientras B espera, luego libera A; B debe rechazar y no insertar. Negativos anon/otro usuario. RED mutar/suprimir revalidación => misma prueba falla; restaurar GREEN. Distinguir falta de consentimiento legal `profiles.consent_status` de los consent records si aplica.
+
+### Chequeos y entrega
+CI en SHA final, `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, db-tests (Files/Tests/Result exactos), `pnpm db:types --local` + diff generado vacío, runner B0 GREEN y mutación específica RED, `git diff --check`, `git merge-tree --write-tree origin/develop HEAD`, `node docs/revision-pr/analizar.mjs verificacion`, `git status --short`, `git ls-remote origin cc/CC-025-b0-onboarding-atomic`. Integrar `origin/develop` con MERGE cuando corresponda (branch behind 2), NO rebase/force/amend; no tocar ficha fuera de la autorización previa. Registrar bitácora hecho/pruebas/falta y límites frente al writer legacy, commit [T-356] y push, pedir R2 independiente. No lanzar migraciones remotas.
+
+**Regla oro:** prohibido tests, fixtures, mocks, asserts, snapshots o mutaciones falsos/adulterados; `.skip`, `.only`, timeouts inflados, omitir checks, capturar cualquier error como RED, service-role bypass, cambiar políticas viejas solo para aprobar, cerrar issue #363 o atribuirse la revisión independiente. **NO MERGEAR** #381/#376/#364/#358.

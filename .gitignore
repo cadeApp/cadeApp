@@ -46,3 +46,7 @@ Thumbs.db
 # Supabase local data & temp
 .supabase/
 supabase/.temp/
+
+# IDE and tool caches
+.codegraph/
+

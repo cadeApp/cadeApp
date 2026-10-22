@@ -1,0 +1,14 @@
+diff --git a/src/features/courier-onboarding/actions.ts b/src/features/courier-onboarding/actions.ts
+index bd13d45..cc6b414 100644
+--- a/src/features/courier-onboarding/actions.ts
++++ b/src/features/courier-onboarding/actions.ts
+@@ -94,8 +94,7 @@ export async function courierOnboardingAction(
+   if (existingCourier) {
+     if (
+       existingCourier.status === 'rejected' ||
+-      existingCourier.status === 'suspended' ||
+-      existingCourier.profile_id !== user.id
++      existingCourier.status === 'suspended'
+     ) {
+       return err('DNI_ALREADY_REGISTERED');
+     }

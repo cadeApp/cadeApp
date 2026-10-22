@@ -1,0 +1,248 @@
+# Evidencia — PR #108 / CC-010 / Ronda 1
+
+## Preflight
+
+```text
+head: e16864d6f3e56a49929e603e4afe5f2e5387c9a3
+base: develop@366a2b859be586278bff9245b3f1ce1d1b6533ec
+ahead: 13
+behind: 0
+diff: 10 archivos (+520, -1)
+merge-tree contra develop: limpio (198456380f3d070167dd66b22dd1be76f7f7cade), sin conflictos
+correlativo CC: CC-010 libre en develop y en todas las ramas remotas
+comentarios en PR: 1 (Lautaro073 reportando head y CI de implementación)
+carpeta docs/revision-pr/pr-108/ previa: no existía
+```
+
+## Checks locales sobre exact-head (`e16864d6f3e56a49929e603e4afe5f2e5387c9a3`)
+
+```bash
+pnpm install --frozen-lockfile   # PASS (lockfile sincronizado con package.json)
+pnpm typecheck                   # PASS (tsc --noEmit && workflows tsconfig)
+pnpm lint                        # PASS (0 errors, 0 warnings)
+pnpm vitest run src/ui/ui-system.test.tsx tools/verify-approved-packages.test.ts  # PASS (33/33 tests)
+```
+
+## CI de GitHub Actions
+
+Run `36223276953` sobre commit exacto `e16864d6f3e56a49929e603e4afe5f2e5387c9a3`:
+- audit: PASS (15s)
+- board-sync: PASS (8s)
+- build: PASS (1m10s)
+- bundle-budget: PASS (7s)
+- db-tests: PASS (2m35s, 12 archivos / 1529 tests)
+- lint: PASS (29s)
+- typecheck: PASS (31s)
+- unit: PASS (56s, 55 archivos / 605 tests)
+- approval-policy: FAIL (esperado por falta de informe de revisión independiente)
+
+## Batería independiente de mutaciones (9 mutaciones)
+
+Ejecutada sobre el árbol en memoria mediante el script harness:
+
+```text
+=== RESUMEN DE MUTACIONES ===
+┌─────────┬───────┬──────────────────────────────────────────────────────────────────────────────────────────┬────────┬─────────────┐
+│ (index) │ id    │ name                                                                                     │ killed │ detail      │
+├─────────┼───────┼──────────────────────────────────────────────────────────────────────────────────────────┼────────┼─────────────┤
+│ 0       │ 'M01' │ 'table.tsx omite TableFooter y TableCaption en exports (test ciego a exports de CC-010)' │ false  │ 'CIEGA'     │
+│ 1       │ 'M02' │ 'table.tsx cambia text-sm por text-base en className'                                    │ true   │ 'DETECTADA' │
+│ 2       │ 'M03' │ 'input-otp.tsx reemplaza {char} por {char ? "*" : ""} en InputOTPSlot'                   │ true   │ 'DETECTADA' │
+│ 3       │ 'M04' │ 'input-otp.tsx quita role="separator" de InputOTPSeparator'                              │ true   │ 'DETECTADA' │
+│ 4       │ 'M05' │ 'input-otp.tsx quita animate-pulse del caret'                                            │ true   │ 'DETECTADA' │
+│ 5       │ 'M06' │ 'verify-approved-packages.test.ts quita input-otp de APPROVED_RUNTIME_PACKAGES'          │ true   │ 'DETECTADA' │
+│ 6       │ 'M07' │ 'tabs.tsx quita data-[state=active]:bg-background en TabsTrigger'                        │ false  │ 'CIEGA'     │
+│ 7       │ 'M08' │ 'table.tsx vacía TableFooter (renderiza null)'                                           │ false  │ 'CIEGA'     │
+│ 8       │ 'M09' │ 'table.tsx vacía TableCaption (renderiza null)'                                          │ false  │ 'CIEGA'     │
+└─────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────┴────────┴─────────────┘
+```
+
+## Script completo reproducible de mutaciones (`harness.mjs`)
+
+Copiable a `/tmp` o ejecutable directamente con `node harness.mjs`:
+
+```javascript
+import fs from 'node:fs';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
+
+const cwd = process.cwd();
+
+const mutations = [
+  {
+    id: 'M01',
+    name: 'table.tsx omite TableFooter y TableCaption en exports (test ciego a exports de CC-010)',
+    file: 'src/ui/table.tsx',
+    mutate: (content) => content.replace(/\s*TableFooter,?\r?\n/, '\n').replace(/\s*TableCaption,?\r?\n/, '\n'),
+    testCmd: 'pnpm vitest run src/ui/ui-system.test.tsx',
+  },
+  {
+    id: 'M02',
+    name: 'table.tsx cambia text-sm por text-base en className',
+    file: 'src/ui/table.tsx',
+    mutate: (content) => content.replace('text-sm', 'text-base'),
+    testCmd: 'pnpm vitest run src/ui/ui-system.test.tsx',
+  },
+  {
+    id: 'M03',
+    name: 'input-otp.tsx reemplaza {char} por {char ? "*" : ""} en InputOTPSlot',
+    file: 'src/ui/input-otp.tsx',
+    mutate: (content) => content.replace('{char}', '{char ? "*" : ""}'),
+    testCmd: 'pnpm vitest run src/ui/ui-system.test.tsx',
+  },
+  {
+    id: 'M04',
+    name: 'input-otp.tsx quita role="separator" de InputOTPSeparator',
+    file: 'src/ui/input-otp.tsx',
+    mutate: (content) => content.replace('role="separator"', ''),
+    testCmd: 'pnpm vitest run src/ui/ui-system.test.tsx',
+  },
+  {
+    id: 'M05',
+    name: 'input-otp.tsx quita animate-pulse del caret',
+    file: 'src/ui/input-otp.tsx',
+    mutate: (content) => content.replace('animate-pulse', ''),
+    testCmd: 'pnpm vitest run src/ui/ui-system.test.tsx',
+  },
+  {
+    id: 'M06',
+    name: 'verify-approved-packages.test.ts quita input-otp de APPROVED_RUNTIME_PACKAGES',
+    file: 'tools/verify-approved-packages.test.ts',
+    mutate: (content) => content.replace(/'input-otp',\r?\n/, ''),
+    testCmd: 'pnpm vitest run tools/verify-approved-packages.test.ts',
+  },
+  {
+    id: 'M07',
+    name: 'tabs.tsx quita data-[state=active]:bg-background en TabsTrigger',
+    file: 'src/ui/tabs.tsx',
+    mutate: (content) => content.replace('data-[state=active]:bg-background', ''),
+    testCmd: 'pnpm vitest run src/ui/ui-system.test.tsx',
+  },
+  {
+    id: 'M08',
+    name: 'table.tsx vacía TableFooter (renderiza null)',
+    file: 'src/ui/table.tsx',
+    mutate: (content) => content.replace(/const TableFooter = [^;]+;/, 'const TableFooter = () => null;'),
+    testCmd: 'pnpm vitest run src/ui/ui-system.test.tsx',
+  },
+  {
+    id: 'M09',
+    name: 'table.tsx vacía TableCaption (renderiza null)',
+    file: 'src/ui/table.tsx',
+    mutate: (content) => content.replace(/const TableCaption = [^;]+;/, 'const TableCaption = () => null;'),
+    testCmd: 'pnpm vitest run src/ui/ui-system.test.tsx',
+  }
+];
+
+console.log('=== HARNESS DE MUTACIONES PR-108 (CC-010) ===\n');
+
+// Baseline
+try {
+  execSync('pnpm vitest run src/ui/ui-system.test.tsx tools/verify-approved-packages.test.ts', {
+    cwd,
+    stdio: 'ignore',
+  });
+  console.log('Baseline: PASS (verde)\n');
+} catch (e) {
+  console.error('Baseline FAILED! No se puede continuar.');
+  process.exit(1);
+}
+
+const results = [];
+
+for (const m of mutations) {
+  const filePath = path.join(cwd, m.file);
+  const original = fs.readFileSync(filePath, 'utf8');
+  const mutated = m.mutate(original);
+
+  if (mutated === original) {
+    console.error(`ERROR: Mutación ${m.id} no modificó el archivo (sin objetivo)`);
+    results.push({ id: m.id, name: m.name, killed: false, detail: 'SIN_OBJETIVO' });
+    continue;
+  }
+
+  fs.writeFileSync(filePath, mutated, 'utf8');
+
+  let failed = false;
+  let output = '';
+  try {
+    output = execSync(m.testCmd, { cwd, encoding: 'utf8', stdio: 'pipe' });
+  } catch (err) {
+    failed = true;
+    output = err.stdout + '\n' + err.stderr;
+  } finally {
+    fs.writeFileSync(filePath, original, 'utf8');
+  }
+
+  const killed = failed;
+  console.log(`[${m.id}] ${m.name}`);
+  console.log(`  Resultado: ${killed ? 'ROJO (detectada ✅)' : 'VERDE (ciega ❌)'}`);
+  results.push({
+    id: m.id,
+    name: m.name,
+    killed,
+    detail: killed ? 'DETECTADA' : 'CIEGA',
+  });
+}
+
+console.log('\n=== RESUMEN DE MUTACIONES ===');
+console.table(results);
+```
+
+---
+
+# Evidencia — PR #108 / CC-010 / Ronda 2
+
+## Preflight
+
+```text
+head verificado funcional: 127ca22d4933172f871b288659747bdca2dad55a
+head actual remoto: 0054d7de3cc2cc363fad836aa4a97a91c4339a5d
+base: develop@366a2b859be586278bff9245b3f1ce1d1b6533ec
+archivos tocados por el autor en 127ca22:
+- src/ui/input-otp.tsx
+- src/ui/ui-system.test.tsx
+incidente de proceso detectado: el autor escribió docs/revision-pr/pr-108/ en commit 5ecebdc y 0054d7d;
+se preservó su ronda-2.md en autorrevision-agy-r2.md y se restauraron archivos según protocolo AG-36.
+```
+
+## Checks locales de Ronda 2 sobre `127ca22d4933172f871b288659747bdca2dad55a`
+
+```bash
+pnpm typecheck   # PASS (tsc --noEmit && workflows tsconfig)
+pnpm lint        # PASS (0 errors, 0 warnings)
+pnpm vitest run src/ui/ui-system.test.tsx --coverage --coverage.include="src/ui/table.tsx" --coverage.include="src/ui/tabs.tsx" --coverage.include="src/ui/input-otp.tsx"
+# PASS (31/31 tests, 100% statements, 100% branches, 100% functions, 100% lines en las 3 primitivas)
+```
+
+## Batería de mutaciones en Ronda 2 (9/9 DETECTADAS)
+
+```text
+=== RESUMEN DE MUTACIONES ===
+┌─────────┬───────┬──────────────────────────────────────────────────────────────────────────────────────────┬────────┬─────────────┐
+│ (index) │ id    │ name                                                                                     │ killed │ detail      │
+├─────────┼───────┼──────────────────────────────────────────────────────────────────────────────────────────┼────────┼─────────────┤
+│ 0       │ 'M01' │ 'table.tsx omite TableFooter y TableCaption en exports (test ciego a exports de CC-010)' │ true   │ 'DETECTADA' │
+│ 1       │ 'M02' │ 'table.tsx cambia text-sm por text-base en className'                                    │ true   │ 'DETECTADA' │
+│ 2       │ 'M03' │ 'input-otp.tsx reemplaza {char} por {char ? "*" : ""} en InputOTPSlot'                   │ true   │ 'DETECTADA' │
+│ 3       │ 'M04' │ 'input-otp.tsx quita role="separator" de InputOTPSeparator'                              │ true   │ 'DETECTADA' │
+│ 4       │ 'M05' │ 'input-otp.tsx quita animate-pulse del caret'                                            │ true   │ 'DETECTADA' │
+│ 5       │ 'M06' │ 'verify-approved-packages.test.ts quita input-otp de APPROVED_RUNTIME_PACKAGES'          │ true   │ 'DETECTADA' │
+│ 6       │ 'M07' │ 'tabs.tsx quita data-[state=active]:bg-background en TabsTrigger'                        │ true   │ 'DETECTADA' │
+│ 7       │ 'M08' │ 'table.tsx vacía TableFooter (renderiza null)'                                           │ true   │ 'DETECTADA' │
+│ 8       │ 'M09' │ 'table.tsx vacía TableCaption (renderiza null)'                                          │ true   │ 'DETECTADA' │
+└─────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────┴────────┴─────────────┘
+```
+
+## CI de GitHub Actions sobre `127ca22d4933172f871b288659747bdca2dad55a` (Run `36224724348` / `36225381585`)
+
+- typecheck: PASS
+- lint: PASS
+- unit: PASS (55 archivos / 605 tests)
+- ui-system: PASS (31/31)
+- build: PASS
+- audit: PASS
+- bundle-budget: PASS
+- db-tests: PASS (12 archivos / 1529 tests)
+- database.types.ts: PASS (sin drift)
+- approval-policy: PASS

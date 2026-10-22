@@ -1,0 +1,587 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { revalidatePath } from 'next/cache';
+import * as serverSupabase from '@/server/supabase/server';
+import * as requestsRpc from '@/server/rpc/requests';
+import {
+  markTripPickedUpAction,
+  markTripDeliveredAction,
+  courierCancelTripAction,
+  merchantReportNoShowAction,
+  merchantCancelTripAction,
+  republishTripAction,
+  markDropDeliveredAction,
+  markDropFailedAction,
+  loadCancellationHistoryPageAction,
+} from './actions';
+
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+}));
+
+vi.mock('@/server/supabase/server', () => ({
+  createClient: vi.fn(),
+}));
+
+vi.mock('@/server/rpc/requests', () => ({
+  callRequestRpc: vi.fn(),
+}));
+
+describe('T-115 DoD: tests de actions por transición de viaje', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const validCourierUser = { id: 'courier-uuid-1', email: 'courier@test.com' };
+  const validMerchantUser = { id: 'merchant-uuid-1', email: 'merchant@test.com' };
+  const validRequestId = '11111111-1111-1111-1111-111111111111';
+
+  let currentMockClient: unknown;
+
+  function mockSupabaseSession(user: { id: string; email: string } | null, role?: string) {
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: role ? { role } : null,
+            error: null,
+          }),
+        };
+      }
+      return {};
+    });
+
+    currentMockClient = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user }, error: null }),
+      },
+      from: mockFrom,
+    };
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue(
+      currentMockClient as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+    );
+  }
+
+  // =========================================================================
+  // H02: Matriz completa de 12 celdas de sesión y rol (6 actions × 2)
+  // =========================================================================
+  describe('H02: Matriz exhaustiva de autenticación y autorización (12 celdas)', () => {
+    it('markTripPickedUpAction: rechaza sin sesión con UNAUTHENTICATED', async () => {
+      mockSupabaseSession(null);
+      const res = await markTripPickedUpAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHENTICATED');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('markTripPickedUpAction: rechaza rol merchant con UNAUTHORIZED_ACTOR', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      const res = await markTripPickedUpAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHORIZED_ACTOR');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('markTripDeliveredAction: rechaza sin sesión con UNAUTHENTICATED', async () => {
+      mockSupabaseSession(null);
+      const res = await markTripDeliveredAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHENTICATED');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('markTripDeliveredAction: rechaza rol merchant con UNAUTHORIZED_ACTOR', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      const res = await markTripDeliveredAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHORIZED_ACTOR');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('courierCancelTripAction: rechaza sin sesión con UNAUTHENTICATED', async () => {
+      mockSupabaseSession(null);
+      const res = await courierCancelTripAction({ requestId: validRequestId, reason: 'Problema mecánico' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHENTICATED');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('courierCancelTripAction: rechaza rol merchant con UNAUTHORIZED_ACTOR', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      const res = await courierCancelTripAction({ requestId: validRequestId, reason: 'Problema mecánico' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHORIZED_ACTOR');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('merchantReportNoShowAction: rechaza sin sesión con UNAUTHENTICATED', async () => {
+      mockSupabaseSession(null);
+      const res = await merchantReportNoShowAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHENTICATED');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('merchantReportNoShowAction: rechaza rol courier con UNAUTHORIZED_ACTOR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await merchantReportNoShowAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHORIZED_ACTOR');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('merchantCancelTripAction: rechaza sin sesión con UNAUTHENTICATED', async () => {
+      mockSupabaseSession(null);
+      const res = await merchantCancelTripAction({ requestId: validRequestId, reason: 'Ya no hace falta' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHENTICATED');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('merchantCancelTripAction: rechaza rol courier con UNAUTHORIZED_ACTOR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await merchantCancelTripAction({ requestId: validRequestId, reason: 'Ya no hace falta' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHORIZED_ACTOR');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('republishTripAction: rechaza sin sesión con UNAUTHENTICATED', async () => {
+      mockSupabaseSession(null);
+      const res = await republishTripAction({ requestId: validRequestId, reason: 'Reintentar' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHENTICATED');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+
+    it('republishTripAction: rechaza rol courier con UNAUTHORIZED_ACTOR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await republishTripAction({ requestId: validRequestId, reason: 'Reintentar' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('UNAUTHORIZED_ACTOR');
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  // =========================================================================
+  // H08: Propagación de INVALID_STATE_TRANSITION en las 6 actions
+  // =========================================================================
+  describe('H08: Propagación de INVALID_STATE_TRANSITION en todas las acciones', () => {
+    it('markTripPickedUpAction: propaga INVALID_STATE_TRANSITION', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: false,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+      const res = await markTripPickedUpAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('INVALID_STATE_TRANSITION');
+    });
+
+    it('markTripDeliveredAction: propaga INVALID_STATE_TRANSITION', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: false,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+      const res = await markTripDeliveredAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('INVALID_STATE_TRANSITION');
+    });
+
+    it('courierCancelTripAction: propaga INVALID_STATE_TRANSITION', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: false,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+      const res = await courierCancelTripAction({ requestId: validRequestId, reason: 'Problema mecánico' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('INVALID_STATE_TRANSITION');
+    });
+
+    it('merchantReportNoShowAction: propaga INVALID_STATE_TRANSITION', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: false,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+      const res = await merchantReportNoShowAction({ requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('INVALID_STATE_TRANSITION');
+    });
+
+    it('merchantCancelTripAction: propaga INVALID_STATE_TRANSITION', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: false,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+      const res = await merchantCancelTripAction({ requestId: validRequestId, reason: 'Ya no hace falta' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('INVALID_STATE_TRANSITION');
+    });
+
+    it('republishTripAction: propaga INVALID_STATE_TRANSITION', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: false,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+      const res = await republishTripAction({ requestId: validRequestId, reason: 'Reintentar' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('INVALID_STATE_TRANSITION');
+    });
+  });
+
+  // =========================================================================
+  // Happy paths: H01 (exact RPC + input), H03 (default no-show), H11 (revalidate)
+  // =========================================================================
+  describe('Happy paths con aserciones exactas de RPC e invalidación (H01, H03, H11)', () => {
+    it('markTripPickedUpAction: invoca mark_picked_up exactamente 1 vez con sus args e invalida caché', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: true,
+        data: {
+          requestId: validRequestId,
+          status: 'in_transit',
+          pickedUpAt: '2026-09-24T10:00:00.000Z',
+        },
+      });
+
+      const res = await markTripPickedUpAction({ requestId: validRequestId });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data.status).toBe('in_transit');
+
+      // H01: Aserciones exactas sobre callRequestRpc
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(1);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledWith(
+        currentMockClient,
+        'mark_picked_up',
+        { requestId: validRequestId }
+      );
+
+      // H11: Revalidación de caché
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+    });
+
+    it('markTripDeliveredAction: invoca mark_delivered exactamente 1 vez con sus args e invalida caché', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: true,
+        data: {
+          requestId: validRequestId,
+          status: 'delivered',
+          deliveredAt: '2026-09-24T10:30:00.000Z',
+        },
+      });
+
+      const res = await markTripDeliveredAction({ requestId: validRequestId });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data.status).toBe('delivered');
+
+      // H01: Aserción exacta
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(1);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledWith(
+        currentMockClient,
+        'mark_delivered',
+        { requestId: validRequestId }
+      );
+
+      // H11: Revalidación
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+    });
+
+    it('courierCancelTripAction: invoca courier_cancel_match exactamente 1 vez con motivo e invalida caché', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: true,
+        data: {
+          requestId: validRequestId,
+          status: 'published',
+          cancelledOfferId: '22222222-2222-2222-2222-222222222222',
+          expiresAt: '2026-09-24T11:00:00.000Z',
+        },
+      });
+
+      const res = await courierCancelTripAction({
+        requestId: validRequestId,
+        reason: 'Problema mecánico en la moto',
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data.status).toBe('published');
+
+      // H01: Aserción exacta
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(1);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledWith(
+        currentMockClient,
+        'courier_cancel_match',
+        { requestId: validRequestId, reason: 'Problema mecánico en la moto' }
+      );
+
+      // H11: Revalidación
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+    });
+
+    it('H03: merchantReportNoShowAction con republish OMITIDO invoca report_no_show con republish: true por defecto', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: true,
+        data: {
+          requestId: validRequestId,
+          status: 'published',
+          cancelledOfferId: '22222222-2222-2222-2222-222222222222',
+          expiresAt: '2026-09-24T11:00:00.000Z',
+        },
+      });
+
+      // Se omite explícitamente el campo republish
+      const res = await merchantReportNoShowAction({
+        requestId: validRequestId,
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data.status).toBe('published');
+
+      // H01 y H03: Aserción exacta de argumentos con default a true
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(1);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledWith(
+        currentMockClient,
+        'report_no_show',
+        { requestId: validRequestId, republish: true }
+      );
+
+      // H11: Revalidación
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests');
+    });
+
+    it('merchantCancelTripAction: invoca cancel_request exactamente 1 vez con motivo e invalida caché', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: true,
+        data: {
+          requestId: validRequestId,
+          status: 'cancelled',
+          cancelledAt: '2026-09-24T10:00:00.000Z',
+        },
+      });
+
+      const res = await merchantCancelTripAction({
+        requestId: validRequestId,
+        reason: 'Cliente canceló el pedido por demora',
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data.status).toBe('cancelled');
+
+      // H01: Aserción exacta
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(1);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledWith(
+        currentMockClient,
+        'cancel_request',
+        { requestId: validRequestId, reason: 'Cliente canceló el pedido por demora' }
+      );
+
+      // H11: Revalidación
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests');
+    });
+
+    it('republishTripAction: invoca republish_request exactamente 1 vez con motivo e invalida caché', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValue({
+        ok: true,
+        data: {
+          requestId: validRequestId,
+          status: 'published',
+          publishedAt: '2026-09-24T10:00:00.000Z',
+          expiresAt: '2026-09-24T11:00:00.000Z',
+        },
+      });
+
+      const res = await republishTripAction({
+        requestId: validRequestId,
+        reason: 'Reintentando conseguir repartidor disponible',
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data.status).toBe('published');
+
+      // H01: Aserción exacta
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledTimes(1);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledWith(
+        currentMockClient,
+        'republish_request',
+        { requestId: validRequestId, reason: 'Reintentando conseguir repartidor disponible' }
+      );
+
+      // H11: Revalidación
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests');
+    });
+  });
+
+  // =========================================================================
+  // Validación de inputs
+  // =========================================================================
+  describe('Validación de esquemas Zod en actions', () => {
+    it('rechaza requestId inválido con VALIDATION_ERROR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await markTripPickedUpAction({ requestId: 'not-a-uuid' });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('courierCancelTripAction: rechaza motivo vacío con VALIDATION_ERROR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await courierCancelTripAction({
+        requestId: validRequestId,
+        reason: '   ',
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('merchantCancelTripAction: rechaza motivo vacío con VALIDATION_ERROR', async () => {
+      mockSupabaseSession(validMerchantUser, 'merchant');
+      const res = await merchantCancelTripAction({
+        requestId: validRequestId,
+        reason: '',
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('markDropDeliveredAction: rechaza dropId o requestId inválido con VALIDATION_ERROR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await markDropDeliveredAction({ dropId: 'bad-uuid', requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('markDropFailedAction: rechaza motivo vacío con VALIDATION_ERROR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await markDropFailedAction({
+        dropId: '40000000-0000-4000-8000-000000000001',
+        requestId: validRequestId,
+        reason: '   ',
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('CC-022 / T-340 / H03: markDropDeliveredAction y markDropFailedAction invocan RPC con argumentos exactos', () => {
+    const validDropId = '40000000-0000-4000-8000-000000000001';
+
+    it('markDropDeliveredAction: ejecuta mark_drop_delivered solo con { dropId } y revalida la ruta del viaje', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValueOnce({
+        ok: true,
+        data: {
+          dropId: validDropId,
+          requestId: validRequestId,
+          status: 'delivered',
+          deliveredAt: '2026-09-24T10:00:00.000Z',
+          requestStatus: 'in_transit',
+          idempotent: false,
+        },
+      });
+
+      const res = await markDropDeliveredAction({
+        dropId: validDropId,
+        requestId: validRequestId,
+      });
+
+      expect(res.ok).toBe(true);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledExactlyOnceWith(
+        currentMockClient,
+        'mark_drop_delivered',
+        { dropId: validDropId }
+      );
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+    });
+
+    it('markDropFailedAction: ejecuta mark_drop_failed con { dropId, reason } y revalida la ruta del viaje', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValueOnce({
+        ok: true,
+        data: {
+          dropId: validDropId,
+          requestId: validRequestId,
+          status: 'failed',
+          failedReason: 'Dirección inaccesible',
+          requestStatus: 'delivered',
+          idempotent: false,
+        },
+      });
+
+      const res = await markDropFailedAction({
+        dropId: validDropId,
+        requestId: validRequestId,
+        reason: 'Dirección inaccesible',
+      });
+
+      expect(res.ok).toBe(true);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledExactlyOnceWith(
+        currentMockClient,
+        'mark_drop_failed',
+        { dropId: validDropId, reason: 'Dirección inaccesible' }
+      );
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+    });
+  });
+});
+
+describe('T-373 — loadCancellationHistoryPageAction', () => {
+  const requestId = '11111111-1111-4111-8111-111111111111';
+  const cursor = { beforeCreatedAt: '2026-10-18T21:30:00.123456+00:00', beforeId: '22222222-2222-4222-8222-222222222222' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('valida requestId y cursor completo antes de tocar Supabase', async () => {
+    for (const input of [
+      { requestId: 'bad', cursor },
+      { requestId },
+      { requestId, cursor: { beforeCreatedAt: cursor.beforeCreatedAt } },
+      { requestId, cursor: { ...cursor, extra: 1 } },
+    ]) {
+      expect(await loadCancellationHistoryPageAction(input)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    expect(serverSupabase.createClient).not.toHaveBeenCalled();
+  });
+
+  it('pide la página con la sesión del usuario y el cursor tal cual, sin revalidar rutas', async () => {
+    const page = {
+      version: '1.0',
+      requestId,
+      events: [],
+      pagination: { limit: 50, hasMore: false, nextCursor: null },
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: page, error: null });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ rpc } as never);
+
+    expect(await loadCancellationHistoryPageAction({ requestId, cursor })).toEqual({ ok: true, data: page });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('get_request_cancellation_history', {
+      p_request_id: requestId,
+      p_limit: null,
+      p_before_created_at: cursor.beforeCreatedAt,
+      p_before_id: cursor.beforeId,
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('propaga el NOT_FOUND de la RPC (pedido ajeno o repartidor sin cancelaciones propias)', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: 'NOT_FOUND' } });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ rpc } as never);
+    expect(await loadCancellationHistoryPageAction({ requestId, cursor })).toEqual({ ok: false, code: 'NOT_FOUND' });
+  });
+});

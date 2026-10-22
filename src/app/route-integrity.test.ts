@@ -1,0 +1,1173 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  evaluateRouteGuard,
+  getRoleDefaultPath,
+  isMerchantRoute,
+  isCourierRoute,
+  resolvePostLoginRedirect,
+  registerAction,
+  type AuthSession,
+} from '@/features/auth';
+import * as serverSupabase from '@/server/supabase/server';
+import * as adminSupabase from '@/server/supabase/admin';
+import CanonicalCourierOnboardingIdentityPage from '@/app/(courier)/courier/onboarding/identity/page';
+import CanonicalCourierOnboardingVehiclePage from '@/app/(courier)/courier/onboarding/vehicle/page';
+
+vi.mock('@/server/supabase/server', () => ({
+  createClient: vi.fn(),
+}));
+vi.mock('@/server/supabase/admin', () => ({
+  createAdminClient: vi.fn(),
+}));
+vi.mock('@/lib/env.public', () => ({
+  publicEnv: {
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key-test',
+  },
+}));
+
+const ROOT_DIR = path.resolve(__dirname, '..');
+
+function resolveSegmentsInDir(baseDir: string, segments: string[]): string | null {
+  let currentDir = baseDir;
+  for (const seg of segments) {
+    if (!fs.existsSync(currentDir)) return null;
+    const exactChild = path.join(currentDir, seg);
+    if (fs.existsSync(exactChild) && fs.statSync(exactChild).isDirectory()) {
+      currentDir = exactChild;
+      continue;
+    }
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    const dynamicChild = entries.find((e) => e.isDirectory() && /^\[.+\]$/.test(e.name));
+    if (dynamicChild) {
+      currentDir = path.join(currentDir, dynamicChild.name);
+      continue;
+    }
+    return null;
+  }
+  const pageCandidate = path.join(currentDir, 'page.tsx');
+  if (fs.existsSync(pageCandidate)) return pageCandidate;
+  const routeCandidate = path.join(currentDir, 'route.ts');
+  if (fs.existsSync(routeCandidate)) return routeCandidate;
+  return null;
+}
+
+function resolveRouteToFilesystemPage(routePath: string): string | null {
+  const clean = (routePath.split('?')[0] ?? '/').split('#')[0] ?? '/';
+  if (clean === '/') {
+    const p = path.join(ROOT_DIR, 'app/page.tsx');
+    return fs.existsSync(p) ? p : null;
+  }
+  const segments = clean.split('/').filter(Boolean);
+  const baseDirs = [
+    path.join(ROOT_DIR, 'app'),
+    path.join(ROOT_DIR, 'app/(public)'),
+    path.join(ROOT_DIR, 'app/(merchant)'),
+    path.join(ROOT_DIR, 'app/(courier)'),
+    path.join(ROOT_DIR, 'app/(admin)'),
+  ];
+  for (const base of baseDirs) {
+    const resolved = resolveSegmentsInDir(base, segments);
+    if (resolved) return resolved;
+  }
+  // /trips/[id] es el destino contractual entre T-114 (my-offers-list.tsx, courier-panel.test.tsx:181) y T-115 (fuera de alcance en T-118.md §Fuera de alcance)
+  if (segments.length === 2 && segments[0] === 'trips' && segments[1]) {
+    return 'contract:T-115:/trips/[id]';
+  }
+  return null;
+}
+
+function walkProductionFiles(dirPath: string): string[] {
+  if (!fs.existsSync(dirPath)) return [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  const results: string[] = [];
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...walkProductionFiles(full));
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+      !entry.name.endsWith('.test.ts') &&
+      !entry.name.endsWith('.test.tsx')
+    ) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+function getAllT118ScopeFiles(): string[] {
+  const dirs = [
+    path.join(ROOT_DIR, 'app/(public)'),
+    path.join(ROOT_DIR, 'app/(merchant)'),
+    path.join(ROOT_DIR, 'app/(courier)'),
+    path.join(ROOT_DIR, 'features/auth'),
+    path.join(ROOT_DIR, 'features/merchants'),
+    path.join(ROOT_DIR, 'features/requests'),
+    path.join(ROOT_DIR, 'features/offers/components'),
+    path.join(ROOT_DIR, 'features/courier-onboarding'),
+    path.join(ROOT_DIR, 'features/availability'),
+  ];
+  const files = new Set<string>([
+    path.join(ROOT_DIR, 'app/page.tsx'),
+    path.join(ROOT_DIR, 'app/(public)/layout.tsx'),
+  ]);
+  for (const d of dirs) {
+    for (const f of walkProductionFiles(d)) {
+      files.add(f);
+    }
+  }
+  return Array.from(files);
+}
+
+function normalizeTemplateRoute(rawCandidate: string): string {
+  return rawCandidate.replace(/\$\{[^}]+\}/g, '__dynamic_segment__');
+}
+
+function validateInternalRouteCandidate(rawCandidate: string, fileLabel: string): void {
+  if (!rawCandidate || rawCandidate.startsWith('//')) return;
+  const candidate = normalizeTemplateRoute(rawCandidate);
+  if (candidate.startsWith('/brand/') || candidate.startsWith('/icons/')) {
+    const publicAsset = path.resolve(ROOT_DIR, '..', 'public', candidate.slice(1));
+    if (!fs.existsSync(publicAsset)) {
+      throw new Error(`${fileLabel} enlaza a asset público inexistente: ${rawCandidate}`);
+    }
+    return;
+  }
+  const pageFile = resolveRouteToFilesystemPage(candidate);
+  if (!pageFile) {
+    throw new Error(
+      `${fileLabel} referencia una ruta interna inexistente en el filesystem: ${rawCandidate}`
+    );
+  }
+}
+
+function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): void {
+  const patterns = [
+    /\bhref\s*[:=]\s*(?:['"](\/[^'"]*)['"]|\{\s*`(\/[^`]*)`\s*\}|`(\/[^`]*)`)/g,
+    /\bhref\s*=\s*\{\s*([a-zA-Z_$][\w$]*)\s*\([^}]*\)\s*\}/g,
+    /\breturn\s+(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
+    /\bredirectTo\s*:\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
+    /\bredirect\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`|([a-zA-Z_$][\w$.]*))\s*\)/g,
+    /\brouter\.(?:push|replace)\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`|([^)]+))\s*\)/g,
+  ];
+
+  // 1) Direct route literals, template literals, nav object properties (href: '/...'), and helper returns (return `/...`)
+  const directPatterns = [
+    /\bhref\s*[:=]\s*(?:['"](\/[^'"]*)['"]|\{\s*`(\/[^`]*)`\s*\}|`(\/[^`]*)`)/g,
+    /\breturn\s+(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
+    /\bredirectTo\s*:\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
+    /\bredirect\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)\s*\)/g,
+    /\brouter\.(?:push|replace)\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)\s*\)/g,
+  ];
+
+  for (const regex of directPatterns) {
+    let match: RegExpExecArray | null = regex.exec(sourceCode);
+    while (match !== null) {
+      const rawCandidate = match[1] ?? match[2] ?? match[3];
+      if (rawCandidate) {
+        validateInternalRouteCandidate(rawCandidate, fileLabel);
+      }
+      match = regex.exec(sourceCode);
+    }
+  }
+
+  // 2) Indirect JSX helper calls: href={helperName(...)}
+  const helperCallRegex = patterns[1]!;
+  helperCallRegex.lastIndex = 0;
+  let helperMatch: RegExpExecArray | null = helperCallRegex.exec(sourceCode);
+  while (helperMatch !== null) {
+    const helperName = helperMatch[1];
+    if (helperName) {
+      const helperDefRegex = new RegExp(
+        `(?:function\\s+${helperName}|(?:const|let|var)\\s+${helperName}\\s*=)[\\s\\S]*?return\\s+(?:['"](\\/[^'"]*)['"]|\`(\\/[^\`]*)\`)`
+      );
+      const defMatch = helperDefRegex.exec(sourceCode);
+      const returnedRoute = defMatch?.[1] ?? defMatch?.[2];
+      if (!returnedRoute) {
+        throw new Error(
+          `${fileLabel} invoca helper de ruta sin destino interno verificable (inexistente): ${helperName}`
+        );
+      }
+      validateInternalRouteCandidate(returnedRoute, fileLabel);
+    }
+    helperMatch = helperCallRegex.exec(sourceCode);
+  }
+
+  // 3) Indirect router.push / router.replace expressions: router.push(targetUrl) / router.push(result.data.redirectTo)
+  const routerCallRegex = patterns[5]!;
+  routerCallRegex.lastIndex = 0;
+  let routerMatch: RegExpExecArray | null = routerCallRegex.exec(sourceCode);
+  while (routerMatch !== null) {
+    const indirectExpr = routerMatch[3]?.trim();
+    if (indirectExpr) {
+      // Check any fallback string/template literal inside the expression (e.g. || '/courier/onboarding/status')
+      const fallbackMatch = /(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/.exec(indirectExpr);
+      const fallbackRoute = fallbackMatch?.[1] ?? fallbackMatch?.[2];
+      if (fallbackRoute) {
+        validateInternalRouteCandidate(fallbackRoute, fileLabel);
+      }
+
+      if (/^[a-zA-Z_$][\w$]*$/.test(indirectExpr)) {
+        const varDefRegex = new RegExp(`(?:const|let|var)\\s+${indirectExpr}\\s*=\\s*([^;\\n]+)`);
+        const varDefMatch = varDefRegex.exec(sourceCode);
+        const rhs = varDefMatch?.[1]?.trim();
+        if (!rhs) {
+          throw new Error(
+            `${fileLabel} navega a variable sin ruta interna verificable (inexistente): ${indirectExpr}`
+          );
+        }
+        const literalRhs = /^(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/.exec(rhs);
+        const assignedRoute = literalRhs?.[1] ?? literalRhs?.[2];
+        if (assignedRoute) {
+          validateInternalRouteCandidate(assignedRoute, fileLabel);
+        } else if (rhs.includes('resolvePostLoginRedirect(')) {
+          validateInternalRouteCandidate(resolvePostLoginRedirect('/ghost', 'merchant', 'active'), fileLabel);
+          validateInternalRouteCandidate(resolvePostLoginRedirect('/ghost', 'courier', 'active'), fileLabel);
+        } else {
+          throw new Error(
+            `${fileLabel} asigna ruta interna inexistente o no verificable a ${indirectExpr}: ${rhs}`
+          );
+        }
+      } else if (indirectExpr.includes('.redirectTo')) {
+        const actionProducerMap: ReadonlyArray<readonly [string, string]> = [
+          ['registerAction', 'features/auth/actions.ts'],
+          ['updatePasswordAction', 'features/auth/actions.ts'],
+          ['merchantOnboardingAction', 'features/merchants/actions.ts'],
+          ['createDeliveryRequestAction', 'features/requests/actions.ts'],
+          ['courierOnboardingAction', 'features/courier-onboarding/actions.ts'],
+        ];
+        const matchedProducer = actionProducerMap.find(([actionName]) =>
+          sourceCode.includes(actionName)
+        );
+        if (!matchedProducer) {
+          throw new Error(
+            `${fileLabel} navega a redirectTo indirecto sin productor verificable (inexistente): ${indirectExpr}`
+          );
+        }
+        const actionFilePath = path.join(ROOT_DIR, matchedProducer[1]);
+        const actionContent = fs.readFileSync(actionFilePath, 'utf-8');
+        assertNoInvalidInternalLinks(actionContent, matchedProducer[1]);
+      }
+    }
+    routerMatch = routerCallRegex.exec(sourceCode);
+  }
+}
+
+function assertNoTextXs(sourceCode: string, fileLabel: string): void {
+  if (/\btext-xs\b/.test(sourceCode)) {
+    throw new Error(`${fileLabel} viola el piso tipográfico de 14px usando text-xs`);
+  }
+}
+
+describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
+  describe('DoD 1: P01 Landing pública de inicio (src/app/page.tsx)', () => {
+    it('no debe contener el placeholder de Fase 0 (T-000) y debe implementar la landing P01 de Aguilares', () => {
+      const pagePath = path.join(ROOT_DIR, 'app/page.tsx');
+      expect(fs.existsSync(pagePath)).toBe(true);
+      const content = fs.readFileSync(pagePath, 'utf-8');
+
+      expect(content).not.toContain('Fase 0 · Scaffold mínimo operativo (T-000)');
+      expect(content).toMatch(/Aguilares/i);
+      expect(content).toMatch(/¿Quién paga el envío\?/i);
+      expect(content).toMatch(/Lo paga quien recibe/i);
+      expect(content).toMatch(/Tengo un comercio/i);
+      expect(content).toMatch(/Quiero repartir/i);
+    });
+  });
+
+  describe('DoD 2: Existencia de Rutas Canónicas y Boundaries loading/error (PR87-H06)', () => {
+    const requiredFiles = [
+      // Rutas públicas
+      'src/app/(public)/layout.tsx',
+      'src/app/(public)/forgot-password/page.tsx',
+
+      // Rutas canónicas de Comercio (C01, C02, C03, C04/C05, C07, C08)
+      'src/app/(merchant)/layout.tsx',
+      'src/app/(merchant)/merchant-nav.tsx',
+      'src/app/(merchant)/merchant/onboarding/page.tsx',
+      'src/app/(merchant)/merchant/dashboard/page.tsx',
+      'src/app/(merchant)/merchant/requests/new/page.tsx',
+      'src/app/(merchant)/merchant/requests/[id]/page.tsx',
+      'src/app/(merchant)/merchant/history/page.tsx',
+      'src/app/(merchant)/merchant/plan/page.tsx',
+
+      // Rutas canónicas de Repartidor (R01, R02, R03, R04, R06, R08)
+      'src/app/(courier)/courier/onboarding/identity/page.tsx',
+      'src/app/(courier)/courier/onboarding/vehicle/page.tsx',
+      'src/app/(courier)/courier/onboarding/status/page.tsx',
+      'src/app/(courier)/courier/feed/page.tsx',
+      'src/app/(courier)/courier/offers/page.tsx',
+      'src/app/(courier)/courier/profile/page.tsx',
+
+      // Boundaries loading.tsx y error.tsx en segmentos canónicos con datos (PR87-H06)
+      'src/app/(merchant)/merchant/onboarding/loading.tsx',
+      'src/app/(merchant)/merchant/onboarding/error.tsx',
+      'src/app/(merchant)/merchant/dashboard/loading.tsx',
+      'src/app/(merchant)/merchant/dashboard/error.tsx',
+      'src/app/(merchant)/merchant/requests/new/loading.tsx',
+      'src/app/(merchant)/merchant/requests/new/error.tsx',
+      'src/app/(merchant)/merchant/requests/[id]/loading.tsx',
+      'src/app/(merchant)/merchant/requests/[id]/error.tsx',
+      'src/app/(merchant)/merchant/history/loading.tsx',
+      'src/app/(merchant)/merchant/history/error.tsx',
+      'src/app/(merchant)/merchant/plan/loading.tsx',
+      'src/app/(merchant)/merchant/plan/error.tsx',
+      'src/app/(courier)/courier/onboarding/status/loading.tsx',
+      'src/app/(courier)/courier/onboarding/status/error.tsx',
+      'src/app/(courier)/courier/feed/loading.tsx',
+      'src/app/(courier)/courier/feed/error.tsx',
+      'src/app/(courier)/courier/offers/loading.tsx',
+      'src/app/(courier)/courier/offers/error.tsx',
+      'src/app/(courier)/courier/profile/loading.tsx',
+      'src/app/(courier)/courier/profile/error.tsx',
+    ];
+
+    it.each(requiredFiles)('debe existir el archivo canónico: %s', (relativePath) => {
+      const fullPath = path.resolve(ROOT_DIR, '..', relativePath);
+      expect(fs.existsSync(fullPath), `Falta el archivo canónico: ${relativePath}`).toBe(true);
+    });
+  });
+
+  describe('DoD 3: Aislamiento de Onboarding por Rol y Guardas', () => {
+    it('clasifica las rutas de onboarding bajo sus respectivos roles', () => {
+      expect(isMerchantRoute('/merchant/onboarding')).toBe(true);
+      expect(isCourierRoute('/courier/onboarding/identity')).toBe(true);
+      expect(isCourierRoute('/courier/onboarding/vehicle')).toBe(true);
+      expect(isCourierRoute('/courier/onboarding/status')).toBe(true);
+    });
+
+    it('impide el cruce de roles en onboarding: courier no accede a onboarding de comercio', () => {
+      const courierSession: AuthSession = {
+        userId: 'usr-courier',
+        email: 'courier@test.com',
+        role: 'courier',
+        aal: 'aal1',
+        consentStatus: 'active',
+      };
+
+      const result = evaluateRouteGuard('/merchant/onboarding', courierSession);
+      expect(result.action).toBe('redirect');
+      if (result.action === 'redirect') {
+        expect(result.redirectTo).toBe(getRoleDefaultPath('courier'));
+      }
+    });
+
+    it('impide el cruce de roles en onboarding: merchant no accede a onboarding de repartidor', () => {
+      const merchantSession: AuthSession = {
+        userId: 'usr-merchant',
+        email: 'merchant@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'active',
+      };
+
+      const result = evaluateRouteGuard('/courier/onboarding/identity', merchantSession);
+      expect(result.action).toBe('redirect');
+      if (result.action === 'redirect') {
+        expect(result.redirectTo).toBe(getRoleDefaultPath('merchant'));
+      }
+    });
+  });
+
+  describe('DoD 4: Destinos de getRoleDefaultPath, enlaces y Redirecciones en TODO el alcance T-118 (PR87-H01, H09)', () => {
+    it('getRoleDefaultPath y evaluateRouteGuard para merchant, courier y admin resuelven únicamente a rutas existentes en el filesystem', () => {
+      const merchantPath = getRoleDefaultPath('merchant');
+      const courierPath = getRoleDefaultPath('courier');
+      const adminPath = getRoleDefaultPath('admin');
+
+      expect(merchantPath).toBe('/merchant/dashboard');
+      expect(courierPath).toBe('/courier/feed');
+      expect(adminPath).toBe('/');
+      expect(resolveRouteToFilesystemPage(merchantPath)).not.toBeNull();
+      expect(resolveRouteToFilesystemPage(courierPath)).not.toBeNull();
+      expect(resolveRouteToFilesystemPage(adminPath)).not.toBeNull();
+
+      const adminAal1: AuthSession = {
+        userId: 'adm-1',
+        email: 'adm@cade.app',
+        role: 'admin',
+        aal: 'aal1',
+        consentStatus: 'active',
+      };
+      const guardResult = evaluateRouteGuard('/admin/settings', adminAal1);
+      expect(guardResult.action).toBe('redirect');
+      if (guardResult.action === 'redirect') {
+        expect(guardResult.redirectTo).not.toBe('/admin');
+        expect(guardResult.redirectTo).not.toBe('/admin/mfa');
+        expect(resolveRouteToFilesystemPage(guardResult.redirectTo)).not.toBeNull();
+      }
+
+      for (const probe of [
+        '/ruta-inexistente',
+        '/ghost',
+        '/terms',
+        '/privacy',
+        '/pilot-terms',
+        '/legal',
+      ]) {
+        const merchantTarget = resolvePostLoginRedirect(probe, 'merchant', 'active');
+        const courierTarget = resolvePostLoginRedirect(probe, 'courier', 'active');
+        expect(resolveRouteToFilesystemPage(merchantTarget)).not.toBeNull();
+        expect(resolveRouteToFilesystemPage(courierTarget)).not.toBeNull();
+      }
+    });
+
+    it('incluye src/app/(public)/layout.tsx en la auditoría y enlaza documentos legales publicados sin destinos rotos', () => {
+      const publicLayoutPath = path.join(ROOT_DIR, 'app/(public)/layout.tsx');
+      const publicLayoutContent = fs.readFileSync(publicLayoutPath, 'utf-8');
+      expect(publicLayoutContent).toContain('/legal/terms');
+      expect(publicLayoutContent).toContain('/legal/privacy');
+      expect(publicLayoutContent).toContain('/legal/courier');
+      expect(publicLayoutContent).toContain('/legal/pilot');
+
+      const allScopeFiles = getAllT118ScopeFiles();
+      expect(allScopeFiles).toContain(publicLayoutPath);
+
+      for (const fullPath of allScopeFiles) {
+        const rel = path.relative(path.resolve(ROOT_DIR, '..'), fullPath).replace(/\\/g, '/');
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        expect(() => assertNoInvalidInternalLinks(content, rel)).not.toThrow();
+      }
+    });
+
+    it('detecta mutaciones inválidas de href o redirectTo hacia cualquier ruta interna inexistente como /ghost o /ruta-inexistente (PR87-H09)', () => {
+      expect(() =>
+        assertNoInvalidInternalLinks('<Link href="/terms">Términos</Link>', 'mutated-layout.tsx')
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks('<Link href="/ghost">Fantasma</Link>', 'mutated-ghost.tsx')
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          '<Link href="/ruta-inexistente">No existe</Link>',
+          'mutated-nonexistent.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          "return { action: 'redirect', redirectTo: '/ghost' };",
+          'mutated-guards.ts'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          '<Link href={`/ghost/${id}`}>Fantasma dinámico</Link>',
+          'mutated-template-href.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks('router.push(`/ghost/${id}`);', 'mutated-template-router.tsx')
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          'return { redirectTo: `/ghost/${id}` };',
+          'mutated-template-redirectTo.ts'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks('redirect(`/ghost/${id}`);', 'mutated-template-redirect.ts')
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          '<Link href={`/merchant/requests/${req.id}`}>Detalle válido</Link>',
+          'valid-template-href.tsx'
+        )
+      ).not.toThrow();
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          "return { action: 'redirect', redirectTo: '/admin/mfa' };",
+          'mutated-guards.ts'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          "const navItems = [{ label: 'Solicitudes', href: '/merchant/dashboard' }, { label: 'Ghost', href: '/ghost' }];",
+          'mutated-merchant-nav.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          '<Link href={buildNextCursorHref(nextCursor)}>Siguiente</Link>',
+          'mutated-orphan-helper-call.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          'const buildNextCursorHref = () => `/ghost?${params.toString()}`; <Link href={buildNextCursorHref(nextCursor)}>Siguiente</Link>',
+          'mutated-helper-return.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          "const targetUrl = '/ghost'; router.push(targetUrl);",
+          'mutated-router-variable.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          'router.push(targetUrl);',
+          'mutated-unverified-router-variable.tsx'
+        )
+      ).toThrow(/inexistente/);
+    });
+
+    it('registerAction redirige a onboarding específico de cada rol para usuarios nuevos', async () => {
+      const mockInsertConsents = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: vi.fn().mockReturnValue({ insert: mockInsertConsents }),
+        rpc: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockImplementation(async () => ({
+        data: { user: { id: 'usr-new-1', email: 'test@test.com' }, session: null },
+        error: null,
+      }));
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const merchantRes = await registerAction({
+        email: 'comercio@test.com',
+        password: 'password123',
+        role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
+      });
+
+      expect(merchantRes.ok).toBe(true);
+      if (merchantRes.ok) {
+        expect(merchantRes.data.redirectTo).toBe('/merchant/onboarding');
+      }
+
+      const courierRes = await registerAction({
+        email: 'courier@test.com',
+        password: 'password123',
+        role: 'courier',
+        displayName: 'Juan Repartidor',
+        phone: '3815559876',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
+      });
+
+      expect(courierRes.ok).toBe(true);
+      if (courierRes.ok) {
+        expect(courierRes.data.redirectTo).toBe('/courier/onboarding/identity');
+      }
+    });
+  });
+
+  describe('DoD 5: Integridad de Navegación, 0 text-xs en TODO el alcance T-118 y buttonVariants válidos (PR87-H07, H08, H15)', () => {
+    it('merchant-nav.tsx y courier-nav.tsx definen exactamente los 3 destinos canónicos de cada rol sin rutas extra', () => {
+      const extractObjectHrefs = (code: string): string[] => {
+        const regex = /\bhref\s*:\s*(?:['"]([^'"]+)['"]|`([^`]+)`)/g;
+        const found: string[] = [];
+        let m: RegExpExecArray | null = regex.exec(code);
+        while (m !== null) {
+          const href = m[1] ?? m[2];
+          if (href) found.push(href);
+          m = regex.exec(code);
+        }
+        return found;
+      };
+
+      const merchantNav = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(merchant)/merchant-nav.tsx'),
+        'utf-8'
+      );
+      const merchantHrefs = extractObjectHrefs(merchantNav);
+      expect(merchantHrefs).toEqual(['/merchant/dashboard', '/merchant/history', '/merchant/plan']);
+      for (const href of merchantHrefs) {
+        expect(resolveRouteToFilesystemPage(href)).not.toBeNull();
+      }
+
+      const courierNav = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(courier)/courier-nav.tsx'),
+        'utf-8'
+      );
+      const courierHrefs = extractObjectHrefs(courierNav);
+      expect(courierHrefs).toEqual(['/courier/feed', '/courier/offers', '/courier/profile']);
+      for (const href of courierHrefs) {
+        expect(resolveRouteToFilesystemPage(href)).not.toBeNull();
+      }
+    });
+
+    it('0 ocurrencias de text-xs y 0 usos de variant: "primary" en TODO el alcance de T-118', () => {
+      const allScopeFiles = getAllT118ScopeFiles();
+      for (const fullPath of allScopeFiles) {
+        const rel = path.relative(path.resolve(ROOT_DIR, '..'), fullPath).replace(/\\/g, '/');
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        expect(() => assertNoTextXs(content, rel)).not.toThrow();
+        expect(content, `${rel} no debe invocar variant: 'primary'`).not.toMatch(
+          /variant:\s*['"]primary['"]/
+        );
+      }
+
+      expect(() => assertNoTextXs('<p className="text-xs">12px</p>', 'mutated.tsx')).toThrow(
+        /text-xs/
+      );
+    });
+  });
+
+  describe('DoD 6: Esquema real de DB, Prohibición de Datos Fantasma y Paginación (PR87-H02, H03, H04, H05, H14)', () => {
+    it('MerchantDashboardPage (/merchant/dashboard/page.tsx) consulta profile_id, business_name en lugar de columnas inexistentes id, name (PR87-H14)', () => {
+      const dashboardPage = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(merchant)/merchant/dashboard/page.tsx'),
+        'utf-8'
+      );
+      expect(dashboardPage).toContain(".select('profile_id, business_name')");
+      expect(dashboardPage).not.toContain(".select('id, name')");
+    });
+
+    it('C08 (/merchant/plan/page.tsx + queries.ts + copy.ts) usa el enum real merchant_subscription_status (pilot|active|expired|cancelled) y no contiene AFIP/ARBA ni trial fantasma', () => {
+      const planPage = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(merchant)/merchant/plan/page.tsx'),
+        'utf-8'
+      );
+      const merchantQueries = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'features/merchants/queries.ts'),
+        'utf-8'
+      );
+      const merchantCopy = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'features/merchants/copy.ts'),
+        'utf-8'
+      );
+      const combined = `${planPage}\n${merchantQueries}\n${merchantCopy}`;
+
+      expect(combined).not.toMatch(/AFIP/i);
+      expect(combined).not.toMatch(/ARBA/i);
+      expect(merchantQueries).toContain('subscription_status');
+      expect(merchantQueries).toContain('paid_until');
+      expect(merchantCopy).toContain("case 'pilot':");
+      expect(merchantCopy).toContain("case 'active':");
+      expect(merchantCopy).toContain("case 'expired':");
+      expect(merchantCopy).toContain("case 'cancelled':");
+    });
+
+    it('R08 (/courier/profile/page.tsx + CourierProfileView) usa el enum real document_review_status (none|submitted|verified|rejected) y no solicita CBU/CVU/alias', () => {
+      const profilePage = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(courier)/courier/profile/page.tsx'),
+        'utf-8'
+      );
+      const profileLeaf = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'features/courier-onboarding/components/courier-profile-view.tsx'),
+        'utf-8'
+      );
+      const combined = `${profilePage}\n${profileLeaf}`;
+
+      expect(combined).not.toMatch(/CBU/i);
+      expect(combined).not.toMatch(/CVU/i);
+      expect(combined).not.toMatch(/alias bancario/i);
+      expect(combined).not.toMatch(/\|\|\s*'moto'/);
+      expect(combined).not.toMatch(/\|\|\s*'approved'/);
+      expect(profileLeaf).toContain("case 'submitted':");
+      expect(profileLeaf).toContain("case 'verified':");
+      expect(profileLeaf).toContain("case 'rejected':");
+      expect(profileLeaf).toContain("case 'none':");
+    });
+
+    it('C07 (src/features/requests/queries.ts) filtra por estado antes de paginar, valida cursor con Zod y no inventa $0 ni distancias', () => {
+      const requestsQueries = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'features/requests/queries.ts'),
+        'utf-8'
+      );
+
+      expect(requestsQueries).not.toContain("return '1,0'");
+      expect(requestsQueries).not.toContain("?? 'Centro'");
+      expect(requestsQueries).not.toContain("?? 'Aguilares'");
+      expect(requestsQueries).toContain('merchantHistoryCursorSchema');
+      expect(requestsQueries).toContain('getMerchantHistoryRequests');
+      expect(requestsQueries).toContain('avgRateArs: number | null = null');
+    });
+
+    it('PR106-H01: El filesystem publica las rutas canónicas del panel admin (/admin/applicants, /admin/applicants/[id], /admin/couriers)', () => {
+      const canonicalAdminRoutes = [
+        '/admin/applicants',
+        '/admin/applicants/test-id',
+        '/admin/couriers',
+      ];
+      for (const route of canonicalAdminRoutes) {
+        const resolved = resolveRouteToFilesystemPage(route);
+        expect(resolved, `La ruta canónica ${route} debe resolver a un archivo de página en el filesystem`).not.toBeNull();
+      }
+    });
+  });
+
+  describe('T-322: Redirección obligatoria a login en onboarding courier sin sesión activa', () => {
+    it('CanonicalCourierOnboardingIdentityPage redirige a /login?redirectTo=/courier/onboarding/identity si user es null', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      try {
+        await CanonicalCourierOnboardingIdentityPage();
+        expect.unreachable('Debe lanzar redirect');
+      } catch (err: unknown) {
+        expect((err as Error).message).toBe('NEXT_REDIRECT');
+        expect((err as { digest?: string }).digest).toContain(
+          '/login?redirectTo=/courier/onboarding/identity'
+        );
+      }
+    });
+
+    it('CanonicalCourierOnboardingVehiclePage redirige a /login?redirectTo=/courier/onboarding/vehicle si user es null', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      try {
+        await CanonicalCourierOnboardingVehiclePage();
+        expect.unreachable('Debe lanzar redirect');
+      } catch (err: unknown) {
+        expect((err as Error).message).toBe('NEXT_REDIRECT');
+        expect((err as { digest?: string }).digest).toContain(
+          '/login?redirectTo=/courier/onboarding/vehicle'
+        );
+      }
+    });
+  });
+
+  describe('T-336: Integridad de navegación de retorno y 404 al home real', () => {
+    interface RootNavigationOccurrence {
+      file: string;
+      line: number;
+      kind: 'href' | 'router.push' | 'router.replace' | 'redirect' | 'redirectTo' | 'propDefault';
+      match: string;
+    }
+
+    interface AllowedOccurrenceRule {
+      allowedKind: RootNavigationOccurrence['kind'];
+      maxCount: number;
+      reason: string;
+    }
+
+    const ROOT_NAV_PRODUCER_PATTERNS: Array<{
+      kind: RootNavigationOccurrence['kind'];
+      createRegex: () => RegExp;
+    }> = [
+      { kind: 'href', createRegex: () => /\bhref\s*[:=]\s*(?:\{\s*)?['"]\/['"](?:\s*\})?/g },
+      { kind: 'router.push', createRegex: () => /\brouter\.push\s*\(\s*['"]\/['"]\s*\)/g },
+      { kind: 'router.replace', createRegex: () => /\brouter\.replace\s*\(\s*['"]\/['"]\s*\)/g },
+      { kind: 'redirect', createRegex: () => /\bredirect\s*\(\s*['"]\/['"]\s*\)/g },
+      { kind: 'redirectTo', createRegex: () => /\bredirectTo\s*:\s*['"]\/['"]/g },
+      { kind: 'propDefault', createRegex: () => /\blogoHref\s*=\s*['"]\/['"]/g },
+    ];
+
+    function resolvesHelperToRoot(sourceCode: string, helperName: string): boolean {
+      // 1. Concise arrow: const helperName = (...) => '/' or with return type
+      const conciseArrowRegex = new RegExp(
+        `(?:const|let|var)\\s+${helperName}\\s*=\\s*(?:\\([^)]*\\)(?:\\s*:\\s*[^=]+)?|[a-zA-Z_$][\\w$]*)\\s*=>\\s*([^;\\n]+)`
+      );
+      const arrowMatch = conciseArrowRegex.exec(sourceCode);
+      if (arrowMatch) {
+        const rhs = arrowMatch[1]?.trim() ?? '';
+        if (/^['"`]\/['"`]$/.test(rhs)) {
+          return true;
+        }
+      }
+
+      // 2. Block function (declaration or arrow/function expression):
+      // function helperName() { return '/'; } or const helperName = () => { return '/'; }
+      const blockFunctionRegex = new RegExp(
+        `(?:function\\s+${helperName}|(?:const|let|var)\\s+${helperName}\\s*=\\s*(?:function|(?:\\([^)]*\\)|[a-zA-Z_$][\\w$]*)\\s*=>))[^\\{]*\\{([\\s\\S]*?)\\}`
+      );
+      const blockMatch = blockFunctionRegex.exec(sourceCode);
+      if (blockMatch) {
+        const body = blockMatch[1] ?? '';
+        const returnRegex = /\breturn\s+([^;\n}]+)/g;
+        let retMatch: RegExpExecArray | null = returnRegex.exec(body);
+        while (retMatch !== null) {
+          const retVal = retMatch[1]?.trim() ?? '';
+          if (/^['"`]\/['"`]$/.test(retVal)) {
+            return true;
+          }
+          retMatch = returnRegex.exec(body);
+        }
+      }
+
+      return false;
+    }
+
+    function resolvesVariableToRoot(sourceCode: string, varName: string): boolean {
+      const varDefRegex = new RegExp(
+        `(?:const|let|var)\\s+${varName}\\s*(?::\\s*[^=]+)?=\\s*([^;\\n]+)`
+      );
+      const match = varDefRegex.exec(sourceCode);
+      if (!match) return false;
+
+      const rhs = match[1]?.trim() ?? '';
+      if (/^['"`]\/['"`]$/.test(rhs)) {
+        return true;
+      }
+
+      const helperCallMatch = /^([a-zA-Z_$][\w$]*)\s*\([^)]*\)$/.exec(rhs);
+      if (helperCallMatch && helperCallMatch[1]) {
+        return resolvesHelperToRoot(sourceCode, helperCallMatch[1]);
+      }
+
+      if (/^[a-zA-Z_$][\w$]*$/.test(rhs)) {
+        return resolvesVariableToRoot(sourceCode, rhs);
+      }
+
+      return false;
+    }
+
+    function resolvesToRoot(sourceCode: string, expr: string): boolean {
+      const trimmed = expr.trim();
+      if (/^['"`]\/['"`]$/.test(trimmed)) {
+        return true;
+      }
+
+      const helperCallMatch = /^([a-zA-Z_$][\w$]*)\s*\([^)]*\)$/.exec(trimmed);
+      if (helperCallMatch && helperCallMatch[1]) {
+        return resolvesHelperToRoot(sourceCode, helperCallMatch[1]);
+      }
+
+      if (/^[a-zA-Z_$][\w$]*$/.test(trimmed)) {
+        return resolvesVariableToRoot(sourceCode, trimmed);
+      }
+
+      return false;
+    }
+
+    const INDIRECT_ROOT_NAV_PATTERNS: Array<{
+      kind: RootNavigationOccurrence['kind'];
+      createRegex: () => RegExp;
+    }> = [
+      {
+        kind: 'router.push',
+        createRegex: () =>
+          /\brouter\.push\s*\(\s*([a-zA-Z_$][\w$]*(?:\([^)]*\))?|[^)]+)\s*\)/g,
+      },
+      {
+        kind: 'router.replace',
+        createRegex: () =>
+          /\brouter\.replace\s*\(\s*([a-zA-Z_$][\w$]*(?:\([^)]*\))?|[^)]+)\s*\)/g,
+      },
+      {
+        kind: 'redirect',
+        createRegex: () =>
+          /\bredirect\s*\(\s*([a-zA-Z_$][\w$]*(?:\([^)]*\))?|[^)]+)\s*\)/g,
+      },
+      { kind: 'redirectTo', createRegex: () => /\bredirectTo\s*:\s*([^,\n}]+)/g },
+      { kind: 'href', createRegex: () => /\bhref\s*=\s*\{\s*([^}]+)\s*\}/g },
+      {
+        kind: 'href',
+        createRegex: () => /\bhref\s*:\s*([a-zA-Z_$][\w$]*(?:\([^)]*\))?)/g,
+      },
+    ];
+
+    function scanRootNavigationOccurrences(
+      sourceCode: string,
+      fileLabel: string
+    ): RootNavigationOccurrence[] {
+      const occurrences: RootNavigationOccurrence[] = [];
+
+      for (const { kind, createRegex } of ROOT_NAV_PRODUCER_PATTERNS) {
+        const rx = createRegex();
+        let m: RegExpExecArray | null = rx.exec(sourceCode);
+        while (m !== null) {
+          const line = sourceCode.slice(0, m.index).split('\n').length;
+          occurrences.push({
+            file: fileLabel,
+            line,
+            kind,
+            match: m[0],
+          });
+          m = rx.exec(sourceCode);
+        }
+      }
+
+      for (const { kind, createRegex } of INDIRECT_ROOT_NAV_PATTERNS) {
+        const rx = createRegex();
+        let m: RegExpExecArray | null = rx.exec(sourceCode);
+        while (m !== null) {
+          const rawArg = m[1]?.trim() ?? '';
+          if (!/^['"`]/.test(rawArg) && resolvesToRoot(sourceCode, rawArg)) {
+            const line = sourceCode.slice(0, m.index).split('\n').length;
+            occurrences.push({
+              file: fileLabel,
+              line,
+              kind,
+              match: m[0],
+            });
+          }
+          m = rx.exec(sourceCode);
+        }
+      }
+
+      const seen = new Set<string>();
+      const uniqueOccurrences: RootNavigationOccurrence[] = [];
+      for (const occ of occurrences) {
+        const key = `${occ.line}:${occ.kind}:${occ.match}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueOccurrences.push(occ);
+        }
+      }
+
+      return uniqueOccurrences.sort((a, b) => a.line - b.line);
+    }
+
+    const ALLOWED_ROOT_NAV_RULES: Record<string, AllowedOccurrenceRule> = {
+      'src/app/(public)/legal/page.tsx': {
+        allowedKind: 'href',
+        maxCount: 1,
+        reason: 'Landing legal pública: botón volver al inicio enlaza a la landing pública',
+      },
+      'src/app/(public)/login/page.tsx': {
+        allowedKind: 'href',
+        maxCount: 1,
+        reason: 'Página pública de login: botón volver al inicio enlaza a la landing pública',
+      },
+      'src/app/(public)/register/page.tsx': {
+        allowedKind: 'href',
+        maxCount: 1,
+        reason: 'Página pública de registro: botón volver al inicio enlaza a la landing pública',
+      },
+      'src/ui/top-bar.tsx': {
+        allowedKind: 'propDefault',
+        maxCount: 1,
+        reason: 'TopBar componente base: valor por defecto de logoHref = "/" cuando no se especifica',
+      },
+    };
+
+    function auditRootNavigationViolations(
+      occurrences: RootNavigationOccurrence[]
+    ): Array<{ occurrence: RootNavigationOccurrence; reason: string }> {
+      const fileCounts: Record<string, number> = {};
+      const violations: Array<{ occurrence: RootNavigationOccurrence; reason: string }> = [];
+
+      for (const occ of occurrences) {
+        const rule = ALLOWED_ROOT_NAV_RULES[occ.file];
+        if (!rule) {
+          violations.push({
+            occurrence: occ,
+            reason: `Archivo no autorizado para navegación root (${occ.kind}: ${occ.match})`,
+          });
+          continue;
+        }
+
+        if (occ.kind !== rule.allowedKind) {
+          violations.push({
+            occurrence: occ,
+            reason: `Tipo de navegación root "${occ.kind}" no permitido en ${occ.file} (esperado: "${rule.allowedKind}")`,
+          });
+          continue;
+        }
+
+        const currentCount = (fileCounts[occ.file] ?? 0) + 1;
+        fileCounts[occ.file] = currentCount;
+
+        if (currentCount > rule.maxCount) {
+          violations.push({
+            occurrence: occ,
+            reason: `Exceso de ocurrencias de navegación root en ${occ.file} (${currentCount} > máximo permitido: ${rule.maxCount})`,
+          });
+        }
+      }
+
+      return violations;
+    }
+
+    it('ErrorView y NotFoundView usan /login como gateway de retorno y no enlazan a la landing pública /', () => {
+      const errorViewPath = path.resolve(ROOT_DIR, 'features/notifications/offline/error-view.tsx');
+      const notFoundViewPath = path.resolve(ROOT_DIR, 'features/notifications/offline/not-found-view.tsx');
+
+      const errorViewContent = fs.readFileSync(errorViewPath, 'utf-8');
+      const notFoundViewContent = fs.readFileSync(notFoundViewPath, 'utf-8');
+
+      expect(errorViewContent).toContain('href="/login"');
+      expect(scanRootNavigationOccurrences(errorViewContent, 'error-view.tsx')).toEqual([]);
+
+      expect(notFoundViewContent).toContain('href="/login"');
+      expect(scanRootNavigationOccurrences(notFoundViewContent, 'not-found-view.tsx')).toEqual([]);
+    });
+
+    it('PR248-H02: las ocurrencias de navegación a la landing pública / en producción están estrictamente limitadas a la allowlist auditada', () => {
+      const candidateDirs = [
+        path.resolve(ROOT_DIR, 'app'),
+        path.resolve(ROOT_DIR, 'features'),
+        path.resolve(ROOT_DIR, 'ui'),
+      ];
+
+      const allProductionFiles: string[] = [];
+      for (const dir of candidateDirs) {
+        allProductionFiles.push(...walkProductionFiles(dir));
+      }
+
+      const allOccurrences: RootNavigationOccurrence[] = [];
+      for (const filePath of allProductionFiles) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const rel = path.relative(path.resolve(ROOT_DIR, '..'), filePath).replace(/\\/g, '/');
+        const occurrences = scanRootNavigationOccurrences(content, rel);
+        allOccurrences.push(...occurrences);
+      }
+
+      const violations = auditRootNavigationViolations(allOccurrences);
+      expect(violations).toEqual([]);
+
+      // Valida que cada archivo autorizado tenga exactamente una ocurrencia registrada
+      const detectedFiles = new Set(allOccurrences.map((o) => o.file));
+      expect(Array.from(detectedFiles).sort()).toEqual(Object.keys(ALLOWED_ROOT_NAV_RULES).sort());
+    });
+
+    it('PR248-H02: detecta violación discriminante ante router.push("/")', () => {
+      const synthetic = `function goToHome() { router.push('/'); }`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('router.push');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación discriminante ante router.replace("/")', () => {
+      const synthetic = `function replaceHome() { router.replace('/'); }`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('router.replace');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación discriminante ante redirect("/")', () => {
+      const synthetic = `redirect('/');`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('redirect');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación discriminante ante redirectTo: "/"', () => {
+      const synthetic = `return { action: 'redirect', redirectTo: '/' };`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('redirectTo');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación cuando un archivo allowlisteado incluye una segunda navegación root no autorizada', () => {
+      const realLoginContent = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(public)/login/page.tsx'),
+        'utf-8'
+      );
+      const mutatedContent = `${realLoginContent}\n<Link href="/">Segundo enlace no documentado</Link>`;
+      const occ = scanRootNavigationOccurrences(mutatedContent, 'src/app/(public)/login/page.tsx');
+      expect(occ).toHaveLength(2);
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Exceso de ocurrencias');
+    });
+
+    it('PR248-H02: detecta violaciones en fuentes consecutivas sin fuga de estado de RegExp entre escaneos', () => {
+      const sourceA = `const a = <Link href="/">Inicio A</Link>;`;
+      const sourceB = `function nav() { router.push('/'); }`;
+
+      const occA = scanRootNavigationOccurrences(sourceA, 'src/app/fileA.tsx');
+      const occB = scanRootNavigationOccurrences(sourceB, 'src/app/fileB.tsx');
+
+      expect(occA).toHaveLength(1);
+      expect(occA[0]?.kind).toBe('href');
+
+      expect(occB).toHaveLength(1);
+      expect(occB[0]?.kind).toBe('router.push');
+
+      expect(auditRootNavigationViolations(occA)).toHaveLength(1);
+      expect(auditRootNavigationViolations(occB)).toHaveLength(1);
+    });
+
+    it('PR248-H02: login, register y legal conservan únicamente sus usos públicos legítimos', () => {
+      const allowedPaths = [
+        'src/app/(public)/legal/page.tsx',
+        'src/app/(public)/login/page.tsx',
+        'src/app/(public)/register/page.tsx',
+        'src/ui/top-bar.tsx',
+      ];
+
+      for (const relPath of allowedPaths) {
+        const fullPath = path.resolve(ROOT_DIR, '..', relPath);
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const occ = scanRootNavigationOccurrences(content, relPath);
+
+        expect(occ).toHaveLength(1);
+        const violations = auditRootNavigationViolations(occ);
+        expect(violations).toEqual([]);
+      }
+    });
+
+    it('PR248-H02: detecta violación discriminante indirecta ante variable local literal con router.push (target = "/")', () => {
+      const synthetic = `const target = '/'; function nav() { router.push(target); }`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('router.push');
+      expect(occ[0]?.match).toBe('router.push(target)');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación discriminante indirecta ante variable local literal con router.replace (target = "/")', () => {
+      const synthetic = `const target = '/'; function nav() { router.replace(target); }`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('router.replace');
+      expect(occ[0]?.match).toBe('router.replace(target)');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación discriminante indirecta ante helper local que devuelve "/" y es navegado', () => {
+      const syntheticArrow = `const goHome = () => '/'; function nav() { router.push(goHome()); }`;
+      const occArrow = scanRootNavigationOccurrences(syntheticArrow, 'src/app/test-comp.tsx');
+      expect(occArrow).toHaveLength(1);
+      expect(occArrow[0]?.kind).toBe('router.push');
+      expect(occArrow[0]?.match).toBe('router.push(goHome())');
+      const violationsArrow = auditRootNavigationViolations(occArrow);
+      expect(violationsArrow).toHaveLength(1);
+      expect(violationsArrow[0]?.reason).toContain('Archivo no autorizado');
+
+      const syntheticBlock = `function getRoot() { return '/'; } redirect(getRoot());`;
+      const occBlock = scanRootNavigationOccurrences(syntheticBlock, 'src/app/test-comp.tsx');
+      expect(occBlock).toHaveLength(1);
+      expect(occBlock[0]?.kind).toBe('redirect');
+      expect(occBlock[0]?.match).toBe('redirect(getRoot())');
+      const violationsBlock = auditRootNavigationViolations(occBlock);
+      expect(violationsBlock).toHaveLength(1);
+      expect(violationsBlock[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: no genera violaciones ante variable o helper local que devuelve destino distinto de root ("/login")', () => {
+      const syntheticVar = `const target = '/login'; router.push(target); router.replace(target); redirect(target);`;
+      const occVar = scanRootNavigationOccurrences(syntheticVar, 'src/app/test-comp.tsx');
+      expect(occVar).toHaveLength(0);
+      expect(auditRootNavigationViolations(occVar)).toHaveLength(0);
+
+      const syntheticHelper = `const goLogin = () => '/login'; function getLogin() { return '/login'; } router.push(goLogin()); redirect(getLogin());`;
+      const occHelper = scanRootNavigationOccurrences(syntheticHelper, 'src/app/test-comp.tsx');
+      expect(occHelper).toHaveLength(0);
+      expect(auditRootNavigationViolations(occHelper)).toHaveLength(0);
+    });
+  });
+});

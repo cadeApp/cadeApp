@@ -1,0 +1,129 @@
+'use client';
+
+import React, { useState, useTransition } from 'react';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
+import type { TripDetails } from '../types';
+import { TripCourierView } from './trip-courier-view';
+import type { TripCancelDialogProps } from './trip-cancel-dialog';
+import { CancellationHistoryCard, type CancellationHistoryResult } from './cancellation-history-card';
+
+const TripCancelDialog = dynamic<TripCancelDialogProps>(
+  () => import('./trip-cancel-dialog').then((mod) => mod.TripCancelDialog),
+  { ssr: false }
+);
+import {
+  markTripPickedUpAction,
+  markTripDeliveredAction,
+  markDropDeliveredAction,
+  markDropFailedAction,
+  courierCancelTripAction,
+} from '../actions';
+import { notify } from '@/ui/notify';
+
+export interface TripCourierContainerProps {
+  trip: TripDetails;
+  /** T-373: primera página del historial (CC-032). Solo se ve si el repartidor tiene cancelaciones propias. */
+  cancellationHistory?: CancellationHistoryResult;
+  /** T-389: «Reportar un problema», armado en el servidor por la page; la vista lo pinta en su lugar. */
+  incidentAction?: React.ReactNode;
+}
+
+export function TripCourierContainer({ trip, cancellationHistory, incidentAction }: TripCourierContainerProps) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+  const handleAdvanceTrip = () => {
+    startTransition(async () => {
+      if (trip.status === 'matched') {
+        const res = await markTripPickedUpAction({ requestId: trip.id });
+        if (res.ok) {
+          notify.success('Pedido marcado como retirado.');
+          router.refresh();
+        } else {
+          notify.error('No se pudo marcar como retirado.');
+        }
+      } else if (trip.status === 'in_transit') {
+        const res = await markTripDeliveredAction({ requestId: trip.id });
+        if (res.ok) {
+          notify.success('¡Entrega confirmada!');
+          router.refresh();
+        } else {
+          notify.error('No se pudo confirmar la entrega.');
+        }
+      }
+    });
+  };
+
+  const handleMarkDropDelivered = (dropId: string) => {
+    startTransition(async () => {
+      const res = await markDropDeliveredAction({ requestId: trip.id, dropId });
+      if (res.ok) {
+        notify.success('Entrega confirmada.');
+        router.refresh();
+      } else {
+        notify.error('No se pudo confirmar la entrega.');
+      }
+    });
+  };
+
+  const handleMarkDropFailed = (dropId: string, reason: string) => {
+    startTransition(async () => {
+      const res = await markDropFailedAction({ requestId: trip.id, dropId, reason });
+      if (res.ok) {
+        notify.success('Entrega registrada como no entregada.');
+        router.refresh();
+      } else {
+        notify.error('No se pudo registrar la entrega no realizada.');
+      }
+    });
+  };
+
+  const handleOpenCancelModal = () => {
+    if (trip.status !== 'matched') return;
+    setCancelModalOpen(true);
+  };
+
+  const handleConfirmCancel = (reason: string) => {
+    startTransition(async () => {
+      const res = await courierCancelTripAction({
+        requestId: trip.id,
+        reason,
+      });
+
+      if (res.ok) {
+        notify.success('Viaje cancelado.');
+        setCancelModalOpen(false);
+        // T-373 / 5-A: se queda en /trips/[id], que ahora muestra «Cancelaste esta asignación» con su historial.
+        router.refresh();
+      } else {
+        notify.error('No se pudo cancelar el viaje.');
+      }
+    });
+  };
+
+  return (
+    <>
+      <TripCourierView
+        trip={trip}
+        onAdvanceTrip={handleAdvanceTrip}
+        onCancelTrip={handleOpenCancelModal}
+        onMarkDropDelivered={handleMarkDropDelivered}
+        onMarkDropFailed={handleMarkDropFailed}
+        isAdvancing={isPending}
+        incidentAction={incidentAction}
+      />
+      {cancellationHistory ? (
+        <CancellationHistoryCard requestId={trip.id} viewer="courier" result={cancellationHistory} />
+      ) : null}
+      <TripCancelDialog
+        open={cancelModalOpen}
+        onOpenChange={setCancelModalOpen}
+        onConfirm={handleConfirmCancel}
+        isPending={isPending}
+        actor="courier"
+      />
+    </>
+  );
+}

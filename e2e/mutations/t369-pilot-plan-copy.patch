@@ -1,0 +1,13 @@
+diff --git a/src/features/merchants/components/publication-balance-section.tsx b/src/features/merchants/components/publication-balance-section.tsx
+index cc67fdb0..c83d2e1a 100644
+--- a/src/features/merchants/components/publication-balance-section.tsx
++++ b/src/features/merchants/components/publication-balance-section.tsx
+@@ -72,7 +72,7 @@ function BalanceError() {
+ 
+ function headlineFor(balance: PublicationBalance): { headline: string; description: string } {
+   if (balance.canPublish) {
+-    return { headline: COPY.modeHeadline[balance.mode], description: COPY.modeDescription[balance.mode] };
++    return { headline: COPY.modeHeadline.credits, description: COPY.modeDescription.credits };
+   }
+   if (balance.subscriptionStatus === 'cancelled') {
+     return { headline: COPY.blockedHeadline.cancelled, description: COPY.blockedDescription.cancelled };

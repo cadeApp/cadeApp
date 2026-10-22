@@ -1,0 +1,1097 @@
+import 'server-only';
+
+import { z } from 'zod';
+import { createClient } from '@/server/supabase/server';
+import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
+import { getMerchantRequestPrivateFieldsRpc } from '@/server/rpc/request-private-fields';
+import { createRequestsRpcServerClient } from '@/server/rpc/requests';
+import type { SupabaseRpcCaller } from '@/server/rpc/offers';
+
+export const MAX_RECONCILE_BATCHES = 10;
+export const MAX_CONSECUTIVE_LOCK_RETRIES = 3;
+
+/**
+ * CC-026 / T-366: Reconcilia transaccionalmente en PostgreSQL las solicitudes vencidas
+ * del comercio autenticado antes de ejecutar lecturas con paginación keyset.
+ * Consume lotes (hasta 50 por lote) mientras `hasMore` sea true.
+ * Si SKIP LOCKED deja filas bloqueadas concurrentemente (`expiredCount === 0 && hasMore === true`),
+ * se reintenta hasta MAX_CONSECUTIVE_LOCK_RETRIES (3) veces antes de fallar cerrado.
+ * Si se agota el presupuesto de reintentos o el tope global de lotes (10) y aún restan filas
+ * pendientes, se arroja excepción explícita para no ejecutar consultas SQL sobre estado obsoleto.
+ */
+export async function reconcileMerchantExpiredRequests(
+  client: SupabaseRpcCaller
+): Promise<void> {
+  const rpcClient = createRequestsRpcServerClient(client);
+  let consecutiveLockRetries = 0;
+
+  for (let batch = 0; batch < MAX_RECONCILE_BATCHES; batch++) {
+    const res = await rpcClient.reconcile_expired_requests({});
+    if (!res.ok) {
+      throw new Error(`Error al reconciliar solicitudes vencidas: ${res.code}`);
+    }
+
+    if (!res.data.hasMore) {
+      return;
+    }
+
+    if (res.data.expiredCount === 0) {
+      consecutiveLockRetries++;
+      if (consecutiveLockRetries >= MAX_CONSECUTIVE_LOCK_RETRIES) {
+        throw new Error(
+          'Solicitudes vencidas bloqueadas concurrentemente; reintentos agotados'
+        );
+      }
+      continue;
+    }
+
+    // Progreso efectivo: resetear el contador de reintentos consecutivos por locks
+    consecutiveLockRetries = 0;
+  }
+
+  throw new Error('Presupuesto de reconciliación de solicitudes vencidas agotado');
+}
+
+import type {
+  MerchantRequestSummary,
+  MerchantRequestDetail,
+  MerchantOfferItem,
+  MerchantMetrics,
+  MerchantDropSummary,
+} from './types';
+import type { PackageType, RecipientPaymentMethod, DeliveryRequestStatus } from '@/domain/schemas';
+import type { LivePageCursor } from '@/lib/live-contracts';
+import { formatApproxDistanceKm } from '@/lib/format';
+
+export const historyFilterStatusSchema = z.enum(['all', 'delivered', 'cancelled', 'expired']);
+export type HistoryFilterStatus = z.infer<typeof historyFilterStatusSchema>;
+
+export const merchantHistoryCursorSchema = z.object({
+  createdAt: z.string().datetime({ offset: true }),
+  id: z.string().uuid(),
+});
+
+export interface ZoneOption {
+  readonly id: string;
+  readonly name: string;
+  readonly centroidLat: number | null;
+  readonly centroidLng: number | null;
+}
+
+export interface MerchantDefaultPickup {
+  readonly defaultPickupAddress: string | null;
+  readonly defaultPickupZoneId: string | null;
+  readonly defaultPickupLat: number | null;
+  readonly defaultPickupLng: number | null;
+  readonly notes: string | null;
+}
+
+export interface MerchantHistoryCursor {
+  readonly createdAt: string;
+  readonly id: string;
+}
+
+export interface GetMerchantRequestsOptions {
+  readonly limit?: number;
+  readonly status?: HistoryFilterStatus;
+  readonly cursor?: MerchantHistoryCursor | null;
+  readonly now?: Date;
+}
+
+export const HISTORY_TERMINAL_STATUSES = ['delivered', 'cancelled', 'expired'] as const;
+
+export function getAguilaresDayBoundsUtc(now: Date = new Date()): {
+  readonly civilDate: string;
+  readonly startUtcIso: string;
+  readonly endUtcIso: string;
+} {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+
+  const year = parts.find((p) => p.type === 'year')?.value ?? '2026';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '01';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '01';
+  const civilDate = `${year}-${month}-${day}`;
+
+  const startDate = new Date(`${civilDate}T00:00:00.000-03:00`);
+  const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+
+  return {
+    civilDate,
+    startUtcIso: startDate.toISOString(),
+    endUtcIso: endDate.toISOString(),
+  };
+}
+
+export function parseMerchantHistorySearchParams(raw?: {
+  status?: string;
+  cursorCreatedAt?: string;
+  cursorId?: string;
+}): {
+  status: HistoryFilterStatus;
+  cursor: MerchantHistoryCursor | null;
+} {
+  const statusParsed = historyFilterStatusSchema.safeParse(raw?.status);
+  const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
+
+  if (!raw?.cursorCreatedAt || !raw?.cursorId) {
+    return { status, cursor: null };
+  }
+
+  const cursorParsed = merchantHistoryCursorSchema.safeParse({
+    createdAt: raw.cursorCreatedAt,
+    id: raw.cursorId,
+  });
+
+  return {
+    status,
+    cursor: cursorParsed.success ? cursorParsed.data : null,
+  };
+}
+
+interface ZoneRow {
+  id: string;
+  name: string;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+}
+
+// T-388: el formateador vive en src/lib/format; se reexporta para los importadores existentes.
+export { formatApproxDistanceKm };
+
+export async function getActiveZones(): Promise<ZoneOption[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('zones')
+    .select<string, ZoneRow>('id, name, centroid_lat, centroid_lng')
+    .eq('active', true)
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw new Error(`Error al cargar zonas activas: ${error.message}`);
+  }
+
+  if (!data) {
+    return [];
+  }
+
+  return data.map((z) => ({
+    id: z.id,
+    name: z.name,
+    centroidLat: z.centroid_lat,
+    centroidLng: z.centroid_lng,
+  }));
+}
+
+export async function getMaxDropsPerRequest(): Promise<number> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'max_drops_per_request')
+    .maybeSingle<{ value: unknown }>();
+
+  if (error) {
+    throw new Error(`Error al cargar max_drops_per_request: ${error.message}`);
+  }
+
+  if (!data || data.value == null) {
+    throw new Error('Configuración max_drops_per_request no encontrada en platform_settings');
+  }
+
+  const parsed = typeof data.value === 'number' ? data.value : Number(data.value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Valor inválido de max_drops_per_request: ${String(data.value)}`);
+  }
+
+  return parsed;
+}
+
+export async function getMerchantDefaultPickup(
+  merchantProfileId: string
+): Promise<MerchantDefaultPickup | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('merchants')
+    .select(
+      'default_pickup_address, default_pickup_zone_id, default_pickup_lat, default_pickup_lng, notes'
+    )
+    .eq('profile_id', merchantProfileId)
+    .maybeSingle<{
+      default_pickup_address: string | null;
+      default_pickup_zone_id: string | null;
+      default_pickup_lat: number | null;
+      default_pickup_lng: number | null;
+      notes: string | null;
+    }>();
+
+  if (error) {
+    throw new Error(`Error al cargar dirección de retiro del comercio: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    defaultPickupAddress: data.default_pickup_address,
+    defaultPickupZoneId: data.default_pickup_zone_id,
+    defaultPickupLat: data.default_pickup_lat,
+    defaultPickupLng: data.default_pickup_lng,
+    notes: data.notes,
+  };
+}
+
+interface RawMerchantRequest {
+  id: string;
+  route_distance_m: number | null;
+  package_type: string | null;
+  recipient_payment_method: string | null;
+  needs_change: boolean | null;
+  status: string;
+  expires_at: string | null;
+  created_at: string;
+  accepted_offer_id: string | null;
+  drops_count?: number | null;
+  pickup_zone: { name: string } | { name: string }[] | null;
+  dropoff_zone: { name: string } | { name: string }[] | null;
+}
+
+interface RawOfferItem {
+  id: string;
+  courier_id: string;
+  amount_ars: number;
+  eta_minutes: number;
+  message: string | null;
+  status: string;
+  created_at: string;
+}
+
+interface AcceptedOfferHydration {
+  readonly amountArs: number;
+  readonly courierName: string;
+}
+
+interface RawDropRow {
+  id: string;
+  request_id: string;
+  position: number;
+  package_type: string;
+  recipient_payment_method: string;
+  needs_change: boolean;
+  approx_distance_m: number | null;
+  status: string;
+  delivered_at: string | null;
+  failed_reason: string | null;
+  dropoff_zone: { name: string } | { name: string }[] | null;
+}
+
+function mapRawDropToSummary(d: RawDropRow): MerchantDropSummary {
+  const zoneObj = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+  return {
+    id: d.id,
+    position: d.position,
+    dropoffZoneName: zoneObj?.name ?? 'Zona no disponible',
+    packageType: d.package_type as PackageType,
+    recipientPaymentMethod: d.recipient_payment_method as RecipientPaymentMethod,
+    needsChange: Boolean(d.needs_change),
+    approxDistanceKm: formatApproxDistanceKm(d.approx_distance_m),
+    status: d.status,
+    deliveredAt: d.delivered_at,
+    failedReason: d.failed_reason,
+  };
+}
+
+export function assertAndMapMerchantDrops(
+  requestId: string,
+  status: string,
+  declaredDropsCount: number | null | undefined,
+  children: MerchantDropSummary[]
+): {
+  drops: MerchantDropSummary[] | undefined;
+  firstDrop: MerchantDropSummary | undefined;
+  dropsCount: number;
+} {
+  const isDraft = status === 'draft';
+  const expectedCount = declaredDropsCount != null ? Number(declaredDropsCount) : undefined;
+
+  if (!isDraft) {
+    if (children.length === 0) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: estado '${status}' requiere al menos 1 entrega materializada, pero se encontraron 0.`
+      );
+    }
+    if (expectedCount !== undefined && children.length !== expectedCount) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: se declararon ${expectedCount} entregas pero se encontraron ${children.length}.`
+      );
+    }
+    const hasConsecutivePositions = children.every((d, idx) => d.position === idx + 1);
+    if (!hasConsecutivePositions) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: las posiciones de las entregas no son consecutivas iniciando en 1.`
+      );
+    }
+    return {
+      drops: children,
+      firstDrop: children[0],
+      dropsCount: children.length,
+    };
+  }
+
+  // Comportamiento para estado 'draft'
+  if (children.length > 0) {
+    const hasConsecutivePositions = children.every((d, idx) => d.position === idx + 1);
+    if (!hasConsecutivePositions) {
+      throw new Error(
+        `Inconsistencia en solicitud borrador ${requestId}: las posiciones de las entregas no son consecutivas iniciando en 1.`
+      );
+    }
+    return {
+      drops: children,
+      firstDrop: children[0],
+      dropsCount: children.length,
+    };
+  }
+
+  return {
+    drops: undefined,
+    firstDrop: undefined,
+    dropsCount: expectedCount ?? 1,
+  };
+}
+
+function mapRawMerchantRequests(
+  rawRequests: RawMerchantRequest[],
+  offersCountMap: Map<string, number>,
+  acceptedOffersMap?: Map<string, AcceptedOfferHydration>,
+  dropsMap?: Map<string, MerchantDropSummary[]>
+): MerchantRequestSummary[] {
+  return rawRequests.map((req) => {
+    const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
+    const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
+    const hydratedOffer = req.accepted_offer_id
+      ? acceptedOffersMap?.get(req.accepted_offer_id)
+      : undefined;
+
+    const reqDrops = dropsMap?.get(req.id) ?? [];
+    const { drops, firstDrop, dropsCount } = assertAndMapMerchantDrops(
+      req.id,
+      req.status,
+      req.drops_count,
+      reqDrops
+    );
+
+    const isDraft = req.status === 'draft';
+    const dropoffZoneName = firstDrop
+      ? firstDrop.dropoffZoneName
+      : isDraft
+        ? (dropoffZone?.name ?? 'Zona no disponible')
+        : 'Zona no disponible';
+    const packageType = firstDrop
+      ? firstDrop.packageType
+      : isDraft
+        ? ((req.package_type as PackageType) ?? 'chico')
+        : ('chico' as PackageType);
+    const recipientPaymentMethod = firstDrop
+      ? firstDrop.recipientPaymentMethod
+      : isDraft
+        ? ((req.recipient_payment_method as RecipientPaymentMethod) ?? 'cash')
+        : ('cash' as RecipientPaymentMethod);
+    const needsChange = firstDrop
+      ? firstDrop.needsChange
+      : isDraft
+        ? Boolean(req.needs_change)
+        : false;
+
+    return {
+      id: req.id,
+      pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
+      dropoffZoneName,
+      approxDistanceKm: formatApproxDistanceKm(req.route_distance_m),
+      packageType,
+      recipientPaymentMethod,
+      needsChange,
+      status: req.status as DeliveryRequestStatus,
+      expiresAt: req.expires_at,
+      createdAt: req.created_at,
+      offersCount: offersCountMap.get(req.id) ?? 0,
+      acceptedOfferId: req.accepted_offer_id,
+      acceptedAmountArs: hydratedOffer ? hydratedOffer.amountArs : null,
+      acceptedCourierName: hydratedOffer ? hydratedOffer.courierName : null,
+      dropsCount,
+      drops,
+    };
+  });
+}
+
+export async function getMerchantHistoryRequests(
+  merchantId: string,
+  options?: GetMerchantRequestsOptions
+): Promise<{
+  requests: MerchantRequestSummary[];
+  nextCursor: MerchantHistoryCursor | null;
+  status: HistoryFilterStatus;
+}> {
+  const supabase = await createClient();
+  await reconcileMerchantExpiredRequests(supabase);
+  const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
+  const statusParsed = historyFilterStatusSchema.safeParse(options?.status);
+  const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
+
+  const cursorParsed = options?.cursor
+    ? merchantHistoryCursorSchema.safeParse(options.cursor)
+    : null;
+  const validCursor: MerchantHistoryCursor | null =
+    cursorParsed && cursorParsed.success ? cursorParsed.data : null;
+
+  let query = supabase
+    .from('delivery_requests')
+    .select(
+      `
+      id,
+      drops_count,
+      route_distance_m,
+      package_type,
+      recipient_payment_method,
+      needs_change,
+      status,
+      expires_at,
+      created_at,
+      accepted_offer_id,
+      pickup_zone:zones!pickup_zone_id(name),
+      dropoff_zone:zones!dropoff_zone_id(name)
+    `
+    )
+    .eq('merchant_id', merchantId);
+
+  if (status === 'all') {
+    if (typeof query.in === 'function') {
+      query = query.in('status', [...HISTORY_TERMINAL_STATUSES]);
+    }
+  } else {
+    query = query.eq('status', status);
+  }
+
+  query = query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(pageSize + 1);
+
+  if (validCursor) {
+    query = query.or(
+      `created_at.lt.${validCursor.createdAt},and(created_at.eq.${validCursor.createdAt},id.lt.${validCursor.id})`
+    );
+  }
+
+  const { data: requestsData, error } = await query;
+
+  if (error) {
+    throw new Error(`Error al cargar historial de solicitudes: ${error.message}`);
+  }
+
+  const fetchedRows = ((requestsData as unknown as RawMerchantRequest[] | null) ?? []).filter((r) =>
+    (HISTORY_TERMINAL_STATUSES as readonly string[]).includes(r.status)
+  );
+  const hasMore = fetchedRows.length > pageSize;
+  const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
+  const lastItem = rawRequests.at(-1);
+  const nextCursor: MerchantHistoryCursor | null =
+    hasMore && lastItem ? { createdAt: lastItem.created_at, id: lastItem.id } : null;
+
+  if (!rawRequests.length) {
+    return {
+      requests: [],
+      nextCursor: null,
+      status,
+    };
+  }
+
+  const requestIds = rawRequests.map((r) => r.id);
+  const offersCountMap = new Map<string, number>();
+
+  const [offersRes, dropsRes] = await Promise.all([
+    supabase
+      .from('offers')
+      .select('request_id')
+      .in('request_id', requestIds)
+      .eq('status', 'pending'),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        id,
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        status,
+        delivered_at,
+        failed_reason,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .in('request_id', requestIds)
+      .order('position', { ascending: true }),
+  ]);
+
+  if (offersRes.error) {
+    throw new Error(`Error al cargar conteo de ofertas: ${offersRes.error.message}`);
+  }
+  if (dropsRes.error) {
+    throw new Error(`Error al cargar entregas de solicitudes: ${dropsRes.error.message}`);
+  }
+
+  if (offersRes.data) {
+    for (const off of offersRes.data as Array<{ request_id: string }>) {
+      offersCountMap.set(off.request_id, (offersCountMap.get(off.request_id) ?? 0) + 1);
+    }
+  }
+
+  const dropsMap = new Map<string, MerchantDropSummary[]>();
+  if (dropsRes.data) {
+    for (const d of dropsRes.data as unknown as RawDropRow[]) {
+      const list = dropsMap.get(d.request_id) ?? [];
+      list.push(mapRawDropToSummary(d));
+      dropsMap.set(d.request_id, list);
+    }
+  }
+
+  // PR87-H18: Hidratar oferta aceptada real (cadete y monto) para filas del historial
+  const acceptedOfferIds = Array.from(
+    new Set(
+      rawRequests
+        .map((r) => r.accepted_offer_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    )
+  );
+  const acceptedOffersMap = new Map<string, AcceptedOfferHydration>();
+
+  if (acceptedOfferIds.length > 0) {
+    const acceptedQuery = supabase
+      .from('offers')
+      .select(
+        `
+        id,
+        amount_ars,
+        courier:couriers!courier_id(
+          profile:profiles!profile_id(display_name)
+        )
+      `
+      )
+      .in('id', acceptedOfferIds);
+
+    const { data: acceptedData, error: acceptedError } = await (typeof (
+      acceptedQuery as unknown as {
+        limit?: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+      }
+    ).limit === 'function'
+      ? (
+          acceptedQuery as unknown as {
+            limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          }
+        ).limit(50)
+      : acceptedQuery);
+
+    if (acceptedError) {
+      throw new Error(`Error al cargar ofertas aceptadas del historial: ${acceptedError.message}`);
+    }
+
+    const rows =
+      (acceptedData as Array<{
+        id: string;
+        amount_ars: number;
+        courier?:
+          | { profile?: { display_name?: string } | Array<{ display_name?: string }> | null }
+          | Array<{ profile?: { display_name?: string } | Array<{ display_name?: string }> | null }>
+          | null;
+      }> | null) ?? [];
+
+    for (const row of rows) {
+      const courierObj = Array.isArray(row.courier) ? row.courier[0] : row.courier;
+      const profileObj = courierObj?.profile
+        ? Array.isArray(courierObj.profile)
+          ? courierObj.profile[0]
+          : courierObj.profile
+        : null;
+      const courierName = profileObj?.display_name?.trim() || 'Repartidor asignado';
+      acceptedOffersMap.set(row.id, {
+        amountArs: row.amount_ars,
+        courierName,
+      });
+    }
+  }
+
+  return {
+    requests: mapRawMerchantRequests(rawRequests, offersCountMap, acceptedOffersMap, dropsMap),
+    nextCursor,
+    status,
+  };
+}
+
+export async function getMerchantRequests(
+  merchantId: string,
+  options?: GetMerchantRequestsOptions
+): Promise<{
+  requests: MerchantRequestSummary[];
+  metrics: MerchantMetrics;
+  nextCursor: MerchantHistoryCursor | null;
+}> {
+  const supabase = await createClient();
+  await reconcileMerchantExpiredRequests(supabase);
+  const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
+  const statusParsed = historyFilterStatusSchema.safeParse(options?.status);
+  const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
+
+  const cursorParsed = options?.cursor
+    ? merchantHistoryCursorSchema.safeParse(options.cursor)
+    : null;
+  const validCursor: MerchantHistoryCursor | null =
+    cursorParsed && cursorParsed.success ? cursorParsed.data : null;
+
+  let pageQuery = supabase
+    .from('delivery_requests')
+    .select(
+      `
+      id,
+      drops_count,
+      route_distance_m,
+      package_type,
+      recipient_payment_method,
+      needs_change,
+      status,
+      expires_at,
+      created_at,
+      accepted_offer_id,
+      pickup_zone:zones!pickup_zone_id(name),
+      dropoff_zone:zones!dropoff_zone_id(name)
+    `
+    )
+    .eq('merchant_id', merchantId);
+
+  const ACTIVE_C02_STATUSES = ['published', 'matched', 'in_transit'] as const;
+
+  if (status !== 'all') {
+    pageQuery = pageQuery.eq('status', status);
+  } else if (typeof (pageQuery as unknown as { in?: unknown }).in === 'function') {
+    pageQuery = pageQuery.in('status', [...ACTIVE_C02_STATUSES]);
+  }
+
+  pageQuery = pageQuery
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(pageSize + 1);
+
+  if (validCursor) {
+    pageQuery = pageQuery.or(
+      `created_at.lt.${validCursor.createdAt},and(created_at.eq.${validCursor.createdAt},id.lt.${validCursor.id})`
+    );
+  }
+
+  const pageResult = await pageQuery;
+
+  if (pageResult.error) {
+    throw new Error(`Error al cargar solicitudes del comercio: ${pageResult.error.message}`);
+  }
+
+  const rawFetchedRows = (pageResult.data as unknown as RawMerchantRequest[] | null) ?? [];
+  const activeStatusSet = new Set<string>(ACTIVE_C02_STATUSES);
+  const fetchedRows =
+    status === 'all' ? rawFetchedRows.filter((r) => activeStatusSet.has(r.status)) : rawFetchedRows;
+  const hasMore = fetchedRows.length > pageSize;
+  const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
+  const lastItem = rawRequests.at(-1);
+  const nextCursor: MerchantHistoryCursor | null =
+    hasMore && lastItem ? { createdAt: lastItem.created_at, id: lastItem.id } : null;
+
+  // PR87-R03 + PR87-R04 + PR87-H19: Lectura acotada por lotes de <=50 filas hasta agotamiento (sin tope global arbitrario) y corte diario civil de Aguilares
+  const { startUtcIso, endUtcIso } = getAguilaresDayBoundsUtc(options?.now ?? new Date());
+  const METRICS_BATCH_LIMIT = 50;
+  const seenIds = new Set<string>();
+  const aggregatedRows: Array<{
+    id: string;
+    status: string;
+    created_at: string;
+    accepted_offer_id: string | null;
+  }> = [];
+
+  let metricsCursor: MerchantHistoryCursor | null = null;
+  while (true) {
+    let batchQuery = supabase
+      .from('delivery_requests')
+      .select('id, status, created_at, accepted_offer_id')
+      .eq('merchant_id', merchantId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
+
+    if (metricsCursor && typeof batchQuery.or === 'function') {
+      batchQuery = batchQuery.or(
+        `created_at.lt.${metricsCursor.createdAt},and(created_at.eq.${metricsCursor.createdAt},id.lt.${metricsCursor.id})`
+      );
+    }
+
+    const batchRes = await batchQuery.limit(METRICS_BATCH_LIMIT);
+    if (batchRes.error) {
+      throw new Error(`Error al cargar métricas del comercio: ${batchRes.error.message}`);
+    }
+
+    const batchRows =
+      (batchRes.data as unknown as Array<{
+        id: string;
+        status: string;
+        created_at: string;
+        accepted_offer_id: string | null;
+      }> | null) ?? [];
+
+    let newRowsAdded = 0;
+    for (const r of batchRows) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        aggregatedRows.push(r);
+        newRowsAdded += 1;
+      }
+    }
+
+    if (batchRows.length < METRICS_BATCH_LIMIT || newRowsAdded === 0) {
+      break;
+    }
+
+    const tail = batchRows.at(-1);
+    if (!tail) break;
+    metricsCursor = { createdAt: tail.created_at, id: tail.id };
+  }
+
+  let dispatchedToday = 0;
+  let activeCount = 0;
+  const todayAcceptedOfferIds: string[] = [];
+
+  for (const row of aggregatedRows) {
+    if (['published', 'matched', 'in_transit'].includes(row.status)) {
+      activeCount += 1;
+    }
+    const isWithinAguilaresToday = row.created_at >= startUtcIso && row.created_at < endUtcIso;
+    if (['matched', 'in_transit', 'delivered'].includes(row.status) && isWithinAguilaresToday) {
+      dispatchedToday += 1;
+    }
+    if (row.accepted_offer_id && isWithinAguilaresToday) {
+      todayAcceptedOfferIds.push(row.accepted_offer_id);
+    }
+  }
+
+  let avgRateArs: number | null = null;
+  if (todayAcceptedOfferIds.length > 0) {
+    const allValidAmounts: number[] = [];
+
+    for (let offset = 0; offset < todayAcceptedOfferIds.length; offset += METRICS_BATCH_LIMIT) {
+      const boundedOfferIds = todayAcceptedOfferIds.slice(offset, offset + METRICS_BATCH_LIMIT);
+      const offersQuery = supabase.from('offers').select('amount_ars').in('id', boundedOfferIds);
+
+      const { data: acceptedOffersData, error: acceptedOffersError } = await (typeof (
+        offersQuery as unknown as {
+          limit?: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+        }
+      ).limit === 'function'
+        ? (
+            offersQuery as unknown as {
+              limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+            }
+          ).limit(METRICS_BATCH_LIMIT)
+        : offersQuery);
+
+      if (acceptedOffersError) {
+        throw new Error(`Error al cargar ofertas aceptadas: ${acceptedOffersError.message}`);
+      }
+
+      for (const item of (acceptedOffersData as Array<{ amount_ars: number }> | null) ?? []) {
+        if (typeof item.amount_ars === 'number' && item.amount_ars > 0) {
+          allValidAmounts.push(item.amount_ars);
+        }
+      }
+    }
+
+    if (allValidAmounts.length > 0) {
+      const sum = allValidAmounts.reduce((acc, amount) => acc + amount, 0);
+      avgRateArs = Math.round(sum / allValidAmounts.length);
+    }
+  }
+
+  if (!rawRequests.length) {
+    return {
+      requests: [],
+      metrics: {
+        dispatchedToday,
+        avgRateArs,
+        activeCount,
+      },
+      nextCursor: null,
+    };
+  }
+
+  const requestIds = rawRequests.map((r) => r.id);
+  const offersCountMap = new Map<string, number>();
+
+  const [offersRes, dropsRes] = await Promise.all([
+    supabase
+      .from('offers')
+      .select('request_id')
+      .in('request_id', requestIds)
+      .eq('status', 'pending'),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        id,
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        status,
+        delivered_at,
+        failed_reason,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .in('request_id', requestIds)
+      .order('position', { ascending: true }),
+  ]);
+
+  if (offersRes.error) {
+    throw new Error(`Error al cargar ofertas pendientes: ${offersRes.error.message}`);
+  }
+  if (dropsRes.error) {
+    throw new Error(`Error al cargar entregas de solicitudes activas: ${dropsRes.error.message}`);
+  }
+
+  if (offersRes.data) {
+    for (const off of offersRes.data as Array<{ request_id: string }>) {
+      offersCountMap.set(off.request_id, (offersCountMap.get(off.request_id) ?? 0) + 1);
+    }
+  }
+
+  const dropsMap = new Map<string, MerchantDropSummary[]>();
+  if (dropsRes.data) {
+    for (const d of dropsRes.data as unknown as RawDropRow[]) {
+      const list = dropsMap.get(d.request_id) ?? [];
+      list.push(mapRawDropToSummary(d));
+      dropsMap.set(d.request_id, list);
+    }
+  }
+
+  return {
+    requests: mapRawMerchantRequests(rawRequests, offersCountMap, undefined, dropsMap),
+    metrics: {
+      dispatchedToday,
+      avgRateArs,
+      activeCount,
+    },
+    nextCursor,
+  };
+}
+
+export async function getMerchantRequestWithOffers(
+  requestId: string,
+  merchantId: string
+): Promise<{
+  request: MerchantRequestDetail;
+  offers: MerchantOfferItem[];
+  nextOffersCursor: LivePageCursor | null;
+} | null> {
+  const supabase = await createClient();
+
+  const { data: requestData, error: requestError } = await supabase
+    .from('delivery_requests')
+    .select(
+      `
+      id,
+      drops_count,
+      route_distance_m,
+      package_type,
+      recipient_payment_method,
+      needs_change,
+      status,
+      expires_at,
+      created_at,
+      accepted_offer_id,
+      pickup_zone:zones!pickup_zone_id(name),
+      dropoff_zone:zones!dropoff_zone_id(name)
+    `
+    )
+    .eq('id', requestId)
+    .eq('merchant_id', merchantId)
+    .maybeSingle<RawMerchantRequest>();
+
+  if (requestError) {
+    throw new Error(`Error al cargar detalle de solicitud: ${requestError.message}`);
+  }
+
+  if (!requestData) {
+    return null;
+  }
+
+  // CC-023: `notes` y `cash_change_amount` no se leen por tabla; llegan por la RPC del comercio dueño, en
+  // paralelo con las ofertas y las entregas (drops). Si falla se lanza, igual que cuando falla la lectura de
+  // la solicitud: nunca se muestran vacíos.
+  const [
+    privateFields,
+    { data: offersData, error: offersError },
+    { data: dropsData, error: dropsError },
+  ] = await Promise.all([
+    getMerchantRequestPrivateFieldsRpc(supabase, { requestId }),
+    supabase
+      .from('offers')
+      .select(
+        `
+      id,
+      courier_id,
+      amount_ars,
+      eta_minutes,
+      message,
+      status,
+      created_at
+    `
+      )
+      .eq('request_id', requestId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(51),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        id,
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        status,
+        delivered_at,
+        failed_reason,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .eq('request_id', requestId)
+      .order('position', { ascending: true }),
+  ]);
+
+  if (!privateFields.ok) {
+    throw new Error(`Error al cargar los datos privados de la solicitud: ${privateFields.code}`);
+  }
+
+  if (dropsError) {
+    throw new Error(`Error al cargar entregas de la solicitud: ${dropsError.message}`);
+  }
+
+  const rawDrops = (dropsData as unknown as RawDropRow[] | null) ?? [];
+  const mappedDrops = rawDrops.map(mapRawDropToSummary);
+  const { drops, firstDrop, dropsCount } = assertAndMapMerchantDrops(
+    requestData.id,
+    requestData.status,
+    requestData.drops_count,
+    mappedDrops
+  );
+
+  const isDraft = requestData.status === 'draft';
+  const pickupZone = Array.isArray(requestData.pickup_zone)
+    ? requestData.pickup_zone[0]
+    : requestData.pickup_zone;
+  const dropoffZone = Array.isArray(requestData.dropoff_zone)
+    ? requestData.dropoff_zone[0]
+    : requestData.dropoff_zone;
+
+  const dropoffZoneName = firstDrop
+    ? firstDrop.dropoffZoneName
+    : isDraft
+      ? (dropoffZone?.name ?? 'Zona no disponible')
+      : 'Zona no disponible';
+  const packageType = firstDrop
+    ? firstDrop.packageType
+    : isDraft
+      ? ((requestData.package_type as PackageType) ?? 'chico')
+      : ('chico' as PackageType);
+  const recipientPaymentMethod = firstDrop
+    ? firstDrop.recipientPaymentMethod
+    : isDraft
+      ? ((requestData.recipient_payment_method as RecipientPaymentMethod) ?? 'cash')
+      : ('cash' as RecipientPaymentMethod);
+  const needsChange = firstDrop
+    ? firstDrop.needsChange
+    : isDraft
+      ? Boolean(requestData.needs_change)
+      : false;
+
+  const request: MerchantRequestDetail = {
+    id: requestData.id,
+    pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
+    dropoffZoneName,
+    approxDistanceKm: formatApproxDistanceKm(requestData.route_distance_m),
+    packageType,
+    recipientPaymentMethod,
+    needsChange,
+    cashChangeAmount: privateFields.data.cashChangeAmount,
+    notes: privateFields.data.notes,
+    status: requestData.status as DeliveryRequestStatus,
+    expiresAt: requestData.expires_at,
+    createdAt: requestData.created_at,
+    acceptedOfferId: requestData.accepted_offer_id,
+    dropsCount,
+    drops,
+  };
+
+  if (offersError) {
+    throw new Error(`Error al cargar ofertas de la solicitud: ${offersError.message}`);
+  }
+
+  const rawOffers = (offersData as unknown as RawOfferItem[] | null) ?? [];
+  const hasMore = rawOffers.length > 50;
+  const pageRows = rawOffers.slice(0, 50);
+
+  // CC-016: el comercio no lee `couriers`/`profiles` por RLS; la identidad y la documentación de quienes
+  // ofertaron llegan por la RPC. Sin esa proyección se falla: nunca se inventa un nivel de documentación.
+  const couriersResult =
+    pageRows.length > 0 ? await getRequestOfferCouriersRpc(supabase, { requestId }) : null;
+
+  if (couriersResult && !couriersResult.ok) {
+    throw new Error(`Error al cargar repartidores de las ofertas: ${couriersResult.code}`);
+  }
+
+  const couriersById = couriersResult?.data ?? null;
+
+  const offers: MerchantOfferItem[] = pageRows.map((o) => {
+    const courier = couriersById?.get(o.courier_id);
+    if (!courier) {
+      throw new Error('Error al cargar repartidores de las ofertas: NOT_FOUND');
+    }
+
+    return {
+      id: o.id,
+      courierId: o.courier_id,
+      courierName: courier.displayName || 'Repartidor',
+      vehicleType: courier.vehicleType,
+      amountArs: o.amount_ars,
+      etaMinutes: o.eta_minutes,
+      message: o.message,
+      licenseStatus: courier.licenseStatus,
+      insuranceStatus: courier.insuranceStatus,
+      docLevel: courier.docLevel,
+      createdAt: o.created_at,
+      status: o.status as MerchantOfferItem['status'],
+    };
+  });
+
+  const tail = pageRows.at(-1);
+  const nextOffersCursor: LivePageCursor | null =
+    hasMore && tail ? { createdAt: tail.created_at, id: tail.id } : null;
+
+  return { request, offers, nextOffersCursor };
+}

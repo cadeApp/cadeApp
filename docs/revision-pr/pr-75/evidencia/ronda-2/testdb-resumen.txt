@@ -1,0 +1,7 @@
+9:psql:/home/user/cadeApp/supabase/tests/rpc_admin.sql:3: NOTICE:  extension "pgtap" already exists, skipping
+10:psql:/home/user/cadeApp/supabase/tests/rpc_admin.sql:14: ERROR:  invalid input syntax for type uuid: "00000000-0000-4000-8000-0000000000m1"
+13:/home/user/cadeApp/supabase/tests/rpc_admin.sql .............. 
+23:/home/user/cadeApp/supabase/tests/rpc_admin.sql            (Wstat: 768 (exited 3) Tests: 0 Failed: 0)
+25:  Parse errors: Bad plan.  You planned 36 tests but ran 0.
+26:Files=7, Tests=177,  1 wallclock secs ( 0.06 usr  0.02 sys +  0.10 cusr  0.05 csys =  0.23 CPU)
+27:Result: FAIL

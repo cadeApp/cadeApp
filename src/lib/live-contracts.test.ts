@@ -1,0 +1,247 @@
+import { describe, expect, it } from 'vitest';
+import {
+  liveAvailableRequestItemSchema,
+  liveFeedResponseSchema,
+  liveMerchantOfferItemSchema,
+  liveOffersResponseSchema,
+  liveTripResponseSchema,
+  liveTripStateSchema,
+  liveErrorResponseSchema,
+  livePageCursorSchema,
+  publicDropSummarySchema,
+} from './live-contracts';
+
+describe('T-204: live-contracts client-safe schemas', () => {
+  const validRequest = {
+    id: 'a0000000-0000-0000-0000-000000000001',
+    pickupZoneName: 'Centro',
+    dropoffZoneName: 'Aguilares',
+    approxDistanceKm: '1,5',
+    packageType: 'chico',
+    recipientPaymentMethod: 'cash',
+    needsChange: false,
+    publishedAt: '2026-09-26T12:00:00Z',
+    expiresAt: null,
+    hasMyOffer: true,
+    myOfferAmountArs: 1500,
+  };
+
+  it('T-363: approxDistanceKm admite null (distancia no calculada) y rechaza un número', () => {
+    expect(
+      liveAvailableRequestItemSchema.safeParse({ ...validRequest, approxDistanceKm: null }).success
+    ).toBe(true);
+    expect(
+      liveAvailableRequestItemSchema.safeParse({ ...validRequest, approxDistanceKm: 1.5 }).success
+    ).toBe(false);
+  });
+
+  const validOffer = {
+    id: 'b0000000-0000-0000-0000-000000000002',
+    courierId: 'c0000000-0000-0000-0000-000000000003',
+    courierName: 'Carlos Repartidor',
+    vehicleType: 'motorcycle',
+    amountArs: 1800,
+    etaMinutes: 20,
+    message: 'En 20 llego',
+    licenseStatus: 'verified',
+    insuranceStatus: 'none',
+    docLevel: 1,
+    createdAt: '2026-09-26T12:05:00Z',
+    status: 'pending',
+  };
+
+  const validCursor = {
+    createdAt: '2026-09-26T12:05:00.000Z',
+    id: 'e0000000-0000-0000-0000-000000000005',
+  };
+
+  const validTrip = {
+    id: 'd0000000-0000-0000-0000-000000000004',
+    status: 'in_transit',
+  };
+
+  it('valida cursor schema con valores correctos', () => {
+    expect(livePageCursorSchema.safeParse(validCursor).success).toBe(true);
+  });
+
+  it('falla cursor si createdAt es inválido o id no es UUID', () => {
+    expect(
+      livePageCursorSchema.safeParse({ ...validCursor, createdAt: 'not-a-datetime' }).success
+    ).toBe(false);
+    expect(
+      livePageCursorSchema.safeParse({ ...validCursor, id: 'not-a-uuid' }).success
+    ).toBe(false);
+  });
+
+  it('valida un feed response válido con solicitudes y nextCursor', () => {
+    const parsedWithCursor = liveFeedResponseSchema.safeParse({
+      data: [validRequest],
+      nextCursor: validCursor,
+    });
+    expect(parsedWithCursor.success).toBe(true);
+
+    const parsedTerminal = liveFeedResponseSchema.safeParse({
+      data: [validRequest],
+      nextCursor: null,
+    });
+    expect(parsedTerminal.success).toBe(true);
+  });
+
+  it('valida un feed response vacío terminal', () => {
+    const parsed = liveFeedResponseSchema.safeParse({ data: [], nextCursor: null });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('falla feed response si falta nextCursor (no es opcional)', () => {
+    const parsed = liveFeedResponseSchema.safeParse({ data: [validRequest] });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('T-342 D3: el contrato del feed en vivo no tiene indicaciones ni monto exacto de cambio', () => {
+    expect(Object.keys(liveAvailableRequestItemSchema.shape)).not.toContain('notes');
+    expect(Object.keys(liveAvailableRequestItemSchema.shape)).not.toContain('cashChangeAmount');
+
+    const parsed = liveFeedResponseSchema.parse({
+      data: [
+        {
+          ...validRequest,
+          needsChange: true,
+          cashChangeAmount: 5000,
+          notes: 'Portón negro, tocar timbre 2B',
+        },
+      ],
+      nextCursor: null,
+    });
+    const first = parsed.data[0];
+    if (!first) throw new Error('First request should be defined');
+    expect(first).not.toHaveProperty('notes');
+    expect(first).not.toHaveProperty('cashChangeAmount');
+    expect(first.needsChange).toBe(true);
+  });
+
+  it('T-343: acepta los cuatro tipos de paquete y los tres medios de pago reales de la base', () => {
+    const data = (['sobre', 'chico', 'mediano', 'grande'] as const).flatMap((packageType, i) =>
+      (['cash', 'transfer', 'to_agree'] as const).map((recipientPaymentMethod, j) => ({
+        ...validRequest,
+        id: `a0000000-0000-0000-0000-0000000000${i}${j}`,
+        packageType,
+        recipientPaymentMethod,
+      }))
+    );
+
+    const parsed = liveFeedResponseSchema.safeParse({ data, nextCursor: null });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.data.map((r) => [r.packageType, r.recipientPaymentMethod])).toEqual(
+      data.map((r) => [r.packageType, r.recipientPaymentMethod])
+    );
+  });
+
+  it('T-343: rechaza el vocabulario inventado small/medium/large', () => {
+    for (const packageType of ['small', 'medium', 'large']) {
+      expect(
+        liveAvailableRequestItemSchema.safeParse({ ...validRequest, packageType }).success
+      ).toBe(false);
+    }
+  });
+
+  it('falla feed response si un campo requerido falta o es inválido', () => {
+    const invalidRequest = { ...validRequest, packageType: 'extra_large' };
+    const parsed = liveFeedResponseSchema.safeParse({ data: [invalidRequest], nextCursor: null });
+    expect(parsed.success).toBe(false);
+
+    const missingId = { ...validRequest, id: 'not-a-uuid' };
+    expect(liveAvailableRequestItemSchema.safeParse(missingId).success).toBe(false);
+  });
+
+  it('valida offers response válido con y sin cursor', () => {
+    const parsedWithCursor = liveOffersResponseSchema.safeParse({
+      data: [validOffer],
+      nextCursor: validCursor,
+    });
+    expect(parsedWithCursor.success).toBe(true);
+
+    const parsedTerminal = liveOffersResponseSchema.safeParse({
+      data: [validOffer],
+      nextCursor: null,
+    });
+    expect(parsedTerminal.success).toBe(true);
+  });
+
+  it('falla offers response si falta nextCursor', () => {
+    const parsed = liveOffersResponseSchema.safeParse({ data: [validOffer] });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('falla offer si amountArs es negativo o docLevel no es 0, 1, 2', () => {
+    expect(
+      liveMerchantOfferItemSchema.safeParse({ ...validOffer, amountArs: -50 }).success
+    ).toBe(false);
+    expect(
+      liveMerchantOfferItemSchema.safeParse({ ...validOffer, docLevel: 5 }).success
+    ).toBe(false);
+    expect(
+      liveMerchantOfferItemSchema.safeParse({ ...validOffer, licenseStatus: 'invalid' }).success
+    ).toBe(false);
+  });
+
+  it('valida trip response cuando hay viaje activo y cuando es null', () => {
+    const withTrip = liveTripResponseSchema.safeParse({ data: validTrip });
+    expect(withTrip.success).toBe(true);
+
+    const withoutTrip = liveTripResponseSchema.safeParse({ data: null });
+    expect(withoutTrip.success).toBe(true);
+  });
+
+  it('falla trip si el status no es matched, in_transit o delivered', () => {
+    expect(
+      liveTripStateSchema.safeParse({ id: validTrip.id, status: 'cancelled' }).success
+    ).toBe(false);
+    expect(
+      liveTripStateSchema.safeParse({ id: 'bad-uuid', status: 'matched' }).success
+    ).toBe(false);
+  });
+
+  it('valida error response', () => {
+    const parsed = liveErrorResponseSchema.safeParse({ error: 'UNAUTHORIZED' });
+    expect(parsed.success).toBe(true);
+    expect(liveErrorResponseSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('T-340 / CC-022 §3: valida solicitudes multi-drop con drops array y sin PII', () => {
+    const multiDrop = {
+      ...validRequest,
+      dropsCount: 2,
+      drops: [
+        {
+          position: 1,
+          dropoffZoneName: 'Barrio Norte',
+          packageType: 'chico',
+          recipientPaymentMethod: 'cash',
+          needsChange: true,
+          approxDistanceM: 1200,
+        },
+        {
+          position: 2,
+          dropoffZoneName: 'Centro',
+          packageType: 'mediano',
+          recipientPaymentMethod: 'transfer',
+          needsChange: false,
+          approxDistanceM: 800,
+        },
+      ],
+    };
+
+    const parsed = liveAvailableRequestItemSchema.safeParse(multiDrop);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.drops).toHaveLength(2);
+
+    // publicDropSummarySchema rejects unknown sensitive fields
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('notes');
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('cashChangeAmount');
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('recipientName');
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('recipientPhone');
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('dropoffAddress');
+  });
+});

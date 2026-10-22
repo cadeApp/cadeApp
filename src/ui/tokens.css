@@ -1,0 +1,71 @@
+:root {
+  --background: 30 33.33% 98.82%; /* #FDFCFB */
+  --foreground: 226.15 41.94% 12.16%; /* #12182C */
+
+  --card: 0 0% 100%; /* #FFFFFF */
+  --card-foreground: 226.15 41.94% 12.16%; /* #12182C */
+
+  --popover: 0 0% 100%; /* #FFFFFF */
+  --popover-foreground: 226.15 41.94% 12.16%; /* #12182C */
+
+  --primary: 181 90.91% 38.82%; /* #09BABD */
+  --primary-foreground: 226.15 41.94% 12.16%; /* #12182C - WCAG AAA 7.35:1 */
+  --primary-dark: 181.58 83.82% 26.67%; /* #0B7A7D - WCAG AA 5.04:1 sobre blanco */
+
+  --secondary: 226.15 41.94% 12.16%; /* #12182C - Tinta marina para botón secundario */
+  --secondary-foreground: 0 0% 100%; /* #FFFFFF */
+
+  --muted: 220 14.29% 95.88%; /* #F3F4F6 */
+  --muted-foreground: 219.23 12.5% 40.78%; /* #5B6475 - Texto secundario Stitch WCAG AA */
+
+  --accent: 138.46 76.47% 96.67%; /* #F0FDF4 */
+  --accent-foreground: 151.52 68.28% 28.43%; /* #177A4B */
+
+  --success: 151.52 68.28% 28.43%; /* #177A4B */
+  --success-foreground: 0 0% 100%; /* #FFFFFF */
+
+  --warning: 25.96 90.48% 37.06%; /* #B45309 */
+  --warning-surface: 38.71 100% 93.92%; /* #FFF4E0 */
+
+  --destructive: 0 66.39% 46.67%; /* #C62828 */
+  --destructive-foreground: 0 0% 100%; /* #FFFFFF */
+
+  --whatsapp: 142.41 70.16% 48.63%; /* #25D366 */
+  --whatsapp-hover: 142.6 70.64% 42.75%; /* #20BA5A */
+  --whatsapp-foreground: 226.15 41.94% 12.16%; /* #12182C - AA/AAA sobre verde oficial */
+
+  --border: 217.5 17.39% 90.98%; /* #E4E7EC */
+  --input: 217.5 17.39% 90.98%; /* #E4E7EC */
+  --ring: 181 90.91% 38.82%; /* #09BABD */
+
+  --radius: 0.625rem; /* 10px en botones e inputs; Card usa rounded-xl (12px) */
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.badge-success {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--success));
+  border-color: hsl(var(--success));
+}
+
+.badge-warning {
+  background-color: hsl(var(--warning-surface));
+  color: hsl(var(--warning));
+  border-color: hsl(var(--warning));
+}
+
+.badge-danger {
+  background-color: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+  border-color: hsl(var(--destructive));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
+}

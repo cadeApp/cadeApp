@@ -1,0 +1,2526 @@
+import { describe, expect, it } from 'vitest';
+import {
+  AGUILARES_BOUNDS,
+  ALL_DOMAIN_ERROR_CODES,
+  ALL_RPC_NAMES,
+  type DomainErrorCode,
+  RPC_CONTRACTS,
+  type RpcErrorCode,
+  type RpcName,
+  adminSetSubscriptionInputSchema,
+  adminUpdateSettingInputSchema,
+  aguilaresCoordPairSchema,
+  calculateHaversineRouteDistanceM,
+  calculateRouteDistanceInputSchema,
+  calculateRouteDistanceOutputSchema,
+  canCourierBeAccepted,
+  canCourierSubmitOffer,
+  canMerchantPublishRequest,
+  canTransitionOffer,
+  canTransitionRequest,
+  civilDateSchema,
+  computeDocLevel,
+  createOfferAmountArsSchema,
+  err,
+  formatZoneToZoneDisplayLabel,
+  getCourierDeclaredBadges,
+  getCourierVerifiedBadges,
+  getEffectiveRequestStatus,
+  isDomainErrorCode,
+  isErr,
+  isOk,
+  isRequestExpired,
+  isWithinAguilaresBounds,
+  isoTimestampSchema,
+  ok,
+  publishRequestOutputSchema,
+  sortOffersForMerchant,
+  transitionOffer,
+  transitionRequest,
+  validateOfferAmountAgainstFloor,
+  validateRoutePointsAndCalculateDistanceM,
+} from './index';
+import { type FakePlatformSettings, createFakeRpcClient } from './testing/rpc-fake';
+
+const BASE_SETTINGS: FakePlatformSettings = {
+  minOfferArs: 1200,
+  maxOffersPerMin: 10,
+  maxRequestPublicationsPerMin: 10,
+  maxIncidentsPerMin: 5,
+  requestTtlMinutes: 25,
+  pilotActive: true,
+  pilotTermsVersion: 'v1.0',
+  subscriptionGraceDays: 3,
+};
+
+const MERCHANT_1 = '10000000-0000-4000-8000-000000000001';
+const MERCHANT_2 = '10000000-0000-4000-8000-000000000002';
+const COURIER_1 = '20000000-0000-4000-8000-000000000001';
+const COURIER_2 = '20000000-0000-4000-8000-000000000002';
+const ADMIN_1 = '90000000-0000-4000-8000-000000000001';
+const REQ_1 = '30000000-0000-4000-8000-000000000001';
+const REQ_2 = '30000000-0000-4000-8000-000000000002';
+const REQ_MISSING = '30000000-0000-4000-8000-999999999999';
+const DOC_1 = '40000000-0000-4000-8000-000000000001';
+const DOC_2 = '40000000-0000-4000-8000-000000000002';
+
+describe('CC-026 — Contrato de reconciliación de vencimientos', () => {
+  it('declara y devuelve VALIDATION_ERROR cuando el caller intenta elegir el ámbito', async () => {
+    const contract = RPC_CONTRACTS.reconcile_expired_requests;
+    expect(contract.errorCodes).toContain('VALIDATION_ERROR');
+
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+    });
+    const forbiddenInput: unknown = { merchantId: MERCHANT_2 };
+
+    await expect(
+      fake.reconcile_expired_requests(forbiddenInput as unknown as Record<string, never>)
+    ).resolves.toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+  });
+
+  it('expone una RPC de comercio sin entrada, con resultado estricto sin datos privados', () => {
+    const entry = Object.entries(RPC_CONTRACTS).find(
+      ([rpcName]) => rpcName === 'reconcile_expired_requests'
+    );
+
+    expect(entry).toBeDefined();
+    if (!entry) return;
+
+    const [, contract] = entry;
+    expect(contract.inputSchema.safeParse({}).success).toBe(true);
+    expect(contract.inputSchema.safeParse({ merchantId: MERCHANT_2 }).success).toBe(false);
+    expect(
+      contract.outputSchema.safeParse({
+        expiredRequestIds: [REQ_1],
+        expiredCount: 1,
+        hasMore: false,
+      }).success
+    ).toBe(true);
+    expect(
+      contract.outputSchema.safeParse({
+        expiredRequestIds: [REQ_1],
+        expiredCount: 1,
+        hasMore: false,
+        recipientPhone: '+543865111111',
+      }).success
+    ).toBe(false);
+    expect(contract.errorCodes).toEqual(
+      expect.arrayContaining(['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'INTERNAL_ERROR'])
+    );
+  });
+
+  it('rechaza resultados de reconciliación con conteo, IDs o lote contradictorios', () => {
+    const schema = RPC_CONTRACTS.reconcile_expired_requests.outputSchema;
+    const overMerchantBatch = Array.from(
+      { length: 51 },
+      (_, index) => `30000000-0000-4000-8000-${String(index).padStart(12, '0')}`
+    );
+
+    expect(
+      schema.safeParse({
+        expiredRequestIds: [REQ_1],
+        expiredCount: 0,
+        hasMore: false,
+      }).success
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        expiredRequestIds: [REQ_1, REQ_1],
+        expiredCount: 2,
+        hasMore: false,
+      }).success
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        expiredRequestIds: overMerchantBatch,
+        expiredCount: 51,
+        hasMore: true,
+      }).success
+    ).toBe(false);
+  });
+
+  it('falla cerrado si una salida de reconciliación viola el contrato', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      invalidOutputFor: 'reconcile_expired_requests',
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(fake.getRequest(REQ_1)?.status).toBe('expired');
+  });
+
+  it('reconcilia únicamente solicitudes vencidas propias y expira sus ofertas pendientes', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+        {
+          requestId: REQ_2,
+          merchantId: MERCHANT_2,
+          status: 'published',
+          expiresAt: '2026-10-15T11:59:59.999Z',
+        },
+      ],
+      initialOffers: [
+        { offerId: DOC_1, requestId: REQ_1, courierId: COURIER_1, amountArs: 1500, status: 'pending' },
+        {
+          offerId: '40000000-0000-4000-8000-000000000003',
+          requestId: REQ_1,
+          courierId: COURIER_2,
+          amountArs: 1500,
+          status: 'withdrawn',
+        },
+        { offerId: DOC_2, requestId: REQ_2, courierId: COURIER_2, amountArs: 1500, status: 'pending' },
+      ],
+    });
+
+    const result = await fake.reconcile_expired_requests({});
+
+    expect(result).toEqual({
+      ok: true,
+      data: { expiredRequestIds: [REQ_1], expiredCount: 1, hasMore: false },
+    });
+    expect(fake.getRequest(REQ_1)?.status).toBe('expired');
+    expect(fake.getOffer(DOC_1)?.status).toBe('expired');
+    expect(fake.getOffer('40000000-0000-4000-8000-000000000003')?.status).toBe('withdrawn');
+    expect(fake.getRequest(REQ_2)?.status).toBe('published');
+    expect(fake.getOffer(DOC_2)?.status).toBe('pending');
+  });
+
+  it.each([
+    {
+      actor: { userId: '', role: null },
+      expectedCode: 'UNAUTHENTICATED',
+      label: 'anónimo sin identidad',
+    },
+    {
+      actor: { userId: COURIER_1, role: 'courier' as const },
+      expectedCode: 'UNAUTHORIZED_ACTOR',
+      label: 'repartidor',
+    },
+    {
+      actor: { userId: ADMIN_1, role: 'admin' as const },
+      expectedCode: 'UNAUTHORIZED_ACTOR',
+      label: 'admin ordinario',
+    },
+    {
+      actor: { userId: MERCHANT_1, role: 'merchant' as const, consentStatus: 'pending' as const },
+      expectedCode: 'UNAUTHORIZED_ACTOR',
+      label: 'comercio sin consentimiento activo',
+    },
+  ])('no reconcilia para $label', async ({ actor, expectedCode }) => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: actor,
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: false,
+      code: expectedCode,
+    });
+    expect(fake.getRequest(REQ_1)?.status).toBe('published');
+  });
+
+  it('reconcilia al comercio habilitado solo en el límite y preserva solicitudes no elegibles', async () => {
+    const exactLimitRequest = '30000000-0000-4000-8000-000000000010';
+    const beforeLimitRequest = '30000000-0000-4000-8000-000000000011';
+    const afterLimitRequest = '30000000-0000-4000-8000-000000000012';
+    const nullExpiryRequest = '30000000-0000-4000-8000-000000000013';
+    const acceptedRequest = '30000000-0000-4000-8000-000000000014';
+    const matchedRequest = '30000000-0000-4000-8000-000000000015';
+    const inTransitRequest = '30000000-0000-4000-8000-000000000016';
+    const deliveredRequest = '30000000-0000-4000-8000-000000000017';
+    const cancelledRequest = '30000000-0000-4000-8000-000000000018';
+    const expiredRequest = '30000000-0000-4000-8000-000000000019';
+    const otherMerchantRequest = '30000000-0000-4000-8000-000000000020';
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: [
+        {
+          requestId: beforeLimitRequest,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T11:59:59.999Z',
+        },
+        {
+          requestId: exactLimitRequest,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+        {
+          requestId: afterLimitRequest,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.001Z',
+        },
+        { requestId: nullExpiryRequest, merchantId: MERCHANT_1, status: 'published' },
+        {
+          requestId: acceptedRequest,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T11:59:59.999Z',
+          acceptedOfferId: DOC_1,
+        },
+        { requestId: matchedRequest, merchantId: MERCHANT_1, status: 'matched' },
+        { requestId: inTransitRequest, merchantId: MERCHANT_1, status: 'in_transit' },
+        { requestId: deliveredRequest, merchantId: MERCHANT_1, status: 'delivered' },
+        { requestId: cancelledRequest, merchantId: MERCHANT_1, status: 'cancelled' },
+        { requestId: expiredRequest, merchantId: MERCHANT_1, status: 'expired' },
+        {
+          requestId: otherMerchantRequest,
+          merchantId: MERCHANT_2,
+          status: 'published',
+          expiresAt: '2026-10-15T11:59:59.999Z',
+        },
+      ],
+    });
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: true,
+      data: {
+        expiredRequestIds: [beforeLimitRequest, exactLimitRequest],
+        expiredCount: 2,
+        hasMore: false,
+      },
+    });
+    expect(fake.getRequest(afterLimitRequest)?.status).toBe('published');
+    expect(fake.getRequest(nullExpiryRequest)?.status).toBe('published');
+    expect(fake.getRequest(acceptedRequest)?.status).toBe('published');
+    expect(fake.getRequest(matchedRequest)?.status).toBe('matched');
+    expect(fake.getRequest(inTransitRequest)?.status).toBe('in_transit');
+    expect(fake.getRequest(deliveredRequest)?.status).toBe('delivered');
+    expect(fake.getRequest(cancelledRequest)?.status).toBe('cancelled');
+    expect(fake.getRequest(expiredRequest)?.status).toBe('expired');
+    expect(fake.getRequest(otherMerchantRequest)?.status).toBe('published');
+  });
+
+  it.each([
+    { total: 50, expectedBatchSizes: [50] },
+    { total: 51, expectedBatchSizes: [50, 1] },
+    { total: 101, expectedBatchSizes: [50, 50, 1] },
+  ])('reconcilia $total vencimientos en lotes idempotentes', async ({ total, expectedBatchSizes }) => {
+    const requestIdFor = (index: number) =>
+      `30000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`;
+    const offerIdFor = (index: number) =>
+      `40000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`;
+    const requestIds = Array.from({ length: total }, (_, index) => requestIdFor(index));
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: requestIds.map((requestId) => ({
+        requestId,
+        merchantId: MERCHANT_1,
+        status: 'published' as const,
+        expiresAt: '2026-10-15T11:59:59.999Z',
+      })),
+      initialOffers: requestIds.map((requestId, index) => ({
+        offerId: offerIdFor(index),
+        requestId,
+        courierId: COURIER_1,
+        amountArs: 1500,
+        status: 'pending' as const,
+      })),
+    });
+
+    let completed = 0;
+    for (const expectedSize of expectedBatchSizes) {
+      const result = await fake.reconcile_expired_requests({});
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          expiredRequestIds: requestIds.slice(completed, completed + expectedSize),
+          expiredCount: expectedSize,
+          hasMore: completed + expectedSize < total,
+        },
+      });
+      completed += expectedSize;
+    }
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: true,
+      data: { expiredRequestIds: [], expiredCount: 0, hasMore: false },
+    });
+    expect(requestIds.every((requestId) => fake.getRequest(requestId)?.status === 'expired')).toBe(true);
+    expect(
+      requestIds.every((_, index) => fake.getOffer(offerIdFor(index))?.status === 'expired')
+    ).toBe(true);
+  });
+});
+
+describe('CC-002 — Contratos del ciclo de solicitudes', () => {
+  const requestRpcs = [
+    'publish_request',
+    'cancel_request',
+    'mark_picked_up',
+    'mark_delivered',
+    'report_no_show',
+    'courier_cancel_match',
+    'republish_request',
+    'report_incident',
+  ] as const;
+
+  it.each(requestRpcs)('%s declara INTERNAL_ERROR para fallos de infraestructura', (rpc) => {
+    expect(RPC_CONTRACTS[rpc].errorCodes).toContain('INTERNAL_ERROR');
+  });
+
+  const courierRpcs = ['mark_delivered', 'courier_cancel_match', 'report_incident'] as const;
+  const offerId = '50000000-0000-4000-8000-000000000001';
+  const now = new Date('2026-09-23T15:00:00.000Z');
+
+  it('report_incident permite al merchant dueño sin exigir un registro de repartidor', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => now,
+      initialActor: { userId: MERCHANT_1, role: 'merchant' },
+      initialRequests: [{ requestId: REQ_1, merchantId: MERCHANT_1, status: 'matched' }],
+    });
+    expect(
+      await fake.report_incident({
+        requestId: REQ_1,
+        kind: 'other',
+        description: 'Demora en el retiro',
+      })
+    ).toEqual({
+      ok: true,
+      data: {
+        incidentId: expect.any(String),
+        requestId: REQ_1,
+        status: 'open',
+        createdAt: now.toISOString(),
+      },
+    });
+  });
+
+  // CC-012 / D05-A: el admin nunca reporta incidentes (antes estaba permitido).
+  it('report_incident rechaza al admin con UNAUTHORIZED_ACTOR aunque tenga aal2', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => now,
+      initialActor: { userId: ADMIN_1, role: 'admin', aal: 'aal2' },
+      initialRequests: [{ requestId: REQ_1, merchantId: MERCHANT_1, status: 'matched' }],
+    });
+    expect(
+      await fake.report_incident({
+        requestId: REQ_1,
+        kind: 'other',
+        description: 'Demora en el retiro',
+      })
+    ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+  });
+
+  for (const rpc of courierRpcs) {
+    it.each(['COURIER_NOT_APPROVED', 'COURIER_SUSPENDED'] as const)(`${rpc} declara %s`, (code) =>
+      expect(RPC_CONTRACTS[rpc].errorCodes).toContain(code)
+    );
+
+    it.each(['pending', 'rejected', 'suspended', 'approved'] as const)(
+      `${rpc} revalida el estado %s al ejecutar y conserva los datos si rechaza`,
+      async (status) => {
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          now: () => now,
+          initialActor: { userId: COURIER_1, role: 'courier', courierStatus: 'approved' },
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: rpc === 'mark_delivered' ? 'in_transit' : 'matched',
+              acceptedOfferId: offerId,
+              assignedCourierId: COURIER_1,
+            },
+          ],
+          initialOffers: [
+            {
+              offerId,
+              requestId: REQ_1,
+              courierId: COURIER_1,
+              amountArs: BASE_SETTINGS.minOfferArs,
+              status: 'accepted',
+            },
+          ],
+        });
+        // Simula una suspensión/revisión posterior a aceptar sin renovar la sesión.
+        fake.seedCourier({ courierId: COURIER_1, status, available: false });
+        const requestBefore = { ...fake.getRequest(REQ_1) };
+        const offerBefore = { ...fake.getOffer(offerId) };
+        const result =
+          rpc === 'mark_delivered'
+            ? await fake.mark_delivered({ requestId: REQ_1 })
+            : rpc === 'courier_cancel_match'
+              ? await fake.courier_cancel_match({ requestId: REQ_1, reason: 'Pinchadura' })
+              : await fake.report_incident({
+                  requestId: REQ_1,
+                  kind: 'other',
+                  description: 'Demora en el retiro',
+                });
+
+        if (status === 'approved') {
+          expect(result.ok).toBe(true);
+          if (result.ok)
+            expect(RPC_CONTRACTS[rpc].outputSchema.safeParse(result.data).success).toBe(true);
+        } else {
+          expect(result).toEqual({
+            ok: false,
+            code: status === 'suspended' ? 'COURIER_SUSPENDED' : 'COURIER_NOT_APPROVED',
+          });
+          expect(fake.getRequest(REQ_1)).toEqual(requestBefore);
+          expect(fake.getOffer(offerId)).toEqual(offerBefore);
+        }
+      }
+    );
+  }
+});
+
+describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () => {
+  describe('Clúster 1 — Máquina de estados: evidencia positiva (H01) y REASON_REQUIRED (H02)', () => {
+    const now = new Date('2026-09-22T15:00:00.000Z');
+    const future = new Date('2026-09-22T15:30:00.000Z');
+    const past = new Date('2026-09-22T14:30:00.000Z');
+
+    it('H01: rechaza con UNAUTHORIZED_ACTOR u omisión de suscripción las 8 guardas protegidas cuando falta evidencia positiva', () => {
+      expect(
+        transitionRequest({
+          from: 'draft',
+          to: 'published',
+          actor: 'merchant',
+          now,
+          subscriptionStatus: 'pilot',
+          pilotActive: true,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'draft',
+          to: 'published',
+          actor: 'merchant',
+          isOwnerMerchant: true,
+          now,
+          pilotActive: true,
+        })
+      ).toEqual({ ok: false, code: 'SUBSCRIPTION_INACTIVE' });
+
+      expect(
+        transitionRequest({
+          from: 'published',
+          to: 'matched',
+          actor: 'merchant',
+          expiresAt: future,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'published',
+          to: 'cancelled',
+          actor: 'merchant',
+          expiresAt: future,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'matched',
+          to: 'in_transit',
+          actor: 'courier',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'matched',
+          to: 'published',
+          actor: 'merchant',
+          reason: 'Repartidor no vino',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'matched',
+          to: 'published',
+          actor: 'courier',
+          reason: 'Se me pinchó la rueda',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'matched',
+          to: 'cancelled',
+          actor: 'merchant',
+          reason: 'Cliente canceló pedido',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'in_transit',
+          to: 'delivered',
+          actor: 'courier',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    });
+
+    it('H02: devuelve REASON_REQUIRED (y no VALIDATION_ERROR) en las 4 ramas que exigen motivo obligatorio', () => {
+      expect(
+        transitionRequest({
+          from: 'matched',
+          to: 'published',
+          actor: 'merchant',
+          isOwnerMerchant: true,
+          reason: '   ',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'REASON_REQUIRED' });
+
+      expect(
+        transitionRequest({
+          from: 'matched',
+          to: 'published',
+          actor: 'courier',
+          isAssignedCourier: true,
+          reason: '',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'REASON_REQUIRED' });
+
+      expect(
+        transitionRequest({
+          from: 'matched',
+          to: 'cancelled',
+          actor: 'merchant',
+          isOwnerMerchant: true,
+          reason: null,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'REASON_REQUIRED' });
+
+      expect(
+        transitionRequest({
+          from: 'in_transit',
+          to: 'cancelled',
+          actor: 'admin',
+          reason: undefined,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'REASON_REQUIRED' });
+    });
+
+    it('permite todas las transiciones válidas con evidencia positiva y evalúa expiración, ofertas y elegibilidad', () => {
+      expect(
+        transitionRequest({
+          from: 'draft',
+          to: 'published',
+          actor: 'merchant',
+          isOwnerMerchant: true,
+          subscriptionStatus: 'active',
+          paidUntil: '2026-09-25',
+          pilotActive: false,
+          now,
+        })
+      ).toEqual({ ok: true, data: { status: 'published', offerSideEffect: 'none' } });
+
+      expect(
+        transitionRequest({
+          from: 'published',
+          to: 'matched',
+          actor: 'merchant',
+          isOwnerMerchant: true,
+          expiresAt: past,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'REQUEST_EXPIRED' });
+
+      expect(
+        transitionRequest({
+          from: 'published',
+          to: 'expired',
+          actor: 'merchant',
+          expiresAt: past,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'published',
+          to: 'expired',
+          actor: 'system',
+          expiresAt: future,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      expect(
+        transitionRequest({
+          from: 'published',
+          to: 'expired',
+          actor: 'system',
+          expiresAt: past,
+          now,
+        })
+      ).toEqual({ ok: true, data: { status: 'expired', offerSideEffect: 'expire_all_pending' } });
+
+      expect(
+        transitionRequest({
+          from: 'matched',
+          to: 'published',
+          actor: 'system',
+          reason: 'x',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(
+        transitionRequest({
+          from: 'in_transit',
+          to: 'cancelled',
+          actor: 'merchant',
+          reason: 'x',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      // CC-015: admin cancel sobre in_transit sin incidente devuelve INVALID_STATE_TRANSITION
+      expect(
+        transitionRequest({
+          from: 'in_transit',
+          to: 'cancelled',
+          actor: 'admin',
+          reason: 'Incidente operativo',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      expect(
+        transitionRequest({
+          from: 'in_transit',
+          to: 'cancelled',
+          actor: 'admin',
+          reason: 'Incidente operativo',
+          hasIncident: false,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      // CC-015: admin cancel sobre in_transit con incidente pasa a cancelled
+      expect(
+        transitionRequest({
+          from: 'in_transit',
+          to: 'cancelled',
+          actor: 'admin',
+          reason: 'Incidente operativo',
+          hasIncident: true,
+          now,
+        })
+      ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
+
+      expect(
+        transitionRequest({
+          from: 'delivered',
+          to: 'published',
+          actor: 'merchant',
+          isOwnerMerchant: true,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      expect(canTransitionRequest('draft', 'published', 'merchant')).toBe(true);
+      expect(canTransitionRequest('published', 'expired', 'system')).toBe(true);
+      expect(canTransitionRequest('delivered', 'cancelled', 'admin')).toBe(false);
+
+      expect(getEffectiveRequestStatus('published', past.toISOString(), now)).toBe('expired');
+      expect(getEffectiveRequestStatus('published', now.toISOString(), now)).toBe('expired');
+      expect(getEffectiveRequestStatus('published', 'invalid-date', now)).toBe('published');
+      expect(getEffectiveRequestStatus('draft', past.toISOString(), now)).toBe('draft');
+
+      expect(
+        canMerchantPublishRequest({
+          subscriptionStatus: 'cancelled',
+          pilotActive: true,
+          paidUntil: '2026-10-01',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'SUBSCRIPTION_INACTIVE' });
+
+      expect(
+        canMerchantPublishRequest({
+          subscriptionStatus: 'active',
+          pilotActive: false,
+          paidUntil: '2026-09-20',
+          graceDays: 3,
+          now,
+        })
+      ).toEqual({ ok: true, data: true });
+
+      expect(transitionOffer('pending', 'withdrawn', 'courier')).toEqual({
+        ok: true,
+        data: 'withdrawn',
+      });
+      expect(transitionOffer('pending', 'withdrawn', 'merchant')).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+      expect(transitionOffer('pending', 'accepted', 'merchant')).toEqual({
+        ok: true,
+        data: 'accepted',
+      });
+      expect(transitionOffer('pending', 'accepted', 'courier')).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+      expect(transitionOffer('pending', 'rejected', 'system')).toEqual({
+        ok: true,
+        data: 'rejected',
+      });
+      expect(transitionOffer('pending', 'rejected', 'courier')).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+      expect(transitionOffer('pending', 'expired', 'system')).toEqual({
+        ok: true,
+        data: 'expired',
+      });
+      expect(transitionOffer('pending', 'expired', 'courier')).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+      expect(transitionOffer('accepted', 'cancelled', 'merchant')).toEqual({
+        ok: true,
+        data: 'cancelled',
+      });
+      expect(transitionOffer('withdrawn', 'accepted', 'merchant')).toEqual({
+        ok: false,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+      expect(canTransitionOffer('pending', 'accepted', 'merchant')).toBe(true);
+
+      expect(canCourierSubmitOffer({ status: 'suspended', available: true })).toEqual({
+        ok: false,
+        code: 'COURIER_SUSPENDED',
+      });
+      expect(canCourierSubmitOffer({ status: 'pending', available: true })).toEqual({
+        ok: false,
+        code: 'COURIER_NOT_APPROVED',
+      });
+      expect(canCourierSubmitOffer({ status: 'approved', available: false })).toEqual({
+        ok: false,
+        code: 'COURIER_UNAVAILABLE',
+      });
+      expect(canCourierSubmitOffer({ status: 'approved', available: true })).toEqual({
+        ok: true,
+        data: true,
+      });
+
+      expect(canCourierBeAccepted({ status: 'suspended' })).toEqual({
+        ok: false,
+        code: 'COURIER_SUSPENDED',
+      });
+      expect(canCourierBeAccepted({ status: 'rejected' })).toEqual({
+        ok: false,
+        code: 'COURIER_NOT_APPROVED',
+      });
+      expect(canCourierBeAccepted({ status: 'approved' })).toEqual({
+        ok: true,
+        data: true,
+      });
+    });
+  });
+
+  describe('Clúster 2 — Schemas y contratos RPC: distancia/barrios (H03), unión discriminada (H04), ISO (H10) y ActionFailure puro (H11)', () => {
+    it('H03: calculateHaversineRouteDistanceM devuelve 0 para puntos idénticos, calculate_route_distance rechaza coordenadas parciales y modela modo sin coordenadas con etiqueta "De barrio X a barrio Y"', () => {
+      const samePoint = { lat: -27.432, lng: -65.615 };
+      expect(calculateHaversineRouteDistanceM(samePoint, samePoint)).toBe(0);
+      expect(
+        calculateHaversineRouteDistanceM(samePoint, { lat: -27.425, lng: -65.608 })
+      ).toBeGreaterThanOrEqual(500);
+
+      expect(
+        validateRoutePointsAndCalculateDistanceM(samePoint, { lat: -26.8, lng: -65.2 })
+      ).toEqual({ ok: false, code: 'OUT_OF_BOUNDS_AGUILARES' });
+      expect(validateRoutePointsAndCalculateDistanceM(samePoint, samePoint)).toEqual({
+        ok: true,
+        data: 0,
+      });
+
+      const partial = calculateRouteDistanceInputSchema.safeParse({
+        pickupLat: -27.432,
+        pickupLng: -65.615,
+        dropoffLat: null,
+        dropoffLng: null,
+        pickupZoneName: 'Centro',
+        dropoffZoneName: 'Villa Nueva',
+      });
+      expect(partial.success).toBe(false);
+
+      const zoneOnlyInput = calculateRouteDistanceInputSchema.safeParse({
+        pickupZoneName: 'Centro',
+        dropoffZoneName: 'Villa Nueva',
+      });
+      expect(zoneOnlyInput.success).toBe(true);
+
+      const zoneOnlyOutput = calculateRouteDistanceOutputSchema.safeParse({
+        routeDistanceM: null,
+        displayLabel: formatZoneToZoneDisplayLabel('Centro', 'Villa Nueva'),
+      });
+      expect(zoneOnlyOutput.success).toBe(true);
+
+      expect(aguilaresCoordPairSchema.safeParse({ lat: -27.432, lng: null }).success).toBe(false);
+      expect(aguilaresCoordPairSchema.safeParse({ lat: -27.432, lng: -65.615 }).success).toBe(true);
+      expect(isWithinAguilaresBounds(AGUILARES_BOUNDS.minLat, AGUILARES_BOUNDS.minLng)).toBe(true);
+      expect(createOfferAmountArsSchema(1200).safeParse(1100).success).toBe(false);
+      expect(createOfferAmountArsSchema(1200).safeParse(1200).success).toBe(true);
+      expect(validateOfferAmountAgainstFloor(1200, 0)).toEqual({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+      });
+    });
+
+    it('H04: adminUpdateSettingInputSchema es unión discriminada por clave y rechaza tipos cruzados', () => {
+      expect(
+        adminUpdateSettingInputSchema.safeParse({ key: 'pilot_active', value: 1 }).success
+      ).toBe(false);
+      expect(
+        adminUpdateSettingInputSchema.safeParse({ key: 'min_offer_ars', value: true }).success
+      ).toBe(false);
+      expect(
+        adminUpdateSettingInputSchema.safeParse({ key: 'min_offer_ars', value: 0 }).success
+      ).toBe(false);
+      expect(
+        adminUpdateSettingInputSchema.safeParse({ key: 'request_ttl_minutes', value: 0 }).success
+      ).toBe(false);
+      expect(
+        adminUpdateSettingInputSchema.safeParse({ key: 'pilot_terms_version', value: '   ' })
+          .success
+      ).toBe(false);
+      expect(
+        adminUpdateSettingInputSchema.safeParse({ key: 'subscription_grace_days', value: -1 })
+          .success
+      ).toBe(false);
+
+      expect(
+        adminUpdateSettingInputSchema.safeParse({ key: 'min_offer_ars', value: 1500 }).success
+      ).toBe(true);
+      expect(
+        adminUpdateSettingInputSchema.safeParse({ key: 'pilot_active', value: false }).success
+      ).toBe(true);
+    });
+
+    it('H10 y H11: los campos temporales validan formato ISO / fecha civil real y err() devuelve únicamente { ok: false, code }', () => {
+      expect(isoTimestampSchema.safeParse('not-a-date').success).toBe(false);
+      expect(isoTimestampSchema.safeParse('2026-09-22T15:00:00.000Z').success).toBe(true);
+      expect(civilDateSchema.safeParse('2026-02-30').success).toBe(false);
+      expect(civilDateSchema.safeParse('2026-09-22').success).toBe(true);
+
+      const invalidPublished = publishRequestOutputSchema.safeParse({
+        requestId: REQ_1,
+        status: 'published',
+        publishedAt: 'not-a-date',
+        expiresAt: 'also-invalid',
+        routeDistanceM: 1000,
+      });
+      expect(invalidPublished.success).toBe(false);
+
+      const invalidSub = adminSetSubscriptionInputSchema.safeParse({
+        merchantId: MERCHANT_1,
+        subscriptionStatus: 'active',
+        paidUntil: 'not-a-civil-date',
+      });
+      expect(invalidSub.success).toBe(false);
+
+      const failure = err('UNAUTHORIZED_ACTOR');
+      expect(Object.keys(failure)).toEqual(['ok', 'code']);
+      expect('message' in failure).toBe(false);
+      expect(isErr(failure)).toBe(true);
+      expect(isOk(failure)).toBe(false);
+      const success = ok(42);
+      expect(isOk(success)).toBe(true);
+      expect(isErr(success)).toBe(false);
+      expect(isDomainErrorCode('UNAUTHORIZED_ACTOR')).toBe(true);
+      expect(isDomainErrorCode('NON_EXISTENT')).toBe(false);
+    });
+
+    it('ordena ofertas según la prioridad de desempate (doc_level vs price) y calcula insignias de repartidor', () => {
+      expect(computeDocLevel('verified', 'verified')).toBe(2);
+      expect(computeDocLevel('verified', 'none')).toBe(1);
+      expect(computeDocLevel('none', 'none')).toBe(0);
+
+      expect(getCourierVerifiedBadges('verified', 'verified')).toEqual([
+        'license_verified',
+        'insurance_verified',
+      ]);
+      expect(getCourierVerifiedBadges('none', 'rejected')).toEqual([]);
+
+      expect(
+        getCourierDeclaredBadges({
+          licenseStatus: 'submitted',
+          insuranceStatus: 'submitted',
+          vehicleType: 'moto',
+        })
+      ).toEqual(['vehicle_declared', 'license_declared', 'insurance_declared']);
+      expect(
+        getCourierDeclaredBadges({
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          vehicleType: null,
+        })
+      ).toEqual([]);
+
+      const o1 = {
+        id: 'b-offer',
+        amountArs: 1500,
+        docLevel: 1 as const,
+        createdAt: '2026-09-22T15:00:00.000Z',
+      };
+      const o2 = {
+        id: 'a-offer',
+        amountArs: 1200,
+        docLevel: 1 as const,
+        createdAt: new Date('2026-09-22T15:00:00.000Z'),
+      };
+      const o3 = {
+        id: 'c-offer',
+        amountArs: 1800,
+        docLevel: 2 as const,
+        createdAt: '2026-09-22T15:05:00.000Z',
+      };
+      const o4 = {
+        id: 'd-offer',
+        amountArs: 1500,
+        docLevel: 1 as const,
+        createdAt: '2026-09-22T14:55:00.000Z',
+      };
+      const o5 = {
+        id: 'e-offer',
+        amountArs: 1200,
+        docLevel: 1 as const,
+        createdAt: '2026-09-22T15:00:00.000Z',
+      };
+
+      const byDoc = sortOffersForMerchant([o1, o2, o3, o4, o5], 'doc_level');
+      expect(byDoc.map((o) => o.id)).toEqual([
+        'c-offer',
+        'd-offer',
+        'a-offer',
+        'e-offer',
+        'b-offer',
+      ]);
+
+      const byPrice = sortOffersForMerchant([o1, o3, o2], 'price');
+      expect(byPrice.map((o) => o.id)).toEqual(['a-offer', 'b-offer', 'c-offer']);
+    });
+  });
+
+  describe('Clúster 3 — Fake conductual: sin defaults ocultos (H09), autenticación en las 13 RPC (H06), NOT_FOUND/estado real (H07), IDs únicos (H08) y códigos por RPC (H05)', () => {
+    it('H09: createFakeRpcClient exige settings explícitos y prohíbe defaults ocultos', () => {
+      expect(() =>
+        createFakeRpcClient({} as unknown as Parameters<typeof createFakeRpcClient>[0])
+      ).toThrow();
+      expect(() =>
+        createFakeRpcClient({
+          settings: { ...BASE_SETTINGS, minOfferArs: 0 },
+        })
+      ).toThrow();
+      expect(() =>
+        createFakeRpcClient({
+          settings: { ...BASE_SETTINGS, maxOffersPerMin: 0 },
+        })
+      ).toThrow();
+    });
+
+    it('H06: las 13 RPC no administrativas rechazan un actor no autenticado (role: null) con UNAUTHENTICATED y rol incorrecto con UNAUTHORIZED_ACTOR', async () => {
+      const fake = createFakeRpcClient({
+        settings: BASE_SETTINGS,
+        initialActor: { role: null },
+      });
+
+      const nonAdminCalls = [
+        () => fake.publish_request({ requestId: REQ_1 }),
+        () => fake.cancel_request({ requestId: REQ_1 }),
+        () => fake.submit_offer({ requestId: REQ_1, amountArs: 1500, etaMinutes: 15 }),
+        () => fake.withdraw_offer({ offerId: REQ_1 }),
+        () => fake.accept_offer({ offerId: REQ_1 }),
+        () => fake.mark_picked_up({ requestId: REQ_1 }),
+        () => fake.mark_delivered({ requestId: REQ_1 }),
+        () => fake.report_no_show({ requestId: REQ_1, republish: true }),
+        () => fake.courier_cancel_match({ requestId: REQ_1, reason: 'Pinchadura' }),
+        () => fake.republish_request({ requestId: REQ_1, reason: 'Reintento' }),
+        () =>
+          fake.report_incident({
+            requestId: REQ_1,
+            kind: 'no_show',
+            description: 'Demora en el retiro',
+          }),
+        () => fake.set_availability({ available: true }),
+        () =>
+          fake.calculate_route_distance({
+            pickupZoneName: 'Centro',
+            dropoffZoneName: 'Villa Nueva',
+          }),
+      ];
+
+      for (const call of nonAdminCalls) {
+        const res = await call();
+        expect(res).toEqual({ ok: false, code: 'UNAUTHENTICATED' });
+      }
+
+      fake.setActor({ userId: COURIER_1, role: 'courier' });
+      expect(await fake.publish_request({ requestId: REQ_1 })).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+      expect(await fake.accept_offer({ offerId: REQ_1 })).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+      expect(
+        await fake.submit_offer({ requestId: REQ_1, amountArs: 1500, etaMinutes: 15 })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      expect(await fake.admin_update_setting({ key: 'min_offer_ars', value: 1400 })).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+
+      fake.setActor({ userId: ADMIN_1, role: 'admin', aal: 'aal1' });
+      expect(await fake.admin_update_setting({ key: 'min_offer_ars', value: 1400 })).toEqual({
+        ok: false,
+        code: 'AAL2_REQUIRED',
+      });
+    });
+
+    it('H07 y H08: el fake devuelve NOT_FOUND ante UUID inexistente, genera IDs únicos para múltiples ofertas, rechaza las restantes al aceptar una y ejecuta el ciclo completo de las 18 RPC', async () => {
+      const fake = createFakeRpcClient({
+        settings: BASE_SETTINGS,
+        initialActor: {
+          userId: MERCHANT_1,
+          role: 'merchant',
+          merchantSubscriptionStatus: 'pilot',
+        },
+        initialRequests: [
+          {
+            requestId: REQ_1,
+            merchantId: MERCHANT_1,
+            status: 'draft',
+            pickupLat: -27.432,
+            pickupLng: -65.615,
+            dropoffLat: -27.425,
+            dropoffLng: -65.608,
+            pickupZoneName: 'Centro',
+            dropoffZoneName: 'Villa Nueva',
+          },
+          {
+            requestId: REQ_2,
+            merchantId: MERCHANT_1,
+            status: 'draft',
+            pickupZoneName: 'Centro',
+            dropoffZoneName: 'Norte',
+          },
+        ],
+        initialCouriers: [
+          { courierId: COURIER_1, status: 'approved', available: true },
+          { courierId: COURIER_2, status: 'approved', available: true },
+        ],
+        initialMerchants: [{ merchantId: MERCHANT_1, subscriptionStatus: 'pilot' }],
+        initialDocuments: [
+          { documentId: DOC_1, courierId: COURIER_1, kind: 'license', status: 'submitted' },
+          { documentId: DOC_2, courierId: COURIER_1, kind: 'insurance', status: 'submitted' },
+        ],
+      });
+
+      // NOT_FOUND checks on missing entities
+      expect(await fake.publish_request({ requestId: REQ_MISSING })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(await fake.cancel_request({ requestId: REQ_MISSING })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(await fake.accept_offer({ offerId: REQ_MISSING })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(await fake.report_no_show({ requestId: REQ_MISSING })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(await fake.republish_request({ requestId: REQ_MISSING })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+
+      // Publish REQ_1 (with coordinates -> Haversine) and REQ_2 (without coordinates -> null distance)
+      const pub1 = await fake.publish_request({ requestId: REQ_1 });
+      expect(pub1.ok).toBe(true);
+      if (pub1.ok) {
+        expect(pub1.data.routeDistanceM).toBeGreaterThanOrEqual(500);
+      }
+
+      const pub2 = await fake.publish_request({ requestId: REQ_2 });
+      expect(pub2.ok).toBe(true);
+      if (pub2.ok) {
+        expect(pub2.data.routeDistanceM).toBeNull();
+      }
+
+      // Courier 1 and Courier 2 submit offers on REQ_1
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      });
+      expect(
+        await fake.submit_offer({ requestId: REQ_MISSING, amountArs: 1300, etaMinutes: 10 })
+      ).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      const offer1Res = await fake.submit_offer({
+        requestId: REQ_1,
+        amountArs: 1300,
+        etaMinutes: 15,
+      });
+      expect(offer1Res.ok).toBe(true);
+
+      // Duplicate active offer by same courier on same request
+      expect(
+        await fake.submit_offer({ requestId: REQ_1, amountArs: 1400, etaMinutes: 15 })
+      ).toEqual({ ok: false, code: 'DUPLICATE_ACTIVE_OFFER' });
+
+      // Courier 2 submits offer on REQ_1 and REQ_2
+      fake.setActor({
+        userId: COURIER_2,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      });
+      const offer2Res = await fake.submit_offer({
+        requestId: REQ_1,
+        amountArs: 1400,
+        etaMinutes: 12,
+      });
+      const offer3Res = await fake.submit_offer({
+        requestId: REQ_2,
+        amountArs: 1500,
+        etaMinutes: 20,
+      });
+      expect(offer2Res.ok).toBe(true);
+      expect(offer3Res.ok).toBe(true);
+
+      if (!offer1Res.ok || !offer2Res.ok || !offer3Res.ok) {
+        throw new Error('Expected offers to succeed');
+      }
+
+      // Unique offer IDs (H08)
+      expect(offer1Res.data.offerId).not.toBe(offer2Res.data.offerId);
+      expect(offer2Res.data.offerId).not.toBe(offer3Res.data.offerId);
+
+      // Merchant accepts offer 1 -> offer 1 becomes accepted, offer 2 becomes rejected (H08)
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+      const accept1 = await fake.accept_offer({ offerId: offer1Res.data.offerId });
+      expect(accept1.ok).toBe(true);
+      expect(fake.getOffer(offer1Res.data.offerId)?.status).toBe('accepted');
+      expect(fake.getOffer(offer2Res.data.offerId)?.status).toBe('rejected');
+
+      // Idempotent re-accept of same offer vs ALREADY_MATCHED on different offer
+      const acceptIdempotent = await fake.accept_offer({ offerId: offer1Res.data.offerId });
+      expect(acceptIdempotent).toEqual({
+        ok: true,
+        data: expect.objectContaining({ idempotent: true }),
+      });
+      expect(await fake.accept_offer({ offerId: offer2Res.data.offerId })).toEqual({
+        ok: false,
+        code: 'ALREADY_MATCHED',
+      });
+
+      // Courier cancels match -> returns to published, then Courier 1 re-offers and delivers
+      fake.setActor({ userId: COURIER_1, role: 'courier' });
+      const cancelMatch = await fake.courier_cancel_match({
+        requestId: REQ_1,
+        reason: 'Inconveniente mecánico',
+      });
+      expect(cancelMatch.ok).toBe(true);
+      expect(fake.getRequest(REQ_1)?.status).toBe('published');
+
+      const offer4Res = await fake.submit_offer({
+        requestId: REQ_1,
+        amountArs: 1350,
+        etaMinutes: 10,
+      });
+      if (!offer4Res.ok) throw new Error('Expected offer4 to succeed');
+
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+      await fake.accept_offer({ offerId: offer4Res.data.offerId });
+
+      // Non-assigned courier cannot mark picked up
+      fake.setActor({ userId: COURIER_2, role: 'courier' });
+      expect(await fake.mark_picked_up({ requestId: REQ_1 })).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+
+      // Assigned courier marks picked up and delivered
+      fake.setActor({ userId: COURIER_1, role: 'courier' });
+      const picked = await fake.mark_picked_up({ requestId: REQ_1 });
+      expect(picked.ok).toBe(true);
+      const delivered = await fake.mark_delivered({ requestId: REQ_1 });
+      expect(delivered.ok).toBe(true);
+      expect(fake.getRequest(REQ_1)?.status).toBe('delivered');
+
+      // Incident report & route distance calculation (with coords & zone-only)
+      // CC-012 / D05-A: el repartidor ya no reporta sobre delivered; el comercio dueño sí (≤ 24 h).
+      expect(
+        await fake.report_incident({
+          requestId: REQ_1,
+          kind: 'damaged_goods',
+          description: 'Paquete entregado con observación',
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+      const incident = await fake.report_incident({
+        requestId: REQ_1,
+        kind: 'damaged_goods',
+        description: 'Paquete entregado con observación',
+      });
+      expect(incident.ok).toBe(true);
+
+      const distCoords = await fake.calculate_route_distance({
+        pickupLat: -27.432,
+        pickupLng: -65.615,
+        dropoffLat: -27.425,
+        dropoffLng: -65.608,
+        pickupZoneName: 'Centro',
+        dropoffZoneName: 'Villa Nueva',
+      });
+      expect(distCoords).toEqual({
+        ok: true,
+        data: {
+          routeDistanceM: expect.any(Number),
+          displayLabel: 'De barrio Centro a barrio Villa Nueva',
+        },
+      });
+
+      const distZones = await fake.calculate_route_distance({
+        pickupZoneName: 'Centro',
+        dropoffZoneName: 'Villa Nueva',
+      });
+      expect(distZones).toEqual({
+        ok: true,
+        data: {
+          routeDistanceM: null,
+          displayLabel: 'De barrio Centro a barrio Villa Nueva',
+        },
+      });
+
+      // Admin RPCs (decide courier, verify documents, suspend courier withdrawing pending offer3 on REQ_2, set subscription, update setting)
+      fake.setActor({ userId: ADMIN_1, role: 'admin', aal: 'aal2' });
+      fake.seedCourier({ courierId: COURIER_1, status: 'pending', available: false });
+      fake.seedDocument({ documentId: DOC_1, courierId: COURIER_1, kind: 'license', status: 'submitted' });
+      fake.seedDocument({ documentId: DOC_2, courierId: COURIER_1, kind: 'insurance', status: 'submitted' });
+      expect(
+        await fake.admin_decide_courier({ courierId: COURIER_1, decision: 'approved' })
+      ).toEqual({
+        ok: true,
+        data: expect.objectContaining({ courierId: COURIER_1, status: 'approved' }),
+      });
+
+      const doc1Verify = await fake.admin_verify_document({
+        documentId: DOC_1,
+        decision: 'verified',
+      });
+      expect(doc1Verify).toEqual({
+        ok: true,
+        data: expect.objectContaining({ docLevel: 1 }),
+      });
+      const doc2Verify = await fake.admin_verify_document({
+        documentId: DOC_2,
+        decision: 'verified',
+      });
+      expect(doc2Verify).toEqual({
+        ok: true,
+        data: expect.objectContaining({ docLevel: 2 }),
+      });
+
+      const suspendRes = await fake.admin_suspend_courier({
+        courierId: COURIER_2,
+        reason: 'Incumplimiento reiterado',
+      });
+      expect(suspendRes).toEqual({
+        ok: true,
+        data: expect.objectContaining({
+          courierId: COURIER_2,
+          status: 'suspended',
+          withdrawnOffersCount: 1,
+        }),
+      });
+      expect(fake.getOffer(offer3Res.data.offerId)?.status).toBe('withdrawn');
+
+      const setSubRes = await fake.admin_set_subscription({
+        merchantId: MERCHANT_1,
+        subscriptionStatus: 'active',
+        paidUntil: '2026-12-31',
+      });
+      expect(setSubRes).toEqual({
+        ok: true,
+        data: {
+          merchantId: MERCHANT_1,
+          subscriptionStatus: 'active',
+          paidUntil: '2026-12-31',
+        },
+      });
+
+      const updateSettingRes = await fake.admin_update_setting({
+        key: 'min_offer_ars',
+        value: 1600,
+      });
+      expect(updateSettingRes).toEqual({
+        ok: true,
+        data: { key: 'min_offer_ars', value: 1600 },
+      });
+      expect(fake.getSettings().minOfferArs).toBe(1600);
+      // Additional fake coverage: withdraw_offer, report_no_show, republish_request, cancel_request, set_availability, setForcedError, setMinOfferArs, all admin_update_setting keys
+      await fake.admin_update_setting({ key: 'request_ttl_minutes', value: 40 });
+      await fake.admin_update_setting({ key: 'pilot_active', value: true });
+      await fake.admin_update_setting({ key: 'pilot_terms_version', value: 'v2.0' });
+      await fake.admin_update_setting({ key: 'subscription_grace_days', value: 5 });
+      expect(fake.getSettings().requestTtlMinutes).toBe(40);
+      expect(fake.getSettings().pilotTermsVersion).toBe('v2.0');
+      expect(fake.getSettings().subscriptionGraceDays).toBe(5);
+
+      fake.setMinOfferArs(1100);
+      expect(() => fake.setMinOfferArs(0)).toThrow();
+      expect(fake.getSettings().minOfferArs).toBe(1100);
+
+      fake.setForcedError('publish_request', 'RATE_LIMITED');
+      expect(await fake.publish_request({ requestId: REQ_2 })).toEqual({
+        ok: false,
+        code: 'RATE_LIMITED',
+      });
+      fake.setForcedError('publish_request', null);
+
+      // Courier 1 submits offer on REQ_2, withdraws it, then submits another offer
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      });
+      expect(await fake.set_availability({ available: true })).toEqual({
+        ok: true,
+        data: { courierId: COURIER_1, available: true },
+      });
+      expect(fake.getCourier(COURIER_1)?.available).toBe(true);
+
+      const offer5Res = await fake.submit_offer({
+        requestId: REQ_2,
+        amountArs: 1200,
+        etaMinutes: 15,
+      });
+      if (!offer5Res.ok) throw new Error('Expected offer5 to succeed');
+
+      const withdrawRes = await fake.withdraw_offer({ offerId: offer5Res.data.offerId });
+      expect(withdrawRes.ok).toBe(true);
+      expect(await fake.withdraw_offer({ offerId: offer5Res.data.offerId })).toEqual({
+        ok: false,
+        code: 'OFFER_NOT_PENDING',
+      });
+
+      const offer6Res = await fake.submit_offer({
+        requestId: REQ_2,
+        amountArs: 1250,
+        etaMinutes: 15,
+      });
+      if (!offer6Res.ok) throw new Error('Expected offer6 to succeed');
+
+      // Merchant accepts offer6 on REQ_2, then reports no-show (republish: true), then accepts again and reports no-show (republish: false), then republishes
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+      await fake.accept_offer({ offerId: offer6Res.data.offerId });
+      const noShowRepublish = await fake.report_no_show({ requestId: REQ_2, republish: true });
+      expect(noShowRepublish.ok).toBe(true);
+
+      fake.setActor({ userId: COURIER_1, role: 'courier' });
+      const offer7Res = await fake.submit_offer({
+        requestId: REQ_2,
+        amountArs: 1250,
+        etaMinutes: 15,
+      });
+      if (!offer7Res.ok) throw new Error('Expected offer7 to succeed');
+
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+      await fake.accept_offer({ offerId: offer7Res.data.offerId });
+      const noShowCancel = await fake.report_no_show({ requestId: REQ_2, republish: false });
+      expect(noShowCancel.ok).toBe(true);
+      expect(fake.getRequest(REQ_2)?.status).toBe('cancelled');
+
+      const republishRes = await fake.republish_request({
+        requestId: REQ_2,
+        reason: 'Publicar nuevamente',
+      });
+      expect(republishRes.ok).toBe(true);
+      expect(fake.getRequest(REQ_2)?.status).toBe('published');
+
+      const cancelPubRes = await fake.cancel_request({
+        requestId: REQ_2,
+        reason: 'Comercio cerró',
+      });
+      expect(cancelPubRes.ok).toBe(true);
+
+      // Additional error branches in rpc-contracts & rpc-fake
+      expect(validateOfferAmountAgainstFloor(800, 1200)).toEqual({
+        ok: false,
+        code: 'OFFER_BELOW_MINIMUM',
+      });
+      expect(validateOfferAmountAgainstFloor(1200, 1200)).toEqual({
+        ok: true,
+        data: 1200,
+      });
+
+      // Invalid schema input in executeRpc -> VALIDATION_ERROR
+      expect(await fake.publish_request({ requestId: 'not-a-uuid' })).toEqual({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+      });
+
+      // NOT_FOUND & guard branches across remaining RPCs
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      });
+      expect(await fake.withdraw_offer({ offerId: REQ_MISSING })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(await fake.mark_picked_up({ requestId: REQ_MISSING })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(await fake.mark_delivered({ requestId: REQ_MISSING })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(await fake.courier_cancel_match({ requestId: REQ_MISSING, reason: 'x' })).toEqual({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(
+        await fake.report_incident({
+          requestId: REQ_MISSING,
+          kind: 'no_show',
+          description: 'No existe',
+        })
+      ).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+      const distCoordsNoZones = await fake.calculate_route_distance({
+        pickupLat: -27.432,
+        pickupLng: -65.615,
+        dropoffLat: -27.425,
+        dropoffLng: -65.608,
+      });
+      expect(distCoordsNoZones.ok).toBe(true);
+
+      // Seed helpers & admin error branches
+      fake.seedRequest({
+        requestId: '30000000-0000-4000-8000-000000000009',
+        merchantId: MERCHANT_1,
+        status: 'matched',
+        acceptedOfferId: offer7Res.data.offerId,
+        assignedCourierId: COURIER_1,
+      });
+      fake.seedOffer({
+        offerId: '50000000-0000-4000-8000-000000000009',
+        requestId: '30000000-0000-4000-8000-000000000009',
+        courierId: COURIER_1,
+        amountArs: 1300,
+        status: 'accepted',
+      });
+      fake.seedCourier({ courierId: COURIER_1, status: 'pending', available: false });
+      fake.seedMerchant({ merchantId: MERCHANT_2, subscriptionStatus: 'expired' });
+      fake.seedDocument({
+        documentId: '40000000-0000-4000-8000-000000000009',
+        courierId: COURIER_1,
+        kind: 'dni_front',
+        status: 'submitted',
+      });
+
+      expect(await fake.set_availability({ available: true })).toEqual({
+        ok: false,
+        code: 'COURIER_NOT_APPROVED',
+      });
+      fake.seedCourier({ courierId: COURIER_1, status: 'suspended', available: false });
+      expect(await fake.set_availability({ available: true })).toEqual({
+        ok: false,
+        code: 'COURIER_SUSPENDED',
+      });
+
+      // Republish from matched without reason -> REASON_REQUIRED, with reason -> published
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+      expect(
+        await fake.republish_request({
+          requestId: '30000000-0000-4000-8000-000000000009',
+          reason: '   ',
+        })
+      ).toEqual({ ok: false, code: 'REASON_REQUIRED' });
+      expect(
+        await fake.republish_request({
+          requestId: '30000000-0000-4000-8000-000000000009',
+          reason: 'Demora excesiva',
+        })
+      ).toEqual({
+        ok: true,
+        data: expect.objectContaining({ status: 'published' }),
+      });
+
+      // Admin NOT_FOUND and REASON_REQUIRED branches
+      fake.setActor({ userId: ADMIN_1, role: 'admin', aal: 'aal2' });
+      expect(
+        await fake.admin_decide_courier({ courierId: REQ_MISSING, decision: 'approved' })
+      ).toEqual({ ok: false, code: 'NOT_FOUND' });
+      expect(
+        await fake.admin_decide_courier({
+          courierId: COURIER_1,
+          decision: 'rejected',
+          reason: '  ',
+        })
+      ).toEqual({ ok: false, code: 'REASON_REQUIRED' });
+      expect(
+        await fake.admin_suspend_courier({ courierId: REQ_MISSING, reason: 'Motivo' })
+      ).toEqual({ ok: false, code: 'NOT_FOUND' });
+      expect(
+        await fake.admin_verify_document({ documentId: REQ_MISSING, decision: 'verified' })
+      ).toEqual({ ok: false, code: 'NOT_FOUND' });
+      expect(
+        await fake.admin_verify_document({
+          documentId: DOC_1,
+          decision: 'rejected',
+          reason: '',
+        })
+      ).toEqual({ ok: false, code: 'REASON_REQUIRED' });
+      expect(
+        await fake.admin_set_subscription({
+          merchantId: REQ_MISSING,
+          subscriptionStatus: 'active',
+        })
+      ).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+      // Admin INVALID_STATE_TRANSITION branches (D03, D04, H19)
+      expect(
+        await fake.admin_decide_courier({ courierId: COURIER_1, decision: 'approved' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      fake.seedCourier({ courierId: COURIER_2, status: 'suspended', available: false });
+      expect(
+        await fake.admin_suspend_courier({ courierId: COURIER_2, reason: 'Re-suspensión cautelar' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      expect(
+        await fake.admin_verify_document({ documentId: DOC_1, decision: 'verified' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      // Exercise remaining guard branches in rpc-fake (publish out-of-bounds, withdraw non-owner, accept non-owner/suspended/non-pending, mark_picked_up suspended/pending, cancel matched)
+      fake.seedRequest({
+        requestId: '30000000-0000-4000-8000-000000000010',
+        merchantId: MERCHANT_1,
+        status: 'draft',
+        pickupLat: -26.8,
+        pickupLng: -65.2,
+        dropoffLat: -27.425,
+        dropoffLng: -65.608,
+      });
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant', merchantSubscriptionStatus: 'pilot' });
+      expect(
+        await fake.publish_request({ requestId: '30000000-0000-4000-8000-000000000010' })
+      ).toEqual({ ok: false, code: 'OUT_OF_BOUNDS_AGUILARES' });
+
+      // Cancel matched request (cancels accepted offer)
+      fake.seedRequest({
+        requestId: '30000000-0000-4000-8000-000000000011',
+        merchantId: MERCHANT_1,
+        status: 'matched',
+        acceptedOfferId: '50000000-0000-4000-8000-000000000009',
+        assignedCourierId: COURIER_1,
+      });
+      expect(
+        await fake.cancel_request({
+          requestId: '30000000-0000-4000-8000-000000000011',
+          reason: 'Cliente canceló',
+        })
+      ).toEqual({
+        ok: true,
+        data: expect.objectContaining({ status: 'cancelled' }),
+      });
+
+      // Withdraw by non-owner courier & mark_picked_up with suspended/pending courier
+      fake.setActor({
+        userId: COURIER_2,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      });
+      expect(
+        await fake.withdraw_offer({ offerId: '50000000-0000-4000-8000-000000000009' })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      fake.seedRequest({
+        requestId: '30000000-0000-4000-8000-000000000012',
+        merchantId: MERCHANT_1,
+        status: 'matched',
+        acceptedOfferId: '50000000-0000-4000-8000-000000000009',
+        assignedCourierId: COURIER_1,
+      });
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'suspended',
+        courierAvailable: false,
+      });
+      expect(
+        await fake.mark_picked_up({ requestId: '30000000-0000-4000-8000-000000000012' })
+      ).toEqual({ ok: false, code: 'COURIER_SUSPENDED' });
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'pending',
+        courierAvailable: false,
+      });
+      expect(
+        await fake.mark_picked_up({ requestId: '30000000-0000-4000-8000-000000000012' })
+      ).toEqual({ ok: false, code: 'COURIER_NOT_APPROVED' });
+      // Aísla la transición inválida de la nueva guarda de aprobación de CC-002.
+      fake.setActor({ courierStatus: 'approved' });
+      expect(
+        await fake.mark_delivered({ requestId: '30000000-0000-4000-8000-000000000012' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      expect(
+        await fake.report_incident({
+          requestId: REQ_2,
+          kind: 'no_show',
+          description: 'No soy participante',
+        })
+      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+      expect(
+        await fake.republish_request({
+          requestId: REQ_1,
+          reason: 'Intento republicar entregado',
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      fake.setActor({ userId: MERCHANT_2, role: 'merchant' });
+      expect(await fake.republish_request({ requestId: REQ_2 })).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
+    });
+
+    it('H05: verifica que todos los códigos de ALL_DOMAIN_ERROR_CODES y cada RpcErrorCode<K> de las 18 RPC se emiten y tipan sin errores', async () => {
+      const fake = createFakeRpcClient({ settings: BASE_SETTINGS });
+      for (const code of ALL_DOMAIN_ERROR_CODES) {
+        const triggered = await fake.triggerErrorCode(code);
+        expect(triggered).toEqual({ ok: false, code });
+      }
+      for (const rpcName of ALL_RPC_NAMES) {
+        const codes = RPC_CONTRACTS[rpcName].errorCodes;
+        expect(codes.length).toBeGreaterThan(0);
+        for (const code of codes) {
+          const typedCode: RpcErrorCode<typeof rpcName> = code;
+          expect(isDomainErrorCode(typedCode)).toBe(true);
+        }
+      }
+    });
+
+    describe('Ronda 2 — Cierre de H05, H07, H08 y códigos específicos de admin_update_setting', () => {
+      it('H05 (Ronda 2): setForcedError está ligado por RPC y rechaza códigos fuera del catálogo de la RPC invocada', () => {
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: MERCHANT_1, role: 'merchant' },
+        });
+        expect(() =>
+          (fake.setForcedError as unknown as (rpc: string, code: string) => void)(
+            'publish_request',
+            'AAL2_REQUIRED'
+          )
+        ).toThrow();
+      });
+
+      it('H04/Mejora Ronda 2: admin_update_setting devuelve INVALID_SETTING_KEY ante clave desconocida e INVALID_SETTING_VALUE ante valor inválido', async () => {
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: ADMIN_1, role: 'admin', aal: 'aal2' },
+        });
+        expect(
+          await fake.admin_update_setting({
+            key: 'unknown_key' as unknown as 'pilot_active',
+            value: true,
+          })
+        ).toEqual({ ok: false, code: 'INVALID_SETTING_KEY' });
+
+        expect(
+          await fake.admin_update_setting({
+            key: 'pilot_active',
+            value: 1 as unknown as boolean,
+          })
+        ).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
+      });
+
+      it('H07.1 (Ronda 2): accept_offer rechaza con NOT_FOUND una oferta cuyo courierId no existe', async () => {
+        const orphanOfferId = '60000000-0000-4000-8000-000000000001';
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: MERCHANT_1, role: 'merchant' },
+          initialMerchants: [{ merchantId: MERCHANT_1, subscriptionStatus: 'pilot' }],
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: 'published',
+              expiresAt: '2026-09-22T16:00:00.000Z',
+            },
+          ],
+          initialOffers: [
+            {
+              offerId: orphanOfferId,
+              requestId: REQ_1,
+              courierId: '20000000-0000-4000-8000-999999999999',
+              amountArs: 1500,
+              status: 'pending',
+            },
+          ],
+        });
+
+        expect(await fake.accept_offer({ offerId: orphanOfferId })).toEqual({
+          ok: false,
+          code: 'NOT_FOUND',
+        });
+      });
+
+      it('H07.2 (Ronda 2): admin_verify_document devuelve NOT_FOUND (sin lanzar TypeError) si falta el courier del documento', async () => {
+        const orphanDocId = '40000000-0000-4000-8000-000000000099';
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: ADMIN_1, role: 'admin', aal: 'aal2' },
+          initialDocuments: [
+            {
+              documentId: orphanDocId,
+              courierId: '20000000-0000-4000-8000-999999999999',
+              kind: 'license',
+              status: 'submitted',
+            },
+          ],
+        });
+
+        expect(
+          await fake.admin_verify_document({ documentId: orphanDocId, decision: 'verified' })
+        ).toEqual({
+          ok: false,
+          code: 'NOT_FOUND',
+        });
+      });
+
+      it('H07.3 (Ronda 2): report_no_show y courier_cancel_match rechazan con INVALID_STATE_TRANSITION una solicitud matched sin acceptedOfferId válido', async () => {
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: MERCHANT_1, role: 'merchant' },
+          initialMerchants: [{ merchantId: MERCHANT_1, subscriptionStatus: 'pilot' }],
+          initialCouriers: [{ courierId: COURIER_1, status: 'approved', available: true }],
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: 'matched',
+              acceptedOfferId: null,
+              assignedCourierId: COURIER_1,
+            },
+          ],
+        });
+
+        expect(await fake.report_no_show({ requestId: REQ_1, republish: true })).toEqual({
+          ok: false,
+          code: 'INVALID_STATE_TRANSITION',
+        });
+
+        fake.setActor({ userId: COURIER_1, role: 'courier' });
+        expect(
+          await fake.courier_cancel_match({ requestId: REQ_1, reason: 'Sin oferta válida' })
+        ).toEqual({
+          ok: false,
+          code: 'INVALID_STATE_TRANSITION',
+        });
+      });
+
+      it('H07.4 (Ronda 2): report_incident rechaza solicitudes draft y aplica la ventana de 24 horas posteriores a deliveredAt (INCIDENT_WINDOW_EXPIRED)', async () => {
+        let currentNow = new Date('2026-09-22T15:00:00.000Z');
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          now: () => currentNow,
+          initialActor: { userId: MERCHANT_1, role: 'merchant' },
+          initialMerchants: [{ merchantId: MERCHANT_1, subscriptionStatus: 'pilot' }],
+          initialCouriers: [{ courierId: COURIER_1, status: 'approved', available: true }],
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: 'draft',
+            },
+            {
+              requestId: REQ_2,
+              merchantId: MERCHANT_1,
+              status: 'in_transit',
+              // CC-012 / PR115-H03: como en Postgres, un viaje en curso tiene su oferta accepted real.
+              acceptedOfferId: '50000000-0000-4000-8000-000000000074',
+              assignedCourierId: COURIER_1,
+            },
+          ],
+          initialOffers: [
+            {
+              offerId: '50000000-0000-4000-8000-000000000074',
+              requestId: REQ_2,
+              courierId: COURIER_1,
+              amountArs: BASE_SETTINGS.minOfferArs,
+              status: 'accepted',
+            },
+          ],
+        });
+
+        expect(
+          await fake.report_incident({
+            requestId: REQ_1,
+            kind: 'other',
+            description: 'Solicitud en borrador',
+          })
+        ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+        fake.setActor({ userId: COURIER_1, role: 'courier' });
+        expect(await fake.mark_delivered({ requestId: REQ_2 })).toEqual({
+          ok: true,
+          data: expect.objectContaining({ status: 'delivered' }),
+        });
+
+        // CC-012 / D05-A: el repartidor no reporta sobre delivered; la ventana de 24 h es del comercio.
+        currentNow = new Date('2026-09-23T14:00:00.000Z');
+        expect(
+          await fake.report_incident({
+            requestId: REQ_2,
+            kind: 'damaged_goods',
+            description: 'Dentro de las 24 horas',
+          })
+        ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+        fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+
+        // Within 24h window -> ok
+        expect(
+          await fake.report_incident({
+            requestId: REQ_2,
+            kind: 'damaged_goods',
+            description: 'Dentro de las 24 horas',
+          })
+        ).toEqual({
+          ok: true,
+          data: expect.objectContaining({ status: 'open' }),
+        });
+
+        // After 24h window -> INCIDENT_WINDOW_EXPIRED
+        currentNow = new Date('2026-09-23T15:00:01.000Z');
+        expect(
+          await fake.report_incident({
+            requestId: REQ_2,
+            kind: 'damaged_goods',
+            description: 'Fuera de las 24 horas',
+          })
+        ).toEqual({ ok: false, code: 'INCIDENT_WINDOW_EXPIRED' });
+      });
+
+      it('H08 (Ronda 2): submit_offer nunca colisiona ni sobreescribe una oferta sembrada con 00000000-0000-4000-8000-000000000001', async () => {
+        const seededOfferId = '00000000-0000-4000-8000-000000000001';
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: {
+            userId: COURIER_2,
+            role: 'courier',
+            courierStatus: 'approved',
+            courierAvailable: true,
+          },
+          initialCouriers: [
+            { courierId: COURIER_1, status: 'approved', available: true },
+            { courierId: COURIER_2, status: 'approved', available: true },
+          ],
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: 'published',
+              expiresAt: '2026-09-22T16:00:00.000Z',
+            },
+          ],
+          initialOffers: [
+            {
+              offerId: seededOfferId,
+              requestId: REQ_1,
+              courierId: COURIER_1,
+              amountArs: 1300,
+              status: 'pending',
+            },
+          ],
+        });
+
+        const submitted = await fake.submit_offer({
+          requestId: REQ_1,
+          amountArs: 1400,
+          etaMinutes: 15,
+        });
+        expect(submitted.ok).toBe(true);
+        if (submitted.ok) {
+          expect(submitted.data.offerId).not.toBe(seededOfferId);
+        }
+        expect(fake.getOffer(seededOfferId)?.courierId).toBe(COURIER_1);
+      });
+
+      it('CC-006 (D01 / D03 / H01 / H02): precedencia canónica S01–S15, controles C01–C04 y AAL2_REQUIRED en cancel_request', async () => {
+        const OFFER_1 = '50000000-0000-4000-8000-000000000001';
+        const now = new Date('2026-09-23T15:00:00.000Z');
+        const past = new Date(now.getTime() - 1000).toISOString();
+        const future = new Date(now.getTime() + 30 * 60_000).toISOString();
+        const inc = { requestId: REQ_1, kind: 'other' as const, description: 'Demora de prueba' };
+
+        type St =
+          | 'draft'
+          | 'published'
+          | 'matched'
+          | 'in_transit'
+          | 'delivered'
+          | 'cancelled'
+          | 'expired';
+        function mk(
+          status: St,
+          actor: { userId: string; role: 'merchant' | 'courier' | 'admin'; aal?: 'aal1' | 'aal2' },
+          opts: {
+            expiresAt?: string;
+            subExpired?: boolean;
+            c2Status?: 'approved' | 'suspended';
+            noC2?: boolean;
+            hasIncident?: boolean;
+            otherRequestIncident?: boolean;
+          } = {}
+        ) {
+          const assigned = ['matched', 'in_transit', 'delivered'].includes(status);
+          const initialIncidents = [];
+          if (opts.hasIncident) {
+            initialIncidents.push({
+              incidentId: '00000000-0000-4000-8000-000000000099',
+              requestId: REQ_1,
+              reporterId: COURIER_1,
+              reporterRole: 'courier' as const,
+              kind: 'safety' as const,
+              description: 'Accidente en camino',
+              createdAt: now.toISOString(),
+            });
+          }
+          if (opts.otherRequestIncident) {
+            initialIncidents.push({
+              incidentId: '00000000-0000-4000-8000-000000000098',
+              requestId: '00000000-0000-4000-8000-000000000088',
+              reporterId: COURIER_1,
+              reporterRole: 'courier' as const,
+              kind: 'safety' as const,
+              description: 'Accidente en otra orden',
+              createdAt: now.toISOString(),
+            });
+          }
+          return createFakeRpcClient({
+            settings: { ...BASE_SETTINGS, pilotActive: !opts.subExpired },
+            now: () => now,
+            initialActor: actor,
+            initialIncidents,
+            initialRequests: [
+              {
+                requestId: REQ_1,
+                merchantId: MERCHANT_1,
+                status,
+                expiresAt: opts.expiresAt ?? future,
+                acceptedOfferId: assigned ? OFFER_1 : null,
+                assignedCourierId: assigned ? COURIER_1 : null,
+                deliveredAt: status === 'delivered' ? now.toISOString() : null,
+              },
+            ],
+            initialOffers: assigned
+              ? [
+                  {
+                    offerId: OFFER_1,
+                    requestId: REQ_1,
+                    courierId: COURIER_1,
+                    amountArs: 2500,
+                    status: 'accepted',
+                  },
+                ]
+              : [],
+            initialCouriers: [
+              { courierId: COURIER_1, status: 'approved', available: true },
+              ...(opts.noC2
+                ? []
+                : [{ courierId: COURIER_2, status: opts.c2Status ?? 'approved', available: true }]),
+            ],
+            initialMerchants: [
+              { merchantId: MERCHANT_1, subscriptionStatus: opts.subExpired ? 'expired' : 'pilot' },
+              { merchantId: MERCHANT_2, subscriptionStatus: opts.subExpired ? 'expired' : 'pilot' },
+            ],
+          });
+        }
+
+        const merch = { userId: MERCHANT_1, role: 'merchant' } as const;
+        const merch2 = { userId: MERCHANT_2, role: 'merchant' } as const;
+        const cour1 = { userId: COURIER_1, role: 'courier' } as const;
+        const cour2 = { userId: COURIER_2, role: 'courier' } as const;
+        const adminAal2 = { userId: ADMIN_1, role: 'admin', aal: 'aal2' } as const;
+        const adminAal1 = { userId: ADMIN_1, role: 'admin', aal: 'aal1' } as const;
+        const code = (r: { ok: boolean; code?: string }) => (r.ok ? 'ok' : String(r.code));
+
+        expect(code(await mk('published', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('INVALID_STATE_TRANSITION'); // S01
+        expect(code(await mk('matched', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('INVALID_STATE_TRANSITION'); // S02
+        expect(code(await mk('in_transit', merch).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('INVALID_STATE_TRANSITION'); // S03
+        expect(code(await mk('published', merch2, { expiresAt: past }).cancel_request({ requestId: REQ_1 }))).toBe('UNAUTHORIZED_ACTOR'); // S04
+        expect(code(await mk('published', merch, { expiresAt: past }).report_incident(inc))).toBe('INVALID_STATE_TRANSITION'); // S05
+        expect(code(await mk('matched', cour2, { c2Status: 'suspended' }).report_incident(inc))).toBe('UNAUTHORIZED_ACTOR'); // S06
+        expect(code(await mk('draft', merch, { subExpired: true }).republish_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('INVALID_STATE_TRANSITION'); // S07
+        expect(code(await mk('matched', merch, { subExpired: true }).republish_request({ requestId: REQ_1 }))).toBe('REASON_REQUIRED'); // S08
+        expect(code(await mk('published', merch, { subExpired: true }).report_no_show({ requestId: REQ_1, republish: true }))).toBe('INVALID_STATE_TRANSITION'); // S09
+        expect(code(await mk('matched', merch2, { subExpired: true }).report_no_show({ requestId: REQ_1, republish: true }))).toBe('UNAUTHORIZED_ACTOR'); // S10
+        expect(code(await mk('published', cour2).mark_picked_up({ requestId: REQ_1 }))).toBe('UNAUTHORIZED_ACTOR'); // S11
+        expect(code(await mk('draft', cour2).mark_picked_up({ requestId: REQ_1 }))).toBe('UNAUTHORIZED_ACTOR'); // S12
+        expect(code(await mk('matched', merch).publish_request({ requestId: REQ_1 }))).toBe('INVALID_STATE_TRANSITION'); // S13
+        expect(code(await mk('matched', cour2, { noC2: true }).report_incident(inc))).toBe('UNAUTHORIZED_ACTOR'); // S14
+        expect(code(await mk('published', merch, { expiresAt: past }).republish_request({ requestId: REQ_1 }))).toBe('ok'); // S15 (H02)
+        expect(code(await mk('published', merch).cancel_request({ requestId: REQ_1 }))).toBe('ok'); // C01
+        expect(code(await mk('matched', cour1).mark_picked_up({ requestId: REQ_1 }))).toBe('ok'); // C02
+        // C03 — CC-029 (T-369): con el piloto apagado, expired sin créditos ni plan se bloquea con PUBLICATION_CREDITS_EXHAUSTED.
+        expect(code(await mk('draft', merch, { subExpired: true }).publish_request({ requestId: REQ_1 }))).toBe('PUBLICATION_CREDITS_EXHAUSTED'); // C03
+        expect(code(await mk('expired', merch).republish_request({ requestId: REQ_1 }))).toBe('ok'); // C04
+
+        // D03, H14 y CC-015: admin en in_transit sin aal2 recibe AAL2_REQUIRED; sin incidente recibe INVALID_STATE_TRANSITION; con incidente pasa a ok
+        expect(code(await mk('in_transit', adminAal1).cancel_request({ requestId: REQ_1, reason: 'Sin MFA' }))).toBe('AAL2_REQUIRED');
+        expect(code(await mk('in_transit', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('INVALID_STATE_TRANSITION');
+        expect(code(await mk('in_transit', adminAal2, { otherRequestIncident: true }).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('INVALID_STATE_TRANSITION');
+        expect(code(await mk('in_transit', adminAal2, { hasIncident: true }).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('ok');
+        expect(code(await mk('published', adminAal1, { expiresAt: past }).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('REQUEST_EXPIRED'); // P4b / T02 / H14
+        expect(code(await mk('published', merch, { expiresAt: past }).cancel_request({ requestId: REQ_1 }))).toBe('REQUEST_EXPIRED');
+        expect(code(await mk('matched', merch).cancel_request({ requestId: REQ_1 }))).toBe('REASON_REQUIRED');
+
+        // Cobertura directa de ramas de transitionRequest y fecha civil en canMerchantPublishRequest
+        expect(
+          canMerchantPublishRequest({
+            subscriptionStatus: 'active',
+            pilotActive: false,
+            paidUntil: '2026-09-25',
+            graceDays: 0,
+            now,
+          })
+        ).toEqual({ ok: true, data: true });
+        expect(
+          transitionRequest({
+            from: 'published',
+            to: 'cancelled',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'expire_all_pending' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'in_transit',
+            actor: 'courier',
+            isAssignedCourier: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'in_transit', offerSideEffect: 'none' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'published',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            reason: 'No show',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'published', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'published',
+            actor: 'courier',
+            isAssignedCourier: true,
+            reason: 'Pinchadura',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'published', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'cancelled',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            reason: 'Cliente canceló',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'in_transit',
+            to: 'delivered',
+            actor: 'courier',
+            isAssignedCourier: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'delivered', offerSideEffect: 'none' } });
+        expect(
+          transitionRequest({
+            from: 'in_transit',
+            to: 'cancelled',
+            actor: 'admin',
+            reason: 'Incidente operativo',
+            now,
+          })
+        ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+        expect(
+          transitionRequest({
+            from: 'in_transit',
+            to: 'cancelled',
+            actor: 'admin',
+            reason: 'Incidente operativo',
+            hasIncident: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
+      });
+    });
+  });
+});
+
+describe('CC-019: área de servicio de Aguilares con los barrios periféricos', () => {
+  // Referencias aprobadas por Lautaro073 (docs/contracts/CC-019.md, tabla «Problema»).
+  const PERIPHERAL_POINTS = [
+    { name: '17 San Lorenzo (rótulo del plano)', lat: -27.45601, lng: -65.61395 },
+    { name: '19 Gambarte', lat: -27.456143, lng: -65.603636 },
+    { name: '20 Terán', lat: -27.456337, lng: -65.602134 },
+    { name: '67 Virgen de la Merced', lat: -27.455233, lng: -65.602138 },
+    { name: '65 Santa Rosa (OSM)', lat: -27.466365, lng: -65.619503 },
+    { name: '65 Santa Rosa, extremo sur (Motel Grey)', lat: -27.4671558, lng: -65.6196513 },
+    { name: '55 San Miguel (canchita)', lat: -27.4284408, lng: -65.5892114 },
+    { name: '56 San Antonio (capilla)', lat: -27.4272716, lng: -65.595871 },
+    { name: '25 El Ceibal', lat: -27.3964375, lng: -65.6359375 },
+    { name: '26 Santa Emilia (Monte Rico Alto)', lat: -27.4018733, lng: -65.6181326 },
+    { name: 'Monte Rico (caserío)', lat: -27.383486, lng: -65.627223 },
+  ] as const;
+
+  it('fija los cuatro límites aprobados', () => {
+    expect(AGUILARES_BOUNDS).toEqual({
+      minLat: -27.48,
+      maxLat: -27.38,
+      minLng: -65.645,
+      maxLng: -65.58,
+    });
+  });
+
+  it.each(PERIPHERAL_POINTS)('acepta $name', ({ lat, lng }) => {
+    expect(isWithinAguilaresBounds(lat, lng)).toBe(true);
+    expect(aguilaresCoordPairSchema.safeParse({ lat, lng }).success).toBe(true);
+    expect(validateRoutePointsAndCalculateDistanceM({ lat, lng }, { lat: -27.432, lng: -65.615 }).ok).toBe(
+      true
+    );
+  });
+
+  it.each([
+    { edge: 'sur', lat: -27.4801, lng: -65.615 },
+    { edge: 'norte', lat: -27.3799, lng: -65.615 },
+    { edge: 'oeste', lat: -27.432, lng: -65.6451 },
+    { edge: 'este', lat: -27.432, lng: -65.5799 },
+  ])('rechaza un punto apenas fuera del borde $edge', ({ lat, lng }) => {
+    expect(isWithinAguilaresBounds(lat, lng)).toBe(false);
+    expect(aguilaresCoordPairSchema.safeParse({ lat, lng }).success).toBe(false);
+    expect(validateRoutePointsAndCalculateDistanceM({ lat, lng }, { lat: -27.432, lng: -65.615 })).toEqual({
+      ok: false,
+      code: 'OUT_OF_BOUNDS_AGUILARES',
+    });
+  });
+
+  it('acepta las cuatro esquinas exactas, como el between de Postgres', () => {
+    expect(isWithinAguilaresBounds(-27.48, -65.645)).toBe(true);
+    expect(isWithinAguilaresBounds(-27.38, -65.58)).toBe(true);
+  });
+});
+
+describe('CC-032 — get_request_cancellation_history en el contrato y el fake', () => {
+  const C3 = '20000000-0000-4000-8000-000000000003';
+  const OFFER_1 = '50000000-0000-4000-8000-000000000321';
+  const OFFER_2 = '50000000-0000-4000-8000-000000000322';
+  const T0 = '2026-10-18T20:00:00.000Z';
+
+  function setup() {
+    let clock = new Date(T0);
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => clock,
+      initialActor: { userId: COURIER_1, role: 'courier' },
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'matched',
+          acceptedOfferId: OFFER_1,
+          assignedCourierId: COURIER_1,
+          expiresAt: '2026-10-18T23:00:00.000Z',
+        },
+      ],
+      initialOffers: [
+        { offerId: OFFER_1, requestId: REQ_1, courierId: COURIER_1, amountArs: 2000, status: 'accepted' },
+      ],
+      initialCouriers: [
+        { courierId: COURIER_1, status: 'approved', available: true, displayName: 'Juan P.' },
+        { courierId: COURIER_2, status: 'approved', available: true, displayName: '  ' },
+        { courierId: C3, status: 'approved', available: true, displayName: 'Ajeno' },
+      ],
+    });
+    return {
+      fake,
+      tick(minutes: number) {
+        clock = new Date(clock.getTime() + minutes * 60_000);
+      },
+    };
+  }
+
+  /** Cadete 1 cancela, el pedido vuelve a published, se asigna al cadete 2 y también cancela. */
+  async function twoCancellations() {
+    const ctx = setup();
+    expect(
+      await ctx.fake.courier_cancel_match({ requestId: REQ_1, reason: 'Problema con el vehículo' })
+    ).toMatchObject({ ok: true, data: { status: 'published' } });
+    ctx.tick(5);
+    ctx.fake.seedOffer({ offerId: OFFER_2, requestId: REQ_1, courierId: COURIER_2, amountArs: 2100, status: 'accepted' });
+    ctx.fake.seedRequest({
+      requestId: REQ_1,
+      merchantId: MERCHANT_1,
+      status: 'matched',
+      acceptedOfferId: OFFER_2,
+      assignedCourierId: COURIER_2,
+      expiresAt: '2026-10-18T23:00:00.000Z',
+    });
+    ctx.fake.setActor({ userId: COURIER_2, role: 'courier' });
+    expect(
+      await ctx.fake.courier_cancel_match({ requestId: REQ_1, reason: 'se me rompió la moto' })
+    ).toMatchObject({ ok: true, data: { status: 'published' } });
+    return ctx;
+  }
+
+  it('es parte del contrato con los códigos del CC', () => {
+    expect(ALL_RPC_NAMES).toContain('get_request_cancellation_history');
+    expect(RPC_CONTRACTS.get_request_cancellation_history.errorCodes).toEqual([
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+    ]);
+  });
+
+  it('el comercio dueño ve las dos cancelaciones en orden desc, con categoría normalizada y sin texto libre', async () => {
+    const { fake } = await twoCancellations();
+    fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+    const result = await fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.version).toBe('1.0');
+    expect(result.data.events.map((e) => [e.actor?.id, e.category, e.categoryLabel, e.rawReason])).toEqual([
+      [COURIER_2, 'other', 'Otro motivo', null],
+      [COURIER_1, 'vehicle_breakdown', 'Problema con el vehículo', null],
+    ]);
+    expect(result.data.events[0]?.actor?.displayName).toBe('Repartidor');
+    expect(result.data.events[1]?.offerId).toBe(OFFER_1);
+    expect(result.data.pagination).toEqual({ limit: 50, hasMore: false, nextCursor: null });
+    // La solicitud reabierta no está cancelada (4-A).
+    expect(fake.getRequest(REQ_1)?.status).toBe('published');
+  });
+
+  it('cada repartidor ve solo sus propias cancelaciones; uno que no participó recibe NOT_FOUND', async () => {
+    const { fake } = await twoCancellations();
+    fake.setActor({ userId: COURIER_1, role: 'courier' });
+    const own = await fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(own.ok && own.data.events.map((e) => e.actor?.id)).toEqual([COURIER_1]);
+    expect(own.ok && own.data.events[0]?.rawReason).toBeNull();
+
+    fake.setActor({ userId: C3, role: 'courier' });
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_1 })).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('el admin ve todo con rawReason; un comercio ajeno o un pedido inexistente dan NOT_FOUND', async () => {
+    const { fake } = await twoCancellations();
+    fake.setActor({ userId: ADMIN_1, role: 'admin' });
+    const admin = await fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(admin.ok && admin.data.events.map((e) => e.rawReason)).toEqual([
+      'se me rompió la moto',
+      'Problema con el vehículo',
+    ]);
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_MISSING })).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+    });
+
+    fake.setActor({ userId: MERCHANT_2, role: 'merchant' });
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_1 })).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('valida el id y el cursor antes del rol, y exige sesión y consentimiento activo', async () => {
+    const { fake } = await twoCancellations();
+    fake.setActor({ userId: C3, role: 'courier', consentStatus: 'pending' });
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_1 })).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED_ACTOR',
+    });
+    const partialCursor = { requestId: REQ_1, cursor: { beforeId: REQ_1 } } as unknown as Parameters<
+      typeof fake.get_request_cancellation_history
+    >[0];
+    expect(await fake.get_request_cancellation_history(partialCursor)).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(await fake.get_request_cancellation_history({ requestId: 'no-uuid' })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    fake.setActor({ userId: '', role: null });
+    expect(await fake.get_request_cancellation_history({ requestId: REQ_1 })).toEqual({
+      ok: false,
+      code: 'UNAUTHENTICATED',
+    });
+  });
+
+  it('pagina por (createdAt, id) desc sobre las filas ya filtradas por actor y acción', async () => {
+    const ctx = setup();
+    const row = (id: string, actorId: string | null, createdAt: string, action = 'courier_cancel_match') => ({
+      id,
+      requestId: REQ_1,
+      offerId: null,
+      actorId,
+      action,
+      reason: 'Tuve un imprevisto',
+      createdAt,
+    });
+    const a1 = '32000000-0000-4000-8000-0000000000a1';
+    const b2 = '32000000-0000-4000-8000-0000000000b2';
+    const a3 = '32000000-0000-4000-8000-0000000000a3';
+    const tieLow = '32000000-0000-4000-8000-0000000000c1';
+    const tieHigh = '32000000-0000-4000-8000-0000000000c2';
+    ctx.fake.seedCancellationReason(row(a1, COURIER_1, '2026-10-18T20:01:00.000Z'));
+    ctx.fake.seedCancellationReason(row(b2, COURIER_2, '2026-10-18T20:02:00.000Z'));
+    ctx.fake.seedCancellationReason(row(a3, COURIER_1, '2026-10-18T20:03:00.000Z'));
+    ctx.fake.seedCancellationReason(
+      row('32000000-0000-4000-8000-0000000000d1', MERCHANT_1, '2026-10-18T20:04:00.000Z', 'cancel_request')
+    );
+
+    ctx.fake.setActor({ userId: COURIER_1, role: 'courier' });
+    const first = await ctx.fake.get_request_cancellation_history({ requestId: REQ_1, limit: 1 });
+    expect(first.ok && first.data.events.map((e) => e.id)).toEqual([a3]);
+    expect(first.ok && first.data.pagination).toEqual({
+      limit: 1,
+      hasMore: true,
+      nextCursor: { beforeCreatedAt: '2026-10-18T20:03:00.000Z', beforeId: a3 },
+    });
+    const second = await ctx.fake.get_request_cancellation_history({
+      requestId: REQ_1,
+      limit: 1,
+      cursor: first.ok ? first.data.pagination.nextCursor : null,
+    });
+    expect(second.ok && second.data.events.map((e) => e.id)).toEqual([a1]);
+    expect(second.ok && second.data.pagination).toEqual({ limit: 1, hasMore: false, nextCursor: null });
+
+    // El comercio no ve el cancel_request; un empate exacto desempata por id desc; actor null sin perfil.
+    ctx.fake.seedCancellationReason(row(tieLow, null, '2026-10-18T20:05:00.000Z'));
+    ctx.fake.seedCancellationReason(row(tieHigh, COURIER_2, '2026-10-18T20:05:00.000Z'));
+    ctx.fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+    const merchant = await ctx.fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(merchant.ok && merchant.data.events.map((e) => e.id)).toEqual([tieHigh, tieLow, a3, b2, a1]);
+    expect(merchant.ok && merchant.data.events[1]?.actor).toBeNull();
+    expect(merchant.ok && merchant.data.events.every((e) => e.category === 'unforeseen_issue')).toBe(true);
+  });
+
+  it('clasifica por coincidencia exacta (sin subcadenas) y admite los códigos canónicos', async () => {
+    const ctx = setup();
+    const reasons: Array<[string, string]> = [
+      ['  TUVE UN IMPREVISTO ', 'unforeseen_issue'],
+      ['problema con el vehiculo', 'vehicle_breakdown'],
+      ['pickup_issue', 'pickup_issue'],
+      ['Emergencia', 'personal_emergency'],
+      ['Otro', 'other'],
+      ['Emergencia médica en casa', 'other'],
+      ['constructor', 'other'],
+    ];
+    reasons.forEach(([reason], i) =>
+      ctx.fake.seedCancellationReason({
+        id: `32000000-0000-4000-8000-0000000001${String(i).padStart(2, '0')}`,
+        requestId: REQ_1,
+        offerId: null,
+        actorId: COURIER_1,
+        action: 'courier_cancel_match',
+        reason,
+        createdAt: `2026-10-18T21:0${i}:00.000Z`,
+      })
+    );
+    ctx.fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+    const result = await ctx.fake.get_request_cancellation_history({ requestId: REQ_1 });
+    expect(result.ok && [...result.data.events].reverse().map((e) => e.category)).toEqual(
+      reasons.map(([, category]) => category)
+    );
+  });
+});

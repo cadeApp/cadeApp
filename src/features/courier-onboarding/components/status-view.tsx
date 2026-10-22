@@ -1,0 +1,276 @@
+'use client';
+
+import * as React from 'react';
+import { useRouter } from 'next/navigation';
+import { Clock, CheckCircle2, ShieldAlert, ArrowRight, FileText } from 'lucide-react';
+import { Button } from '@/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/ui/card';
+import { Badge } from '@/ui/badge';
+import { COURIER_ONBOARDING_COPY } from '../copy';
+import type { CourierDocumentMetadata } from '../queries';
+import type { DocumentReviewStatus } from '../schemas';
+import { DocumentReplacementCard } from './document-replacement-card';
+
+export interface StatusViewProps {
+  readonly documents: readonly CourierDocumentMetadata[];
+  readonly courierId?: string;
+  readonly onGoToFeed?: () => void;
+  /** PR242-H02: el feed ya es el panel, así que ahí no se muestra el botón hacia sí mismo. */
+  readonly showFeedButton?: boolean;
+}
+
+type ItemStatus = 'uploaded' | 'rejected' | 'pending' | 'optional_missing';
+
+function getItemPresentation(status: ItemStatus) {
+  switch (status) {
+    case 'uploaded':
+      return {
+        label: 'Listo',
+        icon: <CheckCircle2 className="text-success h-4 w-4 shrink-0" aria-hidden="true" />,
+        textClass: 'text-muted-foreground',
+      };
+    case 'rejected':
+      return {
+        label: (
+          <span>
+            {COURIER_ONBOARDING_COPY.rejectedBadge}
+            <span className="sr-only"> (Observado)</span>
+          </span>
+        ),
+        icon: <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />,
+        textClass: 'text-destructive font-medium',
+      };
+    case 'pending':
+      return {
+        label: 'Pendiente',
+        icon: <ShieldAlert className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />,
+        textClass: 'text-muted-foreground',
+      };
+    case 'optional_missing':
+      return {
+        label: 'No cargado (opcional)',
+        icon: <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />,
+        textClass: 'text-muted-foreground',
+      };
+  }
+}
+
+function getDocTitle(kind: CourierDocumentMetadata['kind']): string {
+  switch (kind) {
+    case 'dni_front':
+      return 'Frente del DNI';
+    case 'dni_back':
+      return 'Dorso del DNI';
+    case 'selfie':
+      return 'Selfie de verificación';
+    case 'avatar':
+      return COURIER_ONBOARDING_COPY.avatarTitle;
+    case 'license':
+      return 'Licencia de conducir';
+    case 'insurance':
+      return 'Póliza de cobertura';
+    default:
+      return 'Documento';
+  }
+}
+
+export function StatusView({
+  documents,
+  courierId,
+  onGoToFeed,
+  showFeedButton = true,
+}: StatusViewProps) {
+  const router = useRouter();
+  const [localDocuments, setLocalDocuments] = React.useState<readonly CourierDocumentMetadata[]>(documents);
+
+  React.useEffect(() => {
+    setLocalDocuments(documents);
+  }, [documents]);
+
+  const initialRejectedKindsRef = React.useRef(
+    new Set(documents.filter((d) => d.status === 'rejected').map((d) => d.kind))
+  );
+
+  const handleDocumentReplaced = React.useCallback(
+    ({ kind, status }: { kind: CourierDocumentMetadata['kind']; status: DocumentReviewStatus }) => {
+      setLocalDocuments((prev) =>
+        prev.map((doc) =>
+          doc.kind === kind ? { ...doc, status, rejectionCode: null, rejectionMessage: null } : doc
+        )
+      );
+      router.refresh();
+    },
+    [router]
+  );
+
+  const handleNavigate = () => {
+    if (onGoToFeed) {
+      onGoToFeed();
+    } else {
+      router.push('/courier/feed');
+    }
+  };
+
+  const dniFront = localDocuments.find((d) => d.kind === 'dni_front');
+  const dniBack = localDocuments.find((d) => d.kind === 'dni_back');
+
+  let dniStatus: ItemStatus = 'pending';
+  if (dniFront?.status === 'rejected' || dniBack?.status === 'rejected') {
+    dniStatus = 'rejected';
+  } else if (
+    dniFront &&
+    dniBack &&
+    (dniFront.status === 'submitted' || dniFront.status === 'verified') &&
+    (dniBack.status === 'submitted' || dniBack.status === 'verified')
+  ) {
+    dniStatus = 'uploaded';
+  }
+
+  const selfie = localDocuments.find((d) => d.kind === 'selfie');
+  let selfieStatus: ItemStatus = 'pending';
+  if (selfie) {
+    if (selfie.status === 'rejected') {
+      selfieStatus = 'rejected';
+    } else if (selfie.status === 'submitted' || selfie.status === 'verified') {
+      selfieStatus = 'uploaded';
+    }
+  }
+
+  const avatar = localDocuments.find((d) => d.kind === 'avatar');
+  let avatarStatus: ItemStatus = 'pending';
+  if (avatar) {
+    if (avatar.status === 'rejected') {
+      avatarStatus = 'rejected';
+    } else if (avatar.status === 'submitted' || avatar.status === 'verified') {
+      avatarStatus = 'uploaded';
+    }
+  }
+
+  const license = localDocuments.find((d) => d.kind === 'license');
+  let licenseStatus: ItemStatus = 'optional_missing';
+  if (license) {
+    if (license.status === 'rejected') {
+      licenseStatus = 'rejected';
+    } else if (license.status === 'submitted' || license.status === 'verified') {
+      licenseStatus = 'uploaded';
+    }
+  }
+
+  const insurance = localDocuments.find((d) => d.kind === 'insurance');
+  let insuranceStatus: ItemStatus = 'optional_missing';
+  if (insurance) {
+    if (insurance.status === 'rejected') {
+      insuranceStatus = 'rejected';
+    } else if (insurance.status === 'submitted' || insurance.status === 'verified') {
+      insuranceStatus = 'uploaded';
+    }
+  }
+
+  const shownDocuments = localDocuments.filter(
+    (d) => initialRejectedKindsRef.current.has(d.kind) || d.status === 'rejected'
+  );
+  const hasRejected = shownDocuments.some((d) => d.status === 'rejected');
+
+  const checklistItems: Array<{ title: string; status: ItemStatus }> = [
+    { title: 'DNI frente y dorso', status: dniStatus },
+    { title: COURIER_ONBOARDING_COPY.selfieTitle, status: selfieStatus },
+    { title: 'Foto de perfil para comercios', status: avatarStatus },
+    { title: 'Vehículo y consentimientos', status: 'uploaded' },
+    { title: 'Licencia de conducir (opcional)', status: licenseStatus },
+    { title: 'Seguro (opcional)', status: insuranceStatus },
+  ];
+
+  return (
+    <Card className="mx-auto w-full max-w-lg space-y-6 p-6 sm:p-8">
+      <div className="flex w-full flex-col items-center">
+        {/* Status Tracker Pill */}
+        <Badge
+          variant="outline"
+          className="mb-6 inline-flex items-center gap-1.5 rounded-full border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-600"
+        >
+          <span className="h-2 w-2 rounded-full bg-amber-600" />
+          <span>{COURIER_ONBOARDING_COPY.underReviewBadge}</span>
+        </Badge>
+
+        {/* Brand Delivery and Clock Motif */}
+        <div className="relative mb-5 flex h-14 w-14 items-center justify-center rounded-xl border border-border bg-muted/40 text-primary-dark">
+          <Clock className="h-7 w-7" aria-hidden="true" />
+        </div>
+
+        {/* Text Block */}
+        <div className="mb-6 w-full px-2 text-center">
+          <h1 className="mb-2 font-display text-2xl font-bold leading-tight text-foreground">
+            {COURIER_ONBOARDING_COPY.underReviewTitle}
+          </h1>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {COURIER_ONBOARDING_COPY.underReviewSubtitle}
+          </p>
+        </div>
+
+        {/* Verification Bento / Checklist Card */}
+        <Card className="w-full border-border bg-muted/20 shadow-none">
+          <CardHeader className="border-b border-border/50 pb-3">
+            <CardTitle className="text-sm font-bold text-foreground">
+              {COURIER_ONBOARDING_COPY.checklistTitle}
+            </CardTitle>
+            <CardDescription className="text-sm text-muted-foreground">
+              {COURIER_ONBOARDING_COPY.checklistSubtitle}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2.5 pt-3">
+            {checklistItems.map((item, idx) => {
+              const presentation = getItemPresentation(item.status);
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between border-b border-border/40 pb-2 last:border-0 last:pb-0"
+                >
+                  <div className="flex items-center gap-2.5">
+                    {presentation.icon}
+                    <span className="text-sm font-medium text-foreground">{item.title}</span>
+                  </div>
+                  <span className={`text-sm ${presentation.textClass}`}>{presentation.label}</span>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        {/* Documentos rechazados que requieren corrección o seguimiento de corrección (T-356) */}
+        {shownDocuments.length > 0 && (
+          <div className="w-full space-y-3 pt-4" data-slot="rejected-documents-section">
+            <h2
+              className={`text-sm font-bold ${
+                hasRejected ? 'text-destructive' : 'text-foreground'
+              }`}
+            >
+              {hasRejected
+                ? 'Documentos que requieren corrección'
+                : 'Seguimiento de documentos corregidos'}
+            </h2>
+            {shownDocuments.map((doc) => (
+              <DocumentReplacementCard
+                key={doc.kind}
+                courierId={courierId}
+                kind={doc.kind}
+                title={getDocTitle(doc.kind)}
+                initialStatus={doc.status}
+                rejectionCode={doc.rejectionCode}
+                rejectionMessage={doc.rejectionMessage}
+                onReplaced={handleDocumentReplaced}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Botón hacia el feed */}
+      {showFeedButton && (
+        <Button type="button" size="lg" onClick={handleNavigate} className="w-full font-bold">
+          <span>{COURIER_ONBOARDING_COPY.btnGoToFeed}</span>
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      )}
+    </Card>
+  );
+}

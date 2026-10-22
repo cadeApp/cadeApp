@@ -1,0 +1,23 @@
+descartados (residual > 40 m):
+   ('LAMADRID x J.A. ROCA', 81.3)
+   ('COSTA RICA x ECUADOR', 61.1)
+usados 17
+  D. RETONDO x C. PELLEGRINI               ajuste=  18.8 m  leave-one-out=  23.0 m
+  ALSINA x V. SARFIELD                     ajuste=  11.8 m  leave-one-out=  13.0 m
+  AV. SARMIENTO x SAN MARTIN               ajuste=  10.6 m  leave-one-out=  11.9 m
+  J.B. ALBERDI x SAN MARTIN                ajuste=  17.4 m  leave-one-out=  18.7 m
+  B. RIVADAVIA x A. DEL VALLE              ajuste=  37.1 m  leave-one-out=  46.0 m
+  M. MORENO x AV. MITRE                    ajuste=  17.0 m  leave-one-out=  20.6 m
+  J. MARMOL x C. PELLEGRINI                ajuste=  24.3 m  leave-one-out=  27.3 m
+  AV. GRAL. SAVIO x A. AGUADO              ajuste=  37.7 m  leave-one-out=  49.0 m
+  AV. GRAL. SAVIO x I. GORRITI             ajuste=  33.9 m  leave-one-out=  44.0 m
+  COSTA RICA x MEXICO                      ajuste=  23.7 m  leave-one-out=  62.7 m
+  CATAMARCA x TIERRA DEL FUEGO             ajuste=  25.2 m  leave-one-out=  30.3 m
+  MISIONES x ANTARTIDA ARGENTINA           ajuste=  15.9 m  leave-one-out=  18.8 m
+  LA RIOJA x ANTARTIDA ARGENTINA           ajuste=  21.6 m  leave-one-out=  25.3 m
+  AV. NEUQUEN x TIERRA DEL FUEGO           ajuste=  31.7 m  leave-one-out=  38.7 m
+  N. LAPRIDA x C. PELLEGRINI               ajuste=  23.5 m  leave-one-out=  25.5 m
+  D. RETONDO x V. SARFIELD                 ajuste=  15.9 m  leave-one-out=  19.2 m
+  AV. SARMIENTO x AV. BELGRANO             ajuste=  32.8 m  leave-one-out=  35.9 m
+RMS ajuste=24.9 m  RMS LOO=32.9 m  max LOO=62.7 m
+escala x=7.11 m/pt  y=7.31 m/pt  ángulo entre ejes=89.6°

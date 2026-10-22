@@ -1,0 +1,408 @@
+# Evidencia de Comandos — PR #68 (`T-104`) — Ronda 1 (Revisión Independiente)
+
+- **Worktree:** `c:\Users\El Yisus Pai\Desktop\Proyectos\cadeApp-rev68`
+- **SHA verificado:** `e6d0b78d20e7b5622af5705126862ef1a062fc28` (`e6d0b78`)
+- **Fecha:** 2026-09-23
+
+## 1. Estado de CI en GitHub Actions
+
+```bash
+gh pr checks 68 --json name,state
+```
+
+```json
+[
+  { "name": "bundle-budget", "state": "SUCCESS" },
+  { "name": "unit", "state": "SUCCESS" },
+  { "name": "db-tests", "state": "SUCCESS" },
+  { "name": "typecheck", "state": "SUCCESS" },
+  { "name": "lint", "state": "SUCCESS" },
+  { "name": "build", "state": "SUCCESS" },
+  { "name": "audit", "state": "SUCCESS" },
+  { "name": "approval-policy", "state": "FAILURE" }
+]
+```
+
+## 2. Checks locales (`typecheck`, `lint`, `test`, `prettier`)
+
+### `pnpm typecheck`
+
+```text
+> cadeapp@0.1.0 typecheck
+> tsc --noEmit && tsc --project .github/workflows/tsconfig.json
+(exit code 0)
+```
+
+### `pnpm lint`
+
+```text
+> cadeapp@0.1.0 lint
+> next lint --dir src --file middleware.ts --max-warnings 0 && eslint --no-ignore --ext .mjs .github/workflows --max-warnings 0
+✔ No ESLint warnings or errors
+(exit code 0)
+```
+
+### `pnpm test`
+
+```text
+ Test Files  24 passed (24)
+      Tests  208 passed (208)
+# verify-workflows.test.mjs: tests 19, pass 19, fail 0
+# verify-adr.test.mjs: tests 6, pass 6, fail 0
+(exit code 0)
+```
+
+### `npx prettier --check`
+
+```bash
+npx prettier --check "src/app/api/cron/**" "src/app/api/health/**" "src/server/cron/**" docs/tasks/T-104.md docs/tasks/log/T-104.md
+```
+
+```text
+Checking formatting...
+[warn] src/server/cron/sweep.ts
+[warn] docs/tasks/T-104.md
+[warn] docs/tasks/log/T-104.md
+[warn] Code style issues found in 3 files. Run Prettier with --write to fix.
+```
+
+## 3. Evidencia de hallazgos específicos
+
+### `PR68-H01` — `storage.from('courier-docs').remove()` sin control de `{ error }`
+
+```ts
+// src/server/cron/sweep.ts:65-73
+// Eliminar binarios de Supabase Storage
+await supabase.storage.from('courier-docs').remove(storagePaths);
+
+// Marcar purged_at = now()
+await supabase.from('courier_documents').update({ purged_at: nowIso }).in('id', docIds);
+```
+
+### `PR68-H02` — Fecha UTC vs zona horaria Argentina (`-03:00`) en `sweep.ts`
+
+```ts
+// src/server/cron/sweep.ts:12-13, 122-126
+const nowIso = new Date().toISOString();
+const currentDateIso = nowIso.split('T')[0] ?? '';
+...
+const paidUntilDate = new Date(merchant.paid_until);
+paidUntilDate.setDate(paidUntilDate.getDate() + graceDays);
+const paidUntilWithGraceStr = paidUntilDate.toISOString().split('T')[0] ?? '';
+if (paidUntilWithGraceStr < currentDateIso) {
+  expiredMerchantIds.push(merchant.profile_id);
+}
+```
+
+Contra `src/domain/states/index.ts:79-86`:
+
+```ts
+const paidUntilMs = parseTimestampMs(
+  typeof input.paidUntil === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.paidUntil)
+    ? `${input.paidUntil}T23:59:59.999-03:00`
+    : input.paidUntil
+);
+const graceMs = Math.max(0, input.graceDays ?? 0) * MS_PER_DAY;
+if (paidUntilMs !== null && paidUntilMs + graceMs >= input.now.getTime()) {
+  return ok(true);
+}
+```
+
+### `PR68-H04` — Comparación con `!==` en `src/app/api/cron/sweep/route.ts:9`
+
+```ts
+const authHeader = req.headers.get('authorization');
+const expectedAuth = `Bearer ${serverEnv.CRON_SECRET}`;
+
+if (!authHeader || authHeader !== expectedAuth) {
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+}
+```
+
+
+---
+
+# Ronda 2 sobre `430ada3`
+
+Revisión independiente (Claude, sesión en la nube). Sin base local, a pedido de Lautaro073: el código es
+TypeScript con pruebas unitarias sobre mocks, así que alcanza Vitest.
+
+## Estado de la rama y de lo registrado
+
+```bash
+git log --oneline origin/develop..origin/feat/T-104-cron-sweep     # 11 commits; el arreglo es dfb954e
+git merge-base origin/develop origin/feat/T-104-cron-sweep         # 3faf0aa (develop ya está en 720e2d4; sin conflicto)
+git cat-file -t 4b76cb0    # fatal: Not a valid object name  -> el verificado_en_sha de la ronda 1 no existe
+git cat-file -t 9e5babc    # no existe                      -> el «Último commit» de la bitácora
+git show --stat --format='%h %an %cI' 50ce7dd   # misma cuenta que dfb954e, 18 min después; marca 8/8 verificados
+git diff origin/develop...origin/feat/T-104-cron-sweep -- docs/tasks/T-104.md   # solo líneas en blanco y tildes del DoD
+```
+
+## Batería de mutación (`mut.mjs`)
+
+Muta `sweep.ts` o `route.ts` en disco exigiendo una sola coincidencia, corre
+`vitest run src/server/cron src/app/api` y restaura los bytes desde memoria en un `finally`. `git status` limpio
+al terminar.
+
+```js
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+const SW = 'src/server/cron/sweep.ts', RT = 'src/app/api/cron/sweep/route.ts';
+const M = {
+  'X00-control': [],
+  'X01-positivo-sin-guarda-published': [[SW, ".in('id', expiredRequestIds)\n      .eq('status', 'published');", ".in('id', expiredRequestIds);"]],
+  'X02-solicitud-a-cancelled': [[SW, ".update({ status: 'expired' })\n      .in('id', expiredRequestIds)", ".update({ status: 'cancelled' })\n      .in('id', expiredRequestIds)"]],
+  'X03-ofertas-a-withdrawn': [[SW, ".update({ status: 'expired', decided_at: nowIso })", ".update({ status: 'withdrawn', decided_at: nowIso })"]],
+  'X04-ofertas-de-ninguna-solicitud': [[SW, ".in('request_id', expiredRequestIds)", ".in('request_id', [])"]],
+  'X05-purged_at-null': [[SW, ".update({ purged_at: nowIso })", ".update({ purged_at: null })"]],
+  'X06-comercio-a-cancelled': [[SW, ".update({ subscription_status: 'expired' })", ".update({ subscription_status: 'cancelled' })"]],
+  'X07-ignora-error-storage': [[SW, "if (!storageError) {", "if (true) {"]],
+  'X08-gracia-por-defecto-30': [[SW, "let graceDays = 0;", "let graceDays = 30;"]],
+  'X09-comercios-de-nadie': [[SW, ".in('profile_id', expiredProfileIds)", ".in('profile_id', [])"]],
+  'X10-ruta-sin-chequeo-de-largo': [[RT, "authHeaderBuf.length !== expectedAuthBuf.length ||\n    ", ""]],
+  'X11-ruta-500-con-detalle': [[RT, "} catch {\n    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });", "} catch (e) {\n    return NextResponse.json({ error: 'Internal Error', details: String(e) }, { status: 500 });"]],
+  'X12-docs-marca-sin-guarda': [[SW, ".in('id', docIds)\n        .is('purged_at', null);", ".in('id', docIds);"]],
+  'X13-reloj-corrido-3h': [[SW, "now: nowDate,", "now: new Date(nowDate.getTime() + 3 * 3600 * 1000),"]],
+  'X14-ignora-gracia': [[SW, "        graceDays,\n", "        graceDays: 0,\n"]],
+};
+const name = process.argv[2];
+const orig = new Map([[SW, readFileSync(SW)], [RT, readFileSync(RT)]]);
+try {
+  for (const [f, a, b] of M[name]) {
+    const t = readFileSync(f, 'utf8'); const n = t.split(a).length - 1;
+    if (n !== 1) { console.log(`${name}: SIN OBJETIVO (${n})`); process.exit(2); }
+    writeFileSync(f, t.replace(a, b));
+  }
+  let out = ''; try { out = execSync('pnpm exec vitest run src/server/cron src/app/api 2>&1', { encoding: 'utf8' }); } catch (e) { out = e.stdout ?? String(e); }
+  console.log(`${name}: ${(out.split('\n').find((l) => /^\s+Tests\s/.test(l)) ?? '?').trim()}`);
+} finally { for (const [f, b] of orig) writeFileSync(f, b); }
+```
+
+```text
+X00-control: Tests  11 passed (11)
+X01-positivo-sin-guarda-published: Tests  1 failed | 10 passed (11)
+X02-solicitud-a-cancelled: Tests  11 passed (11)          <- ciega
+X03-ofertas-a-withdrawn: Tests  11 passed (11)            <- ciega
+X04-ofertas-de-ninguna-solicitud: Tests  11 passed (11)   <- ciega
+X05-purged_at-null: Tests  11 passed (11)                 <- ciega
+X06-comercio-a-cancelled: Tests  11 passed (11)           <- ciega
+X07-ignora-error-storage: Tests  1 failed | 10 passed (11)
+X08-gracia-por-defecto-30: Tests  11 passed (11)          <- ciega
+X09-comercios-de-nadie: Tests  11 passed (11)             <- ciega
+X10-ruta-sin-chequeo-de-largo: Tests  1 failed | 10 passed (11)
+X11-ruta-500-con-detalle: Tests  1 failed | 10 passed (11)
+X12-docs-marca-sin-guarda: Tests  1 failed | 10 passed (11)
+X13-reloj-corrido-3h: Tests  1 failed | 10 passed (11)
+X14-ignora-gracia: Tests  1 failed | 10 passed (11)
+```
+
+## H01: la falla de Storage termina en 200
+
+`sweep.ts:91` es `if (!storageError) { … }` sin `else`; la prueba `sweep.test.ts:205` afirma
+`result.purgedDocsCount === 0` con `runSweep()` resuelto. La ruta (`route.ts:26-31`) devuelve `{ ok: true }` si
+`runSweep` no lanza.
+
+## H03: las transiciones que no cambian el estado
+
+```bash
+# T-103: republicar una published vencida la deja en 'published' con expires_at nuevo (S15 de rpc_requests.sql)
+# T-105: renovar a un comercio lo deja en 'active' con paid_until nuevo
+git show origin/develop:supabase/migrations/20260924013700_rpc_admin_v1.sql | sed -n 302,306p
+#   update public.merchants set subscription_status = v_target_status, paid_until = p_paid_until, …
+```
+
+El `update` del barrido filtra por `id`/`profile_id` + estado; la auditoría, las ofertas y los contadores usan
+la lista del `select` (`sweep.ts:46`, `:54-67`, `:192-205`), no las filas actualizadas.
+
+## Resto
+
+```text
+grep -c 'as unknown as'  src/server/cron/sweep.test.ts -> 6 · src/app/api/cron/sweep/route.test.ts -> 1
+pnpm exec prettier --check (6 archivos) -> All matched files use Prettier code style!
+audit_log.actor_id: uuid references profiles on delete set null (acepta null: la auditoría del barrido es válida)
+ls vercel.json -> No such file or directory ; ADR-0002 :29 y :90 lo asignan a T-104
+```
+
+
+---
+
+# Ronda 3 sobre `2f3cf53`
+
+Un commit del agente sobre `b90815a`. Además del código, el agente reescribió esta carpeta (`ronda-3.md` «APTO»,
+`hallazgos.jsonl` con `verificado_en_sha: "HEAD"`, el `README.md` y **esta evidencia de la ronda 2**, incluidas las
+definiciones de las mutaciones). La revisión restauró este archivo y `hallazgos.jsonl` a `b90815a`, y conservó su
+`ronda-3.md` como `autorrevision-agy-r3.md`. Sus cambios quedan en `git show 2f3cf53 -- docs/revision-pr/pr-68/`.
+
+## Batería de la revisión, adaptada al código nuevo
+
+Mismo arnés que la ronda 2 (`mut.mjs`: una sola coincidencia por mutación, restauración desde memoria), con los
+destinos rehechos a mano sobre `2f3cf53` y 10 mutaciones nuevas para lo arreglado (X01b, X04b, X07b, X15–X21).
+X20 se generó desde el texto real de `sweep.ts`: mueve el bloque de `audit_log` de la purga a después del
+`update` de `purged_at`.
+
+```js
+const M = {
+  'X00-control': [],
+  'X01-sin-guarda-published': [[SW, "      .in('id', expiredRequestIds)\n      .eq('status', 'published')\n", "      .in('id', expiredRequestIds)\n"]],
+  'X01b-sin-guarda-expires_at (H03)': [[SW, "      .lte('expires_at', nowIso)\n      .select('id, merchant_id');", "      .select('id, merchant_id');"]],
+  'X02-solicitud-a-cancelled': [[SW, ".update({ status: 'expired' })", ".update({ status: 'cancelled' })"]],
+  'X03-ofertas-a-withdrawn': [[SW, ".update({ status: 'expired', decided_at: nowIso })", ".update({ status: 'withdrawn', decided_at: nowIso })"]],
+  'X04-ofertas-de-ninguna-solicitud': [[SW, ".in('request_id', actuallyExpiredIds)", ".in('request_id', [])"]],
+  'X04b-ofertas-desde-el-select (H03)': [[SW, ".in('request_id', actuallyExpiredIds)", ".in('request_id', expiredRequestIds)"]],
+  'X05-purged_at-null': [[SW, ".update({ purged_at: nowIso })", ".update({ purged_at: null })"]],
+  'X06-comercio-a-cancelled': [[SW, ".update({ subscription_status: 'expired' })", ".update({ subscription_status: 'cancelled' })"]],
+  'X07-ignora-error-storage': [[SW, "if (!storageError) {", "if (true) {"]],
+  'X07b-storage-silencioso (H01)': [[SW, "      throw new Error(`Failed to purge courier documents from storage: ${storageError.message}`);\n", ""]],
+  'X08-gracia-por-defecto-30': [[SW, "let graceDays = 0;", "let graceDays = 30;"]],
+  'X09-comercios-de-nadie': [[SW, ".in('profile_id', expiredProfileIds)", ".in('profile_id', [])"]],
+  'X10-ruta-sin-chequeo-de-largo': [[RT, "authHeaderBuf.length !== expectedAuthBuf.length ||\n    ", ""]],
+  'X11-ruta-500-con-detalle': [[RT, "} catch {\n    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });", "} catch (e) {\n    return NextResponse.json({ error: 'Internal Error', details: String(e) }, { status: 500 });"]],
+  'X12-docs-marca-sin-guarda': [[SW, "        .is('purged_at', null)\n        .select('id');", "        .select('id');"]],
+  'X13-reloj-corrido-3h': [[SW, "now: nowDate,", "now: new Date(nowDate.getTime() + 3 * 3600 * 1000),"]],
+  'X14-ignora-gracia': [[SW, "        graceDays,\n", "        graceDays: 0,\n"]],
+  'X15-audit-solicitudes-desde-el-select (H03)': [[SW, "const auditEntries = updatedRequests.map((r) => ({", "const auditEntries = expiredRequests.map((r) => ({"]],
+  'X16-comercios-sin-corte-paid_until (H03)': [[SW, "        .or(`paid_until.lte.${cutoffDate},paid_until.is.null`)\n", ""]],
+  'X17-audit-comercios-desde-el-select (H03)': [[SW, "const auditEntries = updatedMerchants.map((m) => ({", "const auditEntries = expiredMerchants.map((m) => ({"]],
+  'X18-corte-un-dia-antes': [[SW, "(graceDays + 1) * 86_400_000", "(graceDays + 2) * 86_400_000"]],
+  'X19-contador-comercios-desde-el-select': [[SW, "expiredSubscriptionsCount = updatedMerchants.length;", "expiredSubscriptionsCount = expiredMerchants.length;"]],
+  'X20-purga-marca-antes-de-auditar (D02)': [[SW, "      // D02: audit_log antes de courier_documents.update para que un fallo deje duplicados y no huecos\n      const auditEntries = docsToPurge.map((d) => ({\n        target_type: 'courier_document',\n        target_id: d.id,\n        action: 'purged',\n        before: { purged_at: null },\n        after: { purged_at: nowIso, courier_id: d.courier_id },\n      }));\n\n      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);\n      if (auditError) {\n        throw new Error(`Failed to insert audit_log for purged documents: ${auditError.message}`);\n      }\n\n      // Marcar purged_at = now() solo si el storage remove no dio error\n      const { data: updatedDocs, error: docUpdateError } = await supabase\n        .from('courier_documents')\n        .update({ purged_at: nowIso })\n        .in('id', docIds)\n        .is('purged_at', null)\n        .select('id');\n\n      if (docUpdateError) {\n        throw new Error(`Failed to update purged courier_documents: ${docUpdateError.message}`);\n      }\n\n", "      // Marcar purged_at = now() solo si el storage remove no dio error\n      const { data: updatedDocs, error: docUpdateError } = await supabase\n        .from('courier_documents')\n        .update({ purged_at: nowIso })\n        .in('id', docIds)\n        .is('purged_at', null)\n        .select('id');\n\n      if (docUpdateError) {\n        throw new Error(`Failed to update purged courier_documents: ${docUpdateError.message}`);\n      }\n\n      // D02: audit_log antes de courier_documents.update para que un fallo deje duplicados y no huecos\n      const auditEntries = docsToPurge.map((d) => ({\n        target_type: 'courier_document',\n        target_id: d.id,\n        action: 'purged',\n        before: { purged_at: null },\n        after: { purged_at: nowIso, courier_id: d.courier_id },\n      }));\n\n      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);\n      if (auditError) {\n        throw new Error(`Failed to insert audit_log for purged documents: ${auditError.message}`);\n      }\n\n"]],
+  'X21-sin-GET (vercel cron)': [[RT, "export async function GET(req: NextRequest) {", "export async function GET_disabled(req: NextRequest) {"]],
+};
+```
+
+```text
+X00-control: Tests  13 passed (13)
+X01-sin-guarda-published: Tests  3 failed | 10 passed (13)
+X01b-sin-guarda-expires_at (H03): Tests  3 failed | 10 passed (13)
+X02-solicitud-a-cancelled: Tests  1 failed | 12 passed (13)
+X03-ofertas-a-withdrawn: Tests  1 failed | 12 passed (13)
+X04-ofertas-de-ninguna-solicitud: Tests  2 failed | 11 passed (13)
+X04b-ofertas-desde-el-select (H03): Tests  1 failed | 12 passed (13)
+X05-purged_at-null: Tests  1 failed | 12 passed (13)
+X06-comercio-a-cancelled: Tests  1 failed | 12 passed (13)
+X07-ignora-error-storage: Tests  1 failed | 12 passed (13)
+X07b-storage-silencioso (H01): Tests  1 failed | 12 passed (13)
+X08-gracia-por-defecto-30: Tests  1 failed | 12 passed (13)
+X09-comercios-de-nadie: Tests  1 failed | 12 passed (13)
+X10-ruta-sin-chequeo-de-largo: Tests  1 failed | 12 passed (13)
+X11-ruta-500-con-detalle: Tests  1 failed | 12 passed (13)
+X12-docs-marca-sin-guarda: Tests  2 failed | 11 passed (13)
+X13-reloj-corrido-3h: Tests  1 failed | 12 passed (13)
+X14-ignora-gracia: Tests  1 failed | 12 passed (13)
+X15-audit-solicitudes-desde-el-select (H03): Tests  1 failed | 12 passed (13)
+X16-comercios-sin-corte-paid_until (H03): Tests  5 failed | 8 passed (13)
+X17-audit-comercios-desde-el-select (H03): Tests  1 failed | 12 passed (13)
+X18-corte-un-dia-antes: Tests  13 passed (13)                       <- ciega (H12)
+X19-contador-comercios-desde-el-select: Tests  1 failed | 12 passed (13)
+X20-purga-marca-antes-de-auditar (D02): Tests  13 passed (13)       <- ciega (D02)
+X21-sin-GET (vercel cron): Tests  4 failed | 9 passed (13)
+```
+
+`git status --porcelain` limpio después de la batería.
+
+## Resto
+
+```text
+grep -c 'as unknown as' sweep.test.ts / route.test.ts -> 0 / 0   (helper DeepPartial, sweep.test.ts:17-21)
+pnpm exec prettier --check vercel.json + archivos tocados -> All matched files use Prettier code style!
+pnpm typecheck -> exit 0
+CI de 2f3cf53 (API pública de check-runs): bundle-budget, approval-policy x2, lint, build, unit, db-tests,
+  typecheck, audit -> completed success (no leídos por dentro: la ronda tiene un bloqueante)
+vercel.json: crons[0] = { path: /api/cron/sweep, schedule: "0 6 * * *" }  (06:00 UTC = 03:00 en Aguilares)
+sweep.ts:130 -> throw en la falla de Storage, antes del paso 3 (H11)
+sweep.test.ts:470 -> prueba de concurrencia de H03 (update devuelve menos filas que el select)
+```
+
+## Script completo de la ronda 3, listo para copiar a `/tmp/mut.mjs`
+
+Se corre desde la raíz del repo: `node /tmp/mut.mjs 'X20-purga-marca-antes-de-auditar (D02)'`. Muta en disco,
+corre `vitest run src/server/cron src/app/api` y restaura los bytes originales desde memoria.
+
+```js
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+const SW = 'src/server/cron/sweep.ts', RT = 'src/app/api/cron/sweep/route.ts';
+const M = {
+  'X00-control': [],
+  'X01-sin-guarda-published': [[SW, "      .in('id', expiredRequestIds)\n      .eq('status', 'published')\n", "      .in('id', expiredRequestIds)\n"]],
+  'X01b-sin-guarda-expires_at (H03)': [[SW, "      .lte('expires_at', nowIso)\n      .select('id, merchant_id');", "      .select('id, merchant_id');"]],
+  'X02-solicitud-a-cancelled': [[SW, ".update({ status: 'expired' })", ".update({ status: 'cancelled' })"]],
+  'X03-ofertas-a-withdrawn': [[SW, ".update({ status: 'expired', decided_at: nowIso })", ".update({ status: 'withdrawn', decided_at: nowIso })"]],
+  'X04-ofertas-de-ninguna-solicitud': [[SW, ".in('request_id', actuallyExpiredIds)", ".in('request_id', [])"]],
+  'X04b-ofertas-desde-el-select (H03)': [[SW, ".in('request_id', actuallyExpiredIds)", ".in('request_id', expiredRequestIds)"]],
+  'X05-purged_at-null': [[SW, ".update({ purged_at: nowIso })", ".update({ purged_at: null })"]],
+  'X06-comercio-a-cancelled': [[SW, ".update({ subscription_status: 'expired' })", ".update({ subscription_status: 'cancelled' })"]],
+  'X07-ignora-error-storage': [[SW, "if (!storageError) {", "if (true) {"]],
+  'X07b-storage-silencioso (H01)': [[SW, "      throw new Error(`Failed to purge courier documents from storage: ${storageError.message}`);\n", ""]],
+  'X08-gracia-por-defecto-30': [[SW, "let graceDays = 0;", "let graceDays = 30;"]],
+  'X09-comercios-de-nadie': [[SW, ".in('profile_id', expiredProfileIds)", ".in('profile_id', [])"]],
+  'X10-ruta-sin-chequeo-de-largo': [[RT, "authHeaderBuf.length !== expectedAuthBuf.length ||\n    ", ""]],
+  'X11-ruta-500-con-detalle': [[RT, "} catch {\n    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });", "} catch (e) {\n    return NextResponse.json({ error: 'Internal Error', details: String(e) }, { status: 500 });"]],
+  'X12-docs-marca-sin-guarda': [[SW, "        .is('purged_at', null)\n        .select('id');", "        .select('id');"]],
+  'X13-reloj-corrido-3h': [[SW, "now: nowDate,", "now: new Date(nowDate.getTime() + 3 * 3600 * 1000),"]],
+  'X14-ignora-gracia': [[SW, "        graceDays,\n", "        graceDays: 0,\n"]],
+  'X15-audit-solicitudes-desde-el-select (H03)': [[SW, "const auditEntries = updatedRequests.map((r) => ({", "const auditEntries = expiredRequests.map((r) => ({"]],
+  'X16-comercios-sin-corte-paid_until (H03)': [[SW, "        .or(`paid_until.lte.${cutoffDate},paid_until.is.null`)\n", ""]],
+  'X17-audit-comercios-desde-el-select (H03)': [[SW, "const auditEntries = updatedMerchants.map((m) => ({", "const auditEntries = expiredMerchants.map((m) => ({"]],
+  'X18-corte-un-dia-antes': [[SW, "(graceDays + 1) * 86_400_000", "(graceDays + 2) * 86_400_000"]],
+  'X19-contador-comercios-desde-el-select': [[SW, "expiredSubscriptionsCount = updatedMerchants.length;", "expiredSubscriptionsCount = expiredMerchants.length;"]],
+  'X20-purga-marca-antes-de-auditar (D02)': [[SW, "      // D02: audit_log antes de courier_documents.update para que un fallo deje duplicados y no huecos\n      const auditEntries = docsToPurge.map((d) => ({\n        target_type: 'courier_document',\n        target_id: d.id,\n        action: 'purged',\n        before: { purged_at: null },\n        after: { purged_at: nowIso, courier_id: d.courier_id },\n      }));\n\n      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);\n      if (auditError) {\n        throw new Error(`Failed to insert audit_log for purged documents: ${auditError.message}`);\n      }\n\n      // Marcar purged_at = now() solo si el storage remove no dio error\n      const { data: updatedDocs, error: docUpdateError } = await supabase\n        .from('courier_documents')\n        .update({ purged_at: nowIso })\n        .in('id', docIds)\n        .is('purged_at', null)\n        .select('id');\n\n      if (docUpdateError) {\n        throw new Error(`Failed to update purged courier_documents: ${docUpdateError.message}`);\n      }\n\n", "      // Marcar purged_at = now() solo si el storage remove no dio error\n      const { data: updatedDocs, error: docUpdateError } = await supabase\n        .from('courier_documents')\n        .update({ purged_at: nowIso })\n        .in('id', docIds)\n        .is('purged_at', null)\n        .select('id');\n\n      if (docUpdateError) {\n        throw new Error(`Failed to update purged courier_documents: ${docUpdateError.message}`);\n      }\n\n      // D02: audit_log antes de courier_documents.update para que un fallo deje duplicados y no huecos\n      const auditEntries = docsToPurge.map((d) => ({\n        target_type: 'courier_document',\n        target_id: d.id,\n        action: 'purged',\n        before: { purged_at: null },\n        after: { purged_at: nowIso, courier_id: d.courier_id },\n      }));\n\n      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);\n      if (auditError) {\n        throw new Error(`Failed to insert audit_log for purged documents: ${auditError.message}`);\n      }\n\n"]],
+  'X21-sin-GET (vercel cron)': [[RT, "export async function GET(req: NextRequest) {", "export async function GET_disabled(req: NextRequest) {"]],
+};
+const name = process.argv[2];
+const orig = new Map([[SW, readFileSync(SW)], [RT, readFileSync(RT)]]);
+try {
+  for (const [f, a, b] of M[name]) {
+    const t = readFileSync(f, 'utf8'); const n = t.split(a).length - 1;
+    if (n !== 1) { console.log(`${name}: SIN OBJETIVO (${n})`); process.exit(2); }
+    writeFileSync(f, t.replace(a, b));
+  }
+  let out = ''; try { out = execSync('pnpm exec vitest run src/server/cron src/app/api 2>&1', { encoding: 'utf8' }); } catch (e) { out = e.stdout ?? String(e); }
+  console.log(`${name}: ${(out.split('\n').find((l) => /^\s+Tests\s/.test(l)) ?? '?').trim()}`);
+} finally { for (const [f, b] of orig) writeFileSync(f, b); }
+```
+
+
+---
+
+# Ronda 4 sobre `c16501d`
+
+Un commit del agente sobre `ad3d059`: `c16501d`, que toca solo `src/server/cron/sweep.test.ts` y
+`docs/tasks/log/T-104.md` (`git diff --stat ad3d059 c16501d`). `sweep.ts` y `route.ts` sin cambios. Merge limpio con
+develop `720e2d4` (`git merge-tree --write-tree`).
+
+## Batería de la revisión (el mismo script de la ronda 3, sin cambios)
+
+```text
+X00-control: Tests  15 passed (15)
+X01 … X21: las 24 mutaciones -> «N failed | M passed (15)», ninguna en verde
+X18-corte-un-dia-antes: Tests  1 failed | 14 passed (15)
+X20-purga-marca-antes-de-auditar (D02): Tests  1 failed | 14 passed (15)
+```
+
+Qué prueba cae (reporter verbose):
+
+```text
+X20 -> × runSweep logic > falla y no actualiza courier_documents si el insert de audit_log de la purga falla (D02 / X20)
+X18 -> × runSweep logic > expira comercio justo cuando termina el último día de gracia en Aguilares (-03:00) y calcula el cutoff exacto (H12 / X18)
+```
+
+## CI de `c16501d` (run `36026687501`)
+
+```text
+db-tests (job 107724911020):
+  Files=8, Tests=1444,  2 wallclock secs
+  Result: PASS
+  [db:types] Tipos generados exitosamente en …/src/types/database.types.ts   (git diff --exit-code en el mismo paso)
+unit, typecheck, lint, build, audit, bundle-budget, approval-policy -> success
+```
+
+## Checks locales en worktree limpio de `c16501d`
+
+```text
+pnpm typecheck -> exit 0 · pnpm lint -> exit 0 · prettier --check -> limpio
+pnpm test -> Test Files 1 failed | 35 passed (36) · Tests 1 failed | 318 passed (319)
+  FAIL src/server/supabase/clients.test.ts > … > tools/db-types.mjs no debe truncar … (H13)  -> Test timed out in 5000ms
+pnpm exec vitest run src/server/supabase/clients.test.ts (dos veces) -> Tests 10 passed (10), 1,4 s de tests
+git diff --stat 720e2d4 c16501d -- src/server/supabase tools -> vacío (la PR no toca esos archivos)
+```
