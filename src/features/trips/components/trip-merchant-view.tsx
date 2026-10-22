@@ -277,9 +277,11 @@ export function TripMerchantView({
           courierName: trip.courierName,
           sender: 'merchant',
           tripStatus: trip.status,
-          dropStatus: dropsList.length > 1 ? drop.status : undefined,
+          // PR508-H01: con una sola entrega no realizada, el aviso también usa el estado de esa entrega.
+          dropStatus: dropsList.length > 1 || drop.status === 'failed' ? drop.status : undefined,
         });
         const dropBadge = DROP_STATUS_BADGE[drop.status];
+        const showDropBadge = isMultiDrop || drop.status === 'failed';
         let dropCustomerWaUrl: string | null = null;
         if (drop.recipientPhone) {
           try {
@@ -297,7 +299,7 @@ export function TripMerchantView({
                   <h2 className="text-sm font-bold text-foreground">
                     Avisale a tu cliente{dropsList.length > 1 ? ` (Entrega ${drop.position})` : ''}
                   </h2>
-                  {isMultiDrop && (
+                  {showDropBadge && (
                     <Badge variant={dropBadge.variant} className="shrink-0 rounded-full text-sm">
                       {dropBadge.label}
                     </Badge>

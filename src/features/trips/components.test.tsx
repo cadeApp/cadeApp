@@ -368,8 +368,15 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
         render(<TripMerchantView trip={trip} />);
 
         expect(screen.getAllByText('No entregado').length).toBeGreaterThan(0);
+        expect(screen.getByText('No entregada')).toBeDefined();
         expect(screen.getByText('Motivo: El destinatario no responde')).toBeDefined();
         expect(screen.queryByText('Entregado')).toBeNull();
+
+        // PR508-H01: el aviso al cliente dice que no se pudo entregar, no que fue entregado.
+        const wa = screen.getByRole('link', { name: /Avisar a mi cliente/i });
+        const text = decodeURIComponent(wa.getAttribute('href') ?? '');
+        expect(text).toContain('no pudo completar la entrega');
+        expect(text).not.toContain('ya fue entregado');
       });
 
       it('en curso: cada entrega muestra «Pendiente», «Entregada» o «No entregada»', () => {
