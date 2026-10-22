@@ -1332,6 +1332,15 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_list_trips: {
+        Args: {
+          p_cursor_created_at?: string
+          p_cursor_id?: string
+          p_filter: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
       admin_merchant_delivered_counts: {
         Args: { p_merchant_ids: string[] }
         Returns: Json

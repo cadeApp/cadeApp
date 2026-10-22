@@ -10,6 +10,7 @@ export const ADMIN_COPY = {
     tabs: {
       applicants: 'Postulantes',
       merchants: 'Comercios',
+      trips: 'Viajes',
       incidents: 'Incidentes',
       settings: 'Parámetros',
       audit: 'Auditoría',
