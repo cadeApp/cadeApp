@@ -1085,7 +1085,12 @@ export const publicationOfferPlanSchema = z
     monthlyCredits: z.number().int().positive().nullable(),
     referencePriceArs: z.number().int().nonnegative().nullable(),
   })
-  .strict();
+  .strict()
+  // PR528-H03: mismo check que publication_plans: un plan con cupo lleva créditos por mes; uno ilimitado, no.
+  .refine((plan) => (plan.kind === 'quota') === (plan.monthlyCredits !== null), {
+    message: 'El tipo del plan no coincide con sus créditos por mes.',
+    path: ['monthlyCredits'],
+  });
 export type PublicationOfferPlan = z.infer<typeof publicationOfferPlanSchema>;
 
 export const getPublicationOfferInputSchema = z.object({}).strict();

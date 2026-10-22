@@ -105,6 +105,16 @@ describe('T-412: planes disponibles en Mi plan', () => {
     expect(within(section).queryByRole('list')).toBeNull();
   });
 
+  it('PR528-H02: el descuento se avisa aunque todavía no haya planes ni precio de créditos', () => {
+    const section = renderSection({
+      ok: true,
+      data: { plans: [], looseCreditReferencePriceArs: null, launchDiscountPct: 15 },
+    });
+    expect(within(section).getByText('Tu primera compra tiene 15 % de descuento.')).toBeTruthy();
+    expect(within(section).getByText('Por ahora no hay planes publicados. Escribinos y te contamos las opciones.'))
+      .toBeTruthy();
+  });
+
   it('si la lectura falla, avisa en la sección', () => {
     const section = renderSection({ ok: false, code: 'INTERNAL_ERROR' });
     expect(within(section).getByRole('alert').textContent).toContain('No pudimos cargar los planes disponibles');

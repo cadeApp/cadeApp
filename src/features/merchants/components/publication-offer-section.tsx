@@ -52,11 +52,23 @@ function OfferDetails({
   readonly supportPhone: string | undefined;
 }) {
   const loosePrice = offer.looseCreditReferencePriceArs;
+  // PR528-H02: el descuento se avisa siempre que corresponda, haya o no opciones publicadas.
+  const discount =
+    offer.launchDiscountPct !== null ? (
+      <p className="flex items-center gap-2 rounded-lg bg-primary/10 px-3.5 py-2.5 text-sm font-semibold text-foreground">
+        <BadgePercent className="h-4 w-4 shrink-0 text-primary-dark" aria-hidden="true" />
+        {COPY.discount(offer.launchDiscountPct)}
+      </p>
+    ) : null;
+
   if (offer.plans.length === 0 && loosePrice === null) {
     return (
-      <Card className="p-5 text-sm text-muted-foreground sm:p-6">
-        <p>{COPY.empty}</p>
-      </Card>
+      <div className="space-y-3">
+        {discount}
+        <Card className="p-5 text-sm text-muted-foreground sm:p-6">
+          <p>{COPY.empty}</p>
+        </Card>
+      </div>
     );
   }
 
@@ -70,12 +82,7 @@ function OfferDetails({
 
   return (
     <div className="space-y-3">
-      {offer.launchDiscountPct !== null ? (
-        <p className="flex items-center gap-2 rounded-lg bg-primary/10 px-3.5 py-2.5 text-sm font-semibold text-foreground">
-          <BadgePercent className="h-4 w-4 shrink-0 text-primary-dark" aria-hidden="true" />
-          {COPY.discount(offer.launchDiscountPct)}
-        </p>
-      ) : null}
+      {discount}
 
       <ul aria-label={COPY.listLabel} className="space-y-3">
         {planOptions.map(({ plan, whatsappHref }) => (

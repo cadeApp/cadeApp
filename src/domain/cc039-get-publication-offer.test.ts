@@ -50,6 +50,20 @@ describe('CC-039: contrato de get_publication_offer', () => {
     ).toBe(true);
     expect(contract.outputSchema.safeParse({ ...offer, launchDiscountPct: 0 }).success).toBe(false);
   });
+
+  it('PR528-H03: el tipo y los créditos por mes tienen que coincidir, como en la base', () => {
+    const offer = { plans: [plan], looseCreditReferencePriceArs: null, launchDiscountPct: null };
+    expect(contract.outputSchema.safeParse({ ...offer, plans: [{ ...plan, monthlyCredits: null }] }).success).toBe(
+      false
+    );
+    expect(
+      contract.outputSchema.safeParse({ ...offer, plans: [{ ...plan, kind: 'unlimited', monthlyCredits: 40 }] }).success
+    ).toBe(false);
+    expect(
+      contract.outputSchema.safeParse({ ...offer, plans: [{ ...plan, kind: 'unlimited', monthlyCredits: null }] })
+        .success
+    ).toBe(true);
+  });
 });
 
 describe('CC-039: el fake devuelve la oferta como la base', () => {
