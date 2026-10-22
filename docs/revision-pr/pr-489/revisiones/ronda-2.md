@@ -52,7 +52,7 @@
 
 **Diagnóstico / evidencia:** La ficha reemplaza app_private.is_admin() por is_admin_aal2() en todas las policies, pero NO exige retirar las policies admin UPDATE/ALL que autorizan cambios directos con aal2. T-312 (PR #491, log SEC-01) exige explícitamente borrar UPDATE admin donde la escritura tiene RPC. Un admin aal2 aún podría omitir validaciones y audit_log.
 
-**Arreglo concreto:** Precisar una matriz tabla/operación: eliminar policies/grants de escritura directa administrada exclusivamente por RPC (p.ej. profiles.role, couriers.status, merchants.subscription_stat
+**Arreglo concreto:** Agregar una matriz por tabla/operación: retirar las policies y los grants de escritura directa de tablas cuya mutación pertenece a RPC auditadas (por ejemplo profiles.role, couriers.status, merchants.subscription_status y platform_settings.value). Conservar solo SELECT AAL2 y las excepciones legítimas justificadas. Exigir pgTAP que rechace UPDATE directo tanto en AAL1 como en AAL2, y que permita RPC en AAL2 con registro en audit_log; una mutación que restaure UPDATE debe fallar.
 
 **Pruebas futuras:** pgTAP con JWT de admin aal1/aal2, UPDATE directo debe ser denegado; RPC permitida crea audit_log. Mutación que reintroduce UPDATE directo da rojo.
 
@@ -63,7 +63,7 @@
 
 **Diagnóstico / evidencia:** merchants.notes tiene doble escritura (admin_set_subscription y update_my_merchant_profile); con la columna nueva merchants.admin_notes una RLS de filas NO oculta columnas de la propia fila al comercio cuando tiene SELECT de tabla. Tampoco puede inferirse autor de un valor actual de notes solo por su texto; la ficha pide migrarlo «si la escribió el admin».
 
-**Arreglo concreto:** En el CC preferir tabla merchant_admin_notes separada con SELECT/WRITE solo RPC admin y RLS/grants explícitos (o si se elige columna, revocar SELECT de tabla y dar grants de columnas pr
+**Arreglo concreto:** Exigir un CC con aislamiento demostrable de admin_notes: se recomienda tabla separada merchant_admin_notes con acceso admin AAL2/RPC y grants restrictivos; si se elige columna en merchants, revocar privilegio SELECT de tabla al comercio y reotorgar exclusivamente columnas públicas con pruebas. No migrar el contenido de merchants.notes si su autoría es incierta: solo backfill con procedencia verificable o NULL. Pruebas por actor y grants efectivos, incluido SELECT * por PostgREST, escritura desde perfil de comercio y revisión de auditoría.
 
 **Pruebas futuras:** pgTAP SELECT y UPDATE como comercio y admin, con DB grants y RPC; en modelo compartido probar notes normal y adminNotes privado. Mutación de GRANT SELECT a comercio falla.
 
@@ -74,7 +74,7 @@
 
 **Diagnóstico / evidencia:** T-312 SEC-02 exige policy SELECT, REVOKE INSERT/UPDATE/DELETE/TRUNCATE para anon/authenticated y trigger contra modificaciones; T-408 enumera solo «audit_log solo SELECT» y pgTAP UPDATE/DELETE. Un `TRUNCATE` se autoriza por grant, no pasa por RLS y exige control explícito. La inserción via service_role de viewCourierDocumentAction debe seguir funcionando.
 
-**Arreglo concreto:** Agregar al DoD/apartado seguridad: revocar INSERT, UPDATE, DELETE y TRUNCATE a anon/authenticated, reemplazar policy FOR ALL por SELECT con aal2; trigger anti-UPDATE/DELETE como defensa
+**Arreglo concreto:** Especificar para audit_log: drop de policy FOR ALL, policy exclusivamente SELECT admin AAL2, REVOKE INSERT/UPDATE/DELETE/TRUNCATE para anon/authenticated y trigger anti-UPDATE/DELETE como defensa adicional; la inserción legítima auditada de service_role/RPC debe permanecer operativa. Añadir pgTAP de privilegios y operaciones incluyendo TRUNCATE; mutación que restituye el grant TRUNCATE debe fallar.
 
 **Pruebas futuras:** pgTAP 42501/privilegios para INSERT, UPDATE, DELETE y TRUNCATE; creación por service-role sigue insertando. Mutación GRANT TRUNCATE falla.
 
@@ -85,7 +85,7 @@
 
 **Diagnóstico / evidencia:** La query especificada filtra audit_log por target_type=merchant y target_id, pero existen también admin_grant_publication_credits y merchant_profile_update con el mismo target; solo el apartado de «Contratos a leer» menciona admin_set_subscription/admin_register_plan_period sin exigir .in(action) en DoD. Puede mostrar créditos o ediciones de dirección entre los últimos cinco «cambios de plan».
 
-**Arreglo concreto:** Añadir condición `action IN ('admin_set_subscription','admin_register_plan_period')` antes del ORDER BY y LIMIT 5. Probar con eventos intercalados de los dos planes, un grant de crédito
+**Arreglo concreto:** Filtrar las filas de audit_log para movimientos de plan por target_type='merchant', target_id del comercio Y action IN ('admin_set_subscription','admin_register_plan_period') antes de ordenar y LIMIT 5. Agregar fixture con admin_grant_publication_credits y merchant_profile_update intercaladas del mismo comercio y eventos de otro comercio; esas filas no deben mostrarse. Mutación de quitar el filtro de acción debe fallar.
 
 **Pruebas futuras:** Unit con eventos intercalados (planes + créditos + merchant_profile_update) y dos comercios; solo plan muestra, LIMIT tras filtrar action. Mutación que elimina filtro action falla.
 
@@ -96,7 +96,7 @@
 
 **Diagnóstico / evidencia:** T-409 exige que cada tarea hija tenga ficha, fila del plan e issue y que se abra CC, pero su lista solo permite docs/tasks/T-409.md, plan y log, no nuevas docs/tasks/T-xxx.md ni docs/contracts/CC-xxx.md. No indica procedimiento de PR separado para crear esos artefactos. Si el agente hace exactamente el DoD en la misma rama, viola «Sin cambios fuera de Archivos permitidos».
 
-**Arreglo concreto:** Separar «T-409 inventaría y decide la división» de «hijas/CC se crean en PR/issues separados con fichas propias», o autorizar rutas exactas una vez asignados números y hacer explícito e
+**Arreglo concreto:** Dejar explícito que T-409 es una tarea paraguas de planificación: inventariar hallazgos y abrir issues/CC, mientras que las fichas hijas y contracts se crean en PR independientes autorizadas por sus propias fichas y el procedimiento contract-change. Como alternativa, una vez asignados IDs concretos, listar las nuevas rutas exactas en archivos permitidos antes de implementar. Su DoD no debe dar vulnerabilidades por cerradas hasta que las hijas prueben bypass y tengan revisión independiente.
 
 **Pruebas futuras:** Test documental tipo verify-fichas: ninguna tarea debe mandar al agente escribir una ruta fuera de permitidos salvo cuando la creación se declare como PR independiente.
 
@@ -107,7 +107,7 @@
 
 **Diagnóstico / evidencia:** El hallazgo de T-312 marca SEC-12 como «sospecha», y plantea CHECK que mantiene notes y cash_change_amount en null. Sin aclarar tabla/estado, imponer null puede deshabilitar necesidad de cambio en efectivo y notas legítimas. T-409 sólo menciona SEC-12/CC pendiente, no prueba el flujo real.
 
-**Arreglo concreto:** Anotar expresamente en T-409: capturar Realtime real en Develop con actor permitido/no permitido; distinguir delivery_requests vs delivery_request_contacts y estados, sin PII en logs. E
+**Arreglo concreto:** Agregar cautela en T-409: SEC-12 es sospecha que exige una captura de Realtime con actores autorizado/no autorizado y payload sintético, distinguiendo delivery_requests de delivery_request_contacts. El futuro CC no debe imponer un CHECK de NULL sobre notas o cambio en efectivo sin identificar qué columnas y estados pueden legalmente contenerlos, y sin un caso de regresión del flujo real de cambio.
 
 **Pruebas futuras:** E2E de Realtime con datos artificiales y prueba de flujo legítimo de cambio; no forzar nulos en campos habilitados sin evidencia.
 
