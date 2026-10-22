@@ -104,10 +104,10 @@ begin
     (pg_temp.req_m2_pub_id(), 'Mitre 500', 'Avellaneda 600', 'Destinatario M2 Pub', '3865333333');
 
   -- Ofertas
-  insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
+  insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, message, status)
   values
-    (pg_temp.offer_c1_id(), pg_temp.req_m1_matched_id(), pg_temp.courier_approved_1_id(), 1500, 15, 'accepted'),
-    (pg_temp.offer_c2_id(), pg_temp.req_m1_pub_id(), pg_temp.courier_approved_2_id(), 1600, 20, 'pending');
+    (pg_temp.offer_c1_id(), pg_temp.req_m1_matched_id(), pg_temp.courier_approved_1_id(), 1500, 15, null, 'accepted'),
+    (pg_temp.offer_c2_id(), pg_temp.req_m1_pub_id(), pg_temp.courier_approved_2_id(), 1600, 20, 'mensaje original c2', 'pending');
 
   -- Vincular oferta aceptada
   update public.delivery_requests set accepted_offer_id = pg_temp.offer_c1_id() where id = pg_temp.req_m1_matched_id();
@@ -529,10 +529,10 @@ select is(
 );
 
 -- 50. CC-036: the rejected direct edit (46) left the message unchanged.
-select isnt(
+select is(
   (select message from public.offers where id = pg_temp.offer_c2_id()),
-  'still available',
-  'CC-036: rejected direct edit did not change the offer message'
+  'mensaje original c2',
+  'CC-036: rejected direct edit kept the original offer message'
 );
 
 -- 51-55. Legitimate inserts still work with the stricter initial-state checks.

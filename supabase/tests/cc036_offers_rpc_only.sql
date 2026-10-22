@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(36);
+select plan(37);
 
 -- CC-036 / T-390 (SEC-04): offers queda de solo lectura para los clientes; toda escritura pasa por las RPC.
 
@@ -150,7 +150,7 @@ select is(
   'repartidor sigue viendo su oferta (SELECT intacto)'
 );
 
--- 18-19. La oferta no cambió.
+-- 18-20. La oferta no cambió.
 select pg_temp.reset_actor();
 select is(
   (select amount_ars from public.offers where id = pg_temp.offer_b_id()),
@@ -162,8 +162,13 @@ select is(
   'mensaje original',
   'el mensaje de la oferta no cambió'
 );
+select is(
+  (select eta_minutes from public.offers where id = pg_temp.offer_b_id()),
+  15,
+  'el ETA de la oferta no cambió'
+);
 
--- 20-22. Comercio dueño: sin escritura directa, con lectura.
+-- 21-23. Comercio dueño: sin escritura directa, con lectura.
 select pg_temp.act_as('authenticated', pg_temp.merchant_id());
 select throws_ok(
   $$ update public.offers set status = 'accepted' where id = pg_temp.offer_b_id() $$,
@@ -181,7 +186,7 @@ select is(
   'comercio ve las ofertas de su solicitud'
 );
 
--- 23-24. Admin: sin escritura directa, con lectura.
+-- 24-25. Admin: sin escritura directa, con lectura.
 select pg_temp.act_as('authenticated', pg_temp.admin_id());
 select throws_ok(
   $$ update public.offers set amount_ars = 2000 where id = pg_temp.offer_b_id() $$,
@@ -194,7 +199,7 @@ select is(
   'admin ve las ofertas'
 );
 
--- 25-26. Anónimo: sin escritura ni lectura de filas.
+-- 26-27. Anónimo: sin escritura ni lectura de filas.
 select pg_temp.act_as('anon');
 select throws_ok(
   $$ insert into public.offers (request_id, courier_id, amount_ars, eta_minutes) values (pg_temp.req_2_id(), pg_temp.courier_a_id(), 1500, 15) $$,
@@ -207,7 +212,7 @@ select throws_ok(
   'anon no borra ofertas'
 );
 
--- 27-34. Camino feliz por RPC intacto.
+-- 28-35. Camino feliz por RPC intacto.
 select pg_temp.act_as('authenticated', pg_temp.courier_a_id());
 select throws_ok(
   $$ select public.submit_offer(pg_temp.req_2_id(), 999, 15, null) $$,
@@ -250,7 +255,7 @@ select lives_ok(
   'accept_offer acepta la oferta'
 );
 
--- 35-36. La aceptación por RPC quedó escrita.
+-- 36-37. La aceptación por RPC quedó escrita.
 select pg_temp.reset_actor();
 select is(
   (select status::text from public.offers where id = pg_temp.offer_b_id()),
