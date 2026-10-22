@@ -26,6 +26,7 @@ const DROP_BADGE = {
   failed: 'destructive',
   pending: 'outline',
   notDelivered: 'cancelled',
+  noRecord: 'outline',
 } as const satisfies Record<DropDisplayStatus, 'delivered' | 'destructive' | 'outline' | 'cancelled'>;
 
 const TONE_DOT: Record<TimelineTone, string> = {
@@ -115,7 +116,7 @@ export function AdminTripDetailView({ trip }: AdminTripDetailViewProps) {
             <h2 className="text-lg font-bold text-foreground">{COPY.dropsTitle}</h2>
             <ol className="space-y-3">
               {drops.map((drop) => {
-                const display = dropDisplayStatus(drop, trip.status);
+                const display = dropDisplayStatus(drop, trip.status, trip.drops.length === 0);
                 return (
                   <li key={drop.position} className="space-y-1 rounded-lg border border-border p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">

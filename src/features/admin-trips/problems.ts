@@ -65,13 +65,19 @@ export function tripDropsForDisplay(detail: AdminTripDetail): AdminTripDetail['d
   ];
 }
 
-export type DropDisplayStatus = 'pending' | 'delivered' | 'failed' | 'notDelivered';
+export type DropDisplayStatus = 'pending' | 'delivered' | 'failed' | 'notDelivered' | 'noRecord';
 
-/** Una entrega todavía pendiente en una solicitud cancelada o vencida ya no se va a hacer: «Sin entregar». */
+/**
+ * Estado que se muestra de una entrega. Una entrega todavía pendiente en una solicitud cancelada o vencida ya no se va
+ * a hacer: «Sin entregar». Una solicitud legacy (sin filas de entregas) que no terminó entregada no tiene resultado
+ * individual: no se inventa uno.
+ */
 export function dropDisplayStatus(
   drop: Pick<AdminTripDetail['drops'][number], 'status'>,
-  requestStatus: AdminTripDetail['status']
+  requestStatus: AdminTripDetail['status'],
+  legacy = false
 ): DropDisplayStatus {
+  if (legacy && requestStatus !== 'delivered') return 'noRecord';
   if (drop.status === 'pending' && (requestStatus === 'cancelled' || requestStatus === 'expired')) {
     return 'notDelivered';
   }

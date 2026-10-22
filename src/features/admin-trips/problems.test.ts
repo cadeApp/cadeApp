@@ -194,4 +194,10 @@ describe('PR510-H01: tripDropsForDisplay y dropDisplayStatus', () => {
     expect(dropDisplayStatus({ status: 'pending' }, 'in_transit')).toBe('pending');
     expect(dropDisplayStatus({ status: 'failed' }, 'cancelled')).toBe('failed');
   });
+
+  it('legacy: entregada conserva su estado; cualquier otro cierre no tiene resultado individual', () => {
+    expect(dropDisplayStatus({ status: 'delivered' }, 'delivered', true)).toBe('delivered');
+    expect(dropDisplayStatus({ status: 'pending' }, 'cancelled', true)).toBe('noRecord');
+    expect(dropDisplayStatus({ status: 'pending' }, 'in_transit', true)).toBe('noRecord');
+  });
 });

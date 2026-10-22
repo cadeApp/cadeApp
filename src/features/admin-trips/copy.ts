@@ -61,6 +61,7 @@ export const ADMIN_TRIPS_COPY = {
       delivered: 'Entregada',
       failed: 'No entregada',
       notDelivered: 'Sin entregar',
+      noRecord: 'Sin resultado individual registrado',
     },
     reason: (text: string) => `Motivo: ${text}`,
     incidentsTitle: 'Incidentes',

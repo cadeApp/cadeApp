@@ -12,7 +12,16 @@ const rpcCalls: Array<{ fn: string; args: Record<string, unknown> | undefined }>
 let rpcResult: Result = { data: { items: [], nextCursor: null }, error: null };
 
 function builder(table: string) {
-  const result = () => tables[table] ?? { data: null, error: null };
+  const applied: Array<[string, unknown]> = [];
+  // Aplica los `.eq()` sobre filas que traen la columna filtrada: una lectura sin su filtro deja pasar otra solicitud.
+  const result = (): Result => {
+    const base = tables[table] ?? { data: null, error: null };
+    if (!Array.isArray(base.data)) return base;
+    const rows = base.data.filter((row: Record<string, unknown>) =>
+      applied.every(([column, value]) => !(column in row) || row[column] === value)
+    );
+    return { ...base, data: rows };
+  };
   const chain = {
     select(columns: string) {
       selects[table] = columns;
@@ -20,6 +29,7 @@ function builder(table: string) {
     },
     eq(column: string, value: unknown) {
       (filters[table] ??= []).push([column, value]);
+      applied.push([column, value]);
       return chain;
     },
     order() {
@@ -48,6 +58,7 @@ vi.mock('@/server/supabase/server', () => ({
 const { getAdminTripDetail, getAdminTrips } = await import('./queries');
 
 const REQUEST_ID = '00000000-0000-4000-8000-000000370001';
+const OTHER_REQUEST_ID = '00000000-0000-4000-8000-000000379999';
 
 function seedDelivered() {
   tables.delivery_requests = {
@@ -68,14 +79,24 @@ function seedDelivered() {
   };
   tables.delivery_request_drops = {
     data: [
-      { position: 1, status: 'delivered', delivered_at: '2026-10-22T03:50:00+00:00', failed_reason: null, zones: { name: 'Centro' } },
-      { position: 2, status: 'failed', delivered_at: null, failed_reason: 'No responde', zones: { name: 'Sur' } },
+      { request_id: REQUEST_ID, position: 1, status: 'delivered', delivered_at: '2026-10-22T03:50:00+00:00', failed_reason: null, zones: { name: 'Centro' } },
+      { request_id: REQUEST_ID, position: 2, status: 'failed', delivered_at: null, failed_reason: 'No responde', zones: { name: 'Sur' } },
+      { request_id: OTHER_REQUEST_ID, position: 1, status: 'failed', delivered_at: null, failed_reason: 'Ajena', zones: { name: 'Otra' } },
     ],
     error: null,
   };
   tables.request_cancellation_reasons = {
     data: [
       {
+        request_id: OTHER_REQUEST_ID,
+        id: '00000000-0000-4000-8000-0000000379a1',
+        action: 'courier_cancel_match',
+        reason: 'Motivo de otra solicitud',
+        created_at: '2026-10-22T03:04:00+00:00',
+        actor: { display_name: 'Otro', role: 'courier' },
+      },
+      {
+        request_id: REQUEST_ID,
         id: '00000000-0000-4000-8000-0000000371a1',
         action: 'courier_cancel_match',
         reason: 'Emergencia',
@@ -83,6 +104,7 @@ function seedDelivered() {
         actor: { display_name: 'Juan', role: 'courier' },
       },
       {
+        request_id: REQUEST_ID,
         id: '00000000-0000-4000-8000-0000000371a2',
         action: 'acción_futura',
         reason: 'x',
@@ -93,7 +115,10 @@ function seedDelivered() {
     error: null,
   };
   tables.incidents = {
-    data: [{ id: '00000000-0000-4000-8000-0000000372a1', kind: 'other', status: 'open', created_at: '2026-10-22T04:10:00+00:00' }],
+    data: [
+      { request_id: REQUEST_ID, id: '00000000-0000-4000-8000-0000000372a1', kind: 'other', status: 'open', created_at: '2026-10-22T04:10:00+00:00' },
+      { request_id: OTHER_REQUEST_ID, id: '00000000-0000-4000-8000-0000000379b1', kind: 'safety', status: 'open', created_at: '2026-10-22T04:11:00+00:00' },
+    ],
     error: null,
   };
   tables.offers = {
@@ -170,6 +195,15 @@ describe('T-410: getAdminTripDetail', () => {
       incidents: [['request_id', REQUEST_ID]],
       offers: [['id', '00000000-0000-4000-8000-0000000380a1']],
     });
+  });
+
+  it('PR510-H03: los datos de otra solicitud nunca se mezclan en el detalle', async () => {
+    seedDelivered();
+    const trip = await getAdminTripDetail(REQUEST_ID);
+
+    expect(trip?.drops.map((drop) => drop.failedReason)).toEqual([null, 'No responde']);
+    expect(trip?.events.map((event) => event.reason)).toEqual(['Emergencia']);
+    expect(trip?.incidents.map((incident) => incident.id)).toEqual(['00000000-0000-4000-8000-0000000372a1']);
   });
 
   it('sin oferta aceptada no consulta offers y el repartidor queda en null', async () => {

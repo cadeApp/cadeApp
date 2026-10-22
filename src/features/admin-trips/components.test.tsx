@@ -187,6 +187,24 @@ describe('PR510-H01: entregas legacy y solicitudes cerradas sin entregar', () =>
     expect(screen.getByText(/1 de 1 entregadas/)).toBeDefined();
   });
 
+  it('una solicitud legacy no entregada no inventa un resultado: «Sin resultado individual registrado»', () => {
+    render(
+      <AdminTripDetailView
+        trip={{
+          ...detail,
+          status: 'cancelled',
+          timeline: { ...detail.timeline, deliveredAt: null, cancelledAt: '2026-10-22T05:00:00Z' },
+          drops: [],
+        }}
+      />
+    );
+
+    const drop = screen.getByRole('heading', { level: 3, name: /Entrega 1/ }).closest('li');
+    if (!(drop instanceof HTMLElement)) throw new Error('sin entrega');
+    expect(within(drop).getByText('Sin resultado individual registrado')).toBeDefined();
+    expect(within(drop).queryByText(/Entregada|No entregada|Pendiente|Sin entregar/)).toBeNull();
+  });
+
   it('una entrega pendiente de una solicitud cancelada se muestra como «Sin entregar»', () => {
     render(
       <AdminTripDetailView
