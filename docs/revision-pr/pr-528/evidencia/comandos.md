@@ -34,9 +34,9 @@ const cases = [
     suite: 'src/features/merchants/components/publication-offer-section.test.tsx',
     test: 'PR528-H02:',
     change(source) {
-      const anchor = '        {discount}\\n        <Card';
+      const anchor = '        {discount}\n        <Card';
       if (!source.includes(anchor)) throw new Error('H02: ancla no encontrada');
-      return source.replace(anchor, '        {null}\\n        <Card');
+      return source.replace(anchor, '        {null}\n        <Card');
     },
   },
   {
@@ -45,7 +45,7 @@ const cases = [
     suite: 'src/domain/cc039-get-publication-offer.test.ts',
     test: 'PR528-H03:',
     change(source) {
-      const pattern = /\\.strict\\(\\)\\n  \\/\\/ PR528-H03:[^\\n]*\\n  \\.refine\\([\\s\\S]*?\\n  \\}\\);/;
+      const pattern = /\.strict\(\)\n  \/\/ PR528-H03:[^\n]*\n  \.refine\([\s\S]*?\n  \}\);/;
       if (!pattern.test(source)) throw new Error('H03: refine no encontrada');
       return source.replace(pattern, '.strict();');
     },
@@ -57,9 +57,9 @@ function run(testCase) {
     encoding: 'utf8', maxBuffer: 8 * 1024 * 1024,
   });
   if (out.error) throw out.error;
-  const all = `${out.stdout}\\n${out.stderr}`;
+  const all = `${out.stdout}\n${out.stderr}`;
   console.log(`${testCase.id}: exit=${out.status}`);
-  console.log(all.split('\\n').filter(line => /Test Files|Tests|FAIL|PASS|AssertionError/.test(line)).slice(-7).join('\\n'));
+  console.log(all.split('\n').filter(line => /Test Files|Tests|FAIL|PASS|AssertionError/.test(line)).slice(-7).join('\n'));
   return { status: out.status, output: all };
 }
 
