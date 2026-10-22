@@ -179,7 +179,7 @@ export const publicationBalanceCopy = {
   periodStarts: (from: string) => `Empieza el ${from}`,
   streak: (months: number, pct: number) =>
     pct > 0
-      ? `${months} meses seguidos · arrastrás el ${pct} % del cupo sin usar`
+      ? `${months} meses seguidos · arrastrás el ${pct} % de los créditos sin usar`
       : `${months} ${months === 1 ? 'mes' : 'meses'} seguidos`,
   lotsTitle: 'Tus créditos',
   lotsTableLabel: 'Créditos por lote',

@@ -970,7 +970,7 @@ export const adminUpsertPublicationPlanInputSchema = z
     sort: z.number().int().min(0).max(1000),
   })
   .refine((data) => (data.kind === 'quota') === (data.monthlyCredits !== null), {
-    message: 'Un plan con cupo lleva créditos mensuales; uno ilimitado, no.',
+    message: 'Un plan con créditos mensuales lleva la cantidad por mes; uno ilimitado, no.',
     path: ['monthlyCredits'],
   });
 export const adminUpsertPublicationPlanOutputSchema = z.object({

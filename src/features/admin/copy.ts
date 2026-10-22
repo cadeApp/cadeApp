@@ -304,7 +304,7 @@ export const ADMIN_COPY = {
       },
       carryover_base_pct: {
         label: 'Arrastre inicial',
-        help: 'Porcentaje del cupo sin usar que pasa al mes siguiente en la primera renovación sin cortes.',
+        help: 'Porcentaje de los créditos mensuales sin usar que pasa al mes siguiente en la primera renovación sin cortes.',
         unit: '%',
         unitLabel: 'en porcentaje',
       },
@@ -316,7 +316,7 @@ export const ADMIN_COPY = {
       },
       carryover_cap_pct: {
         label: 'Tope del arrastre',
-        help: 'Porcentaje máximo del cupo que se puede arrastrar. No puede ser menor que el arrastre inicial.',
+        help: 'Porcentaje máximo de los créditos mensuales que se puede arrastrar. No puede ser menor que el arrastre inicial.',
         unit: '%',
         unitLabel: 'en porcentaje',
       },
