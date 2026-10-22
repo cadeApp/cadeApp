@@ -23,7 +23,7 @@ function collectEnforcedCspErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (message: ConsoleMessage) => {
     const text = message.text();
-    if (message.type() === 'error' && /Content Security Policy/i.test(text) && !/Report Only/i.test(text)) {
+    if (message.type() === 'error' && /Content Security Policy/i.test(text) && !/report[- ]only/i.test(text)) {
       errors.push(text);
     }
   });
