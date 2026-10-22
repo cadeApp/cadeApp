@@ -346,6 +346,17 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
         expect(screen.getAllByText('No entregada')).toHaveLength(2);
       });
 
+      it('PR508-H03: ninguna entregada: el último paso usa la cruz y no el check de entregado', () => {
+        render(<TripMerchantView trip={closedTrip(['failed', 'failed'])} />);
+
+        const lastStep = screen.getByText('Retirado').parentElement?.parentElement?.lastElementChild;
+        if (!(lastStep instanceof HTMLElement)) throw new Error('sin último paso');
+        expect(lastStep.textContent).toBe('No entregado');
+        const icon = lastStep.querySelector('svg');
+        expect(icon?.getAttribute('class')).toMatch(/lucide-(circle-x|x-circle)/);
+        expect(icon?.getAttribute('class')).not.toMatch(/check/);
+      });
+
       it('todas entregadas: sigue diciendo «Entregado» y muestra «2 de 2 entregadas»', () => {
         render(<TripMerchantView trip={closedTrip(['delivered', 'delivered'])} />);
 
