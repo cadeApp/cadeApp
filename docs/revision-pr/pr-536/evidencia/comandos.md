@@ -26,7 +26,7 @@ function test(pkgText, lockText) {
     if (actual !== '15.5.28') errors.push('manifest ' + name + ' = ' + actual);
   }
   for (const name of lockPackages) {
-    const pattern = new RegExp("'?" + escapeRegExp(name) + "@(15\\.5\\.\\d+)'?", "g");
+    const pattern = new RegExp("^\\s*'?" + escapeRegExp(name) + "@(15\\.5\\.\\d+)(?:\\([^\\n:]*\\))?'?\\s*:", "gm");
     const hits = [...lockText.matchAll(pattern)].map(x => x[1]);
     if (hits.length < 2 || hits.some(x => x !== '15.5.28')) errors.push('lock ' + name + ' = ' + hits.join(','));
   }
@@ -40,7 +40,7 @@ const cases = [
   ['base RED', test(p0,l0), true],
   ['HEAD GREEN', test(p1,l1), false],
   ['mutación next en manifest RED', test(p1.replace('"next": "15.5.28"', '"next": "15.5.26"'),l1), true],
-  ['mutación next lock RED', test(p1,l1.replace('next@15.5.28:', 'next@15.5.26:')), true]
+  ['mutación next lock RED', test(p1,l1.replace(/^  next@15\.5\.28:/m, '  next@15.5.26:')), true]
 ];
 for (const [name, errors, expectRed] of cases) {
   const good = expectRed ? errors.length > 0 : errors.length === 0;
@@ -75,3 +75,7 @@ pnpm build
 En el log del job audit del run 39867665428: `4 vulnerabilities found`, `Severity: 3 moderate | 1 high (1 ignored)` sin los advisories objetivo. En el job unit: `168 passed` / `3289 passed`; build compiló. El E2E y db-tests estaban pendientes al cerrar esta evidencia.
 
 La batería de mutaciones es de la revisión; no se tomó un harness del autor. Las mutaciones se hacen sobre cadenas en memoria, no sobre el working tree.
+
+## Autocorrección del instrumento (misma ronda)
+
+El primer harness usaba coincidencias de subcadenas como `next@` dentro de `eslint-config-next@`, lo que podía producir falsos positivos y mutar el paquete equivocado. Se corrigió el patrón para anclarlo a claves completas de YAML (dos entradas por paquete: `packages` y `snapshots`), y la mutación a la clave exacta `  next@15.5.28:`. Se volvió a ejecutar la verificación sobre textos obtenidos del conector: base RED (15 condiciones), HEAD GREEN (16/16) y ambas mutaciones RED; el cambio es únicamente del instrumento de revisión, no de las dependencias. La ronda-1 histórica no se reescribe.
