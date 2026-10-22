@@ -1437,6 +1437,7 @@ export type Database = {
         Returns: Json
       }
       get_my_publication_balance: { Args: never; Returns: Json }
+      get_publication_offer: { Args: never; Returns: Json }
       get_request_cancellation_history: {
         Args: {
           p_before_created_at?: string
