@@ -231,12 +231,9 @@ export const registerPeriodFormSchema = z.object({
 });
 export type RegisterPeriodFormInput = z.infer<typeof registerPeriodFormSchema>;
 
+// CC-038: sin código; la base lo genera desde el nombre.
 export const publicationPlanFormSchema = z
   .object({
-    code: z
-      .string()
-      .trim()
-      .regex(/^[a-z0-9][a-z0-9_-]{1,39}$/, 'Usá de 2 a 40 letras minúsculas, números, guiones o guiones bajos.'),
     name: z.string().trim().min(2, 'Ingresá un nombre de al menos 2 caracteres.').max(80, 'Hasta 80 caracteres.'),
     kind: z.enum(['quota', 'unlimited']),
     monthlyCredits: z.string().trim(),
@@ -250,7 +247,7 @@ export const publicationPlanFormSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['monthlyCredits'],
-        message: 'Un plan con cupo lleva entre 1 y 100.000 créditos por mes.',
+        message: 'Un plan con créditos mensuales lleva entre 1 y 100.000 créditos por mes.',
       });
     }
     const price = Number(data.referencePriceArs);

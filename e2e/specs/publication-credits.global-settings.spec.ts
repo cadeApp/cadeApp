@@ -279,8 +279,10 @@ test.describe('T-369 — créditos de publicación y planes (CC-029)', () => {
     const merchant = stagingContext.merchantUser;
     if (!merchant) throw new Error('[E2E Error] No merchant user in stagingContext');
     await getBusinessName(merchant.id);
-    const planCode = stagingContext.testRunId.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-    const planName = `Ilimitado ${planCode}`;
+    // CC-038: el admin solo escribe el nombre; la base deriva el código (minúsculas, guiones, hasta 32 caracteres).
+    const runSlug = stagingContext.testRunId.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const planName = `Ilimitado ${runSlug}`;
+    const expectedCode = `ilimitado-${runSlug}`.slice(0, 32).replace(/-+$/, '');
 
     await withPilot(false, async () => {
       const { adminPage } = await openAdminSession(browser, stagingContext);
@@ -290,19 +292,19 @@ test.describe('T-369 — créditos de publicación y planes (CC-029)', () => {
         await adminPage.getByRole('button', { name: 'Nuevo plan' }).click();
         const planDialog = adminPage.getByRole('dialog');
         await planDialog.getByLabel('Nombre').fill(planName);
-        await planDialog.getByLabel('Código').fill(planCode);
+        await expect(planDialog.getByLabel('Código')).toHaveCount(0);
         await planDialog.getByLabel('Ilimitado').check();
         await planDialog.getByRole('button', { name: 'Guardar' }).click();
         await expect(planDialog).toBeHidden();
         const { data: planRow, error: planErr } = await createAdminClient()
           .from('publication_plans')
-          .select('id, kind, monthly_credits, active')
-          .eq('code', planCode)
+          .select('id, code, kind, monthly_credits, active')
+          .eq('name', planName)
           .single();
         expect(planErr).toBeNull();
         if (!planRow) throw new Error('[E2E Credits] El plan no quedó creado');
         trackEntityForCleanup(stagingContext, 'publication_plan', planRow.id);
-        expect(planRow).toMatchObject({ kind: 'unlimited', monthly_credits: null, active: true });
+        expect(planRow).toMatchObject({ code: expectedCode, kind: 'unlimited', monthly_credits: null, active: true });
 
         await adminPage.goto(`/admin/merchants/${merchant.id}/credits`);
         await waitForNoSkeletons(adminPage);

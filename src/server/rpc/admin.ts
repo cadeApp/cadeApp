@@ -474,7 +474,7 @@ async function callPublicationCreditsRpc<K extends PublicationCreditsRpcName>(
 
 /**
  * CC-029: `public.admin_upsert_publication_plan(...)`. Crea o edita el catálogo; `kind` y el cupo no cambian si el plan
- * ya tiene períodos (`PLAN_IN_USE`).
+ * ya tiene períodos (`PLAN_IN_USE`). CC-038: `p_code` va nulo; la base genera el código y no lo cambia al editar.
  */
 export async function adminUpsertPublicationPlanRpc(
   client: SupabaseRpcCaller,
@@ -485,7 +485,7 @@ export async function adminUpsertPublicationPlanRpc(
   const input = parsed.data;
   return callPublicationCreditsRpc(client, 'admin_upsert_publication_plan', {
     p_plan_id: input.planId,
-    p_code: input.code,
+    p_code: null,
     p_name: input.name,
     p_kind: input.kind,
     p_monthly_credits: input.monthlyCredits,

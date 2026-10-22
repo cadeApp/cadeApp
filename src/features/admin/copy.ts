@@ -558,7 +558,7 @@ export const ADMIN_COPY = {
       sort: 'Orden',
       actions: 'Acciones',
     },
-    kind: { quota: 'Con cupo', unlimited: 'Ilimitado' },
+    kind: { quota: 'Con créditos mensuales', unlimited: 'Ilimitado' },
     activeLabel: { true: 'Activo', false: 'Inactivo' },
     newPlan: 'Nuevo plan',
     edit: 'Editar',
@@ -566,8 +566,8 @@ export const ADMIN_COPY = {
     dialog: {
       createTitle: 'Nuevo plan',
       editTitle: (name: string) => `Editar ${name}`,
-      description: 'El tipo y el cupo no se pueden cambiar si el plan ya tiene períodos: en ese caso creá otro plan.',
-      code: 'Código',
+      description:
+        'El tipo y los créditos por mes no se pueden cambiar si el plan ya tiene períodos: en ese caso creá otro plan.',
       name: 'Nombre',
       kind: 'Tipo',
       monthlyCredits: 'Créditos por mes',

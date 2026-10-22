@@ -142,11 +142,10 @@ describe('T-369 / CC-029 — contratos', () => {
   });
 
   it('valida catálogo y parámetros nuevos', () => {
-    const base = { planId: null, code: 'plan-40', name: 'Plan 40', kind: 'quota' as const, monthlyCredits: 40, referencePriceArs: 1000, active: true, sort: 1 };
+    const base = { planId: null, name: 'Plan 40', kind: 'quota' as const, monthlyCredits: 40, referencePriceArs: 1000, active: true, sort: 1 };
     expect(adminUpsertPublicationPlanInputSchema.safeParse(base).success).toBe(true);
     expect(adminUpsertPublicationPlanInputSchema.safeParse({ ...base, kind: 'unlimited' }).success).toBe(false);
     expect(adminUpsertPublicationPlanInputSchema.safeParse({ ...base, monthlyCredits: null }).success).toBe(false);
-    expect(adminUpsertPublicationPlanInputSchema.safeParse({ ...base, code: 'X' }).success).toBe(false);
 
     expect(PLATFORM_SETTING_KEYS).toEqual(
       expect.arrayContaining(['publication_drops_per_credit', 'carryover_base_pct', 'carryover_cap_pct', 'launch_discount_pct'])
@@ -262,8 +261,8 @@ describe('T-369 / CC-029 — fake de créditos', () => {
 
     const t = setup();
     t.asAdmin();
-    const quota = await t.fake.admin_upsert_publication_plan({ planId: null, code: 'plan-5', name: 'Plan 5', kind: 'quota', monthlyCredits: 5, referencePriceArs: null, active: true, sort: 1 });
-    const unlimited = await t.fake.admin_upsert_publication_plan({ planId: null, code: 'ilimitado', name: 'Ilimitado', kind: 'unlimited', monthlyCredits: null, referencePriceArs: null, active: true, sort: 2 });
+    const quota = await t.fake.admin_upsert_publication_plan({ planId: null, name: 'Plan 5', kind: 'quota', monthlyCredits: 5, referencePriceArs: null, active: true, sort: 1 });
+    const unlimited = await t.fake.admin_upsert_publication_plan({ planId: null, name: 'Ilimitado', kind: 'unlimited', monthlyCredits: null, referencePriceArs: null, active: true, sort: 2 });
     if (!quota.ok || !unlimited.ok) throw new Error('catálogo');
     await t.grant(2, 1);
     t.asAdmin();
@@ -284,7 +283,7 @@ describe('T-369 / CC-029 — fake de créditos', () => {
   it('fidelidad: renovación tardía dentro de la gracia arrastra 5% del cupo al corte, una sola vez', async () => {
     const t = setup();
     t.asAdmin();
-    const plan = await t.fake.admin_upsert_publication_plan({ planId: null, code: 'plan-40', name: 'Plan 40', kind: 'quota', monthlyCredits: 40, referencePriceArs: null, active: true, sort: 1 });
+    const plan = await t.fake.admin_upsert_publication_plan({ planId: null, name: 'Plan 40', kind: 'quota', monthlyCredits: 40, referencePriceArs: null, active: true, sort: 1 });
     if (!plan.ok) throw new Error(plan.code);
     const first = await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: true, operationKey: key(1) });
     if (!first.ok) throw new Error(first.code);
@@ -313,7 +312,7 @@ describe('T-369 / CC-029 — fake de créditos', () => {
     expect(secondPurchase.ok && secondPurchase.data.launchDiscountPct).toBeNull();
 
     t.asAdmin();
-    const plan = await t.fake.admin_upsert_publication_plan({ planId: null, code: 'plan-5', name: 'Plan 5', kind: 'quota', monthlyCredits: 5, referencePriceArs: null, active: true, sort: 1 });
+    const plan = await t.fake.admin_upsert_publication_plan({ planId: null, name: 'Plan 5', kind: 'quota', monthlyCredits: 5, referencePriceArs: null, active: true, sort: 1 });
     if (!plan.ok) throw new Error(plan.code);
     await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(4) });
     expect(
@@ -323,10 +322,9 @@ describe('T-369 / CC-029 — fake de créditos', () => {
 });
 
 describe('T-369 / CC-029 — fake: administración y bordes', () => {
-  const quota = (code: string, monthlyCredits = 5, active = true) => ({
+  const quota = (name: string, monthlyCredits = 5, active = true) => ({
     planId: null,
-    code,
-    name: code,
+    name,
     kind: 'quota' as const,
     monthlyCredits,
     referencePriceArs: null,
@@ -359,12 +357,11 @@ describe('T-369 / CC-029 — fake: administración y bordes', () => {
     expect(first.ok && first.data.launchDiscountPct).toBe(15);
   });
 
-  it('catálogo: código duplicado, inexistente, cambio de cupo en uso y desactivación', async () => {
+  it('catálogo: inexistente, cambio de cupo en uso y desactivación', async () => {
     const t = setup();
     t.asAdmin();
     const plan = await t.fake.admin_upsert_publication_plan(quota('plan-a'));
     if (!plan.ok) throw new Error(plan.code);
-    expect(await t.fake.admin_upsert_publication_plan(quota('plan-a'))).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
     expect(await t.fake.admin_upsert_publication_plan({ ...quota('plan-b'), planId: key(99) })).toEqual({ ok: false, code: 'NOT_FOUND' });
     expect((await t.fake.admin_upsert_publication_plan({ ...quota('plan-a', 8), planId: plan.data.planId })).ok).toBe(true);
 
@@ -571,7 +568,6 @@ describe('CC-029 addendum D01-B — admin_list_publication_plans en el fake', ()
     for (let n = 1; n <= count; n += 1) {
       const created = await ctx.fake.admin_upsert_publication_plan({
         planId: null,
-        code: `plan-${n}`,
         name: `Plan ${n}`,
         kind: 'quota',
         monthlyCredits: 10,
