@@ -550,10 +550,11 @@ test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () 
       condition: null,
     },
     {
+      // T-392: URL fija como staging; con `vars.PRODUCTION_APP_URL` en el `if` el job se salteaba siempre.
       name: 'production',
       environment: 'production',
-      appUrl: '${{ vars.PRODUCTION_APP_URL }}',
-      condition: "vars.PRODUCTION_APP_URL != ''",
+      appUrl: 'https://cadeapp.online',
+      condition: null,
     },
   ];
   for (const { name, environment, appUrl, condition } of jobs) {
@@ -564,6 +565,8 @@ test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () 
     );
     assert.ok(body.includes(`\n      APP_URL: ${appUrl}\n`), `${name}: APP_URL ${appUrl}`);
     if (condition) assert.ok(body.includes(`\n    if: ${condition}\n`), `${name}: if ${condition}`);
+    // PR509-H01: sin condición declarada, el job no tiene ningún `if` (ni de una línea ni de bloque).
+    else assert.doesNotMatch(body, /^ {4}if\s*:/m, `${name}: el job no tiene if`);
 
     const call = step(body, 'Call /api/cron/health');
     assert.ok(
@@ -592,6 +595,18 @@ test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () 
       curl.endsWith(' "$APP_URL/api/cron/health"'),
       `${name}: el llamado termina en "$APP_URL/api/cron/health"`
     );
+  }
+});
+
+test('T-392: health-cron jobs run on every schedule, with no job-level if', () => {
+  // `jobs.<id>.if` se evalúa antes de entrar al environment: ahí `vars` no tiene las variables del environment, así
+  // que un `if` sobre ellas saltea el job en silencio en cada corrida. Cualquier otro `if` de job (por evento, de una
+  // línea o de bloque) también puede saltearlo en el `schedule`: los jobs del health-cron no llevan ninguno.
+  const healthCron = workflow('health-cron.yml');
+  for (const name of ['staging', 'production']) {
+    const body = job(healthCron, name).replace(/\r\n/g, '\n');
+    assert.ok(body.includes('\n    environment: '), `${name}: usa un environment`);
+    assert.doesNotMatch(body, /^ {4}if\s*:/m, `${name}: el job no tiene if`);
   }
 });
 

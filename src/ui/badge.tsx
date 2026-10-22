@@ -12,6 +12,7 @@ export const badgeVariants = cva(
         with_offers: 'border-primary-dark bg-card text-primary-dark',
         matched: 'border-transparent bg-secondary text-secondary-foreground',
         in_transit: 'badge-warning',
+        partial: 'badge-warning',
         delivered: 'badge-success',
         expired: 'border-border bg-muted text-muted-foreground',
         cancelled: 'badge-danger',

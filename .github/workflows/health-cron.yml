@@ -35,14 +35,15 @@ jobs:
           curl --fail --silent --show-error --retry 2 --retry-delay 10 --max-time 30 \
             -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/health"
 
+  # T-392: sin `if` sobre `vars`. El `if` de un job se evalúa antes de entrar al environment y no ve sus variables,
+  # así que `vars.PRODUCTION_APP_URL != ''` salteaba el job siempre. El dominio de producción no es secreto.
   production:
     name: health-cron-production
-    if: vars.PRODUCTION_APP_URL != ''
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 5
     env:
-      APP_URL: ${{ vars.PRODUCTION_APP_URL }}
+      APP_URL: https://cadeapp.online
     steps:
       - name: Call /api/cron/health
         env:
