@@ -1103,6 +1103,109 @@ export const getPublicationOfferOutputSchema = z
   .strict();
 export type PublicationOffer = z.infer<typeof getPublicationOfferOutputSchema>;
 
+// CC-040: novedades del admin. Público, acción (solo pantallas de la app) y textos con los mismos límites que la base.
+export const announcementAudienceSchema = z.enum(['merchants', 'couriers', 'all']);
+export type AnnouncementAudience = z.infer<typeof announcementAudienceSchema>;
+export const announcementCtaSchema = z.enum(['none', 'merchant_plan', 'merchant_new_request', 'courier_feed']);
+export type AnnouncementCta = z.infer<typeof announcementCtaSchema>;
+
+const ANNOUNCEMENT_CTAS_BY_AUDIENCE: Record<AnnouncementAudience, readonly AnnouncementCta[]> = {
+  merchants: ['none', 'merchant_plan', 'merchant_new_request'],
+  couriers: ['none', 'courier_feed'],
+  all: ['none'],
+};
+
+/** La acción tiene que existir para todo el público: con «ambos», sin botón (check de `announcements`). */
+export function isAnnouncementCtaAllowed(audience: AnnouncementAudience, cta: AnnouncementCta): boolean {
+  return ANNOUNCEMENT_CTAS_BY_AUDIENCE[audience].includes(cta);
+}
+
+export const announcementTitleSchema = z.string().trim().min(1).max(60);
+export const announcementBodySchema = z.string().trim().min(1).max(140);
+
+export const adminCountAnnouncementAudienceInputSchema = z.object({ audience: announcementAudienceSchema }).strict();
+export const adminCountAnnouncementAudienceOutputSchema = z
+  .object({
+    recipients: z.number().int().nonnegative(),
+    pushRecipients: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const adminCreateAnnouncementInputSchema = z
+  .object({
+    audience: announcementAudienceSchema,
+    title: announcementTitleSchema,
+    body: announcementBodySchema,
+    cta: announcementCtaSchema,
+    visibleDays: z.number().int().min(1).max(30),
+  })
+  .strict()
+  .refine((input) => isAnnouncementCtaAllowed(input.audience, input.cta), {
+    message: 'La acción no corresponde al público elegido.',
+    path: ['cta'],
+  });
+export const adminCreateAnnouncementOutputSchema = z
+  .object({ announcementId: uuidSchema, visibleUntil: isoTimestampSchema })
+  .strict();
+
+export const adminRecordAnnouncementPushInputSchema = z
+  .object({
+    announcementId: uuidSchema,
+    targets: z.number().int().nonnegative(),
+    sent: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  })
+  .strict()
+  .refine((input) => input.sent + input.failed <= input.targets, {
+    message: 'Enviados y fallidos no pueden superar a los destinatarios.',
+    path: ['sent'],
+  });
+export const adminRecordAnnouncementPushOutputSchema = z.object({ announcementId: uuidSchema }).strict();
+
+export const adminAnnouncementsCursorSchema = z.object({ createdAt: isoTimestampSchema, id: uuidSchema }).strict();
+export type AdminAnnouncementsCursor = z.infer<typeof adminAnnouncementsCursorSchema>;
+export const adminListAnnouncementsInputSchema = z
+  .object({
+    cursor: adminAnnouncementsCursorSchema.nullable().optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  })
+  .strict();
+export const adminAnnouncementItemSchema = z
+  .object({
+    id: uuidSchema,
+    audience: announcementAudienceSchema,
+    title: z.string().min(1),
+    body: z.string().min(1),
+    cta: announcementCtaSchema,
+    visibleUntil: isoTimestampSchema,
+    createdAt: isoTimestampSchema,
+    createdByName: z.string(),
+    pushTargets: z.number().int().nonnegative().nullable(),
+    pushSent: z.number().int().nonnegative().nullable(),
+    pushFailed: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+export type AdminAnnouncementItem = z.infer<typeof adminAnnouncementItemSchema>;
+export const adminListAnnouncementsOutputSchema = z
+  .object({
+    items: z.array(adminAnnouncementItemSchema),
+    nextCursor: adminAnnouncementsCursorSchema.nullable(),
+  })
+  .strict();
+
+export const getMyAnnouncementInputSchema = z.object({}).strict();
+export const announcementBannerSchema = z
+  .object({ id: uuidSchema, title: z.string().min(1), body: z.string().min(1), cta: announcementCtaSchema })
+  .strict();
+export type AnnouncementBanner = z.infer<typeof announcementBannerSchema>;
+export const getMyAnnouncementOutputSchema = z.object({ announcement: announcementBannerSchema.nullable() }).strict();
+
+export const dismissAnnouncementInputSchema = z.object({ announcementId: uuidSchema }).strict();
+export const dismissAnnouncementOutputSchema = z.object({ dismissed: z.literal(true) }).strict();
+
+export const setPromotionsOptInInputSchema = z.object({ enabled: z.boolean() }).strict();
+export const setPromotionsOptInOutputSchema = z.object({ enabled: z.boolean() }).strict();
+
 export const RPC_CONTRACTS = {
   update_my_merchant_profile: {
     inputSchema: updateMyMerchantProfileInputSchema,
@@ -1741,6 +1844,73 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  admin_count_announcement_audience: {
+    inputSchema: adminCountAnnouncementAudienceInputSchema,
+    outputSchema: adminCountAnnouncementAudienceOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_create_announcement: {
+    inputSchema: adminCreateAnnouncementInputSchema,
+    outputSchema: adminCreateAnnouncementOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'RATE_LIMITED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_record_announcement_push: {
+    inputSchema: adminRecordAnnouncementPushInputSchema,
+    outputSchema: adminRecordAnnouncementPushOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_list_announcements: {
+    inputSchema: adminListAnnouncementsInputSchema,
+    outputSchema: adminListAnnouncementsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  get_my_announcement: {
+    inputSchema: getMyAnnouncementInputSchema,
+    outputSchema: getMyAnnouncementOutputSchema,
+    errorCodes: ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR'] as const satisfies readonly DomainErrorCode[],
+  },
+  dismiss_announcement: {
+    inputSchema: dismissAnnouncementInputSchema,
+    outputSchema: dismissAnnouncementOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  set_promotions_opt_in: {
+    inputSchema: setPromotionsOptInInputSchema,
+    outputSchema: setPromotionsOptInOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   get_publication_offer: {
     inputSchema: getPublicationOfferInputSchema,
     outputSchema: getPublicationOfferOutputSchema,
@@ -1805,6 +1975,13 @@ export const ALL_RPC_NAMES = [
   'admin_list_publication_plans',
   'get_my_publication_balance',
   'get_publication_offer',
+  'admin_count_announcement_audience',
+  'admin_create_announcement',
+  'admin_record_announcement_push',
+  'admin_list_announcements',
+  'get_my_announcement',
+  'dismiss_announcement',
+  'set_promotions_opt_in',
   'get_request_cancellation_history',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 

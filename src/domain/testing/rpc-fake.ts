@@ -8,6 +8,8 @@ import {
   type RpcInput,
   type RpcName,
   type RpcOutput,
+  type AnnouncementAudience,
+  type AnnouncementCta,
   type PublicationBalance,
   RPC_CONTRACTS,
   validateOfferAmountAgainstFloor,
@@ -283,6 +285,23 @@ export interface FakeSeedIncident {
 }
 
 // CC-035: fila de `push_subscriptions` del fake (una por endpoint, como el índice único).
+// CC-040: una novedad del admin con su vigencia y el resultado del push.
+interface FakeAnnouncementRecord {
+  readonly id: string;
+  readonly audience: AnnouncementAudience;
+  readonly title: string;
+  readonly body: string;
+  readonly cta: AnnouncementCta;
+  readonly createdAt: string;
+  readonly createdAtMs: number;
+  readonly visibleUntil: string;
+  readonly visibleUntilMs: number;
+  push: { targets: number; sent: number; failed: number } | null;
+}
+
+const ANNOUNCEMENT_DAILY_LIMIT = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export interface FakePushSubscriptionRecord {
   readonly subscriptionId: string;
   readonly endpoint: string;
@@ -488,6 +507,13 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_list_publication_plans: ['admin'],
   get_my_publication_balance: ['merchant'],
   get_publication_offer: ['merchant'],
+  admin_count_announcement_audience: ['admin'],
+  admin_create_announcement: ['admin'],
+  admin_record_announcement_push: ['admin'],
+  admin_list_announcements: ['admin'],
+  get_my_announcement: ['merchant', 'courier'],
+  dismiss_announcement: ['merchant', 'courier'],
+  set_promotions_opt_in: ['merchant', 'courier'],
   get_request_cancellation_history: ['merchant', 'courier', 'admin'],
 };
 
@@ -662,6 +688,28 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const storedCourierDocumentPaths = new Set<string>();
   const incidents = new Map<string, FakeIncidentRecord>();
   const pushSubscriptions = new Map<string, FakePushSubscriptionRecord>();
+  // CC-040: novedades, cierres por cuenta y preferencia de promociones (true acepta, false se dio de baja).
+  const announcements: FakeAnnouncementRecord[] = [];
+  const announcementDismissals = new Set<string>();
+  const promotionPreferences = new Map<string, boolean>();
+  let announcementSeq = 0;
+
+  // CC-040: público de una novedad. El fake no modela el consentimiento de cada perfil: todo comercio con alta y todo
+  // repartidor aprobado cuenta como activo (el consentimiento del actor sí se valida en cada RPC).
+  function announcementAudienceIds(audience: AnnouncementAudience): string[] {
+    const ids: string[] = [];
+    if (audience !== 'couriers') merchants.forEach((_, id) => ids.push(id));
+    if (audience !== 'merchants') {
+      couriers.forEach((courier, id) => {
+        if (courier.status === 'approved') ids.push(id);
+      });
+    }
+    return ids;
+  }
+
+  function isAnnouncementMember(audience: AnnouncementAudience, profileId: string): boolean {
+    return announcementAudienceIds(audience).includes(profileId);
+  }
   const cancellationReasons: FakeCancellationReasonRecord[] = [];
   let cancellationReasonSeq = 0;
   const rateLimits = new Map<string, number>();
@@ -3669,6 +3717,113 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       }),
 
     // CC-039: planes activos (sort, id; hasta 50) sin código, precio del crédito suelto y descuento si corresponde.
+    // CC-040: novedades del admin.
+    admin_count_announcement_audience: (rawInput) =>
+      executeRpc('admin_count_announcement_audience', rawInput, true, (input) => {
+        const ids = announcementAudienceIds(input.audience);
+        const subscribed = new Set([...pushSubscriptions.values()].map((sub) => sub.userId));
+        return ok({
+          recipients: ids.filter((id) => promotionPreferences.get(id) !== false).length,
+          pushRecipients: ids.filter((id) => promotionPreferences.get(id) === true && subscribed.has(id)).length,
+        });
+      }),
+
+    admin_create_announcement: (rawInput) =>
+      executeRpc('admin_create_announcement', rawInput, true, (input) => {
+        const nowMs = nowFn().getTime();
+        if (announcements.filter((row) => row.createdAtMs > nowMs - DAY_MS).length >= ANNOUNCEMENT_DAILY_LIMIT) {
+          return err('RATE_LIMITED');
+        }
+        announcementSeq += 1;
+        const visibleUntilMs = nowMs + input.visibleDays * DAY_MS;
+        const row: FakeAnnouncementRecord = {
+          id: `90000000-0000-4000-8000-${String(announcementSeq).padStart(12, '0')}`,
+          audience: input.audience,
+          title: input.title,
+          body: input.body,
+          cta: input.cta,
+          createdAt: new Date(nowMs).toISOString(),
+          createdAtMs: nowMs,
+          visibleUntil: new Date(visibleUntilMs).toISOString(),
+          visibleUntilMs,
+          push: null,
+        };
+        announcements.push(row);
+        return ok({ announcementId: row.id, visibleUntil: row.visibleUntil });
+      }),
+
+    admin_record_announcement_push: (rawInput) =>
+      executeRpc('admin_record_announcement_push', rawInput, true, (input) => {
+        const row = announcements.find((candidate) => candidate.id === input.announcementId);
+        if (!row) return err('NOT_FOUND');
+        if (row.push) return err('INVALID_STATE_TRANSITION');
+        row.push = { targets: input.targets, sent: input.sent, failed: input.failed };
+        return ok({ announcementId: row.id });
+      }),
+
+    admin_list_announcements: (rawInput) =>
+      executeRpc('admin_list_announcements', rawInput, true, (input) => {
+        const limit = input.limit ?? DEFAULT_INCIDENTS_PAGE_SIZE;
+        const cursor = input.cursor ? { createdAt: input.cursor.createdAt, requestId: input.cursor.id } : null;
+        const rows = announcements
+          .map((row) => ({ row, key: { createdAt: row.createdAt, requestId: row.id } }))
+          .sort((a, b) => compareTripKeysetDesc(a.key, b.key))
+          .filter((entry) => !cursor || compareTripKeysetDesc(entry.key, cursor) > 0);
+        const page = rows.slice(0, limit);
+        const last = page[page.length - 1];
+        return ok({
+          items: page.map(({ row }) => ({
+            id: row.id,
+            audience: row.audience,
+            title: row.title,
+            body: row.body,
+            cta: row.cta,
+            visibleUntil: row.visibleUntil,
+            createdAt: row.createdAt,
+            createdByName: '',
+            pushTargets: row.push?.targets ?? null,
+            pushSent: row.push?.sent ?? null,
+            pushFailed: row.push?.failed ?? null,
+          })),
+          nextCursor: rows.length > limit && last ? { createdAt: last.row.createdAt, id: last.row.id } : null,
+        });
+      }),
+
+    get_my_announcement: (rawInput) =>
+      executeRpc('get_my_announcement', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        if (promotionPreferences.get(actor.userId) === false) return ok({ announcement: null });
+        const nowMs = nowFn().getTime();
+        const visible = announcements
+          .filter(
+            (row) =>
+              row.visibleUntilMs > nowMs &&
+              isAnnouncementMember(row.audience, actor.userId) &&
+              !announcementDismissals.has(`${row.id}:${actor.userId}`)
+          )
+          .sort((a, b) => compareTripKeysetDesc({ createdAt: a.createdAt, requestId: a.id }, { createdAt: b.createdAt, requestId: b.id }));
+        const latest = visible[0];
+        return ok({
+          announcement: latest ? { id: latest.id, title: latest.title, body: latest.body, cta: latest.cta } : null,
+        });
+      }),
+
+    dismiss_announcement: (rawInput) =>
+      executeRpc('dismiss_announcement', rawInput, false, (input) => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        const row = announcements.find((candidate) => candidate.id === input.announcementId);
+        if (!row || !isAnnouncementMember(row.audience, actor.userId)) return err('NOT_FOUND');
+        announcementDismissals.add(`${row.id}:${actor.userId}`);
+        return ok({ dismissed: true as const });
+      }),
+
+    set_promotions_opt_in: (rawInput) =>
+      executeRpc('set_promotions_opt_in', rawInput, false, (input) => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        promotionPreferences.set(actor.userId, input.enabled);
+        return ok({ enabled: input.enabled });
+      }),
+
     get_publication_offer: (rawInput) =>
       executeRpc('get_publication_offer', rawInput, false, () => {
         if ((actor.consentStatus ?? 'active') !== 'active' || !merchants.has(actor.userId)) {
