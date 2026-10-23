@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { redirect } from 'next/navigation';
+import { AnnouncementBanner } from '@/features/announcements';
+import { getMyAnnouncement } from '@/features/announcements/server';
 import { CourierFeed, type ActiveTripSummary } from '@/features/offers';
 import {
   getAvailableRequests,
@@ -31,10 +33,11 @@ async function getPendingCourierDocuments() {
 }
 
 export default async function CourierFeedPage() {
-  const [statusInfo, minOfferArs, feedPage] = await Promise.all([
+  const [statusInfo, minOfferArs, feedPage, announcement] = await Promise.all([
     getCourierStatusAndAvailability(),
     getPlatformMinOfferArs(),
     getAvailableRequests(),
+    getMyAnnouncement(),
   ]);
 
   const documents =
@@ -45,7 +48,7 @@ export default async function CourierFeedPage() {
     activeTripsResult = await getActiveTripsForCourier();
   }
 
-  return (
+  const feed = (
     <CourierFeed
       courierStatus={statusInfo.status}
       isAvailable={statusInfo.available}
@@ -56,5 +59,16 @@ export default async function CourierFeedPage() {
       courierId={activeTripsResult?.courierId}
       initialActiveTrips={activeTripsResult?.trips}
     />
+  );
+
+  // T-414: la novedad vigente va arriba del feed; sin novedad, el feed se ve igual que siempre.
+  if (!announcement) return feed;
+  return (
+    <>
+      <div className="mx-auto w-full max-w-3xl px-4 pt-6 sm:px-6">
+        <AnnouncementBanner key={announcement.id} announcement={announcement} />
+      </div>
+      {feed}
+    </>
   );
 }

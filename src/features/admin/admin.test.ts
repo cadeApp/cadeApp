@@ -70,15 +70,16 @@ describe('T-122: DoD - Admin Shell y Route Guard A00', () => {
     });
   });
 
-  describe('3. Navegación Desktop A00: 6 pestañas canónicas sin Liquidaciones', () => {
-    it('ADMIN_NAV_TABS contiene exactamente las 6 pestañas canónicas (T-410 suma «Viajes»)', () => {
-      expect(ADMIN_NAV_TABS).toHaveLength(6);
+  describe('3. Navegación Desktop A00: 7 pestañas canónicas sin Liquidaciones', () => {
+    it('ADMIN_NAV_TABS contiene exactamente las 7 pestañas canónicas (T-410 suma «Viajes»; T-414, «Novedades»)', () => {
+      expect(ADMIN_NAV_TABS).toHaveLength(7);
       const labels = ADMIN_NAV_TABS.map((t) => t.label);
       expect(labels).toEqual([
         'Postulantes',
         'Comercios',
         'Viajes',
         'Incidentes',
+        'Novedades',
         'Parámetros',
         'Auditoría',
       ]);
@@ -88,6 +89,7 @@ describe('T-122: DoD - Admin Shell y Route Guard A00', () => {
         '/admin/merchants',
         '/admin/trips',
         '/admin/incidents',
+        '/admin/announcements',
         '/admin/settings',
         '/admin/audit',
       ]);
