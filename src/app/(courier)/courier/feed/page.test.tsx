@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   getCourierDocumentsStatus: vi.fn(),
   getActiveTripsForCourier: vi.fn(),
   getUser: vi.fn(),
+  AnnouncementBanner: vi.fn((_props: Record<string, unknown>) => null),
+  getMyAnnouncement: vi.fn(),
 }));
 
 vi.mock('@/features/offers', () => ({ CourierFeed: mocks.CourierFeed }));
@@ -25,6 +27,8 @@ vi.mock('@/features/trips/server', () => ({
 vi.mock('@/features/courier-onboarding/server', () => ({
   getCourierDocumentsStatus: mocks.getCourierDocumentsStatus,
 }));
+vi.mock('@/features/announcements', () => ({ AnnouncementBanner: mocks.AnnouncementBanner }));
+vi.mock('@/features/announcements/server', () => ({ getMyAnnouncement: mocks.getMyAnnouncement }));
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(async () => ({ auth: { getUser: mocks.getUser } })),
 }));
@@ -45,6 +49,7 @@ describe('Hotfix T-325 / PR242-H01: /courier/feed usa los documentos persistidos
     mocks.getAvailableRequests.mockResolvedValue({ requests: [], nextCursor: null });
     mocks.getActiveTripsForCourier.mockResolvedValue({ courierId: 'courier-123', trips: [] });
     mocks.getUser.mockResolvedValue({ data: { user: { id: 'courier-123' } }, error: null });
+    mocks.getMyAnnouncement.mockResolvedValue(null);
   });
   afterEach(cleanup);
 
@@ -152,3 +157,36 @@ describe('Hotfix T-325 / PR242-H01: /courier/feed usa los documentos persistidos
     expect(mocks.CourierFeed).not.toHaveBeenCalled();
   });
 });
+
+describe('T-414: banner de novedades en /courier/feed', () => {
+  const ANNOUNCEMENT = {
+    id: '90000000-0000-4000-8000-000000000001',
+    title: 'Nueva tarifa sugerida',
+    body: 'Actualizamos las referencias.',
+    cta: 'courier_feed',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getPlatformMinOfferArs.mockResolvedValue(1000);
+    mocks.getAvailableRequests.mockResolvedValue({ requests: [], nextCursor: null });
+    mocks.getActiveTripsForCourier.mockResolvedValue({ courierId: 'courier-123', trips: [] });
+    mocks.getCourierStatusAndAvailability.mockResolvedValue({ status: 'approved', available: true });
+  });
+  afterEach(cleanup);
+
+  it('muestra la novedad vigente arriba del feed', async () => {
+    mocks.getMyAnnouncement.mockResolvedValue(ANNOUNCEMENT);
+    await renderPage();
+    expect(mocks.getMyAnnouncement).toHaveBeenCalledTimes(1);
+    expect(mocks.AnnouncementBanner).toHaveBeenCalledTimes(1);
+    expect(mocks.AnnouncementBanner.mock.calls[0]?.[0]).toMatchObject({ announcement: ANNOUNCEMENT });
+  });
+
+  it('sin novedad no hay banner y el feed se ve igual', async () => {
+    mocks.getMyAnnouncement.mockResolvedValue(null);
+    await renderPage();
+    expect(mocks.AnnouncementBanner).not.toHaveBeenCalled();
+  });
+});
+

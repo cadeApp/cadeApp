@@ -1,7 +1,10 @@
+import * as React from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
 import { getMerchantRequests } from '@/features/requests/server';
 import { MerchantRequestsList } from '@/features/requests';
+import { AnnouncementBanner } from '@/features/announcements';
+import { getMyAnnouncement } from '@/features/announcements/server';
 
 export default async function MerchantDashboardPage() {
   const supabase = await createClient();
@@ -34,10 +37,15 @@ export default async function MerchantDashboardPage() {
     redirect('/merchant/onboarding');
   }
 
-  const { requests, metrics } = await getMerchantRequests(merchantProfile.profile_id);
+  const [{ requests, metrics }, announcement] = await Promise.all([
+    getMerchantRequests(merchantProfile.profile_id),
+    getMyAnnouncement(),
+  ]);
 
   return (
     <div className="space-y-4 px-4 py-4">
+      {/* T-414: la novedad vigente va antes de las solicitudes. */}
+      {announcement ? <AnnouncementBanner key={announcement.id} announcement={announcement} /> : null}
       <MerchantRequestsList requests={requests} metrics={metrics} />
     </div>
   );

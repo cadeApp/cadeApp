@@ -12,6 +12,7 @@ export const ADMIN_COPY = {
       merchants: 'Comercios',
       trips: 'Viajes',
       incidents: 'Incidentes',
+      announcements: 'Novedades',
       settings: 'Parámetros',
       audit: 'Auditoría',
     },
@@ -386,6 +387,7 @@ export const ADMIN_COPY = {
       mark_delivered: 'Marcó la entrega',
       report_no_show: 'Reportó una ausencia',
       courier_cancel_match: 'El repartidor canceló',
+      admin_create_announcement: 'Envió una novedad',
     },
     unknownAction: 'Otro evento',
     entities: {
@@ -394,6 +396,7 @@ export const ADMIN_COPY = {
       merchant: 'Comercio',
       platform_setting: 'Parámetro',
       delivery_request: 'Solicitud',
+      announcement: 'Novedad',
     },
     unknownEntity: 'Otra entidad',
     fields: {
@@ -404,6 +407,11 @@ export const ADMIN_COPY = {
       kind: 'Documento',
       docLevel: 'Nivel',
       withdrawnOffersCount: 'Ofertas retiradas',
+      audience: 'Público',
+      title: 'Título',
+      body: 'Texto',
+      cta: 'Botón',
+      visibleUntil: 'Visible hasta',
     },
     values: {
       pending: 'Pendiente',

@@ -130,7 +130,22 @@ const PUSH_PAYLOAD_KEYS = {
   offer_accepted: ['event', 'requestId', 'offerId'],
   request_cancelled: ['event', 'requestId'],
   request_expired: ['event', 'requestId'],
+  // CC-040: novedad del admin.
+  announcement: ['event', 'announcementId', 'title', 'body', 'url'],
 };
+
+// CC-040: mismas urls que ANNOUNCEMENT_PUSH_URLS de src/server/push/sender.ts.
+const ANNOUNCEMENT_URLS = [
+  '/merchant/plan',
+  '/merchant/requests/new',
+  '/merchant/dashboard',
+  '/courier/feed',
+  '/login',
+];
+
+function isTextBetween(value, min, max) {
+  return typeof value === 'string' && value.length >= min && value.length <= max;
+}
 
 // Mismo patrón que z.string().uuid() (Zod 3).
 const UUID_REGEX =
@@ -157,6 +172,23 @@ function parsePushPayload(payload) {
     !expectedKeys.every((key) => actualKeys.includes(key))
   ) {
     return null;
+  }
+  if (event === 'announcement') {
+    if (
+      !isUuid(payload.announcementId) ||
+      !isTextBetween(payload.title, 1, 60) ||
+      !isTextBetween(payload.body, 1, 140) ||
+      ANNOUNCEMENT_URLS.indexOf(payload.url) === -1
+    ) {
+      return null;
+    }
+    return {
+      event: event,
+      announcementId: payload.announcementId,
+      title: payload.title,
+      body: payload.body,
+      url: payload.url,
+    };
   }
   if (!isUuid(payload.requestId)) {
     return null;
@@ -187,6 +219,17 @@ function getNotificationDataForEvent(rawPayload, baseOrigin) {
   }
 
   const event = payload.event;
+
+  if (event === 'announcement') {
+    return {
+      title: payload.title,
+      body: payload.body,
+      icon: icon,
+      badge: badge,
+      data: { url: origin + payload.url, event: event, announcementId: payload.announcementId },
+    };
+  }
+
   const requestId = payload.requestId;
 
   switch (event) {

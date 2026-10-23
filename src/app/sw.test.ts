@@ -521,3 +521,59 @@ describe('PR120-H06 / H11: public/sw.js valida el contrato T-203 (pushPayloadSch
     expect(sw.listeners['notificationclick']?.length).toBe(1);
   });
 });
+
+describe('T-414 / CC-040: public/sw.js valida el evento announcement como pushPayloadSchema', () => {
+  const ANNOUNCEMENT_ID = '90000000-0000-4000-8000-000000000001';
+  const valid = {
+    event: 'announcement',
+    announcementId: ANNOUNCEMENT_ID,
+    title: 'Hoy los viajes múltiples cuestan 1 crédito',
+    body: 'Aprovechá la promo de hoy.',
+    url: '/merchant/plan',
+  };
+  let sw: SWContext;
+
+  beforeEach(() => {
+    sw = createSWInstance();
+  });
+
+  async function pushAndGetNotification(payload: unknown): Promise<{ title: unknown; body: unknown; url: unknown }> {
+    await sw.dispatchPush(payload);
+    expect(sw.mockShowNotification).toHaveBeenCalledTimes(1);
+    const [title, options] = sw.mockShowNotification.mock.calls[0] as [unknown, { body?: unknown; data?: { url?: unknown } }];
+    return { title, body: options.body, url: options.data?.url };
+  }
+
+  it('muestra el título y el texto de la novedad y abre la pantalla de la lista', async () => {
+    expect(await pushAndGetNotification(valid)).toEqual({
+      title: valid.title,
+      body: valid.body,
+      url: 'https://cadeapp.ar/merchant/plan',
+    });
+  });
+
+  it.each(['/merchant/requests/new', '/merchant/dashboard', '/courier/feed', '/login'])(
+    'acepta la url %s de la lista fija',
+    async (url) => {
+      expect((await pushAndGetNotification({ ...valid, url })).url).toBe(`https://cadeapp.ar${url}`);
+    }
+  );
+
+  it.each([
+    ['clave extra', { ...valid, extra: 1 }],
+    ['url fuera de la lista', { ...valid, url: 'https://evil.example/' }],
+    ['url relativa ajena', { ...valid, url: '/admin' }],
+    ['título de 61', { ...valid, title: 'x'.repeat(61) }],
+    ['texto vacío', { ...valid, body: '' }],
+    ['texto de 141', { ...valid, body: 'y'.repeat(141) }],
+    ['id inválido', { ...valid, announcementId: 'no-uuid' }],
+    ['sin url', { event: 'announcement', announcementId: ANNOUNCEMENT_ID, title: 'T', body: 'B' }],
+  ])('%s → aviso genérico', async (_name, payload) => {
+    expect(await pushAndGetNotification(payload)).toEqual({
+      title: 'cadeApp',
+      body: 'Tenés una actualización en la aplicación.',
+      url: 'https://cadeapp.ar/login',
+    });
+  });
+});
+
