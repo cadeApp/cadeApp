@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(48);
+select plan(63);
 
 -- CC-040 (T-414): novedades del admin. Privilegios, autorización, validaciones, tope diario, público, banner, cierre,
 -- baja de promociones, destinatarios del push, registro del envío e historial.
@@ -178,6 +178,40 @@ select is(
 select is(pg_temp.err(pg_temp.mine(pg_temp.u(1))), 'UNAUTHORIZED_ACTOR', 'el admin no tiene banner propio');
 select is(pg_temp.err(pg_temp.mine(pg_temp.u(4))), 'UNAUTHORIZED_ACTOR', 'un comercio sin consentimiento activo no lee');
 select is(pg_temp.err(pg_temp.mine(null)), 'UNAUTHENTICATED', 'sin sujeto: UNAUTHENTICATED');
+
+-- PR542-H05: matriz de autorización por RPC. Las cuatro del admin × (sin sesión, comercio, admin aal1) y las tres del
+-- usuario × (sin sesión, admin, comercio sin consentimiento activo), con un id válido inexistente donde hace falta.
+create function pg_temp.admin_rpc(p_name text) returns text language sql as $$
+  select case p_name
+    when 'count' then 'select public.admin_count_announcement_audience(''merchants'')'
+    when 'create' then 'select public.admin_create_announcement(''merchants'', ''T'', ''B'', ''none'', 7)'
+    when 'record' then 'select public.admin_record_announcement_push(''00000000-0000-4000-8000-0000004099fe''::uuid, 0, 0, 0)'
+    when 'list' then 'select public.admin_list_announcements(null, null, 5)'
+  end
+$$;
+create function pg_temp.user_rpc(p_name text) returns text language sql as $$
+  select case p_name
+    when 'mine' then 'select public.get_my_announcement()'
+    when 'dismiss' then 'select public.dismiss_announcement(''00000000-0000-4000-8000-0000004099fe''::uuid)'
+    when 'optin' then 'select public.set_promotions_opt_in(true)'
+  end
+$$;
+
+select is(pg_temp.err(pg_temp.call(null, 'aal2', pg_temp.admin_rpc('count'))), 'UNAUTHENTICATED', 'count: sin sesión');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(2), 'aal1', pg_temp.admin_rpc('create'))), 'UNAUTHORIZED_ACTOR', 'create: comercio');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(1), 'aal1', pg_temp.admin_rpc('create'))), 'AAL2_REQUIRED', 'create: admin aal1');
+select is(pg_temp.err(pg_temp.call(null, 'aal2', pg_temp.admin_rpc('record'))), 'UNAUTHENTICATED', 'record: sin sesión');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(2), 'aal1', pg_temp.admin_rpc('record'))), 'UNAUTHORIZED_ACTOR', 'record: comercio');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(1), 'aal1', pg_temp.admin_rpc('record'))), 'AAL2_REQUIRED', 'record: admin aal1');
+select is(pg_temp.err(pg_temp.call(null, 'aal2', pg_temp.admin_rpc('list'))), 'UNAUTHENTICATED', 'list: sin sesión');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(2), 'aal1', pg_temp.admin_rpc('list'))), 'UNAUTHORIZED_ACTOR', 'list: comercio');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(1), 'aal1', pg_temp.admin_rpc('list'))), 'AAL2_REQUIRED', 'list: admin aal1');
+select is(pg_temp.err(pg_temp.call(null, 'aal1', pg_temp.user_rpc('dismiss'))), 'UNAUTHENTICATED', 'dismiss: sin sesión');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(1), 'aal2', pg_temp.user_rpc('dismiss'))), 'UNAUTHORIZED_ACTOR', 'dismiss: admin');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(4), 'aal1', pg_temp.user_rpc('dismiss'))), 'UNAUTHORIZED_ACTOR', 'dismiss: comercio sin consentimiento activo');
+select is(pg_temp.err(pg_temp.call(null, 'aal1', pg_temp.user_rpc('optin'))), 'UNAUTHENTICATED', 'set_promotions_opt_in: sin sesión');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(1), 'aal2', pg_temp.user_rpc('optin'))), 'UNAUTHORIZED_ACTOR', 'set_promotions_opt_in: admin');
+select is(pg_temp.err(pg_temp.call(pg_temp.u(4), 'aal1', pg_temp.user_rpc('optin'))), 'UNAUTHORIZED_ACTOR', 'set_promotions_opt_in: comercio sin consentimiento activo');
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- Validaciones

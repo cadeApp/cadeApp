@@ -47,7 +47,12 @@ describe('T-414 / CC-040: evento push announcement', () => {
 });
 
 describe('T-414: envío en tandas de 10', () => {
-  it('nunca hay más de 10 envíos en vuelo y se mandan todos', async () => {
+  /** Vacía la cola de microtareas: el sender encadena awaits sin timers, así que alcanza con unos pocos ticks. */
+  async function flushMicrotasks(): Promise<void> {
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+  }
+
+  it('PR542-H06: nunca hay más de 10 envíos en vuelo y se mandan todos (barrera sin timers)', async () => {
     const subscriptions: PushSubscriptionRecord[] = Array.from({ length: 25 }, (_, index) => ({
       id: `sub-${index}`,
       userId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
@@ -59,27 +64,49 @@ describe('T-414: envío en tandas de 10', () => {
       getSubscriptionsForUsers: vi.fn(async () => subscriptions),
       deleteSubscriptionByEndpoint: vi.fn(async () => undefined),
     };
+    let started = 0;
     let inFlight = 0;
     let maxInFlight = 0;
+    const pending: Array<() => void> = [];
     const transport: PushTransport = {
-      send: vi.fn(async () => {
-        inFlight += 1;
-        maxInFlight = Math.max(maxInFlight, inFlight);
-        await new Promise((resolve) => setTimeout(resolve, 1));
-        inFlight -= 1;
-        return { status: 201 };
-      }),
+      send: vi.fn(
+        () =>
+          new Promise<{ status: number }>((resolve) => {
+            started += 1;
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            pending.push(() => {
+              inFlight -= 1;
+              resolve({ status: 201 });
+            });
+          })
+      ),
+    };
+    const releaseBatch = async () => {
+      pending.splice(0).forEach((release) => release());
+      await flushMicrotasks();
     };
 
-    const result = await sendPushNotification(
+    const run = sendPushNotification(
       subscriptions.map((sub) => sub.userId),
       event,
       { db, transport }
     );
 
+    await flushMicrotasks();
+    expect(started).toBe(10);
+    expect(maxInFlight).toBe(10);
+
+    await releaseBatch();
+    expect(started).toBe(20);
+    await releaseBatch();
+    expect(started).toBe(25);
+    await releaseBatch();
+
+    const result = await run;
+    expect(maxInFlight).toBe(10);
     expect(result.sentCount).toBe(25);
     expect(result.attempts).toHaveLength(25);
-    expect(maxInFlight).toBe(10);
   });
 });
 
