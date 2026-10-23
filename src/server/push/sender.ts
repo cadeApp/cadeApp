@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/server/supabase/admin';
 import { serverEnv } from '@/server/env';
 import { publicEnv } from '@/lib/env.public';
+import type { AnnouncementAudience, AnnouncementCta } from '@/domain';
 
 const require = createRequire(import.meta.url);
 const webpush = require('web-push') as {
@@ -16,6 +17,40 @@ const webpush = require('web-push') as {
 };
 
 
+// CC-040: destinos posibles de una novedad. El service worker (public/sw.js) acepta solo esta lista.
+export const ANNOUNCEMENT_PUSH_URLS = [
+  '/merchant/plan',
+  '/merchant/requests/new',
+  '/merchant/dashboard',
+  '/courier/feed',
+  '/login',
+] as const;
+export type AnnouncementPushUrl = (typeof ANNOUNCEMENT_PUSH_URLS)[number];
+
+/** CC-040: la acción lleva a su pantalla; sin acción, a la home del público (`/login` redirige a la de cada rol). */
+export function announcementPushUrl(audience: AnnouncementAudience, cta: AnnouncementCta): AnnouncementPushUrl {
+  switch (cta) {
+    case 'merchant_plan':
+      return '/merchant/plan';
+    case 'merchant_new_request':
+      return '/merchant/requests/new';
+    case 'courier_feed':
+      return '/courier/feed';
+    case 'none':
+      if (audience === 'merchants') return '/merchant/dashboard';
+      return audience === 'couriers' ? '/courier/feed' : '/login';
+  }
+}
+
+/** CC-040: novedad del admin. Va aparte de `PushEvent` (eventos de solicitudes, que siempre llevan `requestId`). */
+export interface AnnouncementPushEvent {
+  event: 'announcement';
+  announcementId: string;
+  title: string;
+  body: string;
+  url: AnnouncementPushUrl;
+}
+
 export type PushEvent =
   | { event: 'request_published'; requestId: string }
   | { event: 'offer_submitted'; requestId: string; offerId: string }
@@ -24,6 +59,16 @@ export type PushEvent =
   | { event: 'request_expired'; requestId: string };
 
 export const pushPayloadSchema = z.discriminatedUnion('event', [
+  // CC-040: el texto lo escribe el admin y es público; no lleva datos personales.
+  z
+    .object({
+      event: z.literal('announcement'),
+      announcementId: z.string().uuid(),
+      title: z.string().min(1).max(60),
+      body: z.string().min(1).max(140),
+      url: z.enum(ANNOUNCEMENT_PUSH_URLS),
+    })
+    .strict(),
   z
     .object({
       event: z.literal('request_published'),
@@ -60,7 +105,7 @@ export const pushPayloadSchema = z.discriminatedUnion('event', [
 
 export type PushPayload = z.infer<typeof pushPayloadSchema>;
 
-export function buildPushPayload(event: PushEvent): PushPayload {
+export function buildPushPayload(event: PushEvent | AnnouncementPushEvent): PushPayload {
   return pushPayloadSchema.parse(event);
 }
 
@@ -101,27 +146,46 @@ export interface SendPushResult {
   errors: Error[];
 }
 
+// PR542-H03: PostgREST corta cada respuesta en 1000 filas y el filtro `in` viaja en la URL. Los usuarios se consultan
+// de a USER_ID_CHUNK y cada consulta se pagina de a DB_PAGE_SIZE, con orden estable, para no perder suscripciones.
+const USER_ID_CHUNK = 100;
+const DB_PAGE_SIZE = 1000;
+
 export class DefaultPushDatabaseClient implements PushDatabaseClient {
   async getSubscriptionsForUsers(userIds: string[]): Promise<PushSubscriptionRecord[]> {
     if (userIds.length === 0) return [];
     const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from('push_subscriptions')
-      .select('id, user_id, endpoint, p256dh, auth, platform')
-      .in('user_id', userIds);
+    const records: PushSubscriptionRecord[] = [];
 
-    if (error || !data) {
-      throw new Error(`Failed to query push_subscriptions: ${error?.message ?? 'No data'}`);
+    for (let index = 0; index < userIds.length; index += USER_ID_CHUNK) {
+      const chunk = userIds.slice(index, index + USER_ID_CHUNK);
+      for (let from = 0; ; from += DB_PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from('push_subscriptions')
+          .select('id, user_id, endpoint, p256dh, auth, platform')
+          .in('user_id', chunk)
+          .order('id')
+          .range(from, from + DB_PAGE_SIZE - 1);
+
+        if (error || !data) {
+          throw new Error(`Failed to query push_subscriptions: ${error?.message ?? 'No data'}`);
+        }
+
+        for (const row of data) {
+          records.push({
+            id: row.id,
+            userId: row.user_id,
+            endpoint: row.endpoint,
+            p256dh: row.p256dh,
+            auth: row.auth,
+            platform: row.platform ?? null,
+          });
+        }
+        if (data.length < DB_PAGE_SIZE) break;
+      }
     }
 
-    return data.map((row) => ({
-      id: row.id,
-      userId: row.user_id,
-      endpoint: row.endpoint,
-      p256dh: row.p256dh,
-      auth: row.auth,
-      platform: row.platform ?? null,
-    }));
+    return records;
   }
 
   async deleteSubscriptionByEndpoint(endpoint: string): Promise<void> {
@@ -207,9 +271,11 @@ export class WebPushTransport implements PushTransport {
   }
 }
 
+const PUSH_BATCH_SIZE = 10;
+
 export async function sendPushNotification(
   userIds: string[],
-  event: PushEvent,
+  event: PushEvent | AnnouncementPushEvent,
   options?: {
     db?: PushDatabaseClient;
     transport?: PushTransport;
@@ -250,7 +316,9 @@ export async function sendPushNotification(
 
   result.totalSubscriptions = subscriptions.length;
 
-  for (const sub of subscriptions) {
+  // CC-040: tandas de PUSH_BATCH_SIZE envíos en paralelo, para no exceder el tiempo de la función con muchos
+  // destinatarios.
+  const deliver = async (sub: PushSubscriptionRecord): Promise<void> => {
     try {
       const { status, error } = await transport.send(sub, payloadStr);
       result.attempts.push({
@@ -283,6 +351,10 @@ export async function sendPushNotification(
       });
       result.errors.push(err instanceof Error ? err : new Error(errorMsg));
     }
+  };
+
+  for (let index = 0; index < subscriptions.length; index += PUSH_BATCH_SIZE) {
+    await Promise.all(subscriptions.slice(index, index + PUSH_BATCH_SIZE).map(deliver));
   }
 
   return result;
@@ -309,5 +381,26 @@ export async function safeNotifyPostTransition(
       attempts: [],
       errors: [err instanceof Error ? err : new Error(String(err))],
     };
+  }
+}
+
+/**
+ * CC-040: destinatarios del push de una novedad (público con `push_promotions = true`). La RPC solo la ejecuta
+ * `service_role`, por eso va con el cliente de servicio, igual que la lectura de `push_subscriptions`.
+ */
+export async function getAnnouncementPushRecipients(announcementId: string): Promise<string[]> {
+  const supabase = createAdminClient();
+  const recipients: string[] = [];
+  // PR542-H03: la función ordena por perfil; se pagina de a DB_PAGE_SIZE hasta la última página.
+  for (let from = 0; ; from += DB_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .rpc('announcement_push_recipients', { p_announcement_id: announcementId })
+      .range(from, from + DB_PAGE_SIZE - 1);
+    if (error) {
+      throw new Error(`Failed to query announcement_push_recipients: ${error.message}`);
+    }
+    const page = z.array(z.string().uuid()).parse(data);
+    recipients.push(...page);
+    if (page.length < DB_PAGE_SIZE) return recipients;
   }
 }
