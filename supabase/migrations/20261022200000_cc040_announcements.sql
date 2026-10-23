@@ -55,6 +55,14 @@ alter table public.announcements enable row level security;
 alter table public.announcement_dismissals enable row level security;
 alter table public.promotion_preferences enable row level security;
 
+-- Sin acceso directo para clientes (mismo patrón que las tablas de CC-029): todo pasa por las RPC.
+create policy announcements_no_client_access on public.announcements
+  as restrictive for all to anon, authenticated using (false) with check (false);
+create policy announcement_dismissals_no_client_access on public.announcement_dismissals
+  as restrictive for all to anon, authenticated using (false) with check (false);
+create policy promotion_preferences_no_client_access on public.promotion_preferences
+  as restrictive for all to anon, authenticated using (false) with check (false);
+
 revoke all on table public.announcements from public, anon, authenticated;
 revoke all on table public.announcement_dismissals from public, anon, authenticated;
 revoke all on table public.promotion_preferences from public, anon, authenticated;

@@ -308,8 +308,11 @@ select ok(
   and (pg_temp.mine(pg_temp.u(3)))->'data' = '{"announcement": null}'::jsonb,
   'darse de baja oculta el banner'
 );
+-- La lectura va en otra sentencia: dentro de la misma, la consulta vería la foto previa a la RPC.
+create temp table reaccept as
+select (pg_temp.call(pg_temp.u(3), 'aal1', 'select public.set_promotions_opt_in(true)'))->'data' as r;
 select ok(
-  (pg_temp.call(pg_temp.u(3), 'aal1', 'select public.set_promotions_opt_in(true)'))->'data' = '{"enabled": true}'::jsonb
+  (select r from reaccept) = '{"enabled": true}'::jsonb
   and (select push_promotions from public.promotion_preferences where profile_id = pg_temp.u(3)),
   'volver a aceptar guarda la preferencia'
 );
