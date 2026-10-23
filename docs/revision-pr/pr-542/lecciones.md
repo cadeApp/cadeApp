@@ -19,3 +19,17 @@ Un test con `setTimeout(1)` depende de calendario del event loop y contraviene l
 D01=A quedó en CC-040 y SQL, pero faltó actualizar checklist RLS de ficha T-414. Tras una decisión buscar en ficha, contrato, migración y tests frases contradictorias. No deshacer la seguridad aprobada para hacer coincidir la documentación.
 
 **Límite:** CI unit verde no certifica mutaciones de autor. `arreglado-sin-verificar` sigue siendo válido hasta comprobación independiente.
+
+---
+
+## Ronda 2 — cierre
+
+**H05 / P06:** con 15 aserciones adicionales la matriz RPC se completa. La mutación aislada de una sola línea en `admin_list_announcements` produjo exactamente tres fallos específicos (18–20). Este RED sí discrimina el guard real y no es un fallo accidental del fixture. Es el contraste que exige `pr-56/AG-37`.
+
+**H06 / P08:** la barrera deferred permite una condición verificable `started=10` antes de liberar; no usa timers. El RED local por 11 envíos fue informado por el autor, con GREEN en CI contrastado independientemente. No exagerar esa evidencia.
+
+**H07 / P03:** la ficha, CC-040 y SQL coinciden respecto a policies `AS RESTRICTIVE`.
+
+No se inventa nueva numeración AG: el máximo en todas las ramas no puede recuperarse desde el contenedor sin `git fetch`. **No editar AGENTS.md** a partir de esta única PR.
+
+**Advertencia operacional:** CI `e2e-preview` puede reportar un contexto de error a pesar de un workflow SUCCESS si el job E2E fue skipped. La revisión distingue estado de infraestructura/ejecución de evidencia funcional; el E2E de T-414 queda posterior a `migrate-develop`.
