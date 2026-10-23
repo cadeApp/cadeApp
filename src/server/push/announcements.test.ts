@@ -87,21 +87,39 @@ describe('T-414: destinatarios del push de una novedad', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('los pide a announcement_push_recipients con el cliente de servicio', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: ['00000000-0000-4000-8000-000000400002'], error: null });
+    const range = vi.fn().mockResolvedValue({ data: ['00000000-0000-4000-8000-000000400002'], error: null });
+    const rpc = vi.fn().mockReturnValue({ range });
     vi.mocked(createAdminClient).mockReturnValue({ rpc } as unknown as ReturnType<typeof createAdminClient>);
 
     await expect(getAnnouncementPushRecipients(ANNOUNCEMENT_ID)).resolves.toEqual([
       '00000000-0000-4000-8000-000000400002',
     ]);
     expect(rpc).toHaveBeenCalledWith('announcement_push_recipients', { p_announcement_id: ANNOUNCEMENT_ID });
+    expect(range).toHaveBeenCalledWith(0, 999);
+  });
+
+  it('PR542-H03: pagina de a 1000 hasta traer todos los destinatarios', async () => {
+    const all = Array.from({ length: 2500 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`);
+    const range = vi.fn(async (from: number, to: number) => ({ data: all.slice(from, to + 1), error: null }));
+    const rpc = vi.fn().mockReturnValue({ range });
+    vi.mocked(createAdminClient).mockReturnValue({ rpc } as unknown as ReturnType<typeof createAdminClient>);
+
+    await expect(getAnnouncementPushRecipients(ANNOUNCEMENT_ID)).resolves.toEqual(all);
+    expect(range.mock.calls).toEqual([
+      [0, 999],
+      [1000, 1999],
+      [2000, 2999],
+    ]);
   });
 
   it('un error o una respuesta fuera de forma se lanzan', async () => {
-    const failing = vi.fn().mockResolvedValue({ data: null, error: { message: 'permission denied' } });
+    const failing = vi.fn().mockReturnValue({
+      range: vi.fn().mockResolvedValue({ data: null, error: { message: 'permission denied' } }),
+    });
     vi.mocked(createAdminClient).mockReturnValue({ rpc: failing } as unknown as ReturnType<typeof createAdminClient>);
     await expect(getAnnouncementPushRecipients(ANNOUNCEMENT_ID)).rejects.toThrow('permission denied');
 
-    const malformed = vi.fn().mockResolvedValue({ data: ['no-uuid'], error: null });
+    const malformed = vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: ['no-uuid'], error: null }) });
     vi.mocked(createAdminClient).mockReturnValue({ rpc: malformed } as unknown as ReturnType<typeof createAdminClient>);
     await expect(getAnnouncementPushRecipients(ANNOUNCEMENT_ID)).rejects.toThrow();
   });

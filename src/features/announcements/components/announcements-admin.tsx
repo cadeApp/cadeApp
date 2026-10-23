@@ -72,16 +72,20 @@ export function AnnouncementsAdmin() {
     if (!isAnnouncementCtaAllowed(audience, cta)) form.setValue('cta', 'none');
   }, [audience, cta, form]);
 
-  const onReview = form.handleSubmit(async (data) => {
-    setSendError(null);
+  async function countAudience(target: AnnouncementAudience) {
     setAudienceCount({ status: 'loading' });
-    setPending(data);
-    const result = await countAnnouncementAudienceAction(data.audience);
+    const result = await countAnnouncementAudienceAction(target);
     setAudienceCount(
       result.ok
         ? { status: 'ready', recipients: result.data.recipients, push: result.data.pushRecipients }
         : { status: 'error' }
     );
+  }
+
+  const onReview = form.handleSubmit(async (data) => {
+    setSendError(null);
+    setPending(data);
+    await countAudience(data.audience);
   });
 
   async function onConfirm() {
@@ -102,7 +106,14 @@ export function AnnouncementsAdmin() {
       notify.error(message);
       return;
     }
-    notify.success(result.data.push ? COPY.sent(result.data.push.sent, result.data.push.failed) : COPY.sentWithoutPush);
+    const { push, pushRecorded } = result.data;
+    notify.success(
+      push === null
+        ? COPY.sentWithoutPush
+        : pushRecorded
+          ? COPY.sent(push.sent, push.failed)
+          : COPY.sentNotRecorded(push.sent, push.failed)
+    );
     setPending(null);
     form.reset(DEFAULT_VALUES);
     router.refresh();
@@ -218,6 +229,17 @@ export function AnnouncementsAdmin() {
             <div className="mt-4">
               <AnnouncementBannerView title={pending.title.trim()} body={pending.body.trim()} cta={pending.cta} />
             </div>
+            {audienceCount.status === 'error' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => void countAudience(pending.audience)}
+              >
+                {COPY.retryCount}
+              </Button>
+            ) : null}
             {sendError ? (
               <p role="alert" className="mt-3 text-sm font-medium text-destructive">
                 {sendError}
@@ -227,7 +249,7 @@ export function AnnouncementsAdmin() {
               <Button type="button" variant="outline" onClick={() => setPending(null)} disabled={sending}>
                 {COPY.back}
               </Button>
-              <Button type="button" onClick={() => void onConfirm()} disabled={sending || audienceCount.status === 'loading'}>
+              <Button type="button" onClick={() => void onConfirm()} disabled={sending || audienceCount.status !== 'ready'}>
                 {sending ? COPY.sending : COPY.confirm}
               </Button>
             </DialogFooter>

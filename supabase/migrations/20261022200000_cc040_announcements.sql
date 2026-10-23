@@ -466,6 +466,8 @@ as $$
   cross join lateral app_private.announcement_audience(n.audience) a
   join public.promotion_preferences pp on pp.profile_id = a.profile_id and pp.push_promotions = true
   where n.id = p_announcement_id
+  -- Orden estable: el servidor pagina el resultado de a 1000 (límite de PostgREST).
+  order by a.profile_id
 $$;
 
 -- ============================================================================

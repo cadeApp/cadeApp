@@ -42,7 +42,7 @@ describe('T-414: createAnnouncementAction', () => {
       name === 'admin_create_announcement' ? CREATED : { ok: true, data: { announcementId: ANNOUNCEMENT_ID } }
     );
     mocks.recipients.mockResolvedValue(['u1', 'u2']);
-    mocks.send.mockResolvedValue({ totalSubscriptions: 3, sentCount: 2, failedCount: 1, errors: [] });
+    mocks.send.mockResolvedValue({ totalSubscriptions: 3, sentCount: 2, failedCount: 1, attempts: [{}, {}, {}], errors: [] });
 
     await expect(createAnnouncementAction(INPUT)).resolves.toEqual({
       ok: true,
@@ -50,6 +50,7 @@ describe('T-414: createAnnouncementAction', () => {
         announcementId: ANNOUNCEMENT_ID,
         visibleUntil: CREATED.data.visibleUntil,
         push: { targets: 3, sent: 2, failed: 1 },
+        pushRecorded: true,
       },
     });
     expect(mocks.call).toHaveBeenNthCalledWith(1, mocks.client, 'admin_create_announcement', INPUT);
@@ -83,10 +84,47 @@ describe('T-414: createAnnouncementAction', () => {
     mocks.recipients.mockRejectedValue(new Error('permission denied'));
     await expect(createAnnouncementAction(INPUT)).resolves.toEqual({
       ok: true,
-      data: { announcementId: ANNOUNCEMENT_ID, visibleUntil: CREATED.data.visibleUntil, push: null },
+      data: { announcementId: ANNOUNCEMENT_ID, visibleUntil: CREATED.data.visibleUntil, push: null, pushRecorded: false },
     });
     expect(mocks.call).toHaveBeenCalledTimes(1);
     expect(mocks.revalidate).toHaveBeenCalledWith('/admin/announcements');
+  });
+
+  it('PR542-H01: si el sender falla antes de mandar, no se registra «0 enviados» como un envío normal', async () => {
+    mocks.call.mockResolvedValue(CREATED);
+    mocks.recipients.mockResolvedValue(['u1']);
+    mocks.send.mockResolvedValue({
+      totalSubscriptions: 0,
+      sentCount: 0,
+      failedCount: 0,
+      attempts: [],
+      errors: [new Error('Failed to query push_subscriptions')],
+    });
+    await expect(createAnnouncementAction(INPUT)).resolves.toEqual({
+      ok: true,
+      data: { announcementId: ANNOUNCEMENT_ID, visibleUntil: CREATED.data.visibleUntil, push: null, pushRecorded: false },
+    });
+    expect(mocks.call).toHaveBeenCalledTimes(1);
+  });
+
+  it('sin destinatarios con push, el resultado vacío sí se registra', async () => {
+    mocks.call.mockImplementation(async (_client: unknown, name: string) =>
+      name === 'admin_create_announcement' ? CREATED : { ok: true, data: { announcementId: ANNOUNCEMENT_ID } }
+    );
+    mocks.recipients.mockResolvedValue([]);
+    mocks.send.mockResolvedValue({ totalSubscriptions: 0, sentCount: 0, failedCount: 0, attempts: [], errors: [] });
+    const result = await createAnnouncementAction(INPUT);
+    expect(result.ok && result.data).toMatchObject({ push: { targets: 0, sent: 0, failed: 0 }, pushRecorded: true });
+  });
+
+  it('PR542-H02: si no se pudo registrar el resultado, se avisa', async () => {
+    mocks.call.mockImplementation(async (_client: unknown, name: string) =>
+      name === 'admin_create_announcement' ? CREATED : { ok: false, code: 'INVALID_STATE_TRANSITION' }
+    );
+    mocks.recipients.mockResolvedValue(['u1']);
+    mocks.send.mockResolvedValue({ totalSubscriptions: 1, sentCount: 1, failedCount: 0, attempts: [{}], errors: [] });
+    const result = await createAnnouncementAction(INPUT);
+    expect(result.ok && result.data).toMatchObject({ push: { targets: 1, sent: 1, failed: 0 }, pushRecorded: false });
   });
 
   it('una entrada inválida devuelve el error del wrapper sin enviar', async () => {

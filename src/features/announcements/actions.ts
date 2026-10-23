@@ -13,7 +13,12 @@ export interface AnnouncementPushSummary {
 }
 
 export type CreateAnnouncementResult = ActionResult<
-  RpcOutput<'admin_create_announcement'> & { readonly push: AnnouncementPushSummary | null },
+  RpcOutput<'admin_create_announcement'> & {
+    /** null si el push no se pudo enviar (la novedad igual queda en el banner). */
+    readonly push: AnnouncementPushSummary | null;
+    /** false si el resultado del push no quedó guardado en el historial. */
+    readonly pushRecorded: boolean;
+  },
   'UNAUTHENTICATED' | 'UNAUTHORIZED_ACTOR' | 'AAL2_REQUIRED' | 'VALIDATION_ERROR' | 'RATE_LIMITED' | 'INTERNAL_ERROR'
 >;
 
@@ -46,6 +51,7 @@ export async function createAnnouncementAction(rawInput: unknown): Promise<Creat
   const input = RPC_CONTRACTS.admin_create_announcement.inputSchema.parse(rawInput);
   const { announcementId } = created.data;
   let push: AnnouncementPushSummary | null = null;
+  let pushRecorded = false;
   try {
     const recipients = await getAnnouncementPushRecipients(announcementId);
     const result = await sendPushNotification(recipients, {
@@ -55,14 +61,22 @@ export async function createAnnouncementAction(rawInput: unknown): Promise<Creat
       body: input.body,
       url: announcementPushUrl(input.audience, input.cta),
     });
+    // PR542-H01: errores sin ningún intento son una falla antes de enviar (p. ej., al leer las suscripciones), no
+    // «0 enviados»; no se registra para no dejar un resultado falso en el historial.
+    if (result.attempts.length === 0 && result.errors.length > 0) {
+      throw new Error('announcement push failed before sending');
+    }
     push = { targets: result.totalSubscriptions, sent: result.sentCount, failed: result.failedCount };
-    await callWithSession('admin_record_announcement_push', { announcementId, ...push });
+    // PR542-H02: el registro puede fallar sin lanzar; se informa.
+    const recorded = await callWithSession('admin_record_announcement_push', { announcementId, ...push });
+    pushRecorded = recorded.ok;
   } catch {
     push = null;
+    pushRecorded = false;
   }
 
   revalidatePath('/admin/announcements');
-  return ok({ ...created.data, push });
+  return ok({ ...created.data, push, pushRecorded });
 }
 
 /** CC-040: cierra la novedad para la cuenta del comercio o repartidor. */

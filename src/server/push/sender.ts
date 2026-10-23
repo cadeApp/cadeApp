@@ -146,27 +146,46 @@ export interface SendPushResult {
   errors: Error[];
 }
 
+// PR542-H03: PostgREST corta cada respuesta en 1000 filas y el filtro `in` viaja en la URL. Los usuarios se consultan
+// de a USER_ID_CHUNK y cada consulta se pagina de a DB_PAGE_SIZE, con orden estable, para no perder suscripciones.
+const USER_ID_CHUNK = 100;
+const DB_PAGE_SIZE = 1000;
+
 export class DefaultPushDatabaseClient implements PushDatabaseClient {
   async getSubscriptionsForUsers(userIds: string[]): Promise<PushSubscriptionRecord[]> {
     if (userIds.length === 0) return [];
     const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from('push_subscriptions')
-      .select('id, user_id, endpoint, p256dh, auth, platform')
-      .in('user_id', userIds);
+    const records: PushSubscriptionRecord[] = [];
 
-    if (error || !data) {
-      throw new Error(`Failed to query push_subscriptions: ${error?.message ?? 'No data'}`);
+    for (let index = 0; index < userIds.length; index += USER_ID_CHUNK) {
+      const chunk = userIds.slice(index, index + USER_ID_CHUNK);
+      for (let from = 0; ; from += DB_PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from('push_subscriptions')
+          .select('id, user_id, endpoint, p256dh, auth, platform')
+          .in('user_id', chunk)
+          .order('id')
+          .range(from, from + DB_PAGE_SIZE - 1);
+
+        if (error || !data) {
+          throw new Error(`Failed to query push_subscriptions: ${error?.message ?? 'No data'}`);
+        }
+
+        for (const row of data) {
+          records.push({
+            id: row.id,
+            userId: row.user_id,
+            endpoint: row.endpoint,
+            p256dh: row.p256dh,
+            auth: row.auth,
+            platform: row.platform ?? null,
+          });
+        }
+        if (data.length < DB_PAGE_SIZE) break;
+      }
     }
 
-    return data.map((row) => ({
-      id: row.id,
-      userId: row.user_id,
-      endpoint: row.endpoint,
-      p256dh: row.p256dh,
-      auth: row.auth,
-      platform: row.platform ?? null,
-    }));
+    return records;
   }
 
   async deleteSubscriptionByEndpoint(endpoint: string): Promise<void> {
@@ -370,11 +389,18 @@ export async function safeNotifyPostTransition(
  * `service_role`, por eso va con el cliente de servicio, igual que la lectura de `push_subscriptions`.
  */
 export async function getAnnouncementPushRecipients(announcementId: string): Promise<string[]> {
-  const { data, error } = await createAdminClient().rpc('announcement_push_recipients', {
-    p_announcement_id: announcementId,
-  });
-  if (error) {
-    throw new Error(`Failed to query announcement_push_recipients: ${error.message}`);
+  const supabase = createAdminClient();
+  const recipients: string[] = [];
+  // PR542-H03: la función ordena por perfil; se pagina de a DB_PAGE_SIZE hasta la última página.
+  for (let from = 0; ; from += DB_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .rpc('announcement_push_recipients', { p_announcement_id: announcementId })
+      .range(from, from + DB_PAGE_SIZE - 1);
+    if (error) {
+      throw new Error(`Failed to query announcement_push_recipients: ${error.message}`);
+    }
+    const page = z.array(z.string().uuid()).parse(data);
+    recipients.push(...page);
+    if (page.length < DB_PAGE_SIZE) return recipients;
   }
-  return z.array(z.string().uuid()).parse(data);
 }

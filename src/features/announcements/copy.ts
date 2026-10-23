@@ -43,11 +43,14 @@ export const ANNOUNCEMENTS_COPY = {
     confirmCounting: 'Calculando destinatarios...',
     confirmSummary: (recipients: number, push: number) =>
       `La van a ver ${recipients} ${recipients === 1 ? 'cuenta' : 'cuentas'} en su inicio. Por push llega a ${push} (quienes aceptaron novedades y tienen avisos activos).`,
-    confirmCountError: 'No pudimos calcular los destinatarios. Igual podés enviarla.',
+    confirmCountError: 'No pudimos calcular los destinatarios. Reintentá para poder enviarla.',
+    retryCount: 'Reintentar conteo',
     confirm: 'Enviar novedad',
     sending: 'Enviando...',
     back: 'Volver',
     sent: (sent: number, failed: number) => `Novedad publicada. Push: ${sent} enviados, ${failed} fallidos.`,
+    sentNotRecorded: (sent: number, failed: number) =>
+      `Novedad publicada. Push: ${sent} enviados, ${failed} fallidos. No se pudo guardar ese resultado en el historial.`,
     sentWithoutPush: 'Novedad publicada. El push no se pudo enviar; igual se ve en el inicio.',
     errors: {
       validation: 'Revisá los datos de la novedad.',

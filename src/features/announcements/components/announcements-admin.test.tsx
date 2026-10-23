@@ -80,6 +80,7 @@ describe('T-414: panel de novedades del admin', () => {
         announcementId: '90000000-0000-4000-8000-000000000001',
         visibleUntil: '2026-10-29T12:00:00.000000Z',
         push: { targets: 6, sent: 5, failed: 1 },
+        pushRecorded: true,
       },
     });
     render(<AnnouncementsAdmin />);
@@ -112,21 +113,60 @@ describe('T-414: panel de novedades del admin', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('sin push registrado, avisa que igual se ve en el inicio', async () => {
-    mocks.count.mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+  it('PR542-H04: si el conteo falla, no se puede enviar hasta reintentarlo', async () => {
+    mocks.count
+      .mockResolvedValueOnce({ ok: false, code: 'INTERNAL_ERROR' })
+      .mockResolvedValueOnce({ ok: true, data: { recipients: 2, pushRecipients: 1 } });
     mocks.create.mockResolvedValue({
       ok: true,
-      data: { announcementId: '90000000-0000-4000-8000-000000000001', visibleUntil: '2026-10-29T12:00:00.000000Z', push: null },
+      data: {
+        announcementId: '90000000-0000-4000-8000-000000000001',
+        visibleUntil: '2026-10-29T12:00:00.000000Z',
+        push: null,
+        pushRecorded: false,
+      },
     });
     render(<AnnouncementsAdmin />);
     fill('Título', 'Promo');
     fill('Texto', 'Texto');
     fireEvent.click(screen.getByRole('button', { name: 'Revisar y enviar' }));
     const dialog = await screen.findByRole('dialog');
-    expect(await within(dialog).findByText('No pudimos calcular los destinatarios. Igual podés enviarla.')).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar novedad' }));
+    expect(await within(dialog).findByText('No pudimos calcular los destinatarios. Reintentá para poder enviarla.')).toBeTruthy();
+    expect((within(dialog).getByRole('button', { name: 'Enviar novedad' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reintentar conteo' }));
+    expect(await within(dialog).findByText(/La van a ver 2 cuentas/)).toBeTruthy();
+    const confirm = within(dialog).getByRole('button', { name: 'Enviar novedad' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
     await waitFor(() =>
       expect(mocks.success).toHaveBeenCalledWith('Novedad publicada. El push no se pudo enviar; igual se ve en el inicio.')
+    );
+  });
+
+  it('PR542-H02: si el resultado del push no quedó registrado, lo avisa', async () => {
+    mocks.count.mockResolvedValue({ ok: true, data: { recipients: 2, pushRecipients: 1 } });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      data: {
+        announcementId: '90000000-0000-4000-8000-000000000001',
+        visibleUntil: '2026-10-29T12:00:00.000000Z',
+        push: { targets: 1, sent: 1, failed: 0 },
+        pushRecorded: false,
+      },
+    });
+    render(<AnnouncementsAdmin />);
+    fill('Título', 'Promo');
+    fill('Texto', 'Texto');
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar y enviar' }));
+    const dialog = await screen.findByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: 'Enviar novedad' }) as HTMLButtonElement;
+    await waitFor(() => expect(confirm.disabled).toBe(false));
+    fireEvent.click(confirm);
+    await waitFor(() =>
+      expect(mocks.success).toHaveBeenCalledWith(
+        'Novedad publicada. Push: 1 enviados, 0 fallidos. No se pudo guardar ese resultado en el historial.'
+      )
     );
   });
 
