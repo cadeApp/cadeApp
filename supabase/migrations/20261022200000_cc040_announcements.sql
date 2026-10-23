@@ -290,7 +290,6 @@ declare
   v_total integer;
   v_last jsonb;
 begin
-  perform app_private.assert_admin_aal2();
 
   if v_limit < 1 or v_limit > 50 or (p_cursor_created_at is null) <> (p_cursor_id is null) then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
