@@ -129,4 +129,25 @@ describe('PR551: el indicador lee datos nuevos (polling y refresco al volver)', 
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('4 repartidores conectados ahora'));
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('si un refresco falla después de mostrar un número, la query queda en error y el indicador desaparece', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'DATABASE_ERROR' }), { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <OnlineCouriersIndicator initial={{ count: 2, windowMinutes: 10 }} />
+      </QueryClientProvider>
+    );
+    expect(screen.getByRole('status').textContent).toContain('2 repartidores conectados ahora');
+
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(client.getQueryState(['requests', 'online-couriers'])?.status).toBe('error'));
+    expect(client.getQueryData(['requests', 'online-couriers'])).toEqual({ count: 2, windowMinutes: 10 });
+    expect(container.textContent).toBe('');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

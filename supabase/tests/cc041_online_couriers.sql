@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(30);
+select plan(36);
 
 -- CC-041 (T-415): presencia de repartidores y conteo de conectados. Privilegios, autorización, señal con now(),
 -- conteo (aprobados, disponibles, consentimiento activo, señal dentro de la ventana) y el parámetro nuevo.
@@ -13,7 +13,8 @@ $$;
 -- 1 admin · 2 comercio · 3 comercio sin consentimiento activo
 -- 4 repartidor A (aprobado, disponible) · 5 repartidor B (aprobado, disponible, señal vieja)
 -- 6 repartidor C (aprobado, no disponible) · 7 repartidor suspendido · 8 repartidor pendiente
--- 9 repartidor aprobado sin consentimiento activo
+-- 9 repartidor aprobado sin consentimiento activo · 10 repartidor aprobado, disponible y activo que nunca mandó señal
+-- 11 comercio con consentimiento activo pero sin fila en merchants
 
 create function pg_temp.act_as(actor_id uuid, aal text default 'aal1')
 returns void language plpgsql as $$
@@ -79,14 +80,20 @@ values
   (pg_temp.u(6), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc041.cc@example.test', 'pwd', '{"role":"courier"}'::jsonb),
   (pg_temp.u(7), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc041.cs@example.test', 'pwd', '{"role":"courier"}'::jsonb),
   (pg_temp.u(8), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc041.cp@example.test', 'pwd', '{"role":"courier"}'::jsonb),
-  (pg_temp.u(9), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc041.cn@example.test', 'pwd', '{"role":"courier"}'::jsonb);
+  (pg_temp.u(9), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc041.cn@example.test', 'pwd', '{"role":"courier"}'::jsonb),
+  (pg_temp.u(10), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc041.cx@example.test', 'pwd', '{"role":"courier"}'::jsonb),
+  (pg_temp.u(11), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc041.mx@example.test', 'pwd', '{"role":"merchant"}'::jsonb);
 
 update public.profiles set consent_status = 'active'
-where id in (pg_temp.u(1), pg_temp.u(2), pg_temp.u(4), pg_temp.u(5), pg_temp.u(6), pg_temp.u(7), pg_temp.u(8));
+where id in (
+  pg_temp.u(1), pg_temp.u(2), pg_temp.u(4), pg_temp.u(5), pg_temp.u(6), pg_temp.u(7), pg_temp.u(8), pg_temp.u(10), pg_temp.u(11)
+);
 update public.profiles set role = 'admin' where id = pg_temp.u(1);
-update public.couriers set status = 'approved', available = true where profile_id in (pg_temp.u(4), pg_temp.u(5), pg_temp.u(9));
+update public.couriers set status = 'approved', available = true
+where profile_id in (pg_temp.u(4), pg_temp.u(5), pg_temp.u(9), pg_temp.u(10));
 update public.couriers set status = 'approved', available = false where profile_id = pg_temp.u(6);
 update public.couriers set status = 'suspended', available = false where profile_id = pg_temp.u(7);
+delete from public.merchants where profile_id = pg_temp.u(11);
 
 create temp table baseline as select ((pg_temp.online())->'data'->>'count')::integer as n;
 
@@ -97,6 +104,24 @@ select ok(
   (select relrowsecurity from pg_class where oid = 'public.courier_presence'::regclass)
   and exists (select 1 from pg_policies where tablename = 'courier_presence' and policyname = 'courier_presence_no_client_access'),
   'courier_presence tiene RLS y la policy deny-all'
+);
+-- PR551-H03: la policy es restrictiva, para todo comando, para anon y authenticated, y niega en USING y WITH CHECK.
+select ok(
+  exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'courier_presence' and policyname = 'courier_presence_no_client_access'
+      and permissive = 'RESTRICTIVE' and cmd = 'ALL'
+      and roles @> array['anon', 'authenticated']::name[] and roles <@ array['anon', 'authenticated']::name[]
+      and qual = 'false' and with_check = 'false'
+  ),
+  'la policy de courier_presence es restrictiva, ALL, anon/authenticated, USING(false) y WITH CHECK(false)'
+);
+select ok(
+  (select bool_and(p.prosecdef and p.proconfig @> array['search_path=public, pg_temp'])
+   from pg_proc p
+   where p.oid in ('public.courier_heartbeat()'::regprocedure, 'public.get_online_couriers_count()'::regprocedure))
+  and (select provolatile from pg_proc where oid = 'public.get_online_couriers_count()'::regprocedure) = 's',
+  'las dos RPC son SECURITY DEFINER con search_path fijo y el conteo es STABLE'
 );
 select ok(
   not exists (
@@ -147,6 +172,11 @@ select is(
 select is(pg_temp.err(pg_temp.online(pg_temp.u(4))), 'UNAUTHORIZED_ACTOR', 'conteo de un repartidor');
 select is(pg_temp.err(pg_temp.online(pg_temp.u(3))), 'UNAUTHORIZED_ACTOR', 'conteo de un comercio sin consentimiento activo');
 select is(pg_temp.err(pg_temp.online(pg_temp.u(1))), 'UNAUTHORIZED_ACTOR', 'conteo del admin');
+select is(
+  pg_temp.err(pg_temp.online(pg_temp.u(11))),
+  'UNAUTHORIZED_ACTOR',
+  'conteo de un perfil comercio activo sin fila en merchants'
+);
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- Señal
@@ -188,6 +218,18 @@ select is(
   jsonb_build_object('count', (select n from baseline) + 1, 'windowMinutes', 10),
   'solo cuenta al aprobado disponible con señal reciente'
 );
+select ok(
+  not exists (select 1 from public.courier_presence where courier_id = pg_temp.u(10)),
+  'un aprobado disponible y activo sin señal no tiene presencia (y el conteo anterior no lo incluye)'
+);
+-- PR551-H03: la señal en el borde exacto de la ventana ya no cuenta.
+update public.courier_presence set last_seen_at = now() - interval '10 minutes' where courier_id = pg_temp.u(5);
+select is(
+  ((pg_temp.online())->'data'->>'count')::integer,
+  (select n from baseline) + 1,
+  'una señal de exactamente 10 minutos con ventana de 10 ya no cuenta'
+);
+update public.courier_presence set last_seen_at = now() - interval '20 minutes' where courier_id = pg_temp.u(5);
 -- PR551: un suspendido y un pendiente con presencia reciente y «Disponible» prendido no cuentan.
 insert into public.courier_presence (courier_id, last_seen_at) values (pg_temp.u(7), now()), (pg_temp.u(8), now());
 update public.couriers set available = true where profile_id in (pg_temp.u(7), pg_temp.u(8));
@@ -225,6 +267,16 @@ select ok(
   pg_temp.err(pg_temp.setting('courier_online_window_minutes', '2.5')) = 'INVALID_SETTING_VALUE'
   and pg_temp.err(pg_temp.setting('courier_online_window_minutes', '"10"')) = 'INVALID_SETTING_VALUE',
   'la ventana es un número entero'
+);
+-- La lectura del valor va en otra sentencia: en la misma vería la foto previa a la RPC.
+create temp table window_edges as
+select
+  pg_temp.err(pg_temp.setting('courier_online_window_minutes', '2')) as e2,
+  pg_temp.err(pg_temp.setting('courier_online_window_minutes', '60')) as e60;
+select ok(
+  (select e2 is null and e60 is null from window_edges)
+  and (select value from public.platform_settings where key = 'courier_online_window_minutes') = '60'::jsonb,
+  'los extremos 2 y 60 son válidos'
 );
 select is(pg_temp.err(pg_temp.setting('min_offer_ars', '1500')), null, 'las demás claves siguen funcionando');
 select is(pg_temp.err(pg_temp.setting('clave_inexistente', '1')), 'INVALID_SETTING_KEY', 'una clave desconocida se rechaza');

@@ -118,20 +118,54 @@ describe('CC-041: el fake se comporta como la base', () => {
     expect(await t.count()).toEqual({ count: 0, windowMinutes: 30 });
   });
 
-  it('PR551: un repartidor que pierde el consentimiento activo deja de contar, como en la base', async () => {
+  it('PR551-H01: un repartidor que pierde el consentimiento activo deja de contar y vuelve al recuperarlo', async () => {
+    for (const lost of ['pending', 'reconsent_required'] as const) {
+      const t = setup();
+      t.asCourier(COURIER_A);
+      expect((await t.fake.courier_heartbeat({})).ok).toBe(true);
+      expect(await t.count()).toEqual({ count: 1, windowMinutes: 10 });
+
+      // Solo cambia el consentimiento del repartidor; el comercio que consulta sigue activo.
+      t.fake.setActor({ userId: COURIER_A, role: 'courier', aal: 'aal1', consentStatus: lost });
+      expect(await t.count(), lost).toEqual({ count: 0, windowMinutes: 10 });
+
+      t.asCourier(COURIER_A);
+      expect(await t.count(), lost).toEqual({ count: 1, windowMinutes: 10 });
+    }
+  });
+
+  it('PR551-H01: un suspendido con señal reciente, disponible y consentimiento activo no cuenta', async () => {
     const t = setup();
     t.asCourier(COURIER_A);
-    await t.fake.courier_heartbeat({});
-    t.asCourier(COURIER_B);
-    await t.fake.courier_heartbeat({});
-    expect(await t.count()).toEqual({ count: 2, windowMinutes: 10 });
-
-    t.fake.setActor({ userId: COURIER_A, role: 'courier', aal: 'aal1', consentStatus: 'reconsent_required' });
+    expect((await t.fake.courier_heartbeat({})).ok).toBe(true);
     expect(await t.count()).toEqual({ count: 1, windowMinutes: 10 });
-    t.fake.setActor({ userId: COURIER_B, role: 'courier', aal: 'aal1', consentStatus: 'pending' });
+
+    t.asCourier(COURIER_A, 'suspended', true);
+    expect(await t.count()).toEqual({ count: 0, windowMinutes: 10 });
+
+    t.asCourier(COURIER_A, 'approved', true);
+    expect(await t.count()).toEqual({ count: 1, windowMinutes: 10 });
+  });
+
+  it('PR551-H01: una señal nueva renueva la hora de una vieja fuera de la ventana', async () => {
+    const t = setup();
+    t.asCourier(COURIER_A);
+    expect((await t.fake.courier_heartbeat({})).ok).toBe(true);
+    clock += 15 * 60 * 1000;
     expect(await t.count()).toEqual({ count: 0, windowMinutes: 10 });
 
     t.asCourier(COURIER_A);
+    expect(await t.fake.courier_heartbeat({})).toEqual({ ok: true, data: { lastSeenAt: new Date(clock).toISOString() } });
     expect(await t.count()).toEqual({ count: 1, windowMinutes: 10 });
+  });
+
+  it('PR551-H01: el borde exacto de la ventana ya no cuenta', async () => {
+    const t = setup();
+    t.asCourier(COURIER_A);
+    expect((await t.fake.courier_heartbeat({})).ok).toBe(true);
+    clock += 10 * 60 * 1000 - 1;
+    expect(await t.count()).toEqual({ count: 1, windowMinutes: 10 });
+    clock += 1;
+    expect(await t.count()).toEqual({ count: 0, windowMinutes: 10 });
   });
 });
