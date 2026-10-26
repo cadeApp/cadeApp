@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const exampleItemSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   name: z.string().min(1, 'El nombre es obligatorio'),
   createdAt: z.string().datetime(),
 });

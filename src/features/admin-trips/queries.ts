@@ -119,7 +119,7 @@ function requestCode(id: string): string {
  * schema estricto sin datos del destinatario.
  */
 export async function getAdminTripDetail(requestId: string): Promise<AdminTripDetail | null> {
-  if (!z.string().uuid().safeParse(requestId).success) {
+  if (!z.string().guid().safeParse(requestId).success) {
     return null;
   }
 

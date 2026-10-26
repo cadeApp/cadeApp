@@ -19,7 +19,7 @@ import {
   vehicleTypeSchema,
 } from './schemas';
 
-export const uuidSchema = z.string().uuid();
+export const uuidSchema = z.string().guid();
 
 export const isoTimestampSchema = z.string().datetime({ offset: true });
 

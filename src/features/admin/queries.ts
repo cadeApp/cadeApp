@@ -320,7 +320,7 @@ interface MerchantRow {
 const merchantDeliveredCountsSchema = z.array(
   z
     .object({
-      merchant_id: z.string().uuid(),
+      merchant_id: z.string().guid(),
       delivered_count: z.number().int().nonnegative(),
     })
     .strict()
@@ -654,7 +654,7 @@ export async function getPublicationPlans(
 
 const publicationPlansParamsSchema = z.object({
   afterSort: z.coerce.number().int().min(0).max(1000),
-  afterId: z.string().uuid(),
+  afterId: z.string().guid(),
 });
 
 function firstParam(value: string | string[] | undefined): string | undefined {

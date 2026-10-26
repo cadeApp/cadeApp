@@ -9,7 +9,7 @@ import {
 export { publicDropSummarySchema, type PublicDropSummary };
 
 export const liveAvailableRequestItemSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   pickupZoneName: z.string().min(1),
   dropoffZoneName: z.string().min(1),
   approxDistanceKm: z.string().nullable(),
@@ -29,8 +29,8 @@ export const liveAvailableRequestItemSchema = z.object({
 export type LiveAvailableRequestItem = z.infer<typeof liveAvailableRequestItemSchema>;
 
 export const liveMerchantOfferItemSchema = z.object({
-  id: z.string().uuid(),
-  courierId: z.string().uuid(),
+  id: z.string().guid(),
+  courierId: z.string().guid(),
   courierName: z.string().min(1),
   vehicleType: z.string().nullable(),
   amountArs: z.number().int().positive(),
@@ -46,7 +46,7 @@ export const liveMerchantOfferItemSchema = z.object({
 export type LiveMerchantOfferItem = z.infer<typeof liveMerchantOfferItemSchema>;
 
 export const liveTripStateSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   status: z.enum(['matched', 'in_transit', 'delivered']),
 });
 
@@ -54,7 +54,7 @@ export type LiveTripState = z.infer<typeof liveTripStateSchema>;
 
 export const livePageCursorSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
-  id: z.string().uuid(),
+  id: z.string().guid(),
 });
 
 export type LivePageCursor = z.infer<typeof livePageCursorSchema>;
