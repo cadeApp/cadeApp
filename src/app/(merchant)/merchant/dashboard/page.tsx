@@ -48,9 +48,12 @@ export default async function MerchantDashboardPage() {
     <div className="space-y-4 px-4 py-4">
       {/* T-414: la novedad vigente va antes de las solicitudes. */}
       {announcement ? <AnnouncementBanner key={announcement.id} announcement={announcement} /> : null}
-      {/* T-415: repartidores conectados ahora, para decidir si conviene publicar. */}
-      <OnlineCouriersIndicator initial={onlineCouriers.ok ? onlineCouriers.data : null} />
-      <MerchantRequestsList requests={requests} metrics={metrics} />
+      {/* T-415 (diseño T-417): repartidores conectados ahora, como una métrica más. */}
+      <MerchantRequestsList
+        requests={requests}
+        metrics={metrics}
+        extraMetric={<OnlineCouriersIndicator initial={onlineCouriers.ok ? onlineCouriers.data : null} />}
+      />
     </div>
   );
 }

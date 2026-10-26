@@ -80,17 +80,24 @@ describe('T-415: repartidores conectados en /merchant/dashboard', () => {
   });
   afterEach(cleanup);
 
-  it('lee el conteo en el servidor y se lo pasa al indicador', async () => {
+  // T-417: la tarjeta va como métrica extra de la lista, no suelta en la página.
+  function extraMetricProps(): unknown {
+    const listProps = mocks.MerchantRequestsList.mock.calls[0]?.[0] as { extraMetric?: React.ReactElement } | undefined;
+    expect(listProps?.extraMetric?.type).toBe(mocks.OnlineCouriersIndicator);
+    return listProps?.extraMetric?.props;
+  }
+
+  it('lee el conteo en el servidor y se lo pasa a la tarjeta de la lista', async () => {
     mocks.getOnlineCouriersLiveServer.mockResolvedValue({ ok: true, data: { count: 2, windowMinutes: 10 } });
     render(await MerchantDashboardPage());
     expect(mocks.getOnlineCouriersLiveServer).toHaveBeenCalledTimes(1);
-    expect(mocks.OnlineCouriersIndicator.mock.calls[0]?.[0]).toMatchObject({ initial: { count: 2, windowMinutes: 10 } });
+    expect(extraMetricProps()).toMatchObject({ initial: { count: 2, windowMinutes: 10 } });
   });
 
-  it('si la lectura del servidor falla, el indicador arranca sin dato', async () => {
+  it('si la lectura del servidor falla, la tarjeta arranca sin dato', async () => {
     mocks.getOnlineCouriersLiveServer.mockResolvedValue({ ok: false, error: 'DATABASE_ERROR', status: 500 });
     render(await MerchantDashboardPage());
-    expect(mocks.OnlineCouriersIndicator.mock.calls[0]?.[0]).toMatchObject({ initial: null });
+    expect(extraMetricProps()).toMatchObject({ initial: null });
     expect(mocks.MerchantRequestsList).toHaveBeenCalledTimes(1);
   });
 });
