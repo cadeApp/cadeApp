@@ -24,10 +24,17 @@ describe('T-416: semántica de los contratos con Zod 4', () => {
   });
 
   it('las fechas que devuelven Postgres y JS siguen siendo válidas y las que no tienen zona, no', () => {
-    for (const value of ['2026-10-26T10:00:00.123456+00:00', '2026-10-26T10:00:00-03:00', new Date().toISOString()]) {
+    const valid = [
+      '2026-10-26T10:00:00.123456+00:00',
+      '2026-10-26T10:00:00-03:00',
+      '2026-10-26T10:00:00+03:00',
+      new Date().toISOString(),
+    ];
+    for (const value of valid) {
       expect(isoTimestampSchema.safeParse(value).success, value).toBe(true);
     }
-    for (const value of ['2026-10-26T10:00:00', '2026-10-26 10:00:00+00', 'ayer']) {
+    // D01 = A (PR555): el offset compacto sin dos puntos, que Zod 3 aceptaba, se rechaza.
+    for (const value of ['2026-10-26T10:00:00', '2026-10-26 10:00:00+00', '2026-10-26T10:00:00+0300', 'ayer']) {
       expect(isoTimestampSchema.safeParse(value).success, value).toBe(false);
     }
   });
