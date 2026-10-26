@@ -699,6 +699,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   let announcementSeq = 0;
   // CC-041: última señal de cada repartidor, en ms (la pone el fake con su reloj, como la base con now()).
   const courierPresence = new Map<string, number>();
+  // PR551: último consentimiento conocido de cada perfil que fue actor (el conteo excluye a quien no está activo).
+  const profileConsent = new Map<string, ConsentStatus>();
 
   // CC-040: público de una novedad. El fake no modela el consentimiento de cada perfil: todo comercio con alta y todo
   // repartidor aprobado cuenta como activo (el consentimiento del actor sí se valida en cada RPC).
@@ -1350,6 +1352,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   }
 
   function syncActorRecords(currentActor: FakeActorContext) {
+    if (currentActor.consentStatus) profileConsent.set(currentActor.userId, currentActor.consentStatus);
     if (currentActor.role === 'courier') {
       putCourier({
         courierId: currentActor.userId,
@@ -3726,8 +3729,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       }),
 
     // CC-039: planes activos (sort, id; hasta 50) sin código, precio del crédito suelto y descuento si corresponde.
-    // CC-041: presencia del repartidor aprobado y conteo de conectados para el comercio. El fake no modela el
-    // consentimiento de cada repartidor: cuenta a todos los aprobados y disponibles con señal dentro de la ventana.
+    // CC-041: presencia del repartidor aprobado y conteo de conectados para el comercio. El consentimiento de cada
+    // repartidor es el último que tuvo como actor (sin dato, activo), igual que el join con profiles en la base.
     courier_heartbeat: (rawInput) =>
       executeRpc('courier_heartbeat', rawInput, false, () => {
         if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
@@ -3747,7 +3750,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         let count = 0;
         courierPresence.forEach((lastSeenMs, courierId) => {
           const courier = couriers.get(courierId);
-          if (courier?.status === 'approved' && courier.available && lastSeenMs > since) count += 1;
+          const consentActive = (profileConsent.get(courierId) ?? 'active') === 'active';
+          if (courier?.status === 'approved' && courier.available && consentActive && lastSeenMs > since) count += 1;
         });
         return ok({ count, windowMinutes });
       }),

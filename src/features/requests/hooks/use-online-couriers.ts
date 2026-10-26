@@ -26,6 +26,8 @@ export function onlineCouriersQueryOptions(initial: LiveOnlineCouriersResponse |
     queryKey: onlineCouriersQueryKey,
     queryFn: fetchOnlineCouriers,
     refetchInterval: ONLINE_COURIERS_REFETCH_MS,
+    // PR551: el dato inicial del servidor vale un minuto; sin esto, la query lo da por viejo y lo vuelve a leer al montar.
+    staleTime: ONLINE_COURIERS_REFETCH_MS,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: 'always' as const,
     refetchOnReconnect: 'always' as const,

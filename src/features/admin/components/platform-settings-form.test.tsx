@@ -5,6 +5,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PlatformSettingsForm } from './platform-settings-form';
 import { updatePlatformSettingAction } from '../actions';
 import type { PlatformSettingsSnapshot } from '../types';
+import { courierOnlineWindowFormSchema } from '../schemas';
+import { adminUpdateSettingInputSchema } from '@/domain';
 
 const refresh = vi.fn();
 
@@ -223,5 +225,32 @@ describe('T-369 / CC-029: parámetros de créditos, arrastre y descuento', () =>
     fireEvent.click(screen.getByRole('button', { name: /guardar arrastre inicial/i }));
     expect(await screen.findByText('El valor ingresado no es válido para este parámetro.')).toBeTruthy();
     expect(updatePlatformSettingAction).toHaveBeenCalledWith({ key: 'carryover_base_pct', value: 40 });
+  });
+});
+
+describe('PR551: ventana de repartidores conectados', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('el formulario arranca con el valor guardado', () => {
+    render(<PlatformSettingsForm settings={{ ...settings, courierOnlineWindowMinutes: 15 }} />);
+    expect((screen.getByLabelText(/ventana de repartidores conectados/i) as HTMLInputElement).value).toBe('15');
+  });
+
+  it('rechaza valores fuera de 2 a 60 sin llamar a la acción', async () => {
+    render(<PlatformSettingsForm settings={settings} />);
+    for (const value of ['1', '61']) {
+      fireEvent.change(screen.getByLabelText(/ventana de repartidores conectados/i), { target: { value } });
+      fireEvent.click(screen.getByRole('button', { name: /guardar ventana de repartidores conectados/i }));
+      expect(await screen.findByText('Ingresá una cantidad entera de minutos entre 2 y 60.')).toBeTruthy();
+    }
+    expect(updatePlatformSettingAction).not.toHaveBeenCalled();
+  });
+
+  it('el formulario acepta exactamente lo que acepta el contrato de la RPC', () => {
+    for (const value of [1, 2, 10, 60, 61]) {
+      const form = courierOnlineWindowFormSchema.safeParse({ value: String(value) }).success;
+      const contract = adminUpdateSettingInputSchema.safeParse({ key: 'courier_online_window_minutes', value }).success;
+      expect(form).toBe(contract);
+    }
   });
 });

@@ -809,6 +809,13 @@ describe('T-123: getPlatformSettings (A04)', () => {
     await expect(getPlatformSettings()).rejects.toThrow(/carryover_cap_pct/);
   });
 
+  it('PR551: lee la ventana de repartidores conectados guardada, no un valor fijo', async () => {
+    mockClient({
+      platform_settings: { data: [...rows, { key: 'courier_online_window_minutes', value: 15 }], error: null },
+    });
+    await expect(getPlatformSettings()).resolves.toMatchObject({ courierOnlineWindowMinutes: 15 });
+  });
+
   it('si falta el piso no inventa 1000: falla', async () => {
     mockClient({
       platform_settings: { data: rows.filter((row) => row.key !== 'min_offer_ars'), error: null },

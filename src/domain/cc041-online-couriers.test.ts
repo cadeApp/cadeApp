@@ -117,4 +117,21 @@ describe('CC-041: el fake se comporta como la base', () => {
     clock += 31 * 60 * 1000;
     expect(await t.count()).toEqual({ count: 0, windowMinutes: 30 });
   });
+
+  it('PR551: un repartidor que pierde el consentimiento activo deja de contar, como en la base', async () => {
+    const t = setup();
+    t.asCourier(COURIER_A);
+    await t.fake.courier_heartbeat({});
+    t.asCourier(COURIER_B);
+    await t.fake.courier_heartbeat({});
+    expect(await t.count()).toEqual({ count: 2, windowMinutes: 10 });
+
+    t.fake.setActor({ userId: COURIER_A, role: 'courier', aal: 'aal1', consentStatus: 'reconsent_required' });
+    expect(await t.count()).toEqual({ count: 1, windowMinutes: 10 });
+    t.fake.setActor({ userId: COURIER_B, role: 'courier', aal: 'aal1', consentStatus: 'pending' });
+    expect(await t.count()).toEqual({ count: 0, windowMinutes: 10 });
+
+    t.asCourier(COURIER_A);
+    expect(await t.count()).toEqual({ count: 1, windowMinutes: 10 });
+  });
 });

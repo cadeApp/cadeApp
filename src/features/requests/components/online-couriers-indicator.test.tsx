@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { OnlineCouriersIndicator } from './online-couriers-indicator';
 import { ONLINE_COURIERS_REFETCH_MS, onlineCouriersQueryOptions } from '../hooks/use-online-couriers';
 
@@ -78,5 +78,55 @@ describe('T-415: repartidores conectados ahora', () => {
     expect(onlineCouriersQueryOptions({ count: 1, windowMinutes: 10 })).toMatchObject({
       initialData: { count: 1, windowMinutes: 10 },
     });
+  });
+});
+
+describe('PR551: el indicador lee datos nuevos (polling y refresco al volver)', () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    focusManager.setFocused(undefined);
+  });
+
+  function sequenceFetch(...counts: number[]) {
+    const fetchMock = vi.fn();
+    for (const count of counts) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ count, windowMinutes: 10 }), { status: 200 }));
+    }
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('cada minuto vuelve a leer y muestra el número nuevo', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetchMock = sequenceFetch(5, 7);
+    renderIndicator({ initial: { count: 2, windowMinutes: 10 } });
+    expect(screen.getByRole('status').textContent).toContain('2 repartidores conectados ahora');
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ONLINE_COURIERS_REFETCH_MS);
+    });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('5 repartidores conectados ahora'));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ONLINE_COURIERS_REFETCH_MS);
+    });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('7 repartidores conectados ahora'));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('al volver a la pantalla lee enseguida, sin esperar el minuto', async () => {
+    const fetchMock = sequenceFetch(4);
+    renderIndicator({ initial: { count: 2, windowMinutes: 10 } });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('4 repartidores conectados ahora'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

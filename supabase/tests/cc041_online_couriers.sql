@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(28);
+select plan(30);
 
 -- CC-041 (T-415): presencia de repartidores y conteo de conectados. Privilegios, autorización, señal con now(),
 -- conteo (aprobados, disponibles, consentimiento activo, señal dentro de la ventana) y el parámetro nuevo.
@@ -166,6 +166,14 @@ select ok(
   and (select count(*) from public.courier_presence where courier_id = pg_temp.u(4)) = 1,
   'repetir la señal es idempotente'
 );
+-- PR551: renovar reemplaza la hora vieja (un upsert que conservara la fila previa fallaría acá).
+update public.courier_presence set last_seen_at = now() - interval '30 minutes' where courier_id = pg_temp.u(4);
+select pg_temp.beat(pg_temp.u(4));
+select is(
+  (select last_seen_at from public.courier_presence where courier_id = pg_temp.u(4)),
+  now(),
+  'renovar la señal reemplaza la hora vieja por now()'
+);
 
 -- B con señal de hace 20 minutos y C con señal pero sin «Disponible».
 select pg_temp.beat(pg_temp.u(5));
@@ -179,6 +187,14 @@ select is(
   (pg_temp.online())->'data',
   jsonb_build_object('count', (select n from baseline) + 1, 'windowMinutes', 10),
   'solo cuenta al aprobado disponible con señal reciente'
+);
+-- PR551: un suspendido y un pendiente con presencia reciente y «Disponible» prendido no cuentan.
+insert into public.courier_presence (courier_id, last_seen_at) values (pg_temp.u(7), now()), (pg_temp.u(8), now());
+update public.couriers set available = true where profile_id in (pg_temp.u(7), pg_temp.u(8));
+select is(
+  ((pg_temp.online())->'data'->>'count')::integer,
+  (select n from baseline) + 1,
+  'un suspendido o un pendiente con señal reciente no cuentan'
 );
 select is(
   (select array_agg(k order by k) from jsonb_object_keys((pg_temp.online())->'data') k),
