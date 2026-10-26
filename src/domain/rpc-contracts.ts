@@ -781,6 +781,11 @@ export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
     key: z.literal('loose_credit_reference_price_ars'),
     value: z.number().int().min(0).max(100_000_000),
   }),
+  // CC-041 (T-415)
+  z.object({
+    key: z.literal('courier_online_window_minutes'),
+    value: z.number().int().min(2).max(60),
+  }),
 ]);
 export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
@@ -1205,6 +1210,18 @@ export const dismissAnnouncementOutputSchema = z.object({ dismissed: z.literal(t
 
 export const setPromotionsOptInInputSchema = z.object({ enabled: z.boolean() }).strict();
 export const setPromotionsOptInOutputSchema = z.object({ enabled: z.boolean() }).strict();
+
+// CC-041: presencia del repartidor (la hora la pone la base) y conteo agregado de conectados para el comercio.
+export const courierHeartbeatInputSchema = z.object({}).strict();
+export const courierHeartbeatOutputSchema = z.object({ lastSeenAt: isoTimestampSchema }).strict();
+export const getOnlineCouriersCountInputSchema = z.object({}).strict();
+export const getOnlineCouriersCountOutputSchema = z
+  .object({
+    count: z.number().int().nonnegative(),
+    windowMinutes: z.number().int().min(2).max(60),
+  })
+  .strict();
+export type OnlineCouriersCount = z.infer<typeof getOnlineCouriersCountOutputSchema>;
 
 export const RPC_CONTRACTS = {
   update_my_merchant_profile: {
@@ -1902,6 +1919,20 @@ export const RPC_CONTRACTS = {
       'NOT_FOUND',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  courier_heartbeat: {
+    inputSchema: courierHeartbeatInputSchema,
+    outputSchema: courierHeartbeatOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'COURIER_NOT_APPROVED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  get_online_couriers_count: {
+    inputSchema: getOnlineCouriersCountInputSchema,
+    outputSchema: getOnlineCouriersCountOutputSchema,
+    errorCodes: ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR'] as const satisfies readonly DomainErrorCode[],
+  },
   set_promotions_opt_in: {
     inputSchema: setPromotionsOptInInputSchema,
     outputSchema: setPromotionsOptInOutputSchema,
@@ -1982,6 +2013,8 @@ export const ALL_RPC_NAMES = [
   'get_my_announcement',
   'dismiss_announcement',
   'set_promotions_opt_in',
+  'courier_heartbeat',
+  'get_online_couriers_count',
   'get_request_cancellation_history',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 

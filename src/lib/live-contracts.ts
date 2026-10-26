@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
-import { publicDropSummarySchema, type PublicDropSummary } from '@/domain/rpc-contracts';
+import {
+  getOnlineCouriersCountOutputSchema,
+  publicDropSummarySchema,
+  type PublicDropSummary,
+} from '@/domain/rpc-contracts';
 
 export { publicDropSummarySchema, type PublicDropSummary };
 
@@ -80,3 +84,7 @@ export const liveErrorResponseSchema = z.object({
 });
 
 export type LiveErrorResponse = z.infer<typeof liveErrorResponseSchema>;
+
+// CC-041 (T-415): conteo agregado de repartidores conectados para el comercio (mismo contrato que la RPC).
+export const liveOnlineCouriersResponseSchema = getOnlineCouriersCountOutputSchema;
+export type LiveOnlineCouriersResponse = z.infer<typeof liveOnlineCouriersResponseSchema>;

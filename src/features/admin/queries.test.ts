@@ -783,6 +783,7 @@ describe('T-123: getPlatformSettings (A04)', () => {
       pilotTermsVersion: '1.1',
       subscriptionGraceDays: 3,
       maxDropsPerRequest: 5,
+      courierOnlineWindowMinutes: 10,
       publicationDropsPerCredit: 2,
       carryoverBasePct: 5,
       carryoverStepPct: 5,

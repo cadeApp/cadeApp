@@ -135,6 +135,8 @@ export const PLATFORM_SETTING_KEYS = [
   'carryover_cap_pct',
   'launch_discount_pct',
   'loose_credit_reference_price_ars',
+  // CC-041 (T-415): ventana de repartidores conectados, en minutos
+  'courier_online_window_minutes',
 ] as const;
 export type PlatformSettingKey = (typeof PLATFORM_SETTING_KEYS)[number];
 export const platformSettingKeySchema = z.enum(PLATFORM_SETTING_KEYS);

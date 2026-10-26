@@ -14,6 +14,7 @@ import { getDomainErrorMessage } from '@/lib/error-messages';
 import { updatePlatformSettingAction } from '../actions';
 import { ADMIN_COPY } from '../copy';
 import {
+  courierOnlineWindowFormSchema,
   dropsPerCreditFormSchema,
   graceDaysFormSchema,
   maxDropsFormSchema,
@@ -116,6 +117,12 @@ export function PlatformSettingsForm({ settings }: PlatformSettingsFormProps) {
         schema={maxDropsFormSchema}
         initialValue={String(settings.maxDropsPerRequest)}
         toInput={(value) => ({ key: 'max_drops_per_request', value: Number(value) })}
+      />
+      <ValueSettingRow
+        settingKey="courier_online_window_minutes"
+        schema={courierOnlineWindowFormSchema}
+        initialValue={String(settings.courierOnlineWindowMinutes)}
+        toInput={(value) => ({ key: 'courier_online_window_minutes', value: Number(value) })}
       />
 
       <section aria-labelledby="settings-credits-title" className="space-y-4 pt-2">

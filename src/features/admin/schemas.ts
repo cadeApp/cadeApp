@@ -204,6 +204,10 @@ const boundedIntegerTextSchema = (min: number, max: number, message: string) =>
 export const dropsPerCreditFormSchema = z.object({
   value: boundedIntegerTextSchema(1, 1000, 'Ingresá una cantidad entera de entregas entre 1 y 1000.'),
 });
+// CC-041 (T-415): ventana de repartidores conectados, mismo rango que `admin_update_setting`.
+export const courierOnlineWindowFormSchema = z.object({
+  value: boundedIntegerTextSchema(2, 60, 'Ingresá una cantidad entera de minutos entre 2 y 60.'),
+});
 export const percentFormSchema = z.object({
   value: boundedIntegerTextSchema(0, 100, 'Ingresá un porcentaje entero entre 0 y 100.'),
 });

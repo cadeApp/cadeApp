@@ -23,6 +23,7 @@ const settings: PlatformSettingsSnapshot = {
   pilotTermsVersion: '1.1',
   subscriptionGraceDays: 3,
   maxDropsPerRequest: 5,
+  courierOnlineWindowMinutes: 10,
   publicationDropsPerCredit: 2,
   carryoverBasePct: 5,
   carryoverStepPct: 5,
@@ -101,6 +102,12 @@ describe('T-123: PlatformSettingsForm (A04)', () => {
       save: /guardar m[aá]ximo de entregas/i,
       change: () => fireEvent.change(inputFor(/m[aá]ximo de entregas/i), { target: { value: '8' } }),
       payload: { key: 'max_drops_per_request', value: 8 },
+    },
+    {
+      name: 'ventana de repartidores conectados',
+      save: /guardar ventana de repartidores conectados/i,
+      change: () => fireEvent.change(inputFor(/ventana de repartidores conectados/i), { target: { value: '15' } }),
+      payload: { key: 'courier_online_window_minutes', value: 15 },
     },
   ] as const)('guarda $name con admin_update_setting y refresca', async ({ save, change, payload }) => {
     vi.mocked(updatePlatformSettingAction).mockResolvedValue({ ok: true, data: payload });

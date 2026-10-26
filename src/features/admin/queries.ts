@@ -443,6 +443,10 @@ export async function getPlatformSettings(): Promise<PlatformSettingsSnapshot> {
     pilotTermsVersion: read('pilot_terms_version', isString),
     subscriptionGraceDays: read('subscription_grace_days', isNumber),
     maxDropsPerRequest: read('max_drops_per_request', isNumber),
+    // CC-041: la migración lo carga en 10; antes de aplicarla se muestra el mismo valor que usa la RPC por defecto.
+    courierOnlineWindowMinutes: values.has('courier_online_window_minutes')
+      ? read('courier_online_window_minutes', isNumber)
+      : 10,
     publicationDropsPerCredit: read('publication_drops_per_credit', isNumber),
     carryoverBasePct: read('carryover_base_pct', isNumber),
     carryoverStepPct: read('carryover_step_pct', isNumber),

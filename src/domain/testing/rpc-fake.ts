@@ -61,6 +61,8 @@ export interface FakePlatformSettings {
   readonly carryoverCapPct?: number;
   readonly launchDiscountPct?: number;
   readonly looseCreditReferencePriceArs?: number | null;
+  /** CC-041: ventana de repartidores conectados (por defecto 10). */
+  readonly courierOnlineWindowMinutes?: number;
 }
 
 export interface FakeSeedDrop {
@@ -514,6 +516,8 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   get_my_announcement: ['merchant', 'courier'],
   dismiss_announcement: ['merchant', 'courier'],
   set_promotions_opt_in: ['merchant', 'courier'],
+  courier_heartbeat: ['courier'],
+  get_online_couriers_count: ['merchant'],
   get_request_cancellation_history: ['merchant', 'courier', 'admin'],
 };
 
@@ -693,6 +697,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const announcementDismissals = new Set<string>();
   const promotionPreferences = new Map<string, boolean>();
   let announcementSeq = 0;
+  // CC-041: última señal de cada repartidor, en ms (la pone el fake con su reloj, como la base con now()).
+  const courierPresence = new Map<string, number>();
 
   // CC-040: público de una novedad. El fake no modela el consentimiento de cada perfil: todo comercio con alta y todo
   // repartidor aprobado cuenta como activo (el consentimiento del actor sí se valida en cada RPC).
@@ -3452,6 +3458,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           case 'loose_credit_reference_price_ars':
             settings = { ...settings, looseCreditReferencePriceArs: input.value };
             break;
+          case 'courier_online_window_minutes':
+            settings = { ...settings, courierOnlineWindowMinutes: input.value };
+            break;
         }
         return ok(input);
       }),
@@ -3717,6 +3726,32 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       }),
 
     // CC-039: planes activos (sort, id; hasta 50) sin código, precio del crédito suelto y descuento si corresponde.
+    // CC-041: presencia del repartidor aprobado y conteo de conectados para el comercio. El fake no modela el
+    // consentimiento de cada repartidor: cuenta a todos los aprobados y disponibles con señal dentro de la ventana.
+    courier_heartbeat: (rawInput) =>
+      executeRpc('courier_heartbeat', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        if (couriers.get(actor.userId)?.status !== 'approved') return err('COURIER_NOT_APPROVED');
+        const nowMs = nowFn().getTime();
+        courierPresence.set(actor.userId, nowMs);
+        return ok({ lastSeenAt: new Date(nowMs).toISOString() });
+      }),
+
+    get_online_couriers_count: (rawInput) =>
+      executeRpc('get_online_couriers_count', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active' || !merchants.has(actor.userId)) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+        const windowMinutes = settings.courierOnlineWindowMinutes ?? 10;
+        const since = nowFn().getTime() - windowMinutes * 60_000;
+        let count = 0;
+        courierPresence.forEach((lastSeenMs, courierId) => {
+          const courier = couriers.get(courierId);
+          if (courier?.status === 'approved' && courier.available && lastSeenMs > since) count += 1;
+        });
+        return ok({ count, windowMinutes });
+      }),
+
     // CC-040: novedades del admin.
     admin_count_announcement_audience: (rawInput) =>
       executeRpc('admin_count_announcement_audience', rawInput, true, (input) => {
