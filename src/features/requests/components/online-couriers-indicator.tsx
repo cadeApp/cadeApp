@@ -1,8 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { Bike, Info } from 'lucide-react';
 import type { LiveOnlineCouriersResponse } from '@/lib/live-contracts';
+import { BrandLogo } from '@/ui/brand-logo';
+import { Card } from '@/ui/card';
 import { cn } from '@/ui/cn';
 import { onlineCouriersCopy as COPY } from '../copy';
 import { useOnlineCouriers } from '../hooks/use-online-couriers';
@@ -14,36 +15,35 @@ export interface OnlineCouriersIndicatorProps {
 }
 
 /**
- * CC-041 (T-415): cuántos repartidores están conectados ahora, para que el comercio sepa si conviene publicar. Solo
- * informa: con 0 aclara que puede publicar igual. Si la lectura falla, no muestra nada.
+ * CC-041 (T-415, diseño T-417): tarjeta del inicio del comercio con cuántos repartidores están conectados ahora, para
+ * saber si conviene publicar. Solo informa: con 0 aclara que puede publicar igual; si la lectura falla, «Sin datos».
  */
 export function OnlineCouriersIndicator({ initial, className }: OnlineCouriersIndicatorProps) {
   const { data, isError } = useOnlineCouriers(initial);
-  if (!data || isError) return null;
-
-  if (data.count === 0) {
-    return (
-      <div
-        role="status"
-        className={cn('flex items-start gap-3 rounded-lg border border-border bg-muted/60 px-3.5 py-3', className)}
-      >
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <div className="space-y-0.5 text-sm">
-          <p className="font-semibold text-foreground">{COPY.noneTitle}</p>
-          <p className="text-muted-foreground">{COPY.noneDescription}</p>
-        </div>
-      </div>
-    );
-  }
+  const count = !data || isError ? null : data.count;
+  const online = count !== null && count > 0;
 
   return (
-    <div
+    <Card
       role="status"
-      className={cn('flex items-center gap-2.5 rounded-lg bg-primary/10 px-3.5 py-2.5 text-sm font-semibold text-foreground', className)}
+      className={cn(
+        'flex flex-col justify-between bg-card p-5 shadow-sm',
+        online ? 'border-primary/40' : 'border-border',
+        className
+      )}
     >
-      <span className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-      <Bike className="h-4 w-4 shrink-0 text-primary-dark" aria-hidden="true" />
-      <span>{COPY.count(data.count)}</span>
-    </div>
+      <div className="flex items-center justify-between text-muted-foreground">
+        <span className="text-sm font-medium">{COPY.cardTitle}</span>
+        <span
+          className={cn('flex h-8 w-8 items-center justify-center rounded-lg', online ? 'bg-primary/10' : 'bg-muted')}
+          aria-hidden="true"
+        >
+          <BrandLogo showWordmark={false} className="h-4 w-auto" />
+        </span>
+      </div>
+      <p className="mt-2 font-display text-2xl font-bold text-foreground">{count ?? COPY.unavailable}</p>
+      {count === 0 ? <p className="mt-1 text-sm text-muted-foreground">{COPY.cardNoneHint}</p> : null}
+      {online ? <span className="sr-only">{COPY.count(count)}</span> : null}
+    </Card>
   );
 }
