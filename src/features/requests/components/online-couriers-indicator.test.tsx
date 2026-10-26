@@ -28,26 +28,29 @@ describe('T-415: repartidores conectados ahora', () => {
     vi.unstubAllGlobals();
   });
 
-  it('muestra el número inicial sin esperar a la red', () => {
+  it('T-417: tarjeta con el título, el número inicial sin esperar a la red y el logo de la app', () => {
     mockFetch({ status: 200, body: { count: 3, windowMinutes: 10 } });
     renderIndicator({ initial: { count: 3, windowMinutes: 10 } });
-    expect(screen.getByRole('status').textContent).toContain('3 repartidores conectados ahora');
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain('Repartidores conectados');
+    expect(status.querySelector('p')?.textContent).toBe('3');
+    expect(status.textContent).toContain('3 repartidores conectados ahora');
+    expect(status.querySelector('svg [data-brand-part="rider"]')).not.toBeNull();
   });
 
-  it('con 1 usa el singular', () => {
+  it('con 1 usa el singular en el texto accesible', () => {
     mockFetch({ status: 200, body: { count: 1, windowMinutes: 10 } });
     renderIndicator({ initial: { count: 1, windowMinutes: 10 } });
     expect(screen.getByRole('status').textContent).toContain('1 repartidor conectado ahora');
   });
 
-  it('con 0 avisa que puede publicar igual', () => {
+  it('con 0 muestra 0 y avisa que puede publicar igual', () => {
     mockFetch({ status: 200, body: { count: 0, windowMinutes: 10 } });
     renderIndicator({ initial: { count: 0, windowMinutes: 10 } });
     const status = screen.getByRole('status');
-    expect(status.textContent).toContain('No hay repartidores conectados en este momento.');
-    expect(status.textContent).toContain(
-      'Podés publicar igual: los que tienen avisos activos la reciben y te avisamos cuando alguien oferte.'
-    );
+    expect(status.querySelector('p')?.textContent).toBe('0');
+    expect(status.textContent).toContain('Podés publicar igual: te avisamos cuando alguien oferte.');
+    expect(status.textContent).not.toContain('conectados ahora');
   });
 
   it('sin dato inicial, lee /api/live/online-couriers', async () => {
@@ -57,11 +60,11 @@ describe('T-415: repartidores conectados ahora', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/live/online-couriers', { cache: 'no-store' });
   });
 
-  it('si la lectura falla, no muestra nada', async () => {
+  it('si la lectura falla, la tarjeta dice «Sin datos»', async () => {
     const fetchMock = mockFetch({ status: 500, body: { error: 'DATABASE_ERROR' } });
-    const { container } = renderIndicator({ initial: null });
+    renderIndicator({ initial: null });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(container.textContent).toBe('');
+    await waitFor(() => expect(screen.getByRole('status').querySelector('p')?.textContent).toBe('Sin datos'));
   });
 
   it('se actualiza cada minuto solo con la pantalla visible y al volver a ella', () => {
@@ -130,7 +133,7 @@ describe('PR551: el indicador lee datos nuevos (polling y refresco al volver)', 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('si un refresco falla después de mostrar un número, la query queda en error y el indicador desaparece', async () => {
+  it('si un refresco falla después de mostrar un número, la query queda en error y la tarjeta dice «Sin datos»', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'DATABASE_ERROR' }), { status: 500 }));
     vi.stubGlobal('fetch', fetchMock);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -147,7 +150,8 @@ describe('PR551: el indicador lee datos nuevos (polling y refresco al volver)', 
     });
     await waitFor(() => expect(client.getQueryState(['requests', 'online-couriers'])?.status).toBe('error'));
     expect(client.getQueryData(['requests', 'online-couriers'])).toEqual({ count: 2, windowMinutes: 10 });
-    expect(container.textContent).toBe('');
+    expect(container.querySelector('[role="status"] p')?.textContent).toBe('Sin datos');
+    expect(container.textContent).not.toContain('conectados ahora');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

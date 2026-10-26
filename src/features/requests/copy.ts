@@ -103,7 +103,8 @@ export const requestsCopy = {
 export const onlineCouriersCopy = {
   count: (count: number) =>
     count === 1 ? '1 repartidor conectado ahora' : `${count} repartidores conectados ahora`,
-  noneTitle: 'No hay repartidores conectados en este momento.',
-  noneDescription:
-    'Podés publicar igual: los que tienen avisos activos la reciben y te avisamos cuando alguien oferte.',
+  // T-417: tarjeta del inicio, junto a las métricas.
+  cardTitle: 'Repartidores conectados',
+  cardNoneHint: 'Podés publicar igual: te avisamos cuando alguien oferte.',
+  unavailable: 'Sin datos',
 } as const;
