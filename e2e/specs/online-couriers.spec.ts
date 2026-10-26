@@ -6,7 +6,7 @@ import { createAdminClient } from '@/server/supabase/admin';
  * T-415 (CC-041): repartidores conectados ahora.
  *
  * - El repartidor entra a su feed con «Disponible» prendido y la app manda la señal de presencia (`courier_heartbeat`).
- * - El comercio ve en su inicio y en «Nueva solicitud» al menos 1 repartidor conectado.
+ * - El comercio ve en la tarjeta de su inicio al menos 1 repartidor conectado (T-417: solo en el inicio).
  *
  * La base de develop es compartida: puede haber otros repartidores conectados, así que se exige «al menos 1».
  */
@@ -52,7 +52,7 @@ test.describe('T-415 — Repartidores conectados ahora', () => {
       )
       .toBeGreaterThanOrEqual(startedAt - 5_000);
 
-    // Comercio: indicador en su inicio y en «Nueva solicitud».
+    // Comercio: tarjeta del inicio (T-417).
     const merchantContext = await browser.newContext();
     try {
       const merchantPage = await merchantContext.newPage();
@@ -64,10 +64,6 @@ test.describe('T-415 — Repartidores conectados ahora', () => {
       await expect(homeStatus).toBeVisible();
       const homeCount = Number(ONLINE_TEXT.exec((await homeStatus.textContent()) ?? '')?.[1] ?? '0');
       expect(homeCount).toBeGreaterThanOrEqual(1);
-
-      await merchantPage.goto('/merchant/requests/new');
-      await waitForNoSkeletons(merchantPage);
-      await expect(merchantPage.getByRole('status').filter({ hasText: ONLINE_TEXT })).toBeVisible();
     } finally {
       await merchantContext.close();
     }
