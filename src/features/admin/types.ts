@@ -104,6 +104,8 @@ export interface PlatformSettingsSnapshot {
   readonly pilotTermsVersion: string;
   readonly subscriptionGraceDays: number;
   readonly maxDropsPerRequest: number;
+  /** CC-041 (T-415): minutos desde la última señal para contar a un repartidor como conectado. */
+  readonly courierOnlineWindowMinutes: number;
   // CC-029 (T-369): créditos, arrastre y descuento. El precio de referencia puede no estar cargado todavía.
   readonly publicationDropsPerCredit: number;
   readonly carryoverBasePct: number;

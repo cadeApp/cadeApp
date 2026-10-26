@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   MerchantRequestsList: vi.fn((_props: Record<string, unknown>) => null),
   AnnouncementBanner: vi.fn((_props: Record<string, unknown>) => null),
   getMyAnnouncement: vi.fn(),
+  OnlineCouriersIndicator: vi.fn((_props: Record<string, unknown>) => null),
+  getOnlineCouriersLiveServer: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -24,7 +26,11 @@ vi.mock('@/server/supabase/server', () => ({
   })),
 }));
 vi.mock('@/features/requests/server', () => ({ getMerchantRequests: mocks.getMerchantRequests }));
-vi.mock('@/features/requests', () => ({ MerchantRequestsList: mocks.MerchantRequestsList }));
+vi.mock('@/features/requests', () => ({
+  MerchantRequestsList: mocks.MerchantRequestsList,
+  OnlineCouriersIndicator: mocks.OnlineCouriersIndicator,
+}));
+vi.mock('@/server/live/online-couriers', () => ({ getOnlineCouriersLiveServer: mocks.getOnlineCouriersLiveServer }));
 vi.mock('@/features/announcements', () => ({ AnnouncementBanner: mocks.AnnouncementBanner }));
 vi.mock('@/features/announcements/server', () => ({ getMyAnnouncement: mocks.getMyAnnouncement }));
 
@@ -43,6 +49,7 @@ describe('T-414: banner de novedades en /merchant/dashboard', () => {
     mocks.getUser.mockResolvedValue({ data: { user: { id: 'merchant-1' } }, error: null });
     mocks.maybeSingle.mockResolvedValue({ data: { profile_id: 'merchant-1', business_name: 'Kiosco' }, error: null });
     mocks.getMerchantRequests.mockResolvedValue({ requests: [], metrics: {} });
+    mocks.getOnlineCouriersLiveServer.mockResolvedValue({ ok: true, data: { count: 2, windowMinutes: 10 } });
   });
   afterEach(cleanup);
 
@@ -59,6 +66,31 @@ describe('T-414: banner de novedades en /merchant/dashboard', () => {
     mocks.getMyAnnouncement.mockResolvedValue(null);
     render(await MerchantDashboardPage());
     expect(mocks.AnnouncementBanner).not.toHaveBeenCalled();
+    expect(mocks.MerchantRequestsList).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('T-415: repartidores conectados en /merchant/dashboard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getUser.mockResolvedValue({ data: { user: { id: 'merchant-1' } }, error: null });
+    mocks.maybeSingle.mockResolvedValue({ data: { profile_id: 'merchant-1', business_name: 'Kiosco' }, error: null });
+    mocks.getMerchantRequests.mockResolvedValue({ requests: [], metrics: {} });
+    mocks.getMyAnnouncement.mockResolvedValue(null);
+  });
+  afterEach(cleanup);
+
+  it('lee el conteo en el servidor y se lo pasa al indicador', async () => {
+    mocks.getOnlineCouriersLiveServer.mockResolvedValue({ ok: true, data: { count: 2, windowMinutes: 10 } });
+    render(await MerchantDashboardPage());
+    expect(mocks.getOnlineCouriersLiveServer).toHaveBeenCalledTimes(1);
+    expect(mocks.OnlineCouriersIndicator.mock.calls[0]?.[0]).toMatchObject({ initial: { count: 2, windowMinutes: 10 } });
+  });
+
+  it('si la lectura del servidor falla, el indicador arranca sin dato', async () => {
+    mocks.getOnlineCouriersLiveServer.mockResolvedValue({ ok: false, error: 'DATABASE_ERROR', status: 500 });
+    render(await MerchantDashboardPage());
+    expect(mocks.OnlineCouriersIndicator.mock.calls[0]?.[0]).toMatchObject({ initial: null });
     expect(mocks.MerchantRequestsList).toHaveBeenCalledTimes(1);
   });
 });

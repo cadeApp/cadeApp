@@ -14,7 +14,7 @@ export const adminApplicantTabSchema = z
 
 export type AdminApplicantTab = z.infer<typeof adminApplicantTabSchema>;
 
-export const adminApplicantsCursorSchema = z.string().uuid().optional();
+export const adminApplicantsCursorSchema = z.string().guid().optional();
 
 export const adminApplicantsSearchParamsSchema = z.object({
   tab: adminApplicantTabSchema,
@@ -37,30 +37,30 @@ export const adminMfaSchema = z.object({
 });
 
 export const viewCourierDocumentSchema = z.object({
-  documentId: z.string().uuid(),
-  courierId: z.string().uuid(),
+  documentId: z.string().guid(),
+  courierId: z.string().guid(),
 });
 
 export const decideCourierSchema = z.object({
-  courierId: z.string().uuid(),
+  courierId: z.string().guid(),
   decision: z.enum(['approved', 'rejected']),
   reason: z.string().trim().min(1).max(500),
 });
 
 export const suspendCourierSchema = z.object({
-  courierId: z.string().uuid(),
+  courierId: z.string().guid(),
   reason: z.string().trim().min(1).max(500),
 });
 
 // CC-034: reactivar un suspendido o reconsiderar un rechazado.
 export const reinstateCourierSchema = z.object({
-  courierId: z.string().uuid(),
+  courierId: z.string().guid(),
   reason: z.string().trim().min(1).max(500),
 });
 
 export const verifyCourierDocumentSchema = z
   .object({
-    documentId: z.string().uuid(),
+    documentId: z.string().guid(),
     verified: z.boolean(),
     rejectionReason: z.string().trim().max(500).nullable().optional(),
   })
@@ -82,7 +82,7 @@ export const decisionFormSchema = z.object({
   reason: z.string().trim().min(1, 'El motivo de la decisión es obligatorio.').max(500),
 });
 
-export const adminApplicantIdSchema = z.string().uuid();
+export const adminApplicantIdSchema = z.string().guid();
 
 // T-123: las mutaciones de A03/A04 reutilizan exactamente los schemas de entrada de las RPC.
 export const setMerchantSubscriptionSchema = adminSetSubscriptionInputSchema;
@@ -104,7 +104,7 @@ export interface AdminAuditFilters {
   readonly targetType?: AuditTargetType;
 }
 
-const uuidParamSchema = z.string().uuid();
+const uuidParamSchema = z.string().guid();
 const auditCursorParamSchema = z
   .string()
   .regex(/^[1-9]\d{0,15}$/)
@@ -116,7 +116,7 @@ const auditEntityParamSchema = z.enum(AUDIT_TARGET_TYPES);
 /**
  * Parsea un parámetro de URL con su schema; un valor inválido se descarta sin afectar al resto.
  */
-function parseParam<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, raw: unknown): T | undefined {
+function parseParam<T>(schema: z.ZodType<T, unknown>, raw: unknown): T | undefined {
   const parsed = schema.safeParse(raw);
   return parsed.success ? parsed.data : undefined;
 }
@@ -204,6 +204,10 @@ const boundedIntegerTextSchema = (min: number, max: number, message: string) =>
 export const dropsPerCreditFormSchema = z.object({
   value: boundedIntegerTextSchema(1, 1000, 'Ingresá una cantidad entera de entregas entre 1 y 1000.'),
 });
+// CC-041 (T-415): ventana de repartidores conectados, mismo rango que `admin_update_setting`.
+export const courierOnlineWindowFormSchema = z.object({
+  value: boundedIntegerTextSchema(2, 60, 'Ingresá una cantidad entera de minutos entre 2 y 60.'),
+});
 export const percentFormSchema = z.object({
   value: boundedIntegerTextSchema(0, 100, 'Ingresá un porcentaje entero entre 0 y 100.'),
 });
@@ -225,7 +229,7 @@ export const grantCreditsFormSchema = z.object({
 export type GrantCreditsFormInput = z.infer<typeof grantCreditsFormSchema>;
 
 export const registerPeriodFormSchema = z.object({
-  planId: z.string().uuid('Elegí un plan del catálogo.'),
+  planId: z.string().guid('Elegí un plan del catálogo.'),
   isPurchase: z.boolean(),
   note: noteFormSchema,
 });

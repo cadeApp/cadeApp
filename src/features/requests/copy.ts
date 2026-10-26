@@ -98,3 +98,12 @@ export const requestsCopy = {
     loadingMore: 'Cargando…',
   },
 } as const;
+
+/** CC-041 (T-415): repartidores conectados ahora, antes de publicar. */
+export const onlineCouriersCopy = {
+  count: (count: number) =>
+    count === 1 ? '1 repartidor conectado ahora' : `${count} repartidores conectados ahora`,
+  noneTitle: 'No hay repartidores conectados en este momento.',
+  noneDescription:
+    'Podés publicar igual: los que tienen avisos activos la reciben y te avisamos cuando alguien oferte.',
+} as const;
