@@ -215,6 +215,29 @@ export type Database = {
           },
         ]
       }
+      courier_presence: {
+        Row: {
+          courier_id: string
+          last_seen_at: string
+        }
+        Insert: {
+          courier_id: string
+          last_seen_at: string
+        }
+        Update: {
+          courier_id?: string
+          last_seen_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_presence_courier_id_fkey"
+            columns: ["courier_id"]
+            isOneToOne: true
+            referencedRelation: "couriers"
+            referencedColumns: ["profile_id"]
+          },
+        ]
+      }
       couriers: {
         Row: {
           available: boolean
@@ -1575,6 +1598,7 @@ export type Database = {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
       }
+      courier_heartbeat: { Args: never; Returns: Json }
       create_and_publish_multi_drop: {
         Args: { p_payload: Json }
         Returns: Json
@@ -1589,6 +1613,7 @@ export type Database = {
       }
       get_my_announcement: { Args: never; Returns: Json }
       get_my_publication_balance: { Args: never; Returns: Json }
+      get_online_couriers_count: { Args: never; Returns: Json }
       get_publication_offer: { Args: never; Returns: Json }
       get_request_cancellation_history: {
         Args: {

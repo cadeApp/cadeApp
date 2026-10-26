@@ -5,6 +5,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PlatformSettingsForm } from './platform-settings-form';
 import { updatePlatformSettingAction } from '../actions';
 import type { PlatformSettingsSnapshot } from '../types';
+import { courierOnlineWindowFormSchema } from '../schemas';
+import { adminUpdateSettingInputSchema } from '@/domain';
 
 const refresh = vi.fn();
 
@@ -23,6 +25,7 @@ const settings: PlatformSettingsSnapshot = {
   pilotTermsVersion: '1.1',
   subscriptionGraceDays: 3,
   maxDropsPerRequest: 5,
+  courierOnlineWindowMinutes: 10,
   publicationDropsPerCredit: 2,
   carryoverBasePct: 5,
   carryoverStepPct: 5,
@@ -101,6 +104,12 @@ describe('T-123: PlatformSettingsForm (A04)', () => {
       save: /guardar m[aá]ximo de entregas/i,
       change: () => fireEvent.change(inputFor(/m[aá]ximo de entregas/i), { target: { value: '8' } }),
       payload: { key: 'max_drops_per_request', value: 8 },
+    },
+    {
+      name: 'ventana de repartidores conectados',
+      save: /guardar ventana de repartidores conectados/i,
+      change: () => fireEvent.change(inputFor(/ventana de repartidores conectados/i), { target: { value: '15' } }),
+      payload: { key: 'courier_online_window_minutes', value: 15 },
     },
   ] as const)('guarda $name con admin_update_setting y refresca', async ({ save, change, payload }) => {
     vi.mocked(updatePlatformSettingAction).mockResolvedValue({ ok: true, data: payload });
@@ -216,5 +225,53 @@ describe('T-369 / CC-029: parámetros de créditos, arrastre y descuento', () =>
     fireEvent.click(screen.getByRole('button', { name: /guardar arrastre inicial/i }));
     expect(await screen.findByText('El valor ingresado no es válido para este parámetro.')).toBeTruthy();
     expect(updatePlatformSettingAction).toHaveBeenCalledWith({ key: 'carryover_base_pct', value: 40 });
+  });
+});
+
+describe('PR551-H04: ventana de repartidores conectados', () => {
+  const ERROR = 'Ingresá una cantidad entera de minutos entre 2 y 60.';
+  const field = () => inputFor(/ventana de repartidores conectados/i);
+  const save = () => fireEvent.click(screen.getByRole('button', { name: /guardar ventana de repartidores conectados/i }));
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it('el formulario arranca con el valor guardado', () => {
+    render(<PlatformSettingsForm settings={{ ...settings, courierOnlineWindowMinutes: 15 }} />);
+    expect(field().value).toBe('15');
+  });
+
+  it.each([2, 60])('acepta el extremo %i y lo guarda', async (value) => {
+    vi.mocked(updatePlatformSettingAction).mockResolvedValue({
+      ok: true,
+      data: { key: 'courier_online_window_minutes', value },
+    });
+    render(<PlatformSettingsForm settings={settings} />);
+    fireEvent.change(field(), { target: { value: String(value) } });
+    save();
+    await waitFor(() =>
+      expect(updatePlatformSettingAction).toHaveBeenCalledWith({ key: 'courier_online_window_minutes', value })
+    );
+  });
+
+  it.each(['1', '61', '2.5', '', 'diez'])('rechaza %j con un error accesible y sin llamar a la acción', async (value) => {
+    render(<PlatformSettingsForm settings={settings} />);
+    fireEvent.change(field(), { target: { value } });
+    save();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(ERROR);
+    expect(field().getAttribute('aria-invalid')).toBe('true');
+    expect(updatePlatformSettingAction).not.toHaveBeenCalled();
+  });
+
+  it('el formulario acepta exactamente lo que acepta el contrato de la RPC', () => {
+    for (const value of [-1, 0, 1, 2, 3, 27, 59, 60, 61, 62, 2.5, NaN, Infinity]) {
+      const form = courierOnlineWindowFormSchema.safeParse({ value: String(value) }).success;
+      const contract = adminUpdateSettingInputSchema.safeParse({ key: 'courier_online_window_minutes', value }).success;
+      expect(form, String(value)).toBe(contract);
+    }
+    expect(courierOnlineWindowFormSchema.safeParse({ value: '27' }).success).toBe(true);
+    for (const value of ['', 'diez', ' ']) {
+      expect(courierOnlineWindowFormSchema.safeParse({ value }).success, JSON.stringify(value)).toBe(false);
+    }
   });
 });
