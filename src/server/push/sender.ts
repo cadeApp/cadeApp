@@ -63,7 +63,7 @@ export const pushPayloadSchema = z.discriminatedUnion('event', [
   z
     .object({
       event: z.literal('announcement'),
-      announcementId: z.string().uuid(),
+      announcementId: z.string().guid(),
       title: z.string().min(1).max(60),
       body: z.string().min(1).max(140),
       url: z.enum(ANNOUNCEMENT_PUSH_URLS),
@@ -72,33 +72,33 @@ export const pushPayloadSchema = z.discriminatedUnion('event', [
   z
     .object({
       event: z.literal('request_published'),
-      requestId: z.string().uuid(),
+      requestId: z.string().guid(),
     })
     .strict(),
   z
     .object({
       event: z.literal('offer_submitted'),
-      requestId: z.string().uuid(),
-      offerId: z.string().uuid(),
+      requestId: z.string().guid(),
+      offerId: z.string().guid(),
     })
     .strict(),
   z
     .object({
       event: z.literal('offer_accepted'),
-      requestId: z.string().uuid(),
-      offerId: z.string().uuid(),
+      requestId: z.string().guid(),
+      offerId: z.string().guid(),
     })
     .strict(),
   z
     .object({
       event: z.literal('request_cancelled'),
-      requestId: z.string().uuid(),
+      requestId: z.string().guid(),
     })
     .strict(),
   z
     .object({
       event: z.literal('request_expired'),
-      requestId: z.string().uuid(),
+      requestId: z.string().guid(),
     })
     .strict(),
 ]);
@@ -399,7 +399,7 @@ export async function getAnnouncementPushRecipients(announcementId: string): Pro
     if (error) {
       throw new Error(`Failed to query announcement_push_recipients: ${error.message}`);
     }
-    const page = z.array(z.string().uuid()).parse(data);
+    const page = z.array(z.string().guid()).parse(data);
     recipients.push(...page);
     if (page.length < DB_PAGE_SIZE) return recipients;
   }

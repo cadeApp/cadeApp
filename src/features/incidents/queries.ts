@@ -92,7 +92,7 @@ const ACCEPTED_OFFER_COLUMNS =
  * Nunca datos del destinatario: el resultado se parsea con un schema estricto sin esos campos.
  */
 export async function getIncidentDetail(incidentId: string): Promise<IncidentDetail | null> {
-  if (!z.string().uuid().safeParse(incidentId).success) {
+  if (!z.string().guid().safeParse(incidentId).success) {
     return null;
   }
 

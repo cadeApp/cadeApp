@@ -41,7 +41,7 @@ interface ValueFormInput {
   value: string;
 }
 
-type ValueFormSchema = z.ZodType<ValueFormInput, z.ZodTypeDef, ValueFormInput>;
+type ValueFormSchema = z.ZodType<ValueFormInput, ValueFormInput>;
 
 /**
  * Guarda un parámetro vía la Server Action y devuelve el mensaje de error visible, o null si salió bien.

@@ -6,6 +6,7 @@ import {
   recipientPaymentMethodSchema,
 } from '@/domain/schemas';
 import { extractValidArgentineTenDigits, isValidArgentinePhone } from '@/lib/whatsapp';
+import { requiredError } from '@/lib/zod-messages';
 
 const CONTROL_CHARS_REGEX = /[\x00-\x1F\x7F]/;
 const NOTES_CONTROL_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
@@ -14,9 +15,9 @@ const HAS_LETTERS_REGEX = /[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]/;
 
 export const dropSchema = z
   .object({
-    dropoffZoneId: z.string().uuid('Seleccioná un barrio de entrega válido'),
+    dropoffZoneId: z.string().guid('Seleccioná un barrio de entrega válido'),
     dropoffAddress: z
-      .string({ required_error: 'La dirección de entrega es obligatoria' })
+      .string(requiredError('La dirección de entrega es obligatoria'))
       .trim()
       .min(1, 'La dirección de entrega es obligatoria')
       .max(200, 'La dirección de entrega es demasiado larga')
@@ -32,7 +33,7 @@ export const dropSchema = z
     dropoffLat: aguilaresLatSchema.nullable().optional(),
     dropoffLng: aguilaresLngSchema.nullable().optional(),
     recipientName: z
-      .string({ required_error: 'El nombre del destinatario es obligatorio' })
+      .string(requiredError('El nombre del destinatario es obligatorio'))
       .trim()
       .min(2, 'El nombre debe tener al menos 2 caracteres')
       .max(100, 'El nombre es demasiado largo')
@@ -46,7 +47,7 @@ export const dropSchema = z
         message: 'El nombre debe contener letras y no puede ser solo números o símbolos',
       }),
     recipientPhone: z
-      .string({ required_error: 'El teléfono del destinatario es obligatorio' })
+      .string(requiredError('El teléfono del destinatario es obligatorio'))
       .trim()
       .min(1, 'El teléfono del destinatario es obligatorio')
       .max(30, 'El teléfono es demasiado largo')
@@ -55,9 +56,7 @@ export const dropSchema = z
       })
       .transform((val) => extractValidArgentineTenDigits(val)),
     recipientConsentDeclared: z.literal(true, {
-      errorMap: () => ({
-        message: 'Debés declarar que contás con la autorización del destinatario.',
-      }),
+      error: 'Debés declarar que contás con la autorización del destinatario.',
     }),
     packageType: packageTypeSchema,
     recipientPaymentMethod: recipientPaymentMethodSchema,
@@ -122,10 +121,10 @@ export type DropOutput = z.output<typeof dropSchema>;
 
 export const baseCreateDeliveryRequestSchema = z
   .object({
-    requestId: z.string().uuid('Identificador de solicitud inválido').optional(),
-    pickupZoneId: z.string().uuid('Seleccioná un barrio de retiro válido'),
+    requestId: z.string().guid('Identificador de solicitud inválido').optional(),
+    pickupZoneId: z.string().guid('Seleccioná un barrio de retiro válido'),
     pickupAddress: z
-      .string({ required_error: 'La dirección de retiro es obligatoria' })
+      .string(requiredError('La dirección de retiro es obligatoria'))
       .trim()
       .min(1, 'La dirección de retiro es obligatoria')
       .max(200, 'La dirección de retiro es demasiado larga')
@@ -178,7 +177,6 @@ export type CreateDeliveryRequestOutput = z.output<typeof baseCreateDeliveryRequ
 
 export const createDeliveryRequestSchema: z.ZodType<
   CreateDeliveryRequestOutput,
-  z.ZodTypeDef,
   CreateDeliveryRequestInput
 > = z.preprocess((raw) => {
   if (
@@ -225,12 +223,11 @@ export const createDeliveryRequestSchema: z.ZodType<
   return raw;
 }, baseCreateDeliveryRequestSchema) as unknown as z.ZodType<
   CreateDeliveryRequestOutput,
-  z.ZodTypeDef,
   CreateDeliveryRequestInput
 >;
 
 export const cancelMerchantRequestSchema = z.object({
-  requestId: z.string().uuid('Identificador de solicitud inválido'),
+  requestId: z.string().guid('Identificador de solicitud inválido'),
   reason: z
     .string()
     .trim()
