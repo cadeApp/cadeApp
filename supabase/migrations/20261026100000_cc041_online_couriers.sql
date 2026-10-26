@@ -94,7 +94,6 @@ begin
   join public.couriers c on c.profile_id = cp.courier_id
   join public.profiles p on p.id = cp.courier_id
   where cp.last_seen_at > now() - make_interval(mins => v_window)
-    and c.status = 'approved'
     and c.available
     and p.consent_status = 'active';
 
