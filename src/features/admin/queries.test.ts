@@ -783,6 +783,7 @@ describe('T-123: getPlatformSettings (A04)', () => {
       pilotTermsVersion: '1.1',
       subscriptionGraceDays: 3,
       maxDropsPerRequest: 5,
+      courierOnlineWindowMinutes: 10,
       publicationDropsPerCredit: 2,
       carryoverBasePct: 5,
       carryoverStepPct: 5,
@@ -806,6 +807,19 @@ describe('T-123: getPlatformSettings (A04)', () => {
       platform_settings: { data: rows.filter((row) => row.key !== 'carryover_cap_pct'), error: null },
     });
     await expect(getPlatformSettings()).rejects.toThrow(/carryover_cap_pct/);
+  });
+
+  it('PR551-H04: lee la ventana de repartidores conectados guardada, no un valor fijo', async () => {
+    mockClient({
+      platform_settings: { data: [...rows, { key: 'courier_online_window_minutes', value: 27 }], error: null },
+    });
+    await expect(getPlatformSettings()).resolves.toMatchObject({ courierOnlineWindowMinutes: 27 });
+  });
+
+  it('PR551-H04: sin la fila de la ventana usa 10', async () => {
+    expect(rows.some((row) => row.key === 'courier_online_window_minutes')).toBe(false);
+    mockClient({ platform_settings: { data: rows, error: null } });
+    await expect(getPlatformSettings()).resolves.toMatchObject({ courierOnlineWindowMinutes: 10 });
   });
 
   it('si falta el piso no inventa 1000: falla', async () => {

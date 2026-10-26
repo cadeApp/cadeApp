@@ -258,7 +258,7 @@ export async function getRequestOffersLiveServer(
   requestId: string,
   cursor: LivePageCursor | null = null
 ): Promise<LiveServerResult<LiveOffersResponse>> {
-  const parsedId = z.string().uuid().safeParse(requestId);
+  const parsedId = z.string().guid().safeParse(requestId);
   if (!parsedId.success) {
     return { ok: false, error: 'INVALID_REQUEST_ID', status: 400 };
   }
@@ -377,7 +377,7 @@ export async function getRequestOffersLiveServer(
 export async function getTripLiveStateServer(
   tripId: string
 ): Promise<LiveServerResult<LiveTripState | null>> {
-  const parsedId = z.string().uuid().safeParse(tripId);
+  const parsedId = z.string().guid().safeParse(tripId);
   if (!parsedId.success) {
     return { ok: false, error: 'INVALID_TRIP_ID', status: 400 };
   }

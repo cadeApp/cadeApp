@@ -320,7 +320,7 @@ interface MerchantRow {
 const merchantDeliveredCountsSchema = z.array(
   z
     .object({
-      merchant_id: z.string().uuid(),
+      merchant_id: z.string().guid(),
       delivered_count: z.number().int().nonnegative(),
     })
     .strict()
@@ -443,6 +443,10 @@ export async function getPlatformSettings(): Promise<PlatformSettingsSnapshot> {
     pilotTermsVersion: read('pilot_terms_version', isString),
     subscriptionGraceDays: read('subscription_grace_days', isNumber),
     maxDropsPerRequest: read('max_drops_per_request', isNumber),
+    // CC-041: la migración lo carga en 10; antes de aplicarla se muestra el mismo valor que usa la RPC por defecto.
+    courierOnlineWindowMinutes: values.has('courier_online_window_minutes')
+      ? read('courier_online_window_minutes', isNumber)
+      : 10,
     publicationDropsPerCredit: read('publication_drops_per_credit', isNumber),
     carryoverBasePct: read('carryover_base_pct', isNumber),
     carryoverStepPct: read('carryover_step_pct', isNumber),
@@ -650,7 +654,7 @@ export async function getPublicationPlans(
 
 const publicationPlansParamsSchema = z.object({
   afterSort: z.coerce.number().int().min(0).max(1000),
-  afterId: z.string().uuid(),
+  afterId: z.string().guid(),
 });
 
 function firstParam(value: string | string[] | undefined): string | undefined {

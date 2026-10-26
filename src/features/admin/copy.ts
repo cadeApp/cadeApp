@@ -297,6 +297,12 @@ export const ADMIN_COPY = {
         unit: 'entregas',
         unitLabel: 'en entregas',
       },
+      courier_online_window_minutes: {
+        label: 'Ventana de repartidores conectados',
+        help: 'Minutos desde la última señal de la app para contar a un repartidor como conectado. Los comercios ven cuántos hay antes de publicar.',
+        unit: 'min',
+        unitLabel: 'en minutos',
+      },
       publication_drops_per_credit: {
         label: 'Entregas incluidas por crédito',
         help: 'Cada publicación cuesta 1 crédito más 1 por cada entrega por encima de este número. Las publicadas conservan su costo.',

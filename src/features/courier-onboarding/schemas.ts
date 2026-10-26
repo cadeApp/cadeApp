@@ -5,7 +5,7 @@ import { extractValidArgentineTenDigits, isValidArgentinePhone } from '@/lib/wha
 export const DNI_REGEX = /^(\d{7,8}|\d{1,2}\.\d{3}\.\d{3})$/;
 
 export const dniSchema = z
-  .string({ required_error: 'El DNI es obligatorio' })
+  .string(requiredError('El DNI es obligatorio'))
   .trim()
   .regex(DNI_REGEX, 'El DNI debe tener 7 u 8 dígitos numéricos');
 
@@ -13,19 +13,19 @@ export const ARGENTINA_PLATE_REGEX =
   /^(?:[A-Z]{2}\s?\d{3}\s?[A-Z]{2}|[A-Z]\s?\d{3}\s?[A-Z]{3}|[A-Z]{3}\s?\d{3}|\d{3}\s?[A-Z]{3})$/i;
 
 export const vehiclePlateSchema = z
-  .string({ required_error: 'La patente es obligatoria' })
+  .string(requiredError('La patente es obligatoria'))
   .trim()
   .regex(ARGENTINA_PLATE_REGEX, 'Formato de patente argentina inválido (ej: AB 123 CD, A 123 BCD o ABC 123)');
 
 export const courierOnboardingConsentsSchema = z.object({
   tos: z.literal(true, {
-    errorMap: () => ({ message: 'Debés aceptar los Términos y Condiciones' }),
+    error: 'Debés aceptar los Términos y Condiciones',
   }),
   privacy: z.literal(true, {
-    errorMap: () => ({ message: 'Debés aceptar la Política de Privacidad' }),
+    error: 'Debés aceptar la Política de Privacidad',
   }),
   courierContract: z.literal(true, {
-    errorMap: () => ({ message: 'Debés aceptar las Condiciones para repartidores' }),
+    error: 'Debés aceptar las Condiciones para repartidores',
   }),
   tosVersion: z.string().trim().min(1),
   privacyVersion: z.string().trim().min(1),
@@ -35,10 +35,10 @@ export const courierOnboardingConsentsSchema = z.object({
 export type CourierOnboardingConsentsInput = z.infer<typeof courierOnboardingConsentsSchema>;
 
 export const courierOnboardingDocumentsSchema = z.object({
-  dni_front: z.string({ required_error: 'El frente del DNI es obligatorio' }).min(1, 'El frente del DNI es obligatorio'),
-  dni_back: z.string({ required_error: 'El dorso del DNI es obligatorio' }).min(1, 'El dorso del DNI es obligatorio'),
-  selfie: z.string({ required_error: 'La selfie de verificación es obligatoria' }).min(1, 'La selfie de verificación es obligatoria'),
-  avatar: z.string({ required_error: 'La foto de perfil (avatar) es obligatoria' }).min(1, 'La foto de perfil (avatar) es obligatoria'),
+  dni_front: z.string(requiredError('El frente del DNI es obligatorio')).min(1, 'El frente del DNI es obligatorio'),
+  dni_back: z.string(requiredError('El dorso del DNI es obligatorio')).min(1, 'El dorso del DNI es obligatorio'),
+  selfie: z.string(requiredError('La selfie de verificación es obligatoria')).min(1, 'La selfie de verificación es obligatoria'),
+  avatar: z.string(requiredError('La foto de perfil (avatar) es obligatoria')).min(1, 'La foto de perfil (avatar) es obligatoria'),
   license: z.string().min(1).optional(),
   insurance: z.string().min(1).optional(),
 });
@@ -121,7 +121,7 @@ export type CourierUpdateVehicleInput = z.infer<typeof courierUpdateVehicleSchem
 export const courierUpdatePhoneSchema = z
   .object({
     phone: z
-      .string({ required_error: 'El teléfono de contacto es obligatorio' })
+      .string(requiredError('El teléfono de contacto es obligatorio'))
       .trim()
       .min(1, 'El teléfono de contacto es obligatorio')
       .max(30, 'El teléfono es demasiado largo')
@@ -136,6 +136,7 @@ export type CourierUpdatePhoneInput = z.infer<typeof courierUpdatePhoneSchema>;
 
 
 import type { Database } from '@/types/database.types';
+import { requiredError } from '@/lib/zod-messages';
 
 export type DocumentReviewStatus = Database['public']['Enums']['document_review_status'];
 export type CourierReviewStatus = Database['public']['Enums']['courier_status'];
