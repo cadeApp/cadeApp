@@ -136,3 +136,21 @@ pnpm typecheck && pnpm lint && pnpm test
 ```
 
 Si la evidencia del autor de RED no se puede reproducir, registrarlo en ronda 2, no firmar verificado. No falsificar ni relajar tests para que queden verdes.
+
+---
+
+## Evidencia de ronda 2 — 2026-10-26
+
+- HEAD exacto inspeccionado: `08e3a6804fa5a191085d93c168c2421191dccfb1`. SHA funcional con tests y E2E: `ad035c64c833ccbacec4bc1d8ac8cdb52e0ac681`.
+- `compare(722f3c20..ad035c64)`: únicamente `src/domain/t416-zod-v4.test.ts` (test corregido) y `docs/tasks/log/T-416.md`.
+- `compare(ad035c64..08e3a680)`: únicamente `docs/tasks/log/T-416.md` (+4, -1), sin cambios de comportamiento.
+- `src/domain/t416-zod-v4.test.ts`: caso positivo `+03:00` y negativo `+0300` prueban el `isoTimestampSchema` real de `rpc-contracts.ts`. Se conserva `z.string().datetime({offset:true})`.
+- `unit` sobre `ad035c64`: [job 121430315772](https://github.com/cadeApp/cadeApp/actions/runs/40279643780/job/121430315772), salida textual: `Test Files 181 passed (181)` y `Tests 3370 passed (3370)`.
+- `audit` sobre `ad035c64`: [job 121430315532](https://github.com/cadeApp/cadeApp/actions/runs/40279643780/job/121430315532), `+ zod 4.6.7`, `Severity: 3 moderate`, sin alto GHSA-mrhx-c7xc-m3w5.
+- `db-tests` sobre `ad035c64`: [job 121430315753](https://github.com/cadeApp/cadeApp/actions/runs/40279643780/job/121430315753), success, paso local RPC/RLS success, paso `git diff --exit-code -- src/types/database.types.ts` success; mutaciones RED intencionales en logs de otras tareas no implican failure del job.
+- `e2e-preview` sobre `ad035c64`: [job 121430325812](https://github.com/cadeApp/cadeApp/actions/runs/40279765486/job/121430325812), `Running 111 tests` → `111 passed (29.6m)`, luego `Running 6 tests` → `6 passed (2.7m)`. Commit status `e2e-preview=success`.
+- `08e3a680` CI solo documental al consultar: unit/typecheck/lint/build/audit/bundle-budget success, db-tests y e2e-preview pendientes; approval-policy failure antes del comentario R2. No se requiere otra corrida verde por edición exclusiva de bitácora.
+
+**Harness independiente:** sigue disponible íntegro en la sección H01 de este archivo, para un entorno con `pnpm` y clon funcional; **no se ejecutó** esta ronda. La batería RED del autor de sesión 2 no sustituye una ejecución propia. No se usaron mocks, cambios de assertions ni tests simulados.
+
+**Limitaciones operativas de R2:** GitHub se consultó por el conector; el intento local `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` terminó `Could not resolve host: github.com`. Por ello tampoco se pudo correr `node docs/revision-pr/analizar.mjs verificacion` ni `git merge-tree`. Se comprobó la estructura y los campos de `hallazgos.jsonl` al preparar este commit y GitHub informa `mergeable=true`.

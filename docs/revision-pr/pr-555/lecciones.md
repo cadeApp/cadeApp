@@ -22,3 +22,11 @@ Las dos pruebas E2E con retry del autor son señal de posible inestabilidad, no 
 Los esquemas `z.array(...).min(1)` sin máximo explícito siguen mereciendo inventario y límites previos a parseo donde haya datos no confiables, especialmente por el aviso GHSA. Esto se aisló en issue #560. El aumento de bundle se aisló en issue #561.
 
 No se asigna **AG nuevo** en esta ronda: no fue posible enumerar el máximo de todas las ramas remotas con `git fetch/git grep`. Tampoco se atribuyen pruebas ejecutadas al revisor cuando solo hay evidencia del autor/CI.
+
+## Ronda 2 — cierre de los gates
+
+El test ISO positivo y negativo ahora protege explícitamente D01=A. Un RED informado por el autor es evidencia útil pero no se debe convertir en «mutación independiente» sin ejecución propia. Por eso R2 registra por separado inspección de aserciones y CI remoto, con la limitación del harness no ejecutado.
+
+El gate E2E debe acreditarse con el estado GitHub y las líneas exactas de Playwright del SHA funcional; no es necesario repetir el gate por un cambio exclusivo de bitácora. La mejora de bundle permanece separada de la corrección de la vulnerabilidad.
+
+No se introduce AG nuevo sin enumeración global de ramas; sin nuevos patrones demostrados en R2.
