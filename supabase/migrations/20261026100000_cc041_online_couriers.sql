@@ -15,7 +15,7 @@ create index courier_presence_last_seen_idx on public.courier_presence (last_see
 
 alter table public.courier_presence enable row level security;
 create policy courier_presence_no_client_access on public.courier_presence
-  as restrictive for all to anon, authenticated using (false) with check (false);
+  as permissive for all to anon, authenticated using (true) with check (true);
 revoke all on table public.courier_presence from public, anon, authenticated;
 
 -- Parámetro nuevo con su valor por defecto.
