@@ -83,7 +83,7 @@ begin
   end if;
   select role, consent_status into v_role, v_consent from public.profiles where id = v_uid;
   if v_role is distinct from 'merchant' or v_consent is distinct from 'active'
-     or not exists (select 1 from public.merchants where profile_id = v_uid) then
+     then
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
   end if;
 
