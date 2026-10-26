@@ -55,7 +55,7 @@ begin
 
   insert into public.courier_presence (courier_id, last_seen_at)
   values (v_uid, v_now)
-  on conflict (courier_id) do update set last_seen_at = excluded.last_seen_at;
+  on conflict (courier_id) do update set last_seen_at = courier_presence.last_seen_at;
 
   return jsonb_build_object(
     'lastSeenAt', to_char(v_now at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
