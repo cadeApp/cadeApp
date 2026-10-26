@@ -12,3 +12,11 @@ Ronda 1: cuatro bloqueantes y un desvío aceptado por decisión. Se refuerzan le
 La opción A de Lautaro073 regulariza admin/schemas.ts y exige paridad formulario/RPC. Eso es aceptación de alcance, no certificación de los arreglos. Mientras el autor trabaja, la revisión solo escribe docs/revision-pr/pr-551/.
 
 No se modifica AGENTS.md ni las reglas generales a partir de esta ronda. Los errores de import se identifican como Tests no tests; los mutantes SQL quedan por inspección + CI verde y no se presentan como ejecutados.
+
+
+## Ronda 2 — observaciones
+
+- Los cuatro cambios de tests separan casos que antes estaban acoplados: consentimiento distinto al actor lector (H01), observer real en vez de objeto de opciones (H02), hora vieja y status con presencia (H03), valor persistido distinto del default (H04). El beneficio se comprueba en los mutantes SQL: cada uno modifica únicamente el predicado protegido y el test previsto cae, según jobs #556–#559 inspeccionados.
+- **No convertir evidencia del autor en ejecución independiente.** Esta sesión examinó diffs, test sources y logs CI, pero carece de checkout para ejecutar sus propios mutantes TS. Los estados quedan `arreglado-sin-verificar`; no se completó `verificado_en_sha`.
+- Una suite verde no implica `audit` verde. La dependencia Zod afectada ya tiene tarea separada T-416 y PR #555, no debe ampliarse T-415 ni silenciar el control.
+- El último commit de la sesión del autor solo documenta RED/GREEN. No exigir otro job verde exclusivamente por bitácora, coherente con la regla actual.

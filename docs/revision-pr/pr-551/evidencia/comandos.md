@@ -391,3 +391,105 @@ La primera reproducción del indicador dio un resultado no fiable (6/6 aun habie
 - Q03: conservar el nombre de la policy pero convertirla a permisiva o cambiar `using/with check` a `true`. Afirmar catálogo y expresión de la policy, no solo su existencia. Los grants continúan denegando acceso, por lo que se trata de defensa en profundidad exigida por CC-041, no de una exposición actual demostrada.
 - Q04: eliminar el chequeo de fila en `merchants` de la RPC. Preparar perfil merchant activo sin fila merchant y exigir `UNAUTHORIZED_ACTOR`.
 - Añadir aprobado disponible activo SIN presencia, límites exactos de ventana y extremos válidos 2/60. No inventar resultados RED: ejecutar en una rama REVIEW ONLY aislada y cerrarla sin mergear cuando corresponda.
+
+
+---
+
+# Ronda 2 — revisión de HEAD `b72e2bfad3fdae55843326fce61a72b17d66b4e8` (2026-10-26)
+
+**No se efectuó ejecución local**: el contenedor de este revisor no contiene un clon de cadeApp ni sus node_modules y no tiene salida DNS a github.com. Esta sección ofrece inspección de código real y vínculos a jobs ejecutados, pero no atribuye al revisor los RED locales del autor.
+
+## Cambios examinados
+
+Desde `0bf26aa1` hubo únicamente siete rutas modificadas: bitácora T-415; `cc041-online-couriers.test.ts`; `platform-settings-form.test.tsx`; `queries.test.ts`; `online-couriers-indicator.test.tsx`; `use-online-couriers.test.tsx` (nuevo); `cc041_online_couriers.sql`. `b72e2bf` es solo bitácora. Contrato CC-041 y T-415 leídos desde `develop`. A01 sigue aceptada. Ningún `.skip/.only` en las seis suites.
+
+**GREEN DB con código:** https://github.com/cadeApp/cadeApp/actions/runs/40275448717/job/121417119690 — `cc041_online_couriers.sql ... ok`, `Files=40, Tests=3252, Result: PASS`; tipos generados sin diff.
+
+**RED SQL — diferencias aisladas revisadas en sus commits, sin modificar tests:**
+- https://github.com/cadeApp/cadeApp/pull/556 — `c.status = 'approved'` retirado; https://github.com/cadeApp/cadeApp/actions/runs/40275511570/job/121417303165 — tests 25,28,29,30 fallan.
+- https://github.com/cadeApp/cadeApp/pull/557 — `last_seen_at = courier_presence.last_seen_at`; https://github.com/cadeApp/cadeApp/actions/runs/40275519307/job/121417326420 — tests 21,22,24,25,28,29 fallan.
+- https://github.com/cadeApp/cadeApp/pull/558 — policy permisiva + true; https://github.com/cadeApp/cadeApp/actions/runs/40275527842/job/121417351478 — test 2 falla.
+- https://github.com/cadeApp/cadeApp/pull/559 — sin check de merchant row; https://github.com/cadeApp/cadeApp/actions/runs/40275536735/job/121417377634 — test 17 falla.
+
+**GREEN Vitest HEAD:** https://github.com/cadeApp/cadeApp/actions/runs/40276459983/job/121420134155 — 184 archivos, 3411 tests, workflows 81/81 y ADR 6/6.
+
+**Audit externo fallido:** https://github.com/cadeApp/cadeApp/actions/runs/40276459983/job/121420133822 — GHSA-mrhx-c7xc-m3w5, T-416/#555.
+
+## Arnés independiente de mutaciones TS (PREPARADO, NO EJECUTADO)
+
+Este bloque puede copiarse íntegro a `/tmp/pr551-r2-mutations.py` desde un clon en un worktree limpio de `b72e2bfad3fdae55843326fce61a72b17d66b4e8`. Requiere Python, Node y pnpm 10.28.0. **No se ha comprobado en este entorno** y no es evidencia de RED/GREEN observado. Cada objetivo se sustituye exactamente una vez, la misma suite se ejecuta antes, mutada y después; restauración de bytes originales en `finally` (nunca `git checkout`). En el informe de una futura verificación hay que pegar las líneas `Tests …` REALES por mutante y no contar fallos de import o ausencia de objetivo como RED funcional.
+
+~~~python
+import sys, re, subprocess
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+cases = [
+    ("H01-consent", "src/domain/testing/rpc-fake.ts",
+     "const consentActive = (profileConsent.get(courierId) ?? 'active') === 'active';",
+     "const consentActive = true;", ["src/domain/cc041-online-couriers.test.ts"]),
+    ("H01-status", "src/domain/testing/rpc-fake.ts",
+     "courier?.status === 'approved' && courier.available && consentActive",
+     "Boolean(courier) && courier.available && consentActive",
+     ["src/domain/cc041-online-couriers.test.ts"]),
+    ("H01-renewal", "src/domain/testing/rpc-fake.ts",
+     "courierPresence.set(actor.userId, nowMs);",
+     "if (!courierPresence.has(actor.userId)) courierPresence.set(actor.userId, nowMs);",
+     ["src/domain/cc041-online-couriers.test.ts"]),
+    ("H02-interval", "src/features/requests/hooks/use-online-couriers.ts",
+     "refetchInterval: ONLINE_COURIERS_REFETCH_MS,", "refetchInterval: false,",
+     ["src/features/requests/hooks/use-online-couriers.test.tsx"]),
+    ("H02-background", "src/features/requests/hooks/use-online-couriers.ts",
+     "refetchIntervalInBackground: false,", "refetchIntervalInBackground: true,",
+     ["src/features/requests/hooks/use-online-couriers.test.tsx"]),
+    ("H02-focus", "src/features/requests/hooks/use-online-couriers.ts",
+     "refetchOnWindowFocus: 'always' as const,", "refetchOnWindowFocus: false,",
+     ["src/features/requests/hooks/use-online-couriers.test.tsx"]),
+    ("H02-reconnect", "src/features/requests/hooks/use-online-couriers.ts",
+     "refetchOnReconnect: 'always' as const,", "refetchOnReconnect: false,",
+     ["src/features/requests/hooks/use-online-couriers.test.tsx"]),
+    ("H02-constant", "src/features/requests/hooks/use-online-couriers.ts",
+     "queryFn: fetchOnlineCouriers,", "queryFn: async () => ({count: 1, windowMinutes: 10}),",
+     ["src/features/requests/hooks/use-online-couriers.test.tsx"]),
+    ("H02-error", "src/features/requests/components/online-couriers-indicator.tsx",
+     "if (!data || isError) return null;", "if (!data) return null;",
+     ["src/features/requests/components/online-couriers-indicator.test.tsx"]),
+    ("H04-reading", "src/features/admin/queries.ts",
+     "courierOnlineWindowMinutes: values.has('courier_online_window_minutes')\n      ? read('courier_online_window_minutes', isNumber)\n      : 10,",
+     "courierOnlineWindowMinutes: 10,",
+     ["src/features/admin/queries.test.ts"]),
+    ("H04-minimum", "src/features/admin/schemas.ts",
+     "boundedIntegerTextSchema(2, 60, 'Ingresá una cantidad entera de minutos entre 2 y 60.')",
+     "boundedIntegerTextSchema(1, 60, 'Ingresá una cantidad entera de minutos entre 2 y 60.')",
+     ["src/features/admin/components/platform-settings-form.test.tsx"]),
+    ("H04-maximum", "src/features/admin/schemas.ts",
+     "boundedIntegerTextSchema(2, 60, 'Ingresá una cantidad entera de minutos entre 2 y 60.')",
+     "boundedIntegerTextSchema(2, 61, 'Ingresá una cantidad entera de minutos entre 2 y 60.')",
+     ["src/features/admin/components/platform-settings-form.test.tsx"]),
+]
+def run(name, suites):
+    p = subprocess.run(["pnpm", "exec", "vitest", "run", "--hookTimeout=120000", *suites],
+                       cwd=root, capture_output=True, text=True, timeout=180)
+    matches = [re.sub(r"\x1b\[[0-9;]*m", "", s).strip()
+               for s in p.stdout.splitlines() if re.search(r"\b(Test Files|Tests)\s", s)]
+    print(name, "exit", p.returncode, " | ".join(matches[-3:]), flush=True)
+    return p.returncode
+for name, rel, old, new, suites in cases:
+    file = root / rel
+    original = file.read_bytes()
+    try:
+        data = original.decode("utf-8")
+        if data.count(old) != 1:
+            raise RuntimeError(f"{name}: objetivo no único ({data.count(old)}); no es un RED")
+        if run(name+"-control", suites) != 0:
+            raise RuntimeError(f"{name}: control base no verde")
+        file.write_text(data.replace(old, new, 1), encoding="utf-8")
+        if run(name+"-mutant", suites) == 0:
+            raise RuntimeError(f"{name}: mutante SOBREVIVIENTE")
+    finally:
+        file.write_bytes(original)
+    if run(name+"-restored", suites) != 0:
+        raise RuntimeError(f"{name}: control restaurado no verde")
+~~~
+
+Para SQL, la batería de ramas #556–#559 es **del autor**, no de este revisor; esta revisión sí cotejó los cambios exactos y el RED de CI. Si se exige una batería SQL propia adicional, diseñarla y ejecutarla en una rama aislada REVIEW ONLY, jamás en feat/T-415 ni con Supabase remoto.
