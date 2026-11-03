@@ -90,3 +90,92 @@ Ejemplo de ejecución: `node /tmp/pr582-catalog-mutation.mjs > /tmp/pr582-mut.lo
 - `git log -- docs/revision-pr/pr-582/`: carpeta ausente antes de la revisión.
 - `node docs/revision-pr/analizar.mjs verificacion`: **pendiente de ejecutar en un clon**.
 - CI oficial y `e2e-preview`: **no inspeccionados en detalle** mientras haya bloqueantes; al estar lista la siguiente ronda, validar job/SHA y líneas concretas, no solo color.
+
+
+## Ronda 2 — 2026-11-03 — SHA `2764de210c4929ac2b5a6ea07357d441f1db3759`
+
+### Evidencia independiente en memoria, sin Vitest
+
+El revisor recuperó la función `app_private.request_cycle` de la migración T-369 y corrió el **mismo patrón** de `returnsBeforeWrite` de `audit-catalog.test.ts:167-172`, apuntando al índice real del `INSERT audit_log`. Resultados:
+
+| Variación sobre el SQL | ¿Existe RETURN ejecutable en la rama? | `returnsBeforeWrite` |
+|---|---|---|
+| Original | Sí | `true` |
+| `return ...` → `perform ...` | No | `false` |
+| `return ...` → `perform ...; -- return eliminado` | No | **`true` (ciego)** |
+| `return ...` → `perform ...; /* return */` | No | **`true` (ciego)** |
+| `return ...` → `perform ...; raise notice 'return';` | No | **`true` (ciego)** |
+
+La comparación del dominio de `p_action` (siete valores escritos contra los siete declarados, tras excluir `report_incident`) siguió igual en todos estos casos. **No se afirma que Vitest se haya ejecutado**: estas sondas corrieron sobre SQL leído del repo, con un evaluador JS de la expresión del control; el harness adjunto será la prueba final de mutation runtime.
+
+### Batería independiente completa — H03 y H01
+
+Copiar **el siguiente bloque completo** a `/tmp/pr582-r2-mutate.mjs`, arrancar desde worktree limpio y ejecutar `node /tmp/pr582-r2-mutate.mjs > /tmp/pr582-r2.log 2>&1`. El script verifica primero que el test original sea GREEN, muta una propiedad por vez, corre el test real y restaura desde buffer en `finally`. Nunca commitear SQL mutado ni adulterar los tests. El script no se ejecutó aquí porque la red no permite clonar y falta pnpm.
+
+```js
+// Guardar este bloque en /tmp/pr582-r2-mutate.mjs. Ejecutar desde la raíz de un worktree limpio.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+
+const root = process.cwd();
+const sqlFile = path.join(root, 'supabase/migrations/20261017090000_t369_publication_credits.sql');
+const srcFile = path.join(root, 'src/features/admin/queries.ts');
+const oldReturn = "return jsonb_build_object('incidentId', v_incident, 'requestId', p_request_id, 'status', 'open', 'createdAt', v_now);";
+const oldReason = "return typeof value === 'string' && value.trim().length > 0 ? value : null;";
+const replacements = [
+  { label: 'R2-1: el texto -- return no es una sentencia ejecutable', file: sqlFile,
+    from: oldReturn, to: oldReturn.replace(/^return /, 'perform ') + ' -- return eliminado',
+    spec: 'src/features/admin/audit-catalog.test.ts', expected: 'report_incident' },
+  { label: 'R2-2: /* return */ tampoco es una sentencia', file: sqlFile,
+    from: oldReturn, to: oldReturn.replace(/^return /, 'perform ') + ' /* return */',
+    spec: 'src/features/admin/audit-catalog.test.ts', expected: 'report_incident' },
+  { label: "R2-3: raise notice 'return' tampoco es una sentencia", file: sqlFile,
+    from: oldReturn, to: oldReturn.replace(/^return /, 'perform ') + " raise notice 'return';",
+    spec: 'src/features/admin/audit-catalog.test.ts', expected: 'report_incident' },
+  { label: 'R2-4: H01 no debe recortar el motivo', file: srcFile,
+    from: oldReason, to: "return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;",
+    spec: 'src/features/admin/queries.test.ts', expected: 'motivo completo' },
+];
+function run(spec) {
+  const isWindows = process.platform === 'win32';
+  const proc = spawnSync(isWindows ? 'pnpm.cmd' : 'pnpm', ['exec','vitest','run',spec], { cwd:root, encoding:'utf8', maxBuffer:25_000_000, shell:isWindows });
+  if (proc.error) throw proc.error;
+  const output = [proc.stdout||'', proc.stderr||''].join('\n');
+  const lines = output.split('\n').filter(line => /Test Files|Tests |FAIL|AssertionError|expected|report_incident|motivo completo/i.test(line)).slice(-22);
+  console.log(lines.join('\n'));
+  return { status:proc.status,output };
+}
+for (const spec of [...new Set(replacements.map(m=>m.spec))]) {
+  const baseline = run(spec);
+  if (baseline.status !== 0) throw new Error('CONTROL BASE ROJO: '+spec);
+  console.log('CONTROL GREEN:',spec);
+}
+for (const mutation of replacements) {
+  const original = readFileSync(mutation.file, 'utf8');
+  if (!original.includes(mutation.from)) throw new Error('SIN OBJETIVO: '+mutation.label);
+  if (original.split(mutation.from).length !== 2) throw new Error('OBJETIVO AMBIGUO: '+mutation.label);
+  let result;
+  try {
+    writeFileSync(mutation.file,original.replace(mutation.from,mutation.to),'utf8');
+    console.log('MUTACIÓN',mutation.label);
+    result=run(mutation.spec);
+  } finally {
+    writeFileSync(mutation.file,original,'utf8');
+  }
+  if (readFileSync(mutation.file,'utf8') !== original) throw new Error('RESTAURACIÓN FALLIDA');
+  if (result.status === 0) console.log('CEGUERA CONFIRMADA: mutación GREEN',mutation.label);
+  else if (result.output.toLowerCase().includes(mutation.expected.toLowerCase()))
+    console.log('RED CON OBJETIVO:',mutation.label);
+  else console.log('RED SIN OBJETIVO: inspeccionar fallo',mutation.label);
+}
+
+```
+
+**Control de instrumentación:** un RED atribuible es el que falla por la aserción de `report_incident` o la igualdad estricta del motivo; no cuentan errores de TS, mocks rotos o ausencia de objetivo. Cuando el guard se arregle, las tres mutaciones de SQL deberán emitir **RED CON OBJETIVO**. Si quedan GREEN, el control sigue incompleto.
+
+### Estado de checks observados
+
+Para SHA `2764de210c4929ac2b5a6ea07357d441f1db3759`, `build`, `typecheck`, `lint`, `unit`, `audit` y `bundle-budget` figuran `success` en GitHub Actions run `41694433794`. El run `41693263827` corresponde al SHA intermedio `40197470`. En el log unit se leyó `Test Files 189 passed (189)`, `# pass 81` de la suite workflow y `# pass 6` de ADR; el resumen de número de casos Vitest está por debajo de cobertura y no se debe deducir del conteo de archivos. El job `db-tests` seguía en curso en el head actual (no se cambió Supabase en esta PR), `approval-policy` falló con «Falta el informe completo de revisar-pr sin bloqueantes» y `e2e-preview` aún estaba pendiente. La bitácora en `2764de21` declara GREEN local de 3452 pruebas, 1 passed del E2E local sobre el Preview `40197470` y la ejecución de mutaciones del arnés anterior; siguen siendo resultados del autor, no verificados en este entorno.
+
+**Protocolo pendiente:** registrar resumen del E2E oficial y del job db-tests del próximo SHA de código; no exigir CI nuevo solo por el commit documental de esta ronda.

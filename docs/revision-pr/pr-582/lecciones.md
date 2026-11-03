@@ -6,3 +6,7 @@ No se asignan números AG nuevos: los dos hallazgos son aplicaciones de principi
 - **H02 / P08 y AG-58:** con dominios dinámicos, el catálogo no se vuelve exhaustivo por escribir una lista y comprobar que cada elemento sigue presente en algún lugar del SQL. Exigir conjuntos en dos direcciones y relacionar cada uso dinámico con su archivo/función. La mutación que agrega un valor nuevo es el caso que más importa: la clase nueva no puede quedar invisible.
 
 **Limitación:** estas lecciones son hallazgos por inspección y mutación textual en memoria, no resultados de RED→GREEN del Vitest completo. No modificar `AGENTS.md` todavía.
+
+## Ronda 2 — H03 · Refuerzo de pr-62/AG-60 y pr-68/AG-75
+
+La batería del autor había mutado `return` a `perform` y el test cayó. Eso mide solo desaparición de la palabra. La revisión añadió tres mutaciones independientes que **preservan el token `return` como texto inerte** (comentario `--`, comentario `/* */`, string de `raise notice`); el nuevo guard sigue devolviendo verdadero. Una regex que reconoce una palabra no verifica una sentencia SQL ejecutable. Antes de confiar en un control textual, separar SQL real de comentarios y cadenas; agregar mutaciones que prueben los límites de tokenización, no solo borrar tokens. No se asigna AG nuevo: reitera AG-60 (instrumentos) y AG-75 (baterías independientes).
