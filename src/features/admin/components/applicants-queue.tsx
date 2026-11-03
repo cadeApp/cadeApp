@@ -115,8 +115,7 @@ export function ApplicantsQueue({
                       <TableCell className="px-6 py-4">
                         <div className="text-sm font-medium text-foreground">{a.fullName}</div>
                         <div className="text-sm text-muted-foreground">
-                          {ADMIN_COPY.queue.dniHashLabel}:{' '}
-                          <span className="font-mono">{a.dniHash}</span>
+                          {a.hasDni ? ADMIN_COPY.queue.dniLoaded : ADMIN_COPY.queue.dniPending}
                         </div>
                         {a.phone ? (
                           <div className="text-sm text-muted-foreground">{a.phone}</div>

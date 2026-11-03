@@ -313,8 +313,8 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
             </Badge>
           </div>
           <div className="mt-1 flex flex-wrap gap-4 text-sm text-muted-foreground">
-            <div>
-              {ADMIN_COPY.detail.labels.dniHash}: <span className="font-mono text-foreground">{applicant.dniHash}</span>
+            <div className="font-medium text-foreground">
+              {applicant.hasDni ? ADMIN_COPY.queue.dniLoaded : ADMIN_COPY.queue.dniPending}
             </div>
             {applicant.phone ? (
               <div>

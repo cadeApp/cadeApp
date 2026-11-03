@@ -108,7 +108,16 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
                     {merchant.createdAt ? formatDate(merchant.createdAt) : COPY.empty}
                   </TableCell>
                   <TableCell className="px-6 py-4 text-sm font-medium text-foreground">
-                    {merchant.businessName}
+                    {merchant.signupIncomplete ? (
+                      <>
+                        <span className="block">{merchant.ownerName || COPY.empty}</span>
+                        <span className="block text-sm font-normal text-muted-foreground">
+                          {merchant.businessName}
+                        </span>
+                      </>
+                    ) : (
+                      merchant.businessName
+                    )}
                   </TableCell>
                   <TableCell className="px-6 py-4 text-sm text-foreground">
                     {merchant.ownerName || COPY.empty}

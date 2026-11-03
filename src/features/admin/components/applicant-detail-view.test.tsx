@@ -33,7 +33,7 @@ const mockApplicant: ApplicantDetail = {
   id: 'a0000000-0000-0000-0000-000000000001',
   fullName: 'Juan Repartidor',
   status: 'pending',
-  dniHash: 'hash-dni-1234',
+  hasDni: true,
   phone: '3865123456',
   vehicleType: 'moto',
   vehiclePlate: 'ABC 123',
@@ -355,7 +355,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
     const applicantItem: ApplicantListItem = {
       id: 'a0000000-0000-0000-0000-000000000001',
       fullName: 'Juan Repartidor',
-      dniHash: 'hash-1234',
+      hasDni: true,
       phone: '3865123456',
       vehicleType: 'moto',
       docLevel: 1,
@@ -571,7 +571,7 @@ describe('T-376 / CC-033: señal de documento opcional en revisión en la cola d
     return {
       id: 'a0000000-0000-0000-0000-000000000376',
       fullName: 'Rita Repartidora',
-      dniHash: 'hash-376',
+      hasDni: true,
       phone: '3865000376',
       vehicleType: 'moto',
       docLevel: 1,
@@ -689,5 +689,44 @@ describe('T-387: visor auditado de un PDF', () => {
     const frame = await screen.findByTitle(/documento dni frente \(pdf\)/i);
     expect(frame.tagName).toBe('IFRAME');
     expect(screen.queryByRole('img', { name: /documento dni frente/i })).toBeNull();
+  });
+});
+
+describe('T-401: el hash del DNI no se muestra', () => {
+  const queueItem: ApplicantListItem = {
+    id: 'a0000000-0000-0000-0000-000000000401',
+    fullName: 'Juan Repartidor',
+    hasDni: true,
+    phone: '3865123456',
+    vehicleType: 'moto',
+    docLevel: 1,
+    createdAt: '2026-09-20T10:00:00.000Z',
+    status: 'pending',
+    licenseStatus: 'none',
+    insuranceStatus: 'none',
+    documentsSummary: { hasDniFront: true, hasDniBack: true, hasSelfie: true, hasLicense: false, hasInsurance: false },
+  };
+
+  it('la cola muestra «DNI cargado» o «DNI pendiente» y nunca «DNI Hash»', () => {
+    render(
+      <ApplicantsQueue
+        initialTab="pending"
+        applicants={[queueItem, { ...queueItem, id: 'a0000000-0000-0000-0000-000000000402', fullName: 'Ana Pendiente', hasDni: false }]}
+      />
+    );
+    const rows = screen.getAllByRole('row');
+    expect(rows.find((row) => row.textContent?.includes('Juan Repartidor'))?.textContent).toContain('DNI cargado');
+    expect(rows.find((row) => row.textContent?.includes('Ana Pendiente'))?.textContent).toContain('DNI pendiente');
+    expect(document.body.textContent ?? '').not.toMatch(/hash/i);
+  });
+
+  it('el detalle muestra «DNI cargado» o «DNI pendiente» y nunca «DNI Hash»', () => {
+    const { unmount } = render(<ApplicantDetailView applicant={mockApplicant} />);
+    expect(screen.getByText('DNI cargado')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toMatch(/hash/i);
+    unmount();
+
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, hasDni: false }} />);
+    expect(screen.getByText('DNI pendiente')).toBeTruthy();
   });
 });
