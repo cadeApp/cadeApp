@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parseAdminApplicantsSearchParams } from './schemas';
+import { ADMIN_COPY } from './copy';
+import {
+  AUDIT_TARGET_TYPES,
+  parseAdminApplicantsSearchParams,
+  parseAdminAuditSearchParams,
+} from './schemas';
 
 describe('parseAdminApplicantsSearchParams (PR106-H07)', () => {
   it('retorna tab pending y cursor undefined para un objeto vacío {}', () => {
@@ -40,5 +45,16 @@ describe('parseAdminApplicantsSearchParams (PR106-H07)', () => {
   it('retorna cursor undefined cuando recibe cursor malicioso "javascript:alert(1)"', () => {
     const parsed = parseAdminApplicantsSearchParams({ cursor: 'javascript:alert(1)' });
     expect(parsed.cursor).toBeUndefined();
+  });
+});
+
+describe('T-400: AUDIT_TARGET_TYPES (filtro de entidades)', () => {
+  it('ofrece todas las entidades con etiqueta, ni más ni menos', () => {
+    expect([...AUDIT_TARGET_TYPES].sort()).toEqual(Object.keys(ADMIN_COPY.audit.entities).sort());
+  });
+
+  it('acepta una entidad nueva del catálogo y descarta una desconocida', () => {
+    expect(parseAdminAuditSearchParams({ entity: 'incident' }).targetType).toBe('incident');
+    expect(parseAdminAuditSearchParams({ entity: 'ghost' }).targetType).toBeUndefined();
   });
 });

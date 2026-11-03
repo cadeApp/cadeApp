@@ -17,7 +17,8 @@ const result: AuditLogResult = {
       targetType: 'merchant',
       targetRef: 'f0000000',
       changes: [{ field: 'subscription_status', before: 'pilot', after: 'active' }],
-      hasReason: false,
+      targetName: null,
+      reason: null,
     },
     {
       id: 89,
@@ -27,7 +28,8 @@ const result: AuditLogResult = {
       targetType: 'platform_setting',
       targetRef: 'min_offer_ars',
       changes: [{ field: 'value', before: 1000, after: 1500 }],
-      hasReason: false,
+      targetName: null,
+      reason: null,
     },
   ],
   pageSize: 2,
@@ -126,5 +128,93 @@ describe('T-123: AuditLogTable (A06)', () => {
     );
     expect(screen.queryByRole('link', { name: /siguiente/i })).toBeNull();
     expect(screen.getByText(/no hay registros/i)).toBeTruthy();
+  });
+});
+
+describe('T-400: AuditLogTable (auditoría legible)', () => {
+  const reason =
+    '  Primera línea <script>alert(1)</script>\nSegunda línea del motivo, que es larga y no se corta en el DOM.\n';
+  const readable: AuditLogResult = {
+    items: [
+      {
+        id: 12,
+        createdAt: '2026-10-21T12:00:00.000Z',
+        actorName: 'Lautaro',
+        action: 'admin_reinstate_courier',
+        targetType: 'courier',
+        targetRef: 'b0000000',
+        targetName: 'Ana Gómez',
+        changes: [{ field: 'status', before: 'suspended', after: 'approved' }],
+        reason,
+      },
+      {
+        id: 11,
+        createdAt: '2026-10-21T11:00:00.000Z',
+        actorName: 'Lautaro',
+        action: 'admin_verify_document',
+        targetType: 'courier_document',
+        targetRef: 'd0000000',
+        targetName: 'Bruno Díaz · Licencia de Conducir',
+        changes: [
+          { field: 'status', before: 'submitted', after: 'verified' },
+          { field: 'kind', before: 'license' },
+          { field: 'docLevel', after: 2 },
+        ],
+        reason: null,
+      },
+      {
+        id: 10,
+        createdAt: '2026-10-21T10:00:00.000Z',
+        actorName: null,
+        action: 'push_subscription_reassigned',
+        targetType: 'push_subscription',
+        targetRef: '70000000',
+        targetName: null,
+        changes: [],
+        reason: null,
+      },
+    ],
+    pageSize: 20,
+    nextCursor: null,
+    hasNextPage: false,
+  };
+
+  function rowWith(text: string): HTMLElement {
+    const row = screen.getAllByRole('row').find((candidate) => candidate.textContent?.includes(text));
+    if (!row) throw new Error(`falta la fila con «${text}»`);
+    return row;
+  }
+
+  it('muestra el nombre del afectado y su id corto', () => {
+    render(<AuditLogTable result={readable} filters={{}} actors={[]} />);
+    const row = rowWith('Ana Gómez');
+    expect(within(row).getByText('Ana Gómez')).toBeTruthy();
+    expect(within(row).getByText('b0000000')).toBeTruthy();
+  });
+
+  it('muestra el motivo escapado, completo y con saltos de línea', () => {
+    const { container } = render(<AuditLogTable result={readable} filters={{}} actors={[]} />);
+    const reasonNode = within(rowWith('Ana Gómez')).getByText((_, node) => node?.textContent === reason && node.tagName === 'P');
+    expect(reasonNode.className).toMatch(/whitespace-pre-wrap/);
+    expect(reasonNode.className).not.toMatch(/truncate|line-clamp/);
+    expect(container.querySelector('script')).toBeNull();
+    expect(screen.queryByText(/con motivo registrado/i)).toBeNull();
+  });
+
+  it('etiqueta acciones y entidades nuevas en vez de «Otro evento» / «Otra entidad»', () => {
+    render(<AuditLogTable result={readable} filters={{}} actors={[]} />);
+    const table = screen.getByRole('table');
+    expect(within(table).queryByText(/otro evento/i)).toBeNull();
+    expect(within(table).queryByText(/otra entidad/i)).toBeNull();
+    expect(within(rowWith('70000000')).getByText('70000000')).toBeTruthy();
+  });
+
+  it('un valor de un solo lado se lee como dato o contexto, sin «→ —»', () => {
+    render(<AuditLogTable result={readable} filters={{}} actors={[]} />);
+    const items = within(rowWith('Bruno Díaz')).getAllByRole('listitem').map((item) => item.textContent ?? '');
+    expect(items).toContain('Documento: Licencia de Conducir');
+    expect(items).toContain('Nivel: 2');
+    expect(items.some((text) => text.includes('→ —'))).toBe(false);
+    expect(items.find((text) => text.startsWith('Estado'))).toMatch(/Enviado[\s\S]*→[\s\S]*Verificado/);
   });
 });

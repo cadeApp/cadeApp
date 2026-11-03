@@ -531,7 +531,130 @@ function asChangeValue(value: unknown): AuditChangeValue {
     : null;
 }
 
-function toAuditLogItem(row: AuditRow): AuditLogItem {
+/**
+ * T-400 (decisión de Lautaro073, 2026-10-21): solo estos motivos los escribe un admin para otro admin.
+ * El texto libre de cualquier otra acción puede traer datos personales y se sigue descartando.
+ */
+const AUDIT_REASON_ACTIONS: ReadonlySet<string> = new Set([
+  'admin_decide_courier',
+  'admin_suspend_courier',
+  'admin_reinstate_courier',
+  'admin_verify_document',
+]);
+
+const auditUuidSchema = z.string().guid();
+
+/** Nombres del afectado por `audit_log.id`; las filas sin nombre resuelto no figuran. */
+type AuditTargetNames = ReadonlyMap<number, string>;
+
+function asText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+/** PR582-H01: el motivo se muestra tal como quedó registrado; solo se descarta si está vacío. */
+function asAuditReason(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function documentKindLabel(kind: unknown): string | null {
+  return typeof kind === 'string' && Object.prototype.hasOwnProperty.call(ADMIN_COPY.documentKind, kind)
+    ? ADMIN_COPY.documentKind[kind as keyof typeof ADMIN_COPY.documentKind]
+    : null;
+}
+
+/**
+ * T-400: resuelve en lote, con la sesión del admin (RLS), a quién afectó cada fila de la página: una consulta
+ * por tabla, nunca una por fila, y siempre con el `target_id` completo. Los nombres son un agregado de lectura:
+ * si una consulta falla o la fila ya no existe, esa entidad queda con su id corto.
+ */
+async function resolveAuditTargetNames(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  rows: readonly AuditRow[]
+): Promise<AuditTargetNames> {
+  const isUuid = (value: unknown): value is string => auditUuidSchema.safeParse(value).success;
+  const courierIds = new Set<string>();
+  const merchantIds = new Set<string>();
+  const unknownOwnerDocIds = new Set<string>();
+
+  for (const row of rows) {
+    if (!isUuid(row.target_id)) continue;
+    if (row.target_type === 'courier') courierIds.add(row.target_id);
+    if (row.target_type === 'merchant') merchantIds.add(row.target_id);
+    if (row.target_type === 'courier_document') {
+      const owner = asRecord(row.after).courier_id ?? asRecord(row.before).courier_id;
+      if (isUuid(owner)) courierIds.add(owner);
+      else unknownOwnerDocIds.add(row.target_id);
+    }
+  }
+
+  const [docsResult, merchantsResult] = await Promise.all([
+    unknownOwnerDocIds.size > 0
+      ? supabase.from('courier_documents').select('id, courier_id, kind').in('id', [...unknownOwnerDocIds])
+      : null,
+    merchantIds.size > 0
+      ? supabase
+          .from('merchants')
+          .select('profile_id, business_name, profiles!merchants_profile_id_fkey ( display_name )')
+          .in('profile_id', [...merchantIds])
+      : null,
+  ]);
+
+  const docs = new Map<string, { courierId: string; kind: unknown }>();
+  if (docsResult && !docsResult.error) {
+    for (const doc of (docsResult.data ?? []) as unknown as { id: string; courier_id: string; kind: string }[]) {
+      docs.set(doc.id, { courierId: doc.courier_id, kind: doc.kind });
+      courierIds.add(doc.courier_id);
+    }
+  }
+
+  const merchantNames = new Map<string, string>();
+  if (merchantsResult && !merchantsResult.error) {
+    for (const merchant of (merchantsResult.data ?? []) as unknown as {
+      profile_id: string;
+      business_name: string | null;
+      profiles: { display_name: string | null } | null;
+    }[]) {
+      const name = asText(merchant.business_name) ?? asText(merchant.profiles?.display_name);
+      if (name) merchantNames.set(merchant.profile_id, name);
+    }
+  }
+
+  const courierNames = new Map<string, string>();
+  if (courierIds.size > 0) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, display_name')
+      .in('id', [...courierIds]);
+    if (!error) {
+      for (const profile of (data ?? []) as unknown as { id: string; display_name: string | null }[]) {
+        const name = asText(profile.display_name);
+        if (name) courierNames.set(profile.id, name);
+      }
+    }
+  }
+
+  const names = new Map<number, string>();
+  for (const row of rows) {
+    let name: string | null = null;
+    if (row.target_type === 'courier') name = courierNames.get(row.target_id) ?? null;
+    if (row.target_type === 'merchant') name = merchantNames.get(row.target_id) ?? null;
+    // Mismo código corto que usa la app para las solicitudes (admin-trips).
+    if (row.target_type === 'delivery_request') name = `REQ-${row.target_id.slice(0, 8).toUpperCase()}`;
+    if (row.target_type === 'courier_document') {
+      const before = asRecord(row.before);
+      const after = asRecord(row.after);
+      const doc = docs.get(row.target_id);
+      const owner = after.courier_id ?? before.courier_id ?? doc?.courierId;
+      const ownerName = typeof owner === 'string' ? courierNames.get(owner) : undefined;
+      const kind = documentKindLabel(after.kind ?? before.kind ?? doc?.kind);
+      name = ownerName ? (kind ? `${ownerName} · ${kind}` : ownerName) : null;
+    }
+    if (name) names.set(row.id, name);
+  }
+  return names;
+}
+
+function toAuditLogItem(row: AuditRow, names: AuditTargetNames): AuditLogItem {
   const before = asRecord(row.before);
   const after = asRecord(row.after);
 
@@ -539,11 +662,9 @@ function toAuditLogItem(row: AuditRow): AuditLogItem {
     (field) => field in before || field in after
   ).map((field) => ({
     field,
-    before: asChangeValue(before[field]),
-    after: asChangeValue(after[field]),
+    ...(field in before ? { before: asChangeValue(before[field]) } : {}),
+    ...(field in after ? { after: asChangeValue(after[field]) } : {}),
   }));
-
-  const reason = after.reason;
 
   return {
     id: row.id,
@@ -555,8 +676,9 @@ function toAuditLogItem(row: AuditRow): AuditLogItem {
     action: row.action,
     targetType: row.target_type,
     targetRef: row.target_type === 'platform_setting' ? row.target_id : row.target_id.slice(0, 8),
+    targetName: names.get(row.id) ?? null,
     changes,
-    hasReason: typeof reason === 'string' && reason.trim().length > 0,
+    reason: AUDIT_REASON_ACTIONS.has(row.action) ? asAuditReason(after.reason) : null,
   };
 }
 
@@ -592,9 +714,10 @@ export async function getAuditLog(options?: GetAuditLogOptions): Promise<AuditLo
   const rows = (data ?? []) as unknown as AuditRow[];
   const hasNextPage = rows.length > pageSize;
   const visibleRows = rows.slice(0, pageSize);
+  const names = await resolveAuditTargetNames(supabase, visibleRows);
 
   return {
-    items: visibleRows.map(toAuditLogItem),
+    items: visibleRows.map((row) => toAuditLogItem(row, names)),
     pageSize,
     nextCursor: hasNextPage ? visibleRows[visibleRows.length - 1]?.id ?? null : null,
     hasNextPage,
@@ -621,7 +744,9 @@ export async function getRecentSettingChanges(
     throw new Error(`Error al consultar los últimos cambios: ${error.message}`);
   }
 
-  return ((data ?? []) as unknown as AuditRow[]).map(toAuditLogItem);
+  const rows = (data ?? []) as unknown as AuditRow[];
+  const names = await resolveAuditTargetNames(supabase, rows);
+  return rows.map((row) => toAuditLogItem(row, names));
 }
 
 /**

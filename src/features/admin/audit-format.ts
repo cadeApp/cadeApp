@@ -34,8 +34,31 @@ export function settingLabel(key: string): string {
 }
 
 /** Referencia legible de la entidad afectada. */
-export function auditTargetLabel(item: Pick<AuditLogItem, 'targetType' | 'targetRef'>): string {
-  return item.targetType === 'platform_setting' ? settingLabel(item.targetRef) : item.targetRef;
+export function auditTargetLabel(
+  item: Pick<AuditLogItem, 'targetType' | 'targetRef' | 'targetName'>
+): string {
+  if (item.targetType === 'platform_setting') return settingLabel(item.targetRef);
+  return item.targetName ?? item.targetRef;
+}
+
+export type AuditChangeDisplay =
+  { readonly before: string; readonly after: string } | { readonly value: string };
+
+/**
+ * T-400: un campo de un solo lado (o igual en los dos) es un dato o contexto, no un cambio «→ —».
+ */
+export function describeAuditChange(
+  item: Pick<AuditLogItem, 'targetType' | 'targetRef'>,
+  change: AuditChange
+): AuditChangeDisplay {
+  const { before, after } = change;
+  if (before !== undefined && after !== undefined && before !== after) {
+    return {
+      before: formatAuditValue(item, change.field, before),
+      after: formatAuditValue(item, change.field, after),
+    };
+  }
+  return { value: formatAuditValue(item, change.field, after ?? before ?? null) };
 }
 
 export function formatAuditValue(

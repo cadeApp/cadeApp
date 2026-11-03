@@ -14,7 +14,8 @@ const items: readonly AuditLogItem[] = [
     targetType: 'platform_setting',
     targetRef: 'min_offer_ars',
     changes: [{ field: 'value', before: 1000, after: 1500 }],
-    hasReason: false,
+    targetName: null,
+    reason: null,
   },
   {
     id: 88,
@@ -24,7 +25,8 @@ const items: readonly AuditLogItem[] = [
     targetType: 'platform_setting',
     targetRef: 'request_ttl_minutes',
     changes: [{ field: 'value', before: 30, after: 45 }],
-    hasReason: false,
+    targetName: null,
+    reason: null,
   },
 ];
 
@@ -55,6 +57,30 @@ describe('T-123: RecentSettingChanges (A04, panel «Últimos cambios»)', () => 
     const text = document.body.textContent ?? '';
     expect(text).not.toContain('admin_update_setting');
     expect(text).not.toContain('platform_setting');
+  });
+
+  it('T-400: el primer valor de un parámetro (sin valor anterior) se muestra solo, sin «— →»', () => {
+    render(
+      <RecentSettingChanges
+        items={[
+          {
+            id: 70,
+            createdAt: '2026-09-25T09:00:00.000Z',
+            actorName: 'Lautaro',
+            action: 'admin_update_setting',
+            targetType: 'platform_setting',
+            targetRef: 'loose_credit_reference_price_ars',
+            targetName: null,
+            changes: [{ field: 'value', after: 500 }],
+            reason: null,
+          },
+        ]}
+      />
+    );
+    const [item] = screen.getAllByRole('listitem');
+    expect(item?.textContent ?? '').toContain('500');
+    expect(item?.textContent ?? '').not.toContain('→');
+    expect(item?.textContent ?? '').not.toContain('—');
   });
 
   it('muestra un estado vacío sin eventos', () => {

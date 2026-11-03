@@ -849,7 +849,7 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
     expect(columns).not.toMatch(/phone|email|dni/i);
   });
 
-  it('devuelve nextCursor y el detalle saneado sin motivos ni notas libres', async () => {
+  it('devuelve nextCursor y el detalle saneado sin notas libres (el motivo del admin sí, T-400)', async () => {
     mockClient({ audit_log: { data: AUDIT_ROWS, error: null } });
 
     const result = await getAuditLog({ pageSize: 2 });
@@ -861,7 +861,6 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain('Juan Pérez');
     expect(serialized).not.toContain('3865 44-1122');
-    expect(serialized).not.toContain('30111222');
 
     const [subscription, decision] = result.items;
     expect(subscription).toMatchObject({
@@ -869,7 +868,7 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
       actorName: 'Lautaro',
       action: 'admin_set_subscription',
       targetType: 'merchant',
-      hasReason: false,
+      reason: null,
     });
     expect(subscription?.changes).toEqual(
       expect.arrayContaining([
@@ -877,7 +876,7 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
         { field: 'paid_until', before: null, after: '2026-10-31' },
       ])
     );
-    expect(decision).toMatchObject({ hasReason: true });
+    expect(decision).toMatchObject({ reason: 'DNI 30111222 ilegible' });
     expect(decision?.changes).toEqual([{ field: 'status', before: 'pending', after: 'rejected' }]);
   });
 
@@ -894,6 +893,193 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
   it('propaga el error de base para el error boundary', async () => {
     mockClient({ audit_log: { data: null, error: { message: 'boom' } } });
     await expect(getAuditLog()).rejects.toThrow();
+  });
+});
+
+const T400_ADMIN = 'a0000000-0000-4000-8000-000000000001';
+const T400_COURIER = 'b0000000-0000-4000-8000-000000000002';
+const T400_DOC_OWNER = 'b0000000-0000-4000-8000-000000000003';
+const T400_DOC_VERIFIED = 'd0000000-0000-4000-8000-000000000001';
+const T400_DOC_REPLACED = 'd0000000-0000-4000-8000-000000000002';
+const T400_REQUEST = 'e1a2b3c4-0000-4000-8000-000000000001';
+const T400_INCIDENT = '90000000-0000-4000-8000-000000000001';
+
+function auditRow(
+  id: number,
+  action: string,
+  targetType: string,
+  targetId: string,
+  before: unknown,
+  after: unknown
+) {
+  return {
+    id,
+    created_at: '2026-10-21T12:00:00.000Z',
+    actor_id: T400_ADMIN,
+    action,
+    target_type: targetType,
+    target_id: targetId,
+    before,
+    after,
+    profiles: { display_name: 'Lautaro' },
+  };
+}
+
+describe('T-400: getAuditLog (motivos del admin)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('muestra el motivo completo solo en decidir, suspender, rehabilitar y revisar documentos', async () => {
+    // PR582-H01: espacios y saltos en los extremos incluidos; el motivo no se recorta.
+    const reason = '\n  Línea 1 <b>sin HTML</b>\nLínea 2 con el texto completo del admin  \n';
+    mockClient({
+      audit_log: {
+        data: [
+          auditRow(6, 'admin_decide_courier', 'courier', T400_COURIER, { status: 'pending' }, { status: 'approved', reason }),
+          auditRow(5, 'admin_suspend_courier', 'courier', T400_COURIER, { status: 'approved' }, { status: 'suspended', reason, withdrawnOffersCount: 0 }),
+          auditRow(4, 'admin_reinstate_courier', 'courier', T400_COURIER, { status: 'suspended' }, { status: 'approved', reason }),
+          auditRow(3, 'admin_verify_document', 'courier_document', T400_DOC_VERIFIED, { status: 'submitted', kind: 'license', courier_id: T400_DOC_OWNER }, { status: 'rejected', reason, docLevel: 1 }),
+          auditRow(2, 'admin_resolve_incident', 'incident', T400_INCIDENT, { status: 'open' }, { status: 'resolved', reason: 'Datos del destinatario: Calle Falsa 123' }),
+          auditRow(1, 'admin_decide_courier', 'courier', T400_COURIER, { status: 'pending' }, { status: 'approved', reason: '   ' }),
+        ],
+        error: null,
+      },
+    });
+
+    const { items } = await getAuditLog();
+
+    expect(items.slice(0, 4).map((item) => item.reason)).toEqual([reason, reason, reason, reason]);
+    expect(items[4]?.reason).toBeNull();
+    expect(items[5]?.reason).toBeNull();
+    expect(JSON.stringify(items)).not.toContain('Calle Falsa');
+  });
+
+  it('PR582-H01: conserva el motivo exacto, con espacios y salto final', async () => {
+    const exactReason = '  Primera línea\nSegunda línea  \n';
+    mockClient({
+      audit_log: {
+        data: [
+          auditRow(100, 'admin_suspend_courier', 'courier', T400_COURIER, { status: 'approved' }, { status: 'suspended', reason: exactReason }),
+        ],
+        error: null,
+      },
+    });
+    expect((await getAuditLog()).items[0]?.reason).toBe(exactReason);
+  });
+});
+
+describe('T-400: getAuditLog (nombres de la entidad resueltos en el servidor)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const rows = [
+    auditRow(7, 'admin_reinstate_courier', 'courier', T400_COURIER, { status: 'suspended' }, { status: 'approved', reason: 'ok' }),
+    auditRow(6, 'admin_verify_document', 'courier_document', T400_DOC_VERIFIED, { status: 'submitted', kind: 'license', courier_id: T400_DOC_OWNER }, { status: 'verified', docLevel: 2 }),
+    auditRow(5, 'replace_courier_document', 'courier_document', T400_DOC_REPLACED, { kind: 'insurance' }, { kind: 'insurance', status: 'submitted' }),
+    auditRow(4, 'admin_set_subscription', 'merchant', MERCHANT_A, { subscription_status: 'pilot' }, { subscription_status: 'active' }),
+    auditRow(3, 'admin_grant_publication_credits', 'merchant', MERCHANT_B, null, { credits: 10 }),
+    auditRow(2, 'cancel_request', 'delivery_request', T400_REQUEST, { status: 'published' }, { status: 'cancelled' }),
+    auditRow(1, 'admin_resolve_incident', 'incident', T400_INCIDENT, { status: 'open' }, { status: 'resolved' }),
+    auditRow(0, 'admin_update_setting', 'platform_setting', 'min_offer_ars', { value: 1000 }, { value: 1500 }),
+  ];
+
+  function namedClient() {
+    return mockClient({
+      audit_log: { data: rows, error: null },
+      courier_documents: {
+        data: [{ id: T400_DOC_REPLACED, courier_id: T400_COURIER, kind: 'insurance' }],
+        error: null,
+      },
+      profiles: {
+        data: [
+          { id: T400_COURIER, display_name: 'Ana Gómez' },
+          { id: T400_DOC_OWNER, display_name: 'Bruno Díaz' },
+        ],
+        error: null,
+      },
+      merchants: {
+        data: [
+          { profile_id: MERCHANT_A, business_name: 'Panadería Sol', profiles: { display_name: 'Carla' } },
+          { profile_id: MERCHANT_B, business_name: '  ', profiles: { display_name: 'Diego Ruiz' } },
+        ],
+        error: null,
+      },
+    });
+  }
+
+  it('resuelve el nombre del afectado de cada tipo', async () => {
+    namedClient();
+    const { items } = await getAuditLog();
+    const byId = new Map(items.map((item) => [item.id, item]));
+
+    expect(byId.get(7)).toMatchObject({ targetName: 'Ana Gómez', targetRef: 'b0000000' });
+    expect(byId.get(6)).toMatchObject({
+      targetName: 'Bruno Díaz · Licencia de Conducir',
+      targetRef: 'd0000000',
+    });
+    expect(byId.get(5)).toMatchObject({ targetName: 'Ana Gómez · Seguro de Vehículo' });
+    expect(byId.get(4)).toMatchObject({ targetName: 'Panadería Sol', targetRef: 'f0000000' });
+    expect(byId.get(3)).toMatchObject({ targetName: 'Diego Ruiz' });
+    expect(byId.get(2)).toMatchObject({ targetName: 'REQ-E1A2B3C4' });
+    expect(byId.get(1)).toMatchObject({ targetName: null, targetRef: '90000000' });
+    expect(byId.get(0)).toMatchObject({ targetName: null, targetRef: 'min_offer_ars' });
+  });
+
+  it('consulta en lote, una vez por tipo y con los ids completos (sin N+1)', async () => {
+    const { client, calls } = namedClient();
+    await getAuditLog();
+
+    const tables = client.from.mock.calls.map(([table]) => table);
+    expect(tables.filter((table) => table === 'profiles')).toHaveLength(1);
+    expect(tables.filter((table) => table === 'merchants')).toHaveLength(1);
+    expect(tables.filter((table) => table === 'courier_documents')).toHaveLength(1);
+
+    expect(callsOf(calls, 'courier_documents', 'in')[0]?.args).toEqual(['id', [T400_DOC_REPLACED]]);
+    const [profileColumn, profileIds] = callsOf(calls, 'profiles', 'in')[0]?.args ?? [];
+    expect(profileColumn).toBe('id');
+    expect([...(profileIds as string[])].sort()).toEqual([T400_COURIER, T400_DOC_OWNER].sort());
+    const [merchantColumn, merchantIds] = callsOf(calls, 'merchants', 'in')[0]?.args ?? [];
+    expect(merchantColumn).toBe('profile_id');
+    expect([...(merchantIds as string[])].sort()).toEqual([MERCHANT_A, MERCHANT_B].sort());
+  });
+
+  it('al navegador no llega ningún id completo', async () => {
+    namedClient();
+    const serialized = JSON.stringify(await getAuditLog());
+    for (const fullId of [
+      T400_COURIER,
+      T400_DOC_OWNER,
+      T400_DOC_VERIFIED,
+      T400_DOC_REPLACED,
+      MERCHANT_A,
+      MERCHANT_B,
+      T400_REQUEST,
+      T400_INCIDENT,
+    ]) {
+      expect(serialized).not.toContain(fullId);
+    }
+  });
+
+  it('sin fila o sin permiso, cae al id corto sin error', async () => {
+    mockClient({
+      audit_log: { data: rows, error: null },
+      profiles: { data: null, error: { message: 'permission denied' } },
+      merchants: { data: [], error: null },
+      courier_documents: { data: [], error: null },
+    });
+
+    const { items } = await getAuditLog();
+    expect(items.find((item) => item.id === 7)).toMatchObject({ targetName: null, targetRef: 'b0000000' });
+    expect(items.find((item) => item.id === 4)).toMatchObject({ targetName: null, targetRef: 'f0000000' });
+    expect(items.find((item) => item.id === 2)).toMatchObject({ targetName: 'REQ-E1A2B3C4' });
+  });
+
+  it('una página sin entidades con nombre no hace consultas extra', async () => {
+    const { client } = mockClient({ audit_log: { data: [rows[7]], error: null } });
+    await getAuditLog();
+    expect(client.from.mock.calls.map(([table]) => table)).toEqual(['audit_log']);
   });
 });
 
