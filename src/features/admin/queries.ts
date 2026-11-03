@@ -92,7 +92,7 @@ interface CourierDetailRow {
 /**
  * Obtiene la lista de repartidores postulantes filtrados por estado.
  * Se asegura de que no se expongan datos bancarios ni PII no autorizada.
- * PR106-H07: Paginación por cursor estable por profile_id con máximo 50 por página (por defecto 20).
+ * PR106-H07: Paginación por cursor estable con máximo 50 por página (por defecto 20); T-420: por fecha de registro.
  * PR106-H08: Propagación de fallos de DB a través de excepciones hacia error boundaries.
  * PR106-H12: Utiliza el cliente de sesión autenticada con RLS (createClient), no service_role.
  */
@@ -116,7 +116,7 @@ export async function getApplicantsQueue(
       doc_level,
       license_status,
       insurance_status,
-      profiles!couriers_profile_id_fkey (
+      profiles!couriers_profile_id_fkey!inner (
         display_name,
         phone,
         created_at
@@ -128,10 +128,11 @@ export async function getApplicantsQueue(
     `
     )
     .eq('status', tab)
+    .order('profiles(created_at)', { ascending: false })
     .order('profile_id', { ascending: false });
 
   if (options?.cursor) {
-    query = query.lt('profile_id', options.cursor);
+    query = query.or(registeredCursorFilter(options.cursor), { referencedTable: 'profiles' });
   }
 
   query = query.limit(pageSize + 1);
@@ -145,10 +146,9 @@ export async function getApplicantsQueue(
   const typedCouriers = (couriers ?? []) as unknown as CourierQueueRow[];
   const hasNextPage = typedCouriers.length > pageSize;
   const visibleRows = typedCouriers.slice(0, pageSize);
+  const lastRow = visibleRows[visibleRows.length - 1];
   const nextCursor =
-    hasNextPage && visibleRows.length > 0
-      ? visibleRows[visibleRows.length - 1]?.profile_id ?? null
-      : null;
+    hasNextPage && lastRow?.profiles ? serializeRegisteredCursor(lastRow.profiles.created_at, lastRow.profile_id) : null;
 
   const items: ApplicantListItem[] = visibleRows.map((c) => {
     const profile = c.profiles;
@@ -298,6 +298,20 @@ const MAX_PAGE_SIZE = 50;
 const RECENT_SETTING_CHANGES_LIMIT = 5;
 const AUDIT_ACTORS_LIMIT = 50;
 
+/**
+ * T-420: las listas del admin van de la más nueva a la más vieja por fecha de registro (`profiles.created_at`), con
+ * `profile_id` para desempatar. El cursor es «fecha~id» (validado con `adminRegisteredCursorSchema`) y se aplica sobre
+ * el perfil embebido con `!inner`, así que filtra las filas de la tabla principal.
+ */
+function serializeRegisteredCursor(createdAt: string, id: string): string {
+  return `${createdAt}~${id}`;
+}
+
+function registeredCursorFilter(cursor: string): string {
+  const [createdAt, id] = cursor.split('~');
+  return `created_at.lt."${createdAt}",and(created_at.eq."${createdAt}",id.lt.${id})`;
+}
+
 function clampPageSize(pageSize: number | undefined): number {
   return Math.min(Math.max(1, Math.floor(pageSize ?? DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE);
 }
@@ -312,7 +326,7 @@ interface MerchantRow {
   business_name: string;
   subscription_status: string;
   paid_until: string | null;
-  profiles: { display_name: string | null; phone: string | null } | null;
+  profiles: ProfileRow | null;
   zones: { name: string } | null;
 }
 
@@ -346,14 +360,15 @@ export async function getAdminMerchants(
       business_name,
       subscription_status,
       paid_until,
-      profiles!merchants_profile_id_fkey ( display_name, phone ),
+      profiles!merchants_profile_id_fkey!inner ( display_name, phone, created_at ),
       zones:default_pickup_zone_id ( name )
     `
     )
+    .order('profiles(created_at)', { ascending: false })
     .order('profile_id', { ascending: false });
 
   if (options?.cursor) {
-    query = query.lt('profile_id', options.cursor);
+    query = query.or(registeredCursorFilter(options.cursor), { referencedTable: 'profiles' });
   }
 
   const { data, error } = await query.limit(pageSize + 1);
@@ -393,12 +408,15 @@ export async function getAdminMerchants(
     subscriptionStatus: merchantSubscriptionStatusSchema.parse(row.subscription_status),
     paidUntil: row.paid_until,
     deliveredCount: deliveredCounts.get(row.profile_id) ?? 0,
+    createdAt: row.profiles?.created_at ?? null,
   }));
 
+  const lastRow = visibleRows[visibleRows.length - 1];
   return {
     items,
     pageSize,
-    nextCursor: hasNextPage ? visibleRows[visibleRows.length - 1]?.profile_id ?? null : null,
+    nextCursor:
+      hasNextPage && lastRow?.profiles ? serializeRegisteredCursor(lastRow.profiles.created_at, lastRow.profile_id) : null,
     hasNextPage,
   };
 }

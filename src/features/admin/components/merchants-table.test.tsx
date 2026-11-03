@@ -5,6 +5,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MerchantsTable } from './merchants-table';
 import { setMerchantSubscriptionAction } from '../actions';
 import type { AdminMerchantsResult } from '../types';
+import { formatDate } from '@/lib/format';
 
 const refresh = vi.fn();
 
@@ -30,10 +31,11 @@ const result: AdminMerchantsResult = {
       subscriptionStatus: 'pilot',
       paidUntil: null,
       deliveredCount: 42,
+      createdAt: '2026-10-01T12:00:00+00:00',
     },
   ],
   pageSize: 20,
-  nextCursor: MERCHANT_ID,
+  nextCursor: `2026-10-01T12:00:00+00:00~${MERCHANT_ID}`,
   hasNextPage: true,
 };
 
@@ -64,7 +66,17 @@ describe('T-123: MerchantsTable (A03)', () => {
   it('pagina con un link por cursor', () => {
     render(<MerchantsTable result={result} />);
     const next = screen.getByRole('link', { name: /siguiente/i });
-    expect(next.getAttribute('href')).toBe(`/admin/merchants?cursor=${MERCHANT_ID}`);
+    // T-420: el cursor «fecha~id» va codificado (el + de la zona horaria no se convierte en espacio).
+    expect(next.getAttribute('href')).toBe(
+      `/admin/merchants?cursor=2026-10-01T12%3A00%3A00%2B00%3A00%7E${MERCHANT_ID}`
+    );
+  });
+
+  it('T-420: muestra la fecha y hora de alta de cada comercio', () => {
+    render(<MerchantsTable result={result} />);
+    const table = screen.getByRole('table');
+    expect(within(table).getByRole('columnheader', { name: /alta/i })).toBeTruthy();
+    expect(within(table).getByText(formatDate('2026-10-01T12:00:00+00:00'))).toBeTruthy();
   });
 
   it('T-369: cada comercio enlaza a sus créditos y la cabecera al catálogo de planes', () => {

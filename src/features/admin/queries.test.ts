@@ -28,194 +28,103 @@ describe('Admin Queries (T-122 DoD)', () => {
   });
 
   describe('PR106-H07 y PR106-H12: Cola de postulantes (getApplicantsQueue)', () => {
-    it('utiliza await createClient() (sesión autenticada) y NO createAdminClient() (PR106-H12)', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      });
+    const COURIER_1 = 'c0000000-0000-4000-8000-000000000001';
+    const COURIER_2 = 'c0000000-0000-4000-8000-000000000002';
+    const COURIER_3 = 'c0000000-0000-4000-8000-000000000003';
 
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                limit: mockLimit,
-              }),
-            }),
-          }),
-        }),
+    function courierRow(id: string, createdAt: string) {
+      return {
+        profile_id: id,
+        status: 'pending',
+        vehicle_type: 'moto',
+        vehicle_plate: 'A123BCD',
+        dni_hmac: 'abcdef123456',
+        doc_level: 1,
+        license_status: 'submitted',
+        insurance_status: 'none',
+        profiles: { display_name: 'Juan Perez', phone: '3865123456', created_at: createdAt },
+        courier_documents: [
+          { kind: 'dni_front', status: 'submitted' },
+          { kind: 'dni_back', status: 'submitted' },
+          { kind: 'selfie', status: 'submitted' },
+        ],
       };
+    }
 
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
-
+    it('utiliza await createClient() (sesión autenticada) y NO createAdminClient() (PR106-H12)', async () => {
+      mockClient({ couriers: { data: [], error: null } });
       await getApplicantsQueue('pending');
-
       expect(serverSupabase.createClient).toHaveBeenCalled();
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
-    it('primera página usa limit(pageSize + 1) y NO llama a range() (PR106-H07)', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [
-          {
-            profile_id: 'courier-1',
-            status: 'pending',
-            vehicle_type: 'moto',
-            vehicle_plate: 'A123BCD',
-            dni_hmac: 'abcdef123456',
-            doc_level: 1,
-            license_status: 'submitted',
-            insurance_status: 'none',
-            profiles: {
-              display_name: 'Juan Perez',
-              phone: '3865123456',
-              created_at: '2026-09-25T10:00:00Z',
-            },
-            courier_documents: [
-              { kind: 'dni_front', status: 'submitted' },
-              { kind: 'dni_back', status: 'submitted' },
-              { kind: 'selfie', status: 'submitted' },
-            ],
-          },
-        ],
-        error: null,
-      });
-      const mockRange = vi.fn();
+    it('T-420: ordena por fecha de registro, de la más nueva a la más vieja, y desempata por id', async () => {
+      const { calls } = mockClient({ couriers: { data: [], error: null } });
+      await getApplicantsQueue('pending');
 
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                limit: mockLimit,
-                range: mockRange,
-              }),
-            }),
-          }),
-        }),
-      };
-
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      expect(callsOf(calls, 'couriers', 'eq')[0]?.args).toEqual(['status', 'pending']);
+      expect(callsOf(calls, 'couriers', 'order').map((call) => call.args)).toEqual([
+        ['profiles(created_at)', { ascending: false }],
+        ['profile_id', { ascending: false }],
+      ]);
+      // El perfil se embebe con !inner para que el cursor sobre profiles filtre las filas de couriers.
+      expect(String(callsOf(calls, 'couriers', 'select')[0]?.args[0])).toMatch(
+        /profiles!couriers_profile_id_fkey!inner\s*\(/
       );
+    });
 
+    it('primera página usa limit(pageSize + 1), sin cursor ni range() (PR106-H07)', async () => {
+      const { calls } = mockClient({
+        couriers: { data: [courierRow(COURIER_1, '2026-11-03T16:00:00+00:00')], error: null },
+      });
       const result = await getApplicantsQueue('pending', { pageSize: 20 });
-      expect(mockLimit).toHaveBeenCalledWith(21);
-      expect(mockRange).not.toHaveBeenCalled();
+
+      expect(callsOf(calls, 'couriers', 'limit')[0]?.args).toEqual([21]);
+      expect(callsOf(calls, 'couriers', 'range')).toHaveLength(0);
+      expect(callsOf(calls, 'couriers', 'or')).toHaveLength(0);
       expect(result.pageSize).toBe(20);
       expect(result.hasNextPage).toBe(false);
       expect(result.nextCursor).toBeNull();
       expect(result.items).toHaveLength(1);
       expect(result.items[0]?.fullName).toBe('Juan Perez');
+      expect(result.items[0]?.createdAt).toBe('2026-11-03T16:00:00+00:00');
       expect(result.items[0]?.documentsSummary.hasDniFront).toBe(true);
       expect(result.items[0]?.documentsSummary.hasLicense).toBe(false);
     });
 
-    it('con cursor válido aplica filtro .lt("profile_id", cursor) (PR106-H07)', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      });
-      const mockLt = vi.fn().mockReturnValue({
-        limit: mockLimit,
-      });
+    it('T-420: con cursor sigue después de esa fecha (y del id si la fecha empata) sobre el perfil', async () => {
+      const { calls } = mockClient({ couriers: { data: [], error: null } });
+      const cursor = `2026-11-03T16:22:06.662075+00:00~${COURIER_2}`;
+      await getApplicantsQueue('pending', { cursor, pageSize: 20 });
 
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                lt: mockLt,
-              }),
-            }),
-          }),
-        }),
-      };
-
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
-
-      const cursorUuid = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
-      await getApplicantsQueue('pending', { cursor: cursorUuid, pageSize: 20 });
-
-      expect(mockLt).toHaveBeenCalledWith('profile_id', cursorUuid);
-      expect(mockLimit).toHaveBeenCalledWith(21);
+      expect(callsOf(calls, 'couriers', 'or')[0]?.args).toEqual([
+        `created_at.lt."2026-11-03T16:22:06.662075+00:00",and(created_at.eq."2026-11-03T16:22:06.662075+00:00",id.lt.${COURIER_2})`,
+        { referencedTable: 'profiles' },
+      ]);
+      expect(callsOf(calls, 'couriers', 'lt')).toHaveLength(0);
+      expect(callsOf(calls, 'couriers', 'limit')[0]?.args).toEqual([21]);
     });
 
-    it('calcula hasNextPage y nextCursor a partir del último item visible ante fila extra (PR106-H07)', async () => {
-      // Pedimos pageSize=2 -> limit(3) -> data devuelve 3 filas -> hasNextPage=true, nextCursor='c-2'
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [
-          {
-            profile_id: 'c-1',
-            status: 'pending',
-            profiles: null,
-            courier_documents: [],
-          },
-          {
-            profile_id: 'c-2',
-            status: 'pending',
-            profiles: null,
-            courier_documents: [],
-          },
-          {
-            profile_id: 'c-3',
-            status: 'pending',
-            profiles: null,
-            courier_documents: [],
-          },
-        ],
-        error: null,
+    it('calcula hasNextPage y el cursor «fecha~id» del último visible ante una fila extra (PR106-H07)', async () => {
+      mockClient({
+        couriers: {
+          data: [
+            courierRow(COURIER_3, '2026-11-03T18:00:00+00:00'),
+            courierRow(COURIER_2, '2026-11-03T17:00:00+00:00'),
+            courierRow(COURIER_1, '2026-11-03T16:00:00+00:00'),
+          ],
+          error: null,
+        },
       });
 
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                limit: mockLimit,
-              }),
-            }),
-          }),
-        }),
-      };
-
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
-
       const result = await getApplicantsQueue('pending', { pageSize: 2 });
-      expect(mockLimit).toHaveBeenCalledWith(3);
       expect(result.hasNextPage).toBe(true);
-      expect(result.nextCursor).toBe('c-2');
-      expect(result.items).toHaveLength(2);
-      expect(result.items[0]?.id).toBe('c-1');
-      expect(result.items[1]?.id).toBe('c-2');
+      expect(result.nextCursor).toBe(`2026-11-03T17:00:00+00:00~${COURIER_2}`);
+      expect(result.items.map((item) => item.id)).toEqual([COURIER_3, COURIER_2]);
     });
 
     it('propaga y lanza excepción ante error de DB en getApplicantsQueue (PR106-H08)', async () => {
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                limit: vi.fn().mockResolvedValue({
-                  data: null,
-                  error: { message: 'Database connection failed' },
-                }),
-              }),
-            }),
-          }),
-        }),
-      };
-
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
-
+      mockClient({ couriers: { data: null, error: { message: 'Database connection failed' } } });
       await expect(getApplicantsQueue('pending')).rejects.toThrow('Database connection failed');
     });
   });
@@ -583,7 +492,7 @@ function merchantRow(id: string, overrides: Record<string, unknown> = {}) {
     business_name: 'Panadería La Espiga',
     subscription_status: 'active',
     paid_until: '2026-10-31',
-    profiles: { display_name: 'Rosa Díaz', phone: '3865551234' },
+    profiles: { display_name: 'Rosa Díaz', phone: '3865551234', created_at: '2026-10-01T12:00:00+00:00' },
     zones: { name: 'Centro' },
     ...overrides,
   };
@@ -644,7 +553,7 @@ describe('T-123: getAdminMerchants (A03)', () => {
       [MERCHANT_C, 7],
       [MERCHANT_B, 3],
     ]);
-    expect(result.nextCursor).toBe(MERCHANT_B);
+    expect(result.nextCursor).toBe(`2026-10-01T12:00:00+00:00~${MERCHANT_B}`);
   });
 
   it('no llama a la RPC si la página está vacía', async () => {
@@ -693,19 +602,24 @@ describe('T-123: getAdminMerchants (A03)', () => {
     const { calls } = mockClient({ merchants: { data: [], error: null } });
     await getAdminMerchants({ pageSize: 10 });
 
-    expect(callsOf(calls, 'merchants', 'order')[0]?.args).toEqual([
-      'profile_id',
-      { ascending: false },
+    // T-420: de la más nueva a la más vieja por fecha de registro, con el id para desempatar.
+    expect(callsOf(calls, 'merchants', 'order').map((call) => call.args)).toEqual([
+      ['profiles(created_at)', { ascending: false }],
+      ['profile_id', { ascending: false }],
     ]);
     expect(callsOf(calls, 'merchants', 'limit')[0]?.args).toEqual([11]);
     expect(callsOf(calls, 'merchants', 'range')).toHaveLength(0);
-    expect(callsOf(calls, 'merchants', 'lt')).toHaveLength(0);
+    expect(callsOf(calls, 'merchants', 'or')).toHaveLength(0);
   });
 
-  it('aplica el cursor con lt(profile_id)', async () => {
+  it('T-420: aplica el cursor «fecha~id» sobre el perfil embebido', async () => {
     const { calls } = mockClient({ merchants: { data: [], error: null } });
-    await getAdminMerchants({ cursor: MERCHANT_B });
-    expect(callsOf(calls, 'merchants', 'lt')[0]?.args).toEqual(['profile_id', MERCHANT_B]);
+    await getAdminMerchants({ cursor: `2026-10-01T12:00:00+00:00~${MERCHANT_B}` });
+    expect(callsOf(calls, 'merchants', 'or')[0]?.args).toEqual([
+      `created_at.lt."2026-10-01T12:00:00+00:00",and(created_at.eq."2026-10-01T12:00:00+00:00",id.lt.${MERCHANT_B})`,
+      { referencedTable: 'profiles' },
+    ]);
+    expect(callsOf(calls, 'merchants', 'lt')).toHaveLength(0);
   });
 
   it('acota el tamaño de página a 50 y usa 20 por defecto', async () => {
@@ -741,10 +655,11 @@ describe('T-123: getAdminMerchants (A03)', () => {
         subscriptionStatus: 'active',
         paidUntil: '2026-10-31',
         deliveredCount: 42,
+        createdAt: '2026-10-01T12:00:00+00:00',
       },
     ]);
     expect(result.hasNextPage).toBe(true);
-    expect(result.nextCursor).toBe(MERCHANT_B);
+    expect(result.nextCursor).toBe(`2026-10-01T12:00:00+00:00~${MERCHANT_B}`);
     expect(JSON.stringify(result)).not.toMatch(/cuit|20-12345678-9/i);
   });
 
@@ -1041,7 +956,7 @@ describe('T-321: Desambiguación de embeds PostgREST con foreign keys canónicas
     const [select] = callsOf(calls, 'couriers', 'select');
     expect(select).toBeDefined();
     const selectStr = String(select?.args[0]);
-    expect(selectStr).toMatch(/profiles!couriers_profile_id_fkey\s*\(/);
+    expect(selectStr).toMatch(/profiles!couriers_profile_id_fkey(!inner)?\s*\(/);
     expect(selectStr).not.toMatch(/profiles:profile_id/);
   });
 
@@ -1066,7 +981,7 @@ describe('T-321: Desambiguación de embeds PostgREST con foreign keys canónicas
     const [select] = callsOf(calls, 'merchants', 'select');
     expect(select).toBeDefined();
     const selectStr = String(select?.args[0]);
-    expect(selectStr).toMatch(/profiles!merchants_profile_id_fkey\s*\(/);
+    expect(selectStr).toMatch(/profiles!merchants_profile_id_fkey(!inner)?\s*\(/);
     expect(selectStr).not.toMatch(/profiles:profile_id/);
   });
 

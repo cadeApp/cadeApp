@@ -88,6 +88,8 @@ export interface AdminMerchantListItem {
   readonly subscriptionStatus: MerchantSubscriptionStatus;
   readonly paidUntil: string | null;
   readonly deliveredCount: number;
+  /** T-420: fecha de registro del comercio (`profiles.created_at`). */
+  readonly createdAt: string | null;
 }
 
 export interface AdminMerchantsResult {

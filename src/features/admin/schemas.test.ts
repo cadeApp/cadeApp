@@ -17,10 +17,19 @@ describe('parseAdminApplicantsSearchParams (PR106-H07)', () => {
     expect(parsed.tab).toBe('pending');
   });
 
-  it('retorna mismo UUID cuando recibe un cursor UUID válido', () => {
-    const validUuid = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
-    const parsed = parseAdminApplicantsSearchParams({ cursor: validUuid });
-    expect(parsed.cursor).toBe(validUuid);
+  it('T-420: acepta un cursor «fecha de alta~id» válido', () => {
+    const cursor = '2026-11-03T16:22:06.662075+00:00~a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+    expect(parseAdminApplicantsSearchParams({ cursor }).cursor).toBe(cursor);
+  });
+
+  it.each([
+    'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+    '2026-11-03T16:22:06Z',
+    '2026-11-03T16:22:06Z~no-es-uuid',
+    '2026-11-03T16:22:06Z~a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11~extra',
+    'x),id.gt.0~a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+  ])('T-420: descarta el cursor %s (sus partes van al filtro de PostgREST)', (cursor) => {
+    expect(parseAdminApplicantsSearchParams({ cursor }).cursor).toBeUndefined();
   });
 
   it('retorna cursor undefined cuando recibe cursor inválido "abc"', () => {
