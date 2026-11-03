@@ -145,6 +145,23 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
         },
       ]);
 
+      // T-400: la fila de auditoría dice qué pasó, a quién y por qué.
+      const { data: courierProfile, error: profileErr } = await admin
+        .from('profiles')
+        .select('display_name')
+        .eq('id', courier.id)
+        .single();
+      if (profileErr || !courierProfile?.display_name) {
+        throw new Error(`[E2E Inspect Error] ${profileErr?.message ?? 'repartidor sin nombre'}`);
+      }
+      await page.goto('/admin/audit?action=admin_reinstate_courier&entity=courier');
+      await waitForNoSkeletons(page);
+      const auditRow = page.getByRole('row').filter({ hasText: reason });
+      await expect(auditRow).toHaveCount(1);
+      await expect(auditRow.getByRole('cell', { name: /reactivó un repartidor/i })).toBeVisible();
+      await expect(auditRow.getByText(courierProfile.display_name, { exact: true })).toBeVisible();
+      await expect(auditRow.getByText(reason, { exact: true })).toBeVisible();
+
       // 5. El repartidor vuelve sin disponibilidad; al activarla ve el feed.
       await courierPage.reload();
       await waitForNoSkeletons(courierPage);

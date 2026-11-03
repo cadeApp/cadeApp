@@ -2,7 +2,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Card } from '@/ui/card';
 import { formatDate } from '@/lib/format';
-import { formatAuditValue, settingLabel } from '../audit-format';
+import { describeAuditChange, settingLabel } from '../audit-format';
 import { ADMIN_COPY } from '../copy';
 import type { AuditLogItem } from '../types';
 
@@ -31,6 +31,7 @@ export function RecentSettingChanges({ items }: RecentSettingChangesProps) {
         <ul aria-labelledby={headingId} className="divide-y divide-border">
           {items.map((item) => {
             const change = item.changes.find((candidate) => candidate.field === 'value');
+            const display = change ? describeAuditChange(item, change) : null;
             return (
               <li key={item.id} className="space-y-1 py-3 first:pt-0 last:pb-0">
                 <div className="flex items-baseline justify-between gap-3">
@@ -44,18 +45,16 @@ export function RecentSettingChanges({ items }: RecentSettingChangesProps) {
                     {formatDate(item.createdAt)}
                   </time>
                 </div>
-                {change ? (
+                {display === null ? null : 'value' in display ? (
+                  <p className="text-sm font-semibold text-foreground">{display.value}</p>
+                ) : (
                   <p className="text-sm text-foreground">
-                    <span className="text-muted-foreground line-through">
-                      {formatAuditValue(item, change.field, change.before)}
-                    </span>
+                    <span className="text-muted-foreground line-through">{display.before}</span>
                     <span aria-hidden="true"> → </span>
                     <span className="sr-only"> a </span>
-                    <span className="font-semibold">
-                      {formatAuditValue(item, change.field, change.after)}
-                    </span>
+                    <span className="font-semibold">{display.after}</span>
                   </p>
-                ) : null}
+                )}
                 <p className="text-sm text-muted-foreground">
                   {item.actorName ?? ADMIN_COPY.audit.system}
                 </p>

@@ -107,6 +107,11 @@ export const AUDIT_TARGET_TYPES = [
   'merchant',
   'platform_setting',
   'delivery_request',
+  'announcement',
+  'incident',
+  'publication_plan',
+  'push_subscription',
+  'courier_document_orphan_claim',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 

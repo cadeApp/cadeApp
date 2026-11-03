@@ -11,7 +11,7 @@ import {
   auditEntityLabel,
   auditFieldLabel,
   auditTargetLabel,
-  formatAuditValue,
+  describeAuditChange,
 } from '../audit-format';
 import { ADMIN_COPY } from '../copy';
 import { AUDIT_TARGET_TYPES, type AdminAuditFilters } from '../schemas';
@@ -177,35 +177,50 @@ export function AuditLogTable({ result, filters, actors }: AuditLogTableProps) {
                     {auditActionLabel(item.action)}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-sm text-foreground">
-                    <span className="block">{auditEntityLabel(item.targetType)}</span>
-                    <span className="block font-mono text-sm text-muted-foreground">
-                      {auditTargetLabel(item)}
-                    </span>
+                    <span className="block text-muted-foreground">{auditEntityLabel(item.targetType)}</span>
+                    {item.targetName && item.targetType !== 'delivery_request' ? (
+                      <>
+                        <span className="block font-semibold">{item.targetName}</span>
+                        <span className="block font-mono text-sm text-muted-foreground">
+                          {item.targetRef}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="block font-mono text-sm">{auditTargetLabel(item)}</span>
+                    )}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-sm text-foreground">
                     {item.changes.length === 0 ? (
                       <span className="text-muted-foreground">{COPY.noChanges}</span>
                     ) : (
                       <ul className="space-y-1">
-                        {item.changes.map((change) => (
-                          <li key={change.field}>
-                            <span className="text-muted-foreground">
-                              {auditFieldLabel(change.field)}:
-                            </span>{' '}
-                            {formatAuditValue(item, change.field, change.before)}
-                            <span aria-hidden="true"> → </span>
-                            <span className="sr-only"> a </span>
-                            <span className="font-semibold">
-                              {formatAuditValue(item, change.field, change.after)}
-                            </span>
-                          </li>
-                        ))}
+                        {item.changes.map((change) => {
+                          const display = describeAuditChange(item, change);
+                          return (
+                            <li key={change.field}>
+                              <span className="text-muted-foreground">
+                                {auditFieldLabel(change.field)}:
+                              </span>{' '}
+                              {'value' in display ? (
+                                <span className="font-semibold">{display.value}</span>
+                              ) : (
+                                <>
+                                  {display.before}
+                                  <span aria-hidden="true"> → </span>
+                                  <span className="sr-only"> a </span>
+                                  <span className="font-semibold">{display.after}</span>
+                                </>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
-                    {item.hasReason ? (
-                      <Badge variant="outline" className="mt-2">
-                        {COPY.withReason}
-                      </Badge>
+                    {item.reason ? (
+                      <div className="mt-2 border-l-2 border-border pl-3">
+                        <span className="block text-muted-foreground">{COPY.reason}:</span>
+                        <p className="whitespace-pre-line break-words">{item.reason}</p>
+                      </div>
                     ) : null}
                   </TableCell>
                 </TableRow>

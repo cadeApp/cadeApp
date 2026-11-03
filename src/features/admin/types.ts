@@ -154,10 +154,11 @@ export interface AdminMerchantHeader {
 
 export type AuditChangeValue = string | number | boolean | null;
 
+/** T-400: un lado ausente significa que el campo no estaba en ese lado de `audit_log` (≠ valor `null`). */
 export interface AuditChange {
   readonly field: string;
-  readonly before: AuditChangeValue;
-  readonly after: AuditChangeValue;
+  readonly before?: AuditChangeValue;
+  readonly after?: AuditChangeValue;
 }
 
 export interface AuditLogItem {
@@ -166,9 +167,13 @@ export interface AuditLogItem {
   readonly actorName: string | null;
   readonly action: string;
   readonly targetType: string;
+  /** Id corto (8 caracteres) o la clave del parámetro; nunca el id completo. */
   readonly targetRef: string;
+  /** Nombre del afectado resuelto en el servidor; `null` si no se pudo resolver. */
+  readonly targetName: string | null;
   readonly changes: readonly AuditChange[];
-  readonly hasReason: boolean;
+  /** Motivo escrito por el admin, solo en las acciones que lo admiten (T-400). */
+  readonly reason: string | null;
 }
 
 export interface AuditLogResult {
