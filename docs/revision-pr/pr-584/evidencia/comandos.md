@@ -98,3 +98,80 @@ Para probar RED de lg:hidden→md:hidden se requiere **build local del código m
     node docs/revision-pr/analizar.mjs verificacion
 
 Los comandos se ejecutan sobre worktree limpio del SHA que se quiere verificar. Los resultados locales, CI y E2E que aún no se hayan corrido no se anotan como verdes. En ronda 2 debe leerse el log del CI oficial del SHA de código, no solo el icono de estado.
+
+
+---
+
+# Ronda 2 — SHA 43c4f0d8b54f0a9bff18a6fef4af04460d73a325
+
+Se verificó por GitHub que el autor solo modificó spec E2E (+59) y bitácora (+28). En lectura de source, las 7 rutas de SECTIONS coinciden con ADMIN_NAV_TABS, 12/12 controles estructurales correctos y 5/5 mutantes de **guardas textuales** detectados. Este control no sustituye a una ejecución real de Playwright.
+
+## Harness completo (sin escribir el repo)
+
+Copiar desde la raíz del worktree del SHA a un script temporal; el programa usa Node integrado y no lee .env:
+
+    cat >/tmp/pr584-r2.mjs <<'NODE'
+    import {readFileSync} from 'node:fs';
+    import {join} from 'node:path';
+    const root=process.env.REPO_PATH || process.cwd();
+    const read=p=>readFileSync(join(root,p),'utf8');
+    const s=read('e2e/specs/admin-nav-mobile.spec.ts');
+    const n=read('src/app/(admin)/admin-nav.tsx');
+    const l=read('src/app/(admin)/layout.tsx');
+    const c=read('src/features/admin/constants.ts');
+    const sections=[...s.matchAll(/\{ label: '([^']+)', path: '([^']+)' \}/g)].map(x=>x[2]);
+    const routes=[...c.matchAll(/href: '(\/admin\/[^']+)'/g)].map(x=>x[1]);
+    if(sections.length!==7 || JSON.stringify(sections)!==JSON.stringify(routes)) throw Error('rutas incompletas');
+    function guards(t) {
+      return {
+        mobile:t.includes('viewport: { width: 390, height: 844 }') && t.includes('for (const section of SECTIONS)'),
+        widths:t.includes('for (const width of [1023, 1024, 1280])'),
+        breakpoint:t.includes('if (width < 1024)'),
+        bounds:t.includes("page.locator('main').boundingBox()") && t.includes('expectNear(main.x, 0') && t.includes('expectNear(main.width, width'),
+        desktopBounds:t.includes('expectNear(main.x, SIDEBAR_WIDTH') && t.includes('expectNear(main.width, width - SIDEBAR_WIDTH'),
+        headerVisible:t.includes('admin.menuButton') && t.includes('toBeVisible();'),
+        sidebarHidden:t.includes('admin.sidebarNav') && t.includes('toBeHidden();'),
+        sidebarVisible:t.includes('admin.sidebarNav') && t.includes('toBeVisible();'),
+        sevenLinks:t.includes('toHaveCount(SECTIONS.length)') && t.includes('toHaveText(section.label)'),
+        href:t.includes("toHaveAttribute('href', section.path)"),
+        icons:t.includes('svg[aria-hidden="true"]'),
+        operator:t.includes('getByText(operatorName, { exact: true })') && t.includes("getByRole('button', { name: 'Salir' })")
+      };
+    }
+    const checks=guards(s);
+    if(!Object.values(checks).every(Boolean) || !(n.includes('lg:hidden') && n.includes('lg:flex') && n.includes('lg:w-64') && l.includes('min-w-0 flex-1'))) throw Error('CONTROL ROJO');
+    console.log('CONTROL GREEN 12/12; rutas 7/7');
+    const mutations=[
+      ['umbral','if (width < 1024)','if (width < 768)','breakpoint'],
+      ['ancho main','expectNear(main.width, width - SIDEBAR_WIDTH','expectNear(main.width, width + SIDEBAR_WIDTH','desktopBounds'],
+      ['icono','svg[aria-hidden="true"]','svg','icons'],
+      ['href',"toHaveAttribute('href', section.path)","toHaveAttribute('target', section.path)",'href'],
+      ['rutas','for (const width of [1023, 1024, 1280])','for (const width of [390])','widths']
+    ];
+    let red=0;
+    for(const [name,before,after,key] of mutations){
+      if(!s.includes(before)) throw Error('SIN OBJETIVO '+name);
+      if(guards(s.replace(before,after))[key]) throw Error('MUTANTE SOBREVIVIÓ '+name);
+      console.log('GUARDA RED '+name);red++;
+    }
+    console.log('MUTANTES ESTÁTICOS RED '+red+'/'+mutations.length);
+    NODE
+    node /tmp/pr584-r2.mjs
+
+Aserciones efectivamente vistas por lectura: 390; 1023,1024,1280; \`toBeVisible\` y \`toBeHidden\` en roles correctos, geometry, siete href, iconos, operador y Salir. Mutantes del guard: umbral 1024→768, ancho, ícono, href, anchos de prueba. **Esta batería es distinta de la del autor, pero deliberadamente no reclama verificación E2E.**
+
+## RED declarados por el autor: no reproducidos por el revisor
+
+Bitácora: control Preview 1 passed; (1) \`lg:hidden→md:hidden\` hace fallar Menú a 1023; (2) \`lg:flex→md:flex\` hace visible la barra a 1023; (3) \`lg:w-64→lg:w-48\` desplaza \`main.x\` 256→192; (4) \`flex-1→flex-none\` da \`main.width=1896.9\` frente a 768. Son modificaciones CSS inyectadas en DOM, no un TSX mutado compilado. El script temporal exacto no quedó guardado. No se inventan logs de ejecución.
+
+## Pendiente cuando H02 quede adjunto
+
+    git fetch origin
+    git ls-remote origin feat/T-402-admin-shell
+    node docs/revision-pr/analizar.mjs verificacion
+    pnpm typecheck > /tmp/pr584-typecheck.log 2>&1
+    pnpm lint > /tmp/pr584-lint.log 2>&1
+    pnpm test > /tmp/pr584-test.log 2>&1
+    pnpm exec playwright test e2e/specs/admin-nav-mobile.spec.ts --project=chromium --workers=1 --retries=0 > /tmp/pr584-e2e.log 2>&1
+
+Usar worktree limpio, entorno autorizado Develop y jamás claves en logs. CI/e2e se coteja con SHA de código, no se requiere repetirlo por este commit documental.

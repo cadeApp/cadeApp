@@ -35,3 +35,14 @@ Lautaro073 confirmó en el chat del 2026-11-03 la opción A: conservar las siete
 3. Revisor independiente: en ronda 2 verificar el nuevo SHA, ejecutar los controles posibles, contrastar las mutaciones y revisar CI y E2E antes de levantar bloqueantes.
 
 Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl). Evidencia: [evidencia/comandos.md](evidencia/comandos.md). Lecciones: [lecciones.md](lecciones.md).
+
+
+## Ronda 2 — 2026-11-03
+
+| Ronda | SHA revisado | Resultado | Informe |
+|---|---|---|---|
+| 2 | \`43c4f0d8b54f0a9bff18a6fef4af04460d73a325\` | H01 corregido por inspección, sin Playwright independiente; H02 pendiente manual | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
+
+**Estado actual:** con bloqueante de entrega (H02); H01 = arreglado-sin-verificar. El commit del autor de ronda 2 cambió únicamente \`e2e/specs/admin-nav-mobile.spec.ts\` (+59) y \`docs/tasks/log/T-402.md\` (+28). La revisión de ronda 1 no fue tocada.
+
+**D01** autorizada: 7 secciones y \`getAdminOperatorName\`. **Acción humana imprescindible:** Lautaro073 debe revisar la privacidad y adjuntar las 15 capturas a la PR, no al repositorio. Falta verificación independiente E2E y revisión del CI aplicable al SHA de código, no al commit documental.

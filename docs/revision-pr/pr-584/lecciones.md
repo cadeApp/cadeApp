@@ -17,3 +17,13 @@ En cambios responsive, listar puntos justo debajo, en y por encima de cada break
 ## Límites de esta ronda
 
 La batería estructural de cuatro mutaciones corre por lectura de clases y no sustituye Playwright. No se verificó el CI ni un servidor local de la PR. No se llama arreglado-verificado a un cambio que el autor anunció pero aún no subió.
+
+
+---
+
+## Ronda 2
+
+- **H01 / P08:** el autor añadió el borde de \`lg\`, geometría de main, iconos, nombre y Salir sin tocar producción ni debilitar 390 px. No amerita un AG nuevo, aplica P08 y regla 40.
+- **Mutaciones CSS:** ante imposibilidad de compilar local, probar estilos computados mediante CSS en Preview puede validar sensibilidad de aserciones, pero no equivale a un commit TSX mutado; conservar script completo facilitaría reproducir. No calificar RED del autor como comprobación independiente.
+- **H02 / P15:** generar capturas y adjuntarlas son tareas distintas; si contienen datos sensibles hay que publicar solo copias revisadas.
+- La verificación independiente real de E2E y CI sigue pendiente; no exigir un CI nuevo por commit que solo toca docs/revision-pr.
