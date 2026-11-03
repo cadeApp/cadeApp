@@ -175,8 +175,10 @@ function calledDomain(fn: string): Map<string, string> {
 }
 
 /**
- * PR582-H03: recorre el SQL en orden y quita comentarios (`--`, `/* *\/`); con `emptyLiterals` también vacía los
- * literales `'...'` (con `''` escapado). Un `--` dentro de un literal no es comentario y viceversa.
+ * PR582-H03/H04: recorre el SQL en orden con la gramática léxica de PostgreSQL y quita los comentarios: `--` hasta
+ * el fin de línea y `/* *\/` **anidables**. Con `emptyLiterals` también vacía los literales: `'...'` con `''`
+ * escapado y `E'...'` con escapes de barra. Un `--` o `/*` dentro de un literal no es comentario, y un apóstrofo
+ * dentro de un comentario no abre un literal.
  */
 function scrubSql(sql: string, emptyLiterals: boolean): string {
   let out = '';
@@ -187,13 +189,29 @@ function scrubSql(sql: string, emptyLiterals: boolean): string {
       i = end === -1 ? sql.length : end;
       out += ' ';
     } else if (sql.startsWith('/*', i)) {
-      const end = sql.indexOf('*/', i + 2);
-      i = end === -1 ? sql.length : end + 2;
+      let depth = 1;
+      i += 2;
+      while (i < sql.length && depth > 0) {
+        if (sql.startsWith('/*', i)) {
+          depth += 1;
+          i += 2;
+        } else if (sql.startsWith('*/', i)) {
+          depth -= 1;
+          i += 2;
+        } else {
+          i += 1;
+        }
+      }
       out += ' ';
     } else if (sql[i] === "'") {
+      const escaped = /[eE]/.test(sql[i - 1] ?? '') && !/[a-zA-Z0-9_]/.test(sql[i - 2] ?? '');
       let end = i + 1;
-      while (end < sql.length && !(sql[end] === "'" && sql[end + 1] !== "'"))
-        end += sql[end] === "'" ? 2 : 1;
+      while (end < sql.length) {
+        if (escaped && sql[end] === '\\') end += 2;
+        else if (sql[end] === "'" && sql[end + 1] === "'") end += 2;
+        else if (sql[end] === "'") break;
+        else end += 1;
+      }
       out += emptyLiterals ? "''" : sql.slice(i, end + 1);
       i = end + 1;
     } else {
@@ -205,8 +223,10 @@ function scrubSql(sql: string, emptyLiterals: boolean): string {
 }
 
 /**
- * `if <expr> = '<valor>' then ... return` antes de la escritura: el primer `return` ejecutable de la rama tiene que
- * aparecer antes de que la rama termine (`elsif`, `else` o `end if`).
+ * La rama `if <expr> = '<valor>' then` sale con un `return` **incondicional** antes de la escritura: recorre las
+ * palabras clave ejecutables de la rama llevando la profundidad de los `if` internos; solo cuenta un `return` a
+ * profundidad 0, y la rama termina en `elsif`, `else` o `end if` a esa profundidad. Cualquier otra estructura de
+ * control (bucles, `case`, bloques, `$tag$`) se rechaza: el control falla cerrado en vez de suponer cobertura.
  */
 function returnsBeforeWrite(expression: string, value: string, body: string, writeAt: number) {
   const beforeWrite = scrubSql(body.slice(0, writeAt), false);
@@ -215,8 +235,24 @@ function returnsBeforeWrite(expression: string, value: string, body: string, wri
   );
   if (!branch) return false;
   const rest = scrubSql(beforeWrite.slice(branch.index + branch[0].length), true);
-  const next = /\b(return|elsif|else|end\s+if)\b/i.exec(rest);
-  return next?.[1]?.toLowerCase() === 'return';
+  const keywords =
+    /\$[a-z_]*\$|\b(end\s+if|elsif|else|if|return|end|loop|while|for|foreach|case|begin|exception|declare)\b/gi;
+  let depth = 0;
+  for (const match of rest.matchAll(keywords)) {
+    const keyword = (match[1] ?? '$').toLowerCase().replace(/\s+/g, ' ');
+    if (keyword === 'if') depth += 1;
+    else if (keyword === 'end if') {
+      if (depth === 0) return false;
+      depth -= 1;
+    } else if (keyword === 'elsif' || keyword === 'else') {
+      if (depth === 0) return false;
+    } else if (keyword === 'return') {
+      if (depth === 0) return true;
+    } else {
+      return false;
+    }
+  }
+  return false;
 }
 
 describe('T-400: catálogo de acciones y entidades de audit_log', () => {
