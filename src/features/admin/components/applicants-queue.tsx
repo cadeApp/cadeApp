@@ -183,7 +183,7 @@ export function ApplicantsQueue({
                         </span>
                       </TableCell>
                       <TableCell className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
-                        {formatDate(a.createdAt, 'date')}
+                        {formatDate(a.createdAt)}
                       </TableCell>
                       <TableCell className="px-6 py-4 text-right">
                         <Link href={`/admin/applicants/${a.id}`}>

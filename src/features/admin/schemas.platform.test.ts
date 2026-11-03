@@ -8,11 +8,12 @@ describe('T-123: parseAdminMerchantsSearchParams', () => {
     expect(parseAdminMerchantsSearchParams({})).toEqual({});
   });
 
-  it('acepta un cursor uuid', () => {
-    expect(parseAdminMerchantsSearchParams({ cursor: UUID })).toEqual({ cursor: UUID });
+  it('T-420: acepta un cursor «fecha de alta~id»', () => {
+    const cursor = `2026-11-03T16:22:06.662075+00:00~${UUID}`;
+    expect(parseAdminMerchantsSearchParams({ cursor })).toEqual({ cursor });
   });
 
-  it.each(['abc', '1', "'; drop table merchants;--", ['x', 'y']])(
+  it.each(['abc', '1', UUID, "'; drop table merchants;--", ['x', 'y'], `2026-11-03T16:22:06Z,id.gt.0~${UUID}`])(
     'descarta el cursor inválido %s',
     (cursor) => {
       expect(parseAdminMerchantsSearchParams({ cursor })).toEqual({});

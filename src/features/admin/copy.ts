@@ -60,7 +60,7 @@ export const ADMIN_COPY = {
       vehicle: 'Vehículo',
       documents: 'Documentación',
       level: 'Nivel',
-      date: 'Fecha',
+      date: 'Alta',
       action: 'Acción',
     },
     dniHashLabel: 'DNI Hash',
@@ -209,6 +209,7 @@ export const ADMIN_COPY = {
       plan: 'Plan',
       paidUntil: 'Pagado hasta',
       delivered: 'Despachos',
+      registered: 'Alta',
       actions: 'Acciones',
     },
     status: {
