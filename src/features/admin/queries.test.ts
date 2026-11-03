@@ -954,6 +954,19 @@ describe('T-400: getAuditLog (motivos del admin)', () => {
     expect(items[5]?.reason).toBeNull();
     expect(JSON.stringify(items)).not.toContain('Calle Falsa');
   });
+
+  it('PR582-H01: conserva el motivo exacto, con espacios y salto final', async () => {
+    const exactReason = '  Primera línea\nSegunda línea  \n';
+    mockClient({
+      audit_log: {
+        data: [
+          auditRow(100, 'admin_suspend_courier', 'courier', T400_COURIER, { status: 'approved' }, { status: 'suspended', reason: exactReason }),
+        ],
+        error: null,
+      },
+    });
+    expect((await getAuditLog()).items[0]?.reason).toBe(exactReason);
+  });
 });
 
 describe('T-400: getAuditLog (nombres de la entidad resueltos en el servidor)', () => {

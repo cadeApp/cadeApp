@@ -551,6 +551,11 @@ function asText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+/** PR582-H01: el motivo se muestra tal como quedó registrado; solo se descarta si está vacío. */
+function asAuditReason(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
 function documentKindLabel(kind: unknown): string | null {
   return typeof kind === 'string' && Object.prototype.hasOwnProperty.call(ADMIN_COPY.documentKind, kind)
     ? ADMIN_COPY.documentKind[kind as keyof typeof ADMIN_COPY.documentKind]
@@ -673,11 +678,7 @@ function toAuditLogItem(row: AuditRow, names: AuditTargetNames): AuditLogItem {
     targetRef: row.target_type === 'platform_setting' ? row.target_id : row.target_id.slice(0, 8),
     targetName: names.get(row.id) ?? null,
     changes,
-    // El motivo se muestra tal como quedó registrado; solo se descarta si está vacío.
-    reason:
-      AUDIT_REASON_ACTIONS.has(row.action) && asText(after.reason) !== null
-        ? String(after.reason)
-        : null,
+    reason: AUDIT_REASON_ACTIONS.has(row.action) ? asAuditReason(after.reason) : null,
   };
 }
 

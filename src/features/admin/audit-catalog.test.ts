@@ -68,11 +68,19 @@ function leadingExpressions(sql: string, from: number): string[] {
   return items;
 }
 
-function resolve(expression: string, file: string): readonly string[] {
+/**
+ * Valores que puede tomar una expresión de la escritura. Un valor dinámico se resuelve con el dominio que el SQL
+ * de esa migración le da (sin los excluidos), así una acción nueva en el SQL entra al catálogo y exige etiqueta.
+ */
+function resolve(expression: string, file: string, sql: string, index: number): readonly string[] {
   const literal = /^'([a-z_]+)'$/.exec(expression);
   if (literal?.[1]) return [literal[1]];
   const dynamic = DYNAMIC_VALUES[expression];
-  if (dynamic) return dynamic.values;
+  if (dynamic) {
+    const domain = comparedDomain(expression, enclosingFunction(sql, index).body);
+    for (const value of Object.keys(dynamic.excluded)) domain.delete(value);
+    return [...domain];
+  }
   throw new Error(`${file}: valor no reconocido en una escritura a audit_log: ${expression}`);
 }
 
@@ -106,8 +114,10 @@ function collectCatalog() {
       const [, action, targetType] = leadingExpressions(sql, header.index + header[0].length);
       if (!action || !targetType)
         throw new Error(`${file}: no se pudo leer la escritura a audit_log`);
-      for (const value of resolve(action, file)) actions.set(value, file);
-      for (const value of resolve(targetType, file)) targetTypes.set(value, file);
+      for (const value of resolve(action, file, sql, header.index)) actions.set(value, file);
+      for (const value of resolve(targetType, file, sql, header.index)) {
+        targetTypes.set(value, file);
+      }
       for (const expression of [action, targetType]) {
         if (DYNAMIC_VALUES[expression])
           dynamicUses.push({ expression, file, sql, index: header.index });
