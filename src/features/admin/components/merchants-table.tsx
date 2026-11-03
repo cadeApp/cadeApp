@@ -21,7 +21,7 @@ import { Input } from '@/ui/input';
 import { notify } from '@/ui/notify';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table';
 import { cn } from '@/ui/cn';
-import { formatPhone } from '@/lib/format';
+import { formatDate, formatPhone } from '@/lib/format';
 import { getDomainErrorMessage } from '@/lib/error-messages';
 import type { MerchantSubscriptionStatus } from '@/domain';
 import { setMerchantSubscriptionAction } from '../actions';
@@ -86,6 +86,7 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
           <Table aria-label={COPY.tableLabel}>
             <TableHeader className="bg-muted/70">
               <TableRow>
+                <TableHead className={HEADER_CLASS}>{COPY.columns.registered}</TableHead>
                 <TableHead className={HEADER_CLASS}>{COPY.columns.business}</TableHead>
                 <TableHead className={HEADER_CLASS}>{COPY.columns.owner}</TableHead>
                 <TableHead className={HEADER_CLASS}>{COPY.columns.phone}</TableHead>
@@ -103,6 +104,9 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
             <TableBody className="bg-card">
               {result.items.map((merchant) => (
                 <TableRow key={merchant.id} className="hover:bg-muted/50">
+                  <TableCell className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
+                    {merchant.createdAt ? formatDate(merchant.createdAt) : COPY.empty}
+                  </TableCell>
                   <TableCell className="px-6 py-4 text-sm font-medium text-foreground">
                     {merchant.businessName}
                   </TableCell>

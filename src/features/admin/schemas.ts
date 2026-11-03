@@ -6,6 +6,7 @@ import {
   adminUpdateSettingInputSchema,
   adminUpsertPublicationPlanInputSchema,
   civilDateSchema,
+  isoTimestampSchema,
 } from '@/domain';
 
 export const adminApplicantTabSchema = z
@@ -14,7 +15,19 @@ export const adminApplicantTabSchema = z
 
 export type AdminApplicantTab = z.infer<typeof adminApplicantTabSchema>;
 
-export const adminApplicantsCursorSchema = z.string().guid().optional();
+/**
+ * T-420: cursor «fecha de alta~id» de las listas ordenadas por registro (de la más nueva a la más vieja). Se valida
+ * entero porque sus partes terminan en el filtro de PostgREST.
+ */
+export const adminRegisteredCursorSchema = z
+  .string()
+  .max(120)
+  .refine((raw) => {
+    const [createdAt, id, ...rest] = raw.split('~');
+    return rest.length === 0 && isoTimestampSchema.safeParse(createdAt).success && z.guid().safeParse(id).success;
+  });
+
+export const adminApplicantsCursorSchema = adminRegisteredCursorSchema.optional();
 
 export const adminApplicantsSearchParamsSchema = z.object({
   tab: adminApplicantTabSchema,
@@ -124,7 +137,7 @@ function parseParam<T>(schema: z.ZodType<T, unknown>, raw: unknown): T | undefin
 export function parseAdminMerchantsSearchParams(raw: { cursor?: unknown }): {
   cursor?: string;
 } {
-  const cursor = parseParam(uuidParamSchema, raw.cursor);
+  const cursor = parseParam(adminRegisteredCursorSchema, raw.cursor);
   return cursor === undefined ? {} : { cursor };
 }
 
