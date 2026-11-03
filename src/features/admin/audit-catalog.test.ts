@@ -152,7 +152,8 @@ function quotedLiterals(text: string): string[] {
 }
 
 /** Valores con que el cuerpo compara la expresión (`=`, `<>`, `in (...)`). */
-function comparedDomain(expression: string, body: string): Set<string> {
+function comparedDomain(expression: string, sqlBody: string): Set<string> {
+  const body = scrubSql(sqlBody, false);
   const domain = new Set<string>();
   const compared = new RegExp(`\\b${expression}\\s*(?:=|<>|!=)\\s*'([a-z_]+)'`, 'gi');
   const listed = new RegExp(`\\b${expression}\\s+(?:not\\s+)?in\\s*\\(([^)]*)\\)`, 'gi');
@@ -173,13 +174,49 @@ function calledDomain(fn: string): Map<string, string> {
   return domain;
 }
 
-/** `if <expr> = '<valor>' then ... return` antes de la escritura, dentro de esa misma rama del `if`. */
+/**
+ * PR582-H03: recorre el SQL en orden y quita comentarios (`--`, `/* *\/`); con `emptyLiterals` también vacía los
+ * literales `'...'` (con `''` escapado). Un `--` dentro de un literal no es comentario y viceversa.
+ */
+function scrubSql(sql: string, emptyLiterals: boolean): string {
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    if (sql.startsWith('--', i)) {
+      const end = sql.indexOf('\n', i);
+      i = end === -1 ? sql.length : end;
+      out += ' ';
+    } else if (sql.startsWith('/*', i)) {
+      const end = sql.indexOf('*/', i + 2);
+      i = end === -1 ? sql.length : end + 2;
+      out += ' ';
+    } else if (sql[i] === "'") {
+      let end = i + 1;
+      while (end < sql.length && !(sql[end] === "'" && sql[end + 1] !== "'"))
+        end += sql[end] === "'" ? 2 : 1;
+      out += emptyLiterals ? "''" : sql.slice(i, end + 1);
+      i = end + 1;
+    } else {
+      out += sql[i];
+      i += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * `if <expr> = '<valor>' then ... return` antes de la escritura: el primer `return` ejecutable de la rama tiene que
+ * aparecer antes de que la rama termine (`elsif`, `else` o `end if`).
+ */
 function returnsBeforeWrite(expression: string, value: string, body: string, writeAt: number) {
-  const early = new RegExp(
-    `\\bif\\s+${expression}\\s*=\\s*'${value}'\\s+then\\b(?:(?!\\b(?:end\\s+if|elsif|else)\\b)[\\s\\S])*?\\breturn\\b`,
-    'i'
-  ).exec(body);
-  return early !== null && early.index + early[0].length < writeAt;
+  const beforeWrite = scrubSql(body.slice(0, writeAt), false);
+  const branch = new RegExp(`\\bif\\s+${expression}\\s*=\\s*'${value}'\\s+then\\b`, 'i').exec(
+    beforeWrite
+  );
+  if (!branch) return false;
+  const rest = scrubSql(beforeWrite.slice(branch.index + branch[0].length), true);
+  const next = /\b(return|elsif|else|end\s+if)\b/i.exec(rest);
+  return next?.[1]?.toLowerCase() === 'return';
 }
 
 describe('T-400: catálogo de acciones y entidades de audit_log', () => {
