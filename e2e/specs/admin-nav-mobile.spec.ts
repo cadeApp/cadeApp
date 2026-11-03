@@ -15,6 +15,8 @@ import { AdminPage, LoginPage } from '../pages';
 /**
  * T-402: en una pantalla angosta (390 px) el admin llega a todas las secciones con el menú.
  * Antes, la navegación tenía `hidden md:flex` y debajo de `md` no había forma de cambiar de sección.
+ * PR584-H01: además, el corte en `lg` (1023/1024 px) y el escritorio (1280 px): una sola navegación visible por
+ * ancho, el contenido al lado de la barra lateral y, en escritorio, el operador y «Salir».
  */
 
 const SECTIONS = [
@@ -92,6 +94,63 @@ test.describe('T-402 — navegación del admin en pantalla angosta', () => {
       );
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
+    }
+  });
+});
+
+test.describe('T-402 — corte en lg y escritorio', () => {
+  const SIDEBAR_WIDTH = 256;
+
+  /** Geometría con ±1 px de tolerancia por redondeo del navegador. */
+  function expectNear(actual: number, expected: number, label: string) {
+    expect(Math.abs(actual - expected), `${label}: ${actual} vs ${expected}`).toBeLessThanOrEqual(1);
+  }
+
+  test('debajo de lg solo «Menú»; desde lg la barra lateral con el operador y el contenido a su lado', async ({
+    page,
+    stagingContext,
+  }) => {
+    test.setTimeout(150_000);
+
+    const { credentials, totpSecret } = await seedAdminWithTotp(stagingContext);
+    await loginAdminWithMfa(page, credentials, totpSecret);
+    const admin = new AdminPage(page);
+    const operatorName = credentials.displayName?.trim();
+    if (!operatorName) throw new Error('[E2E Error] El admin sembrado no tiene displayName');
+
+    for (const width of [1023, 1024, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto('/admin/merchants');
+      await waitForNoSkeletons(page);
+      const main = await page.locator('main').boundingBox();
+      if (!main) throw new Error('[E2E Error] Falta el main');
+
+      if (width < 1024) {
+        await expect(admin.sidebarNav, `${width}px`).toBeHidden();
+        await expect(admin.menuButton, `${width}px`).toBeVisible();
+        expectNear(main.x, 0, `${width}px main.x`);
+        expectNear(main.width, width, `${width}px main.width`);
+      } else {
+        await expect(admin.sidebarNav, `${width}px`).toBeVisible();
+        await expect(admin.menuButton, `${width}px`).toBeHidden();
+        const links = admin.sidebarNav.getByRole('link');
+        await expect(links).toHaveCount(SECTIONS.length);
+        for (const [index, section] of SECTIONS.entries()) {
+          const link = links.nth(index);
+          await expect(link).toHaveText(section.label);
+          await expect(link).toHaveAttribute('href', section.path);
+          await expect(link.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+        }
+        await expect(admin.sidebarNav.getByRole('link', { name: 'Comercios', exact: true })).toHaveAttribute(
+          'aria-current',
+          'page'
+        );
+        const sidebar = page.getByRole('complementary');
+        await expect(sidebar.getByText(operatorName, { exact: true })).toBeVisible();
+        await expect(sidebar.getByRole('button', { name: 'Salir' })).toBeVisible();
+        expectNear(main.x, SIDEBAR_WIDTH, `${width}px main.x`);
+        expectNear(main.width, width - SIDEBAR_WIDTH, `${width}px main.width`);
+      }
     }
   });
 });
