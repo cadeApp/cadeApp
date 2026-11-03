@@ -95,3 +95,31 @@ M1 quita fallback, M2 inutiliza flag, M3/M4 false→true sin razón, M5/M6 filtr
 
 Preview: https://cadeapp-develop-git-feat-t-401-admin-useless-data-lautaroj073.vercel.app
 Con admin de prueba: comercio sin nombre y con solo espacios; celda, acciones accesibles, diálogo y créditos; postulantes con y sin DNI en lista y detalle. No exponer credenciales ni hashes reales. El CI `e2e-preview` confirma el gate técnico, pero un E2E genérico no sustituye esta comprobación concreta.
+
+
+---
+
+## Evidencia de Ronda 2 — SHA `887e280483e8f62d9a8b6cda3734ee08f7124772`
+
+**Diff inspeccionado:** `git compare 87992bba...887e2804` en GitHub, único commit `887e2804`, 3 rutas permitidas: bitácora y 2 tests. No cambió código productivo.
+
+### Mutaciones: registro fiel del resultado declarado
+
+Fuente: `docs/tasks/log/T-401.md`, segunda entrada 2026-11-03:
+- Primer intento M1–M6: rojo por aserción, según autor. M7: error de `getByText` — no vale como RED por aserción; la batería se detuvo.
+- Corrección de aserciones en tests: `getByText` → `expect(queryByText(...)).not.toBeNull()`, conservando comprobación de clase. La inspección de diff confirma misma propiedad afirmada.
+- Segundo intento: M1–M9, CONTROL GREEN → RED por aserción → GREEN restaurado, `BATERÍA COMPLETA: 9/9`, `src/` limpio, **según autor**.
+- En Windows se ejecutó el bloque Node copiado a temporal **contra el checkout actual** y con adaptación de `spawnSync` a `shell`; no debe confundirse con el Bash de arriba que fija el worktree del SHA `b082fe4`. Es importante para que M7 use los tests nuevos del commit `887e2804`.
+
+**No son resultados reejecutados por la revisión.** El CI sí ejecuta los tests vigentes del head; no reproduce las mutaciones M1–M9.
+
+### CI de Ronda 2, HEAD funcional `887e2804`
+
+- CI [run 41729270469](https://github.com/cadeApp/cadeApp/actions/runs/41729270469), job `unit` [126242055653](https://github.com/cadeApp/cadeApp/actions/runs/41729270469/job/126242055653): log leído, `Test Files 189 passed (189)` y `Tests 3460 passed (3460)`.
+- `typecheck`, `lint`, `build`, `audit`, `bundle-budget`: SUCCESS en ese run.
+- `approval-policy` [41729269405](https://github.com/cadeApp/cadeApp/actions/runs/41729269405): SUCCESS.
+- `db-tests` [126242056127](https://github.com/cadeApp/cadeApp/actions/runs/41729270469/job/126242056127): en ejecución al producir esta evidencia; **no se atribuye PASS**.
+- `e2e-preview` [41729448801](https://github.com/cadeApp/cadeApp/actions/runs/41729448801): `resolve-preview` exitoso, job E2E en cola al producir esta evidencia; **no se atribuye PASS**.
+- E2E local `admin-courier-reinstate.spec.ts`, 1 passed (53.1 s) contra Preview de `b082fe41`, **reportado en bitácora del autor**. Sin evidencia de smoke de los ejemplos de comercio sin nombre y las dos etiquetas de DNI.
+
+La revisión no inicia Docker ni Supabase remoto, no modifica tests ni usa claves, y no exige CI nuevo verde **solo** por este commit de documentación.

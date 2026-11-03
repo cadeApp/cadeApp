@@ -3,27 +3,30 @@
 | Campo | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/583 |
+| Tarea | T-401 · Fase 4 |
 | Autor | @Lautaro073 |
 | Rama | `feat/T-401-admin-useless-data` → `develop` |
 | Base revisada | `2ed5ef14e6b87efbdedb36e4da18ad8bf08f624a` |
-| SHA revisado | `b082fe414a3eb2507b5b08fa5d013499f8cf5586` |
-| Diff | 10 archivos, +255/−16 |
-| Estado | Sin bloqueantes de código por inspección; sin aprobación ni merge |
+| Último SHA funcional revisado | `887e280483e8f62d9a8b6cda3734ee08f7124772` |
+| Estado | **Ronda 2: sin bloqueantes técnicos detectados; gates E2E/db pendientes al documentar; no aprobado ni mergeado.** |
 
 ## Rondas
 
-| Ronda | SHA funcional revisado | Hallazgos | Informe |
+| Ronda | SHA inspeccionado | Hallazgos nuevos | Informe |
 |---|---|---|---|
-| 1 | `b082fe4` | 0 | [Ronda 1](revisiones/ronda-1.md) |
+| 1 | `b082fe414a3eb2507b5b08fa5d013499f8cf5586` | 0 | [Ronda 1](revisiones/ronda-1.md) |
+| 2 | `887e280483e8f62d9a8b6cda3734ee08f7124772` | 0 | [Ronda 2](revisiones/ronda-2.md) |
 
-Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl) (archivo vacío: cero hallazgos).
-Evidencia y batería de mutaciones adicional propuesta: [comandos.md](evidencia/comandos.md).
+Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl) (vacío porque no se detectaron hallazgos).
+Batería y evidencia: [comandos.md](evidencia/comandos.md).
 Lecciones: [lecciones.md](lecciones.md).
 
-## Pendientes al redactar esta ronda
+## Estado para cierre
 
-- Confirmación final de `e2e-preview` del SHA (seguía en ejecución).
-- Smoke visual autenticado en el Preview: comercio sin nombre y postulantes con/sin DNI; precisa cuenta admin de prueba.
-- RED→GREEN de las mutaciones independientes: no se pudo ejecutar en este entorno sin clon ni `pnpm`.
-- El CI `db-tests` sí completó verde: 40 archivos, 3252 pruebas, Result: PASS, tipos sin diferencia.
-- El `approval-policy` inicial falló porque el cuerpo aún decía «Pendiente» en la sección del informe; se corrige por separado.
+- Código de producción idéntico al de la ronda 1. El único cambio funcional posterior fue endurecer las aserciones unitarias de dos tests; la bitácora documenta M1–M9.
+- CI del SHA funcional `887e2804`: `unit` 189 archivos / 3460 pruebas, `typecheck`, `lint`, `build`, `audit`, `bundle-budget` y `approval-policy` verdes al redactar.
+- `db-tests` y `e2e-preview`: aún no concluidos al redactar; su verde es un **requisito externo de merge** que no se da por satisfecho.
+- El E2E local `admin-courier-reinstate` (1 passed) está registrado por el autor en la bitácora para Preview del SHA `b082fe41`; no cubre todos los ejemplos de UI del DoD.
+- Mutaciones M1–M9 con CONTROL→RED→GREEN: **reportadas por el autor** en la bitácora, sin log raw ni reproducción independiente en el runtime del revisor. La revisión confirmó por inspección que los tests cambiados no debilitan los asserts.
+- Smoke autenticado del estado real de comercio sin nombre y ambos estados de DNI no observado por esta revisión.
+- No exigir nuevo CI en verde exclusivamente por el commit de documentación de ronda 2: el SHA funcional que se verifica es `887e2804`.
