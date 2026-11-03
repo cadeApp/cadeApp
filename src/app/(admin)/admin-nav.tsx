@@ -16,7 +16,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { BrandLogo } from '@/ui/brand-logo';
-import { Button } from '@/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/ui/sheet';
 import { ADMIN_COPY, ADMIN_NAV_TABS } from '@/features/admin';
 import { cn } from '@/ui/cn';
@@ -38,6 +37,8 @@ const NAV_ICONS: Record<AdminNavHref, LucideIcon> = {
 
 const FOCUS_ON_INK =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-secondary';
+
+const ITEM_CLASS = 'flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium';
 
 export interface AdminNavProps {
   readonly operatorName: string;
@@ -82,7 +83,7 @@ export function AdminNav({ operatorName }: AdminNavProps) {
                   onClick={onNavigate}
                   aria-current={isActive ? 'page' : undefined}
                   className={cn(
-                    'flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium',
+                    ITEM_CLASS,
                     FOCUS_ON_INK,
                     isActive
                       ? 'bg-primary font-semibold text-primary-foreground'
@@ -106,19 +107,14 @@ export function AdminNav({ operatorName }: AdminNavProps) {
         <p className="truncate text-sm font-semibold text-secondary-foreground">{operatorName}</p>
         <p className="text-sm text-secondary-foreground/80">{ADMIN_COPY.nav.badgeText}</p>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
+      <button
         type="button"
         onClick={handleLogout}
-        className={cn(
-          'w-full justify-start gap-3 text-secondary-foreground hover:bg-secondary-foreground/10 hover:text-secondary-foreground',
-          FOCUS_ON_INK
-        )}
+        className={cn(ITEM_CLASS, 'w-full text-secondary-foreground hover:bg-secondary-foreground/10', FOCUS_ON_INK)}
       >
-        <LogOut className="h-5 w-5" aria-hidden="true" />
+        <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
         {ADMIN_COPY.nav.logoutButton}
-      </Button>
+      </button>
     </div>
   );
 

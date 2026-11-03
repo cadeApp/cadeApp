@@ -77,7 +77,6 @@ test.describe('T-402 — navegación del admin en pantalla angosta', () => {
     const admin = new AdminPage(page);
     // Debajo de `lg` la barra lateral no se muestra: la única entrada es «Menú».
     await expect(admin.sidebarNav).toBeHidden();
-    await waitForFormHydration(admin.menuButton);
 
     for (const section of SECTIONS) {
       await admin.goToSectionFromMenu(section.label);
@@ -86,7 +85,7 @@ test.describe('T-402 — navegación del admin en pantalla angosta', () => {
       await expect(admin.menuButton).toBeFocused();
       await waitForNoSkeletons(page);
 
-      await admin.menuButton.click();
+      await admin.openMenu();
       await expect(admin.menuNav.getByRole('link', { name: section.label, exact: true })).toHaveAttribute(
         'aria-current',
         'page'

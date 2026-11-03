@@ -1,4 +1,4 @@
-import type { Page, Locator } from '@playwright/test';
+import { expect, type Page, type Locator } from '@playwright/test';
 import { BasePage } from './base.page';
 
 /**
@@ -45,9 +45,20 @@ export class AdminPage extends BasePage {
       .getByRole('navigation', { name: 'Navegación principal de administración' });
   }
 
+  /**
+   * T-402: abre el menú angosto. El botón no está en un formulario: se reintenta el clic hasta que React hidrata y
+   * el Sheet se abre.
+   */
+  async openMenu(): Promise<void> {
+    await expect(async () => {
+      await this.menuButton.click();
+      await expect(this.menuNav).toBeVisible({ timeout: 1_000 });
+    }).toPass();
+  }
+
   /** T-402: abre el menú angosto y entra a una sección por su nombre. */
   async goToSectionFromMenu(label: string): Promise<void> {
-    await this.menuButton.click();
+    await this.openMenu();
     await this.menuNav.getByRole('link', { name: label, exact: true }).click();
   }
 
