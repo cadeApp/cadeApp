@@ -179,3 +179,115 @@ for (const mutation of replacements) {
 Para SHA `2764de210c4929ac2b5a6ea07357d441f1db3759`, `build`, `typecheck`, `lint`, `unit`, `audit` y `bundle-budget` figuran `success` en GitHub Actions run `41694433794`. El run `41693263827` corresponde al SHA intermedio `40197470`. En el log unit se leyó `Test Files 189 passed (189)`, `# pass 81` de la suite workflow y `# pass 6` de ADR; el resumen de número de casos Vitest está por debajo de cobertura y no se debe deducir del conteo de archivos. El job `db-tests` seguía en curso en el head actual (no se cambió Supabase en esta PR), `approval-policy` falló con «Falta el informe completo de revisar-pr sin bloqueantes» y `e2e-preview` aún estaba pendiente. La bitácora en `2764de21` declara GREEN local de 3452 pruebas, 1 passed del E2E local sobre el Preview `40197470` y la ejecución de mutaciones del arnés anterior; siguen siendo resultados del autor, no verificados en este entorno.
 
 **Protocolo pendiente:** registrar resumen del E2E oficial y del job db-tests del próximo SHA de código; no exigir CI nuevo solo por el commit documental de esta ronda.
+
+
+## Ronda 3 — SHA `3c4d3e56c0317f7e925941429aa8a672519be012` — batería independiente H04
+
+**Origen de la prueba:** texto de `app_private.request_cycle` en `supabase/migrations/20261017090000_t369_publication_credits.sql`, leído con GitHub; control `returnsBeforeWrite` y `scrubSql` copiados fielmente del código `3c4d3e56c0317f7e925941429aa8a672519be012` y ejecutados en JS en memoria. No se ejecutaron pgTAP, PostgreSQL ni Vitest del repo en el entorno de revisión, porque el clon no es accesible por DNS y no hay pnpm. La bitácora del autor declara GREEN base y RED de los cuatro mutantes del revisor de ronda 2.
+
+| Mutación en la rama `report_incident` | Salida garantizada | Guard esperado | Guard actual |
+|---|---|---|---|
+| SQL original `RETURN` directo | sí | true | true |
+| `RETURN` → `PERFORM` directo | no | false | false |
+| `IF false THEN RETURN; END IF; PERFORM` | no | false | **true** |
+| `IF v_uid IS NULL THEN RETURN; END IF; PERFORM` | no (el uid nulo ya es rechazado antes) | false | **true** |
+| `PERFORM; /* exterior /* interior */ return */` | no | false | **true** |
+| `PERFORM; -- return eliminado` | no | false | false |
+| `RAISE NOTICE 'literal -- no comentario'; RETURN` real | sí | true | true |
+
+**Base del hallazgo:** `returnsBeforeWrite` busca `/\b(return|elsif|else|end\s+if)\b/` y no distingue la profundidad de un `IF` interno; `scrubSql` usa `indexOf('*/')` sin contador de profundidad. En PostgreSQL los comentarios de bloque `/* */` **se pueden anidar** ([documentación oficial, §4.1.5](https://www.postgresql.org/docs/16/sql-syntax-lexical.html)). Ambos son falsos positivos independientes de la corrección de H03.
+
+**Harness completo de mutación sobre el Vitest real (pendiente de ejecución externa):** copiar el bloque siguiente a `/tmp/pr582-r3-mutate.mjs` y ejecutar `node /tmp/pr582-r3-mutate.mjs > /tmp/pr582-r3.log 2>&1` dentro del worktree. En el SHA actual, H04-1/2/3 deberían aparecer como **FALSO GREEN CONFIRMADO**; después de corregirlo deben salir **RED CON OBJETIVO**, siempre con control base GREEN y restauración explícita. No cuenta un fallo por TypeScript, otro test o instrumento sin objetivo.
+
+```js
+// Guardar como /tmp/pr582-r3-mutate.mjs (fuera del repo).
+// Ejecutar desde un worktree limpio del SHA que contiene el fix.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+
+const root = process.cwd();
+const file = path.join(root, 'supabase/migrations/20261017090000_t369_publication_credits.sql');
+const target = "return jsonb_build_object('incidentId', v_incident, 'requestId', p_request_id, 'status', 'open', 'createdAt', v_now);";
+const perform = target.replace(/^return /, 'perform ');
+const spec = 'src/features/admin/audit-catalog.test.ts';
+const cases = [
+  {
+    label: 'R3-CONTROL: sin RETURN, debe ser RED',
+    mutant: perform,
+    red: true,
+  },
+  {
+    label: 'R3-H04-1: RETURN inalcanzable dentro de IF false',
+    mutant: 'if false then\n      ' + target + '\n    end if;\n    ' + perform,
+    red: true,
+  },
+  {
+    label: 'R3-H04-2: RETURN inalcanzable dentro de IF v_uid IS NULL (ya validado)',
+    mutant: 'if v_uid is null then\n      ' + target + '\n    end if;\n    ' + perform,
+    red: true,
+  },
+  {
+    label: 'R3-H04-3: return en comentario /* anidado */',
+    mutant: perform + ' /* comentario exterior /* interior */ return */',
+    red: true,
+  },
+  {
+    label: 'R3-REGRESION: comentario simple + PERFORM debe ser RED',
+    mutant: perform + ' -- return eliminado',
+    red: true,
+  },
+  {
+    label: 'R3-CONTROL GREEN: SQL string con -- y RETURN real',
+    mutant: "raise notice 'literal -- no es comentario';\n    " + target,
+    red: false,
+  },
+];
+function run(label) {
+  const win = process.platform === 'win32';
+  const r = spawnSync(win ? 'pnpm.cmd' : 'pnpm',
+    ['exec', 'vitest', 'run', spec],
+    { cwd: root, encoding: 'utf8', shell: win, maxBuffer: 20_000_000 });
+  if (r.error) throw r.error;
+  const log = [r.stdout || '', r.stderr || ''].join('\n');
+  const summary = log.split('\n')
+    .filter(l => /Test Files|Tests |FAIL|AssertionError|report_incident|p_action en/i.test(l))
+    .slice(-18).join('\n');
+  console.log('\n' + label + '\n' + summary);
+  return { exit: r.status, log };
+}
+const original = readFileSync(file, 'utf8');
+if (original.split(target).length !== 2)
+  throw new Error('SIN OBJETIVO o ambiguo: el retorno de report_incident no es único');
+const before = run('CONTROL sin mutar');
+if (before.exit !== 0) throw new Error('CONTROL BASE NO GREEN; no atribuir mutaciones');
+for (const c of cases) {
+  let result;
+  try {
+    writeFileSync(file, original.replace(target, c.mutant), 'utf8');
+    result = run(c.label);
+  } finally {
+    writeFileSync(file, original, 'utf8');
+  }
+  if (readFileSync(file, 'utf8') !== original) throw new Error('RESTAURACIÓN FALLIDA');
+  const matchedTarget = /report_incident|p_action en/.test(result.log);
+  if (c.red) {
+    if (result.exit === 0)
+      console.log('FALSO GREEN CONFIRMADO (control ciego): ' + c.label);
+    else if (matchedTarget)
+      console.log('RED CON OBJETIVO: ' + c.label);
+    else
+      console.log('RED SIN OBJETIVO: revisar causa, no contar: ' + c.label);
+  } else {
+    console.log((result.exit === 0 ? 'GREEN CON OBJETIVO' : 'GREEN FALLÓ') + ': ' + c.label);
+  }
+}
+const status = spawnSync('git', ['status','--short','--', 'supabase/migrations/20261017090000_t369_publication_credits.sql'],
+  { cwd:root, encoding:'utf8' });
+console.log('SQL clean:', status.status === 0 && !status.stdout.trim());
+
+```
+
+### CI del SHA de código
+
+Al consultar GitHub para `3c4d3e56c0317f7e925941429aa8a672519be012`: `build`, `lint`, `typecheck`, `audit`, `bundle-budget` estaban `success`; `unit` y `db-tests` `in_progress`; `e2e-preview` `pending` (Preview de Vercel desplegado). `approval-policy` falla mientras no exista informe de revisión **SIN BLOQUEANTES**. **No se declara CI global verde**. Se omitió inspección detallada de logs por existir H04 bloqueante, salvo el check `db-tests` previsto como sustituto de SQL local; aún no había terminado.
