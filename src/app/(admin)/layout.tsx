@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { getAdminOperatorName } from '@/features/admin/server';
 import { AdminNav } from './admin-nav';
 
 export const metadata = {
@@ -6,17 +7,18 @@ export const metadata = {
   description: 'Panel de administración y gestión operativa de cadeApp Aguilares',
 };
 
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const operatorName = await getAdminOperatorName();
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AdminNav />
-      <main className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-8">
-        {children}
-      </main>
+    <div className="min-h-screen bg-background text-foreground lg:flex">
+      <AdminNav operatorName={operatorName} />
+      {/* T-402: el contenido ocupa todo el ancho que deja la barra lateral, sin tope. */}
+      <main className="w-full min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
     </div>
   );
 }
