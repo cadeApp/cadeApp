@@ -222,9 +222,10 @@ describe('T-401: comercio con el alta sin completar', () => {
     render(<MerchantsTable result={incomplete} />);
     const [, merchantCell] = within(screen.getByRole('table')).getAllByRole('cell');
     if (!merchantCell) throw new Error('falta la celda del comercio');
-    expect(within(merchantCell).getByText('Rosa Díaz')).toBeTruthy();
-    const label = within(merchantCell).getByText('Alta sin completar');
-    expect(label.className).toMatch(/text-muted-foreground/);
+    expect(within(merchantCell).queryByText('Rosa Díaz')).not.toBeNull();
+    const label = within(merchantCell).queryByText('Alta sin completar');
+    expect(label).not.toBeNull();
+    expect(label?.className ?? '').toMatch(/text-muted-foreground/);
   });
 
   it('«Créditos y plan», «Abono y piloto» y el diálogo usan el texto de respaldo, nunca un nombre vacío', async () => {

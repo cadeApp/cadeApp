@@ -722,11 +722,11 @@ describe('T-401: el hash del DNI no se muestra', () => {
 
   it('el detalle muestra «DNI cargado» o «DNI pendiente» y nunca «DNI Hash»', () => {
     const { unmount } = render(<ApplicantDetailView applicant={mockApplicant} />);
-    expect(screen.getByText('DNI cargado')).toBeTruthy();
+    expect(screen.queryByText('DNI cargado')).not.toBeNull();
     expect(document.body.textContent ?? '').not.toMatch(/hash/i);
     unmount();
 
     render(<ApplicantDetailView applicant={{ ...mockApplicant, hasDni: false }} />);
-    expect(screen.getByText('DNI pendiente')).toBeTruthy();
+    expect(screen.queryByText('DNI pendiente')).not.toBeNull();
   });
 });
