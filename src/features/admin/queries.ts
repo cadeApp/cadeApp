@@ -673,7 +673,11 @@ function toAuditLogItem(row: AuditRow, names: AuditTargetNames): AuditLogItem {
     targetRef: row.target_type === 'platform_setting' ? row.target_id : row.target_id.slice(0, 8),
     targetName: names.get(row.id) ?? null,
     changes,
-    reason: AUDIT_REASON_ACTIONS.has(row.action) ? asText(after.reason) : null,
+    // El motivo se muestra tal como quedó registrado; solo se descarta si está vacío.
+    reason:
+      AUDIT_REASON_ACTIONS.has(row.action) && asText(after.reason) !== null
+        ? String(after.reason)
+        : null,
   };
 }
 

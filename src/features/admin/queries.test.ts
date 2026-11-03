@@ -931,7 +931,8 @@ describe('T-400: getAuditLog (motivos del admin)', () => {
   });
 
   it('muestra el motivo completo solo en decidir, suspender, rehabilitar y revisar documentos', async () => {
-    const reason = 'Línea 1 <b>sin HTML</b>\nLínea 2 con el texto completo del admin';
+    // PR582-H01: espacios y saltos en los extremos incluidos; el motivo no se recorta.
+    const reason = '\n  Línea 1 <b>sin HTML</b>\nLínea 2 con el texto completo del admin  \n';
     mockClient({
       audit_log: {
         data: [

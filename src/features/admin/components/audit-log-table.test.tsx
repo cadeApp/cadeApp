@@ -132,7 +132,8 @@ describe('T-123: AuditLogTable (A06)', () => {
 });
 
 describe('T-400: AuditLogTable (auditoría legible)', () => {
-  const reason = 'Primera línea <script>alert(1)</script>\nSegunda línea del motivo, que es larga y no se corta en el DOM.';
+  const reason =
+    '  Primera línea <script>alert(1)</script>\nSegunda línea del motivo, que es larga y no se corta en el DOM.\n';
   const readable: AuditLogResult = {
     items: [
       {
@@ -194,7 +195,7 @@ describe('T-400: AuditLogTable (auditoría legible)', () => {
   it('muestra el motivo escapado, completo y con saltos de línea', () => {
     const { container } = render(<AuditLogTable result={readable} filters={{}} actors={[]} />);
     const reasonNode = within(rowWith('Ana Gómez')).getByText((_, node) => node?.textContent === reason && node.tagName === 'P');
-    expect(reasonNode.className).toMatch(/whitespace-pre-line/);
+    expect(reasonNode.className).toMatch(/whitespace-pre-wrap/);
     expect(reasonNode.className).not.toMatch(/truncate|line-clamp/);
     expect(container.querySelector('script')).toBeNull();
     expect(screen.queryByText(/con motivo registrado/i)).toBeNull();

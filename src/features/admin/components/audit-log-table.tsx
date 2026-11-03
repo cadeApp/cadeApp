@@ -219,7 +219,7 @@ export function AuditLogTable({ result, filters, actors }: AuditLogTableProps) {
                     {item.reason ? (
                       <div className="mt-2 border-l-2 border-border pl-3">
                         <span className="block text-muted-foreground">{COPY.reason}:</span>
-                        <p className="whitespace-pre-line break-words">{item.reason}</p>
+                        <p className="whitespace-pre-wrap break-words">{item.reason}</p>
                       </div>
                     ) : null}
                   </TableCell>
