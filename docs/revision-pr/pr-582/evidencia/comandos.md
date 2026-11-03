@@ -291,3 +291,99 @@ console.log('SQL clean:', status.status === 0 && !status.stdout.trim());
 ### CI del SHA de código
 
 Al consultar GitHub para `3c4d3e56c0317f7e925941429aa8a672519be012`: `build`, `lint`, `typecheck`, `audit`, `bundle-budget` estaban `success`; `unit` y `db-tests` `in_progress`; `e2e-preview` `pending` (Preview de Vercel desplegado). `approval-policy` falla mientras no exista informe de revisión **SIN BLOQUEANTES**. **No se declara CI global verde**. Se omitió inspección detallada de logs por existir H04 bloqueante, salvo el check `db-tests` previsto como sustituto de SQL local; aún no había terminado.
+
+
+## Ronda 4 — `9a0b6f5d2c6ca1811dc2c9000dbe2269a1714a3b` — cierre independiente
+
+### ALCANCE Y MÉTODO
+
+- **Verificado por el revisor:** código `scrubSql`, `returnsBeforeWrite`, `comparedDomain` y `asAuditReason` leído desde el SHA exacto; SQL histórico real T-369 y CC-007 leído desde la misma rama mediante conector GitHub. Ejecutó V8 JS con **transcripciones explícitas** de estos helpers (no el Vitest del repo) y mutaciones solo en memoria; no se creó ni ejecutó ninguna migración modificada.
+- **H04/H03:** 17 de 17 casos de la matriz independientes tienen resultado esperado. Incluye R3-H04-1 `IF false`, R3-H04-2 `IF v_uid IS NULL`, R3-H04-3 comentario bloque anidado, R2 comentarios simples y strings, loops, IF cerrados, `E'...'`, dólar literal y `RETURN` válido. El control original es `true`, todos los regresivos probados son `false`.
+- **H02:** para T-369 y CC-007, `comparedDomain` deriva exactamente el conjunto de 7 acciones al quitar la exclusión `report_incident`; mutar temporalmente en memoria `p_action in ('publish_request','republish_request','report_no_show')` por la misma condición con `'new_unlabeled_action'` agrega el valor 8, que **no existe** en `ADMIN_COPY.audit.actions`. Una aserción real de catálogo sería RED. No se afirma haber ejecutado el Vitest mutado.
+- **H01:** `asAuditReason` retorna `null` para nulo, número, vacío y solo-whitespace; devuelve sin cambios `'  Primera línea\nSegunda línea  \n'`. Es una comprobación en V8 del helper, no un E2E DOM.
+- **CI real:** en job `unit` del [run 41698034807](https://github.com/cadeApp/cadeApp/actions/runs/41698034807) del SHA `9a0b6f5d2c6ca1811dc2c9000dbe2269a1714a3b`, se leyó `Test Files 189 passed (189)`, `# pass 81` de workflow tests y `# pass 6` de ADR, sin fallos. `build`, `lint`, `typecheck`, `audit` y `bundle-budget` constaban success.
+- **Gates pendientes:** `db-tests` seguía en ejecución; `e2e-preview` estaba pending en [run 41698361572](https://github.com/cadeApp/cadeApp/actions/runs/41698361572) con Vercel Preview desplegado, y `approval-policy` falló porque la sección del cuerpo de la PR seguía con «Pendiente». Se completará el informe en el cuerpo para que lo reevalúe el evento edited. **No declarar merge-ready hasta ver los tres gates.**
+
+### Script para reproducir la sonda de ronda 4 (sin modificación de archivos)
+
+Guardar el siguiente código como `/tmp/pr582-r4-v8.mjs`, desde la raíz de un worktree `9a0b6f5d2c6ca1811dc2c9000dbe2269a1714a3b`, y ejecutar `node /tmp/pr582-r4-v8.mjs`. La prueba de autor sobre **Vitest real** está documentada en `docs/tasks/log/T-400.md`; para reproducir esos RED de verdad, usar el harness de ronda 3 en esta misma carpeta y `pnpm exec vitest run src/features/admin/audit-catalog.test.ts`. Ningún script de esta ronda modifica el repo.
+
+```js
+// Verificación local sin dependencias; ejecutable como node /tmp/pr582-r4-v8.mjs desde el repositorio.
+// Reproduce por separado (NO reemplaza a Vitest) las funciones puras de audit-catalog.test.ts del SHA revisado.
+// El origen de la función se contrastó por inspección con 9a0b6f5d; no importa producción ni accede a red.
+import fs from 'node:fs';
+const sql = fs.readFileSync('supabase/migrations/20261017090000_t369_publication_credits.sql','utf8');
+const head = sql.indexOf('create or replace function app_private.request_cycle(');
+const end = sql.indexOf('$$;',head);
+const body = sql.slice(head,end);
+const needle = "return jsonb_build_object('incidentId', v_incident, 'requestId', p_request_id, 'status', 'open', 'createdAt', v_now);";
+if (head < 0 || end < 0 || body.split(needle).length !== 2)
+  throw Error('INSTRUMENTO SIN OBJETIVO: revisar SQL antes de atribuir resultado');
+function scrubSql(sql, emptyLiterals) {
+  let out = ''; let i = 0;
+  while (i < sql.length) {
+    if (sql.startsWith('--',i)) {const end = sql.indexOf('\n',i);i=end===-1?sql.length:end;out+=' ';}
+    else if (sql.startsWith('/*',i)) {let depth=1;i+=2;while (i<sql.length&&depth>0){if(sql.startsWith('/*',i)){depth++;i+=2;}else if(sql.startsWith('*/',i)){depth--;i+=2;}else i++;}out+=' ';}
+    else if (sql[i] === "'") {
+      const escaped = /[eE]/.test(sql[i-1]??'') && !/[a-zA-Z0-9_]/.test(sql[i-2]??'');
+      let end = i+1;
+      while(end<sql.length){if(escaped&&sql[end]==='\\')end+=2;else if(sql[end]==="'"&&sql[end+1]==="'")end+=2;else if(sql[end]==="'")break;else end++;}
+      out += emptyLiterals ? "''" : sql.slice(i,end+1);i=end+1;
+    } else out+=sql[i++];
+  }
+  return out;
+}
+function returnsBeforeWrite(expression,value,body,writeAt) {
+  const beforeWrite = scrubSql(body.slice(0,writeAt),false);
+  const branch = new RegExp("\\bif\\s+"+expression+"\\s*=\\s*'"+value+"'\\s+then\\b",'i').exec(beforeWrite);
+  if (!branch) return false;
+  const rest = scrubSql(beforeWrite.slice(branch.index+branch[0].length),true);
+  const keywords = /\$[a-z_]*\$|\b(end\s+if|elsif|else|if|return|end|loop|while|for|foreach|case|begin|exception|declare)\b/gi;
+  let depth = 0;
+  for (const m of rest.matchAll(keywords)) {
+    const k=(m[1]??'$').toLowerCase().replace(/\s+/g,' ');
+    if(k==='if')depth++;
+    else if(k==='end if'){if(depth===0)return false;depth--;}
+    else if(k==='elsif'||k==='else'){if(depth===0)return false;}
+    else if(k==='return'){if(depth===0)return true;}
+    else return false;
+  }
+  return false;
+}
+const perform = needle.replace(/^return /,'perform ');
+const cs = [
+  ['original',needle,true],
+  ['perform',perform,false],
+  ['if false', 'if false then\n'+needle+'\nend if;\n'+perform,false],
+  ['if uid null','if v_uid is null then\n'+needle+'\nend if;\n'+perform,false],
+  ['comment nested',perform+' /* outer /* inner */ return */',false],
+  ['comment --',perform+' -- return eliminado',false],
+  ['comment /* */',perform+' /* return */',false],
+  ['literal',perform+" raise notice 'return';",false],
+  ['string with -- then real return',"raise notice 'x -- y'; "+needle,true],
+  ['closed inner IF then real return',"if v_uid is null then perform 1; end if; "+needle,true],
+  ['loop with return',"loop "+needle+" end loop; "+perform,false],
+  ['E quote escaped',"raise notice E'can\\'t -- return'; "+perform,false],
+  ['E quote then real return',"raise notice E'x\\\\'; "+needle,true],
+  ['commented IF decoy',"-- if p_action = 'report_incident' then return;\n"+perform,false],
+  ['nested comment then return',"/* comment outer /* inner */ after */ "+needle,true],
+  ['two nested IFs',"if true then if false then "+needle+" end if; end if; "+perform,false],
+  ['dollar quoted return',perform+" raise notice $q$return$q$;",false],
+];
+let ok=0;
+for (const [name,rep,expected] of cs) {
+  const mut=body.replace(needle,rep),writeAt=mut.indexOf('insert into public.audit_log');
+  if(writeAt<0)throw Error('No se pudo localizar insert: '+name);
+  const got=returnsBeforeWrite('p_action','report_incident',mut,writeAt);
+  const pass=got===expected; if(pass)ok++;
+  console.log((pass?'PASS ':'FAIL ')+name+' expected='+expected+' observed='+got);
+}
+console.log('MATRIZ '+ok+'/'+cs.length);
+if(ok!==cs.length)process.exitCode=1;
+
+```
+
+**Resultado independiente realizado en el runtime de la revisión:** matriz 17/17; T369/CC007 dominio base 7/7, mutación 8/7 sin etiqueta; asAuditReason 5/5. La sonda no sustituye al runner de Vitest ni a PostgreSQL. El job oficial unit respalda que el test real no falla con código intacto.
+
+**Protocolo operativo:** el commit que cierra la carpeta es exclusivamente de revisión. No pedir un CI verde adicional solo por este commit documental, conforme a la regla 10. Esperar el resultado de los gates automáticos del SHA de código antes de mergear.
