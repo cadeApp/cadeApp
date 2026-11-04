@@ -88,3 +88,32 @@ Este resultado verifica **existencia y ubicación de la aserción**, NO la semá
 **CI de código [41913324153](https://github.com/cadeApp/cadeApp/actions/runs/41913324153):** `unit` → `Test Files 192 passed (192)`, `Tests 3532 passed (3532)`; `typecheck`, `lint`, `build`, `audit`, `bundle-budget` successes. `db-tests` estaba in_progress al consultar (NO se consigna PASS). `bundle-budget`: /admin/applicants 264 kB / 180 kB advisory. **[E2E run 41913467285](https://github.com/cadeApp/cadeApp/actions/runs/41913467285):** resolve-preview success, e2e-preview in_progress y status pendiente, sin log terminado. Fecha de revisión: 2026-11-04.
 
 **Entorno:** `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` dio exit 128 (`Could not resolve host: github.com`); no se ejecutaron clones locales, `pnpm test`, `node docs/revision-pr/analizar.mjs verificacion`, Supabase o Docker. La evidencia del propio agente (397 tests locales) no es control independiente.
+
+---
+
+## E05 — Revalidación final y aceptación (SHA exacto 7e52b87)
+
+**Run E2E:** https://github.com/cadeApp/cadeApp/actions/runs/41915482723 · job `e2e-preview` ID **126874049100**, `conclusion=success`. Status de GitHub para `7e52b87a2673ffbacfbd544f3c191b463ebe3c62`: **`e2e-preview: success`**.
+
+**Log del job, líneas relevantes obtenidas por conector GitHub:**
+
+```text
+38:   ref: 7e52b87a2673ffbacfbd544f3c191b463ebe3c62
+124: HEAD is now at 7e52b87 docs(review): registrar ronda 2 de PR #605 y gate E2E pendiente [T-403]
+537: Running 115 tests using 1 worker
+539: ✓ 1 [chromium] › e2e/specs/admin-applicants-search.spec.ts:66:7 › T-403 — búsqueda sin tildes y contador de postulantes › «jose» encuentra a «José», el contador refleja su alta y una cuenta sin envío no cuenta (28.0s)
+563: ✘ 25 [chromium] › e2e/specs/courier-onboarding.spec.ts:1723:7 › T-376 / CC-033 y T-387 ... PDF ... (31.4s)
+564: ✓ 26 [chromium] › e2e/specs/courier-onboarding.spec.ts:1723:7 › ... PDF ... (retry #1) (43.4s)
+726: 1 flaky
+728: 114 passed (35.5m)
+730: Running 6 tests using 1 worker
+739: 6 passed (2.7m)
+```
+
+**Flaky ajeno identificado:** `courier-onboarding.spec.ts:1755`: la aserción `expect(insuranceCard.getByText('En revisión manual')).toBeVisible({timeout:20000})` no encontró el elemento en el primer intento; pasó en primer retry. No hay cambios en ese spec por T-403, ni una falla observada en el caso T-403. No es otro bloqueante de PR #605; se documenta para seguimiento del área correspondiente.
+
+**CI de implementación:** https://github.com/cadeApp/cadeApp/actions/runs/41913324153 (SHA `5ea4c55`). Todos los jobs `success`. Del log `unit`: `Test Files 192 passed` y `Tests 3532 passed`. Del log `db-tests`: `supabase/tests/cc043_courier_application.sql ... ok`, `cc044_admin_list_applicants.sql ... ok`, `Files=42, Tests=3396`, `Result: PASS`; paso `git diff --exit-code -- src/types/database.types.ts` completo con éxito.
+
+**Comparación del checkout E2E contra el código corregido:** `5ea4c55...7e52b87` => 1 commit, 5 archivos **exclusivamente** bajo `docs/revision-pr/pr-605/**`, 0 modificaciones de código, pruebas o fixtures. El SHA probado por E2E es el de docs y contiene el código idéntico al corregido en `5ea4c55`.
+
+**Límite permanente:** no hay RED real de la mutación SQL `application_submitted -> vehicle_type IS NOT NULL`, porque no se usó una base aislada. Se mantiene [#606](https://github.com/cadeApp/cadeApp/issues/606), fuera del alcance de T-403. Eso no impide marcar H01 `arreglado-verificado`, porque la prueba fortalecida sí se ejecutó y pasó realmente en la rama.

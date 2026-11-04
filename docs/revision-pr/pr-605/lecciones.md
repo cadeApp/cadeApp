@@ -21,3 +21,11 @@ Las suites y los conteos citados provienen de logs de CI del SHA revisado, no de
 ## Ronda 2 — sin AG nuevo
 
 La corrección añadió el estado disociador (`vehicle_type='moto'`, `application_submitted=false`) y corroboración positiva de persistencia vía `.select().single()`. Eso responde al patrón `P08` y `pr-56/AG-37` de la ronda anterior. La auditoría estática propia discriminó las versiones y una ablación, pero **no demuestra ejecución E2E** ni reemplaza una mutación SQL real. La práctica aplicable sigue siendo `pr-63/AG-70`: no presentar un RED hipotético como observado. Se conserva el pgTAP como seguimiento #606.
+
+---
+
+## Ronda 3 — cierre sin AG nuevo (2026-11-04)
+
+La verificación independiente se hizo sobre un **job real terminado**, no sobre el GREEN declarado por el autor: `e2e-preview` del SHA `7e52b87` ejecutó `admin-applicants-search.spec.ts` y lo pasó al primer intento (28 s). La comparación entre `5ea4c55` y `7e52b87` contiene únicamente documentación de revisión; por tanto, el gate probó el mismo código corregido. La marca `arreglado-verificado` se registra en `7e52b87`, distinto del SHA donde el autor implementó D01=A.
+
+**No confundir** `114 passed + 1 flaky` con `115 passed`: el caso T-376 del PDF falló en el primer intento esperando «En revisión manual» y pasó en retry #1. La suite de T-403 pasó sin retry. Los 6 tests `global-settings` pasaron aparte. El issue #606 mantiene la mutación SQL aislada como control futuro, sin bloquear la aceptación ya evidenciada por la ejecución real.
