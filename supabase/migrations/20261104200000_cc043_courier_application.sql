@@ -72,8 +72,7 @@ begin
   select profile_id, status, application_submitted, submitted_at, dni_hmac, vehicle_type, vehicle_plate
   into v_courier
   from public.couriers
-  where profile_id = p_courier_id
-  for update;
+  where profile_id = p_courier_id;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
