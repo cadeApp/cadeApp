@@ -103,8 +103,7 @@ begin
   end if;
 
   if p_vehicle_type in ('moto', 'car') then
-    if v_plate is null
-      or v_plate !~ '^([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2}|[A-Z]\s?[0-9]{3}\s?[A-Z]{3}|[A-Z]{3}\s?[0-9]{3}|[0-9]{3}\s?[A-Z]{3})$' then
+    if v_plate !~ '^([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2}|[A-Z]\s?[0-9]{3}\s?[A-Z]{3}|[A-Z]{3}\s?[0-9]{3}|[0-9]{3}\s?[A-Z]{3})$' then
       raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
     end if;
   elsif v_plate is not null then
