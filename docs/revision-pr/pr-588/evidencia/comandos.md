@@ -52,3 +52,34 @@ git diff --check
 ```
 
 Después del merge y `migrate-develop`: verificar el E2E real por el proceso vigente CC-023. Esa verificación está pendiente y no se infiere de CI verde o Preview READY.
+
+---
+
+## Ronda 2 — Evidencia independiente consultada (2026-11-04)
+
+**SHA solicitado:** `22d7d9c1018b7ce050fcbc05a51559ceaf0ccbbc`; **código:** `f3c43113a817523571796849135e9969a0889c7b`. El compare `f3c43113a817523571796849135e9969a0889c7b...22d7d9c1018b7ce050fcbc05a51559ceaf0ccbbc` devolvió solo `docs/tasks/log/T-421.md`; el compare `3393d51...22d7d9c1018b7ce050fcbc05a51559ceaf0ccbbc` devolvió seis archivos autorizados.
+
+**CI GREEN en código:** https://github.com/cadeApp/cadeApp/actions/runs/41867741655
+- `unit` job `126706282835`: `✓ src/app/auth/confirm/route.test.ts (30 tests)`; `Test Files 191 passed (191)`; `Tests 3508 passed (3508)`.
+- `db-tests` job `126706282994`: `cc016_request_offer_couriers.sql ... ok`; `cc043_courier_application.sql ... ok`; `Files=42, Tests=3396, Result: PASS`.
+- `build`, `typecheck`, `lint`, `audit`, `bundle-budget`: `success`; `db:types` regeneró y el paso `git diff --exit-code -- src/types/database.types.ts` terminó correctamente.
+
+**H02 RED SQL (evidencia verificable):** PR https://github.com/cadeApp/cadeApp/pull/602, cerrada sin merge, commit https://github.com/cadeApp/cadeApp/commit/444e94c9755b0a43585b165571038c74c98a4792 (único cambio: `for update;` → `;` después de `where profile_id = p_courier_id`); CI https://github.com/cadeApp/cadeApp/actions/runs/41867747186, job `126706305657`: `# Failed test 5: "finalize bloquea couriers antes de profiles/documentos"`, `Tests: 85 Failed: 1`, `Result: FAIL`.
+
+**H03 RED SQL (evidencia verificable):** PR https://github.com/cadeApp/cadeApp/pull/603, cerrada sin merge, commit https://github.com/cadeApp/cadeApp/commit/696bc2ee2062c9247eda8005cd31b8b21f17f3cb (único archivo `cc016`, RPC → `update` con marca); CI https://github.com/cadeApp/cadeApp/actions/runs/41867763829, job `126706366592`: `# Failed test 1: "fixture: doc2 envió su postulación por finalize_courier_application"`, `Tests: 25 Failed: 1`, `Result: FAIL`.
+
+**H01 RED local:** bitácora reporta mutación `parseOnboardingComplete('courier', courier ?? null)` sin rama `courierError`, RED 1/30, GREEN 30/30. Se verificó la semántica por lectura del helper y de la ruta, pero **no se volvió a correr esa mutación en este entorno**. El CI sí ejecutó los 30 tests. No inventar un segundo RED ni un harness que no se ejecutó.
+
+**CI HEAD (solo bitácora):** https://github.com/cadeApp/cadeApp/actions/runs/41869418827, build job `126712087520` FAILURE en `src/app/layout.tsx`/Google `next/font`, `TypeError: Cannot read properties of null (reading '1')` en `next/dist/compiled/@next/font/dist/google/loader.js:122`. Mismo árbol de código y dependencies que `f3c43113`; por eso no hay evidencia para imputarlo a los arreglos de T-421. Revisar gates efectivos antes del merge; no exigir nuevo GREEN solo por bitácora.
+
+**Cosas NO ejecutadas por la revisión:** `pnpm` local, `git merge-tree`, `node docs/revision-pr/analizar.mjs verificacion`, Docker/Supabase local y batería de mutaciones independiente. No hay clon local disponible (DNS de github.com inaccesible desde la shell). JSONL validado como 3 objetos parseables y estados coherentes antes del commit. Las mutaciones originales de #602/#603 se inspeccionaron contra el diff real y se confirmó que las PR de mutación no fueron mergeadas.
+
+**Comandos que sí puede reproducir quien tenga un worktree limpio:**
+```bash
+git fetch origin
+git diff --stat 3393d51cd0563f5aadfea3d46fb161b4e18a8179..22d7d9c1018b7ce050fcbc05a51559ceaf0ccbbc
+git diff --name-only f3c43113a817523571796849135e9969a0889c7b..22d7d9c1018b7ce050fcbc05a51559ceaf0ccbbc
+git merge-tree --write-tree origin/develop 22d7d9c1018b7ce050fcbc05a51559ceaf0ccbbc
+pnpm vitest run src/app/auth/confirm/route.test.ts
+node docs/revision-pr/analizar.mjs verificacion
+```
