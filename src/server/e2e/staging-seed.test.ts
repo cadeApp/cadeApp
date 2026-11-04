@@ -872,12 +872,26 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       const profileUpserts: Array<Record<string, unknown>> = [];
       const courierUpserts: Array<Record<string, unknown>> = [];
       const merchantUpserts: Array<Record<string, unknown>> = [];
+      const documentInserts: Array<Array<Record<string, unknown>>> = [];
+      const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
 
       let userCounter = 0;
       const userIds = [mockMerchantId, mockCourier0Id, mockCourier1Id];
 
       const mockClient = {
+        rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
+          rpcCalls.push({ fn, args });
+          return { data: { ok: true, idempotent: false, submittedAt: '2026-11-04T12:00:00.000000Z' }, error: null };
+        }),
         from: vi.fn((table: string) => {
+          if (table === 'courier_documents') {
+            return {
+              insert: vi.fn(async (payload: Array<Record<string, unknown>>) => {
+                documentInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
           if (table === 'zones') {
             return {
               select: () => ({
@@ -969,8 +983,116 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(courierUp1?.license_status).toBe('none');
       expect(courierUp1?.insurance_status).toBe('none');
 
+      // CC-043: cada courier sembrado envía su postulación con la RPC (cuatro documentos vigentes, HMAC aleatorio y
+      // patente válida); nunca escribe application_submitted ni submitted_at a mano.
+      expect(documentInserts).toHaveLength(2);
+      for (const [index, courierId] of [mockCourier0Id, mockCourier1Id].entries()) {
+        expect(documentInserts[index]?.map((doc) => doc.kind)).toEqual(['dni_front', 'dni_back', 'selfie', 'avatar']);
+        expect(documentInserts[index]?.every((doc) => doc.courier_id === courierId && doc.status === 'submitted')).toBe(
+          true
+        );
+        expect(rpcCalls[index]).toEqual({
+          fn: 'finalize_courier_application',
+          args: {
+            p_courier_id: courierId,
+            p_dni_hmac: expect.stringMatching(/^[0-9a-f]{64}$/),
+            p_vehicle_type: 'moto',
+            p_vehicle_plate: `AE 00${index} EE`,
+          },
+        });
+      }
+      expect(rpcCalls[0]?.args.p_dni_hmac).not.toBe(rpcCalls[1]?.args.p_dni_hmac);
+      for (const upsert of courierUpserts) {
+        expect(upsert).not.toHaveProperty('application_submitted');
+        expect(upsert).not.toHaveProperty('submitted_at');
+        expect(upsert.vehicle_plate).toMatch(/^AE \d{3} EE$/);
+      }
+
       // Tracking de los 3 usuarios para cleanup
       expect(ctx.createdUserIds).toEqual([mockMerchantId, mockCourier0Id, mockCourier1Id]);
+    });
+
+    it('CC-043: courierApplication not_submitted siembra un postulante pendiente sin envío ni RPC', async () => {
+      const ctx = createStagingSeedContext();
+      const courierUpserts: Array<Record<string, unknown>> = [];
+      const rpc = vi.fn();
+      const insertDocs = vi.fn();
+      const mockClient = {
+        rpc,
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  limit: vi.fn().mockResolvedValue({ data: [{ id: '123e4567-e89b-12d3-a456-426614175097' }], error: null }),
+                }),
+              }),
+            };
+          }
+          if (table === 'courier_documents') return { insert: insertDocs };
+          if (table === 'profiles') return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          if (table === 'couriers') {
+            return {
+              upsert: vi.fn(async (payload: Record<string, unknown>) => {
+                courierUpserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            createUser: vi.fn().mockResolvedValue({
+              data: { user: { id: '123e4567-e89b-12d3-a456-426614175096' } },
+              error: null,
+            }),
+          },
+        },
+      } as unknown as AdminClientType;
+
+      await seedStagingData(ctx, { couriersCount: 1, courierApplication: 'not_submitted' }, mockClient);
+
+      expect(courierUpserts).toEqual([
+        expect.objectContaining({ status: 'pending', available: false, vehicle_type: null, vehicle_plate: null }),
+      ]);
+      expect(courierUpserts[0]).not.toHaveProperty('application_submitted');
+      expect(rpc).not.toHaveBeenCalled();
+      expect(insertDocs).not.toHaveBeenCalled();
+      expect(ctx.courierUsers?.[0]?.id).toBe('123e4567-e89b-12d3-a456-426614175096');
+    });
+
+    it('CC-043: si la RPC de finalización falla, el seed lo informa en vez de dejar un courier sin envío', async () => {
+      const ctx = createStagingSeedContext();
+      const mockClient = {
+        rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'VALIDATION_ERROR' } }),
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  limit: vi.fn().mockResolvedValue({ data: [{ id: '123e4567-e89b-12d3-a456-426614175098' }], error: null }),
+                }),
+              }),
+            };
+          }
+          if (table === 'courier_documents') return { insert: vi.fn().mockResolvedValue({ error: null }) };
+          if (table === 'profiles' || table === 'couriers') return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            createUser: vi.fn().mockResolvedValue({
+              data: { user: { id: '123e4567-e89b-12d3-a456-426614175099' } },
+              error: null,
+            }),
+          },
+        },
+      } as unknown as AdminClientType;
+
+      await expect(seedStagingData(ctx, { couriersCount: 1 }, mockClient)).rejects.toThrow(
+        /envío de la postulación.*VALIDATION_ERROR/
+      );
     });
 
     it('creación/tracking de request/contact/offers', async () => {
@@ -990,6 +1112,10 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       const userIds = [mockMerchantId, mockCourier0Id, mockCourier1Id];
 
       const mockClient = {
+        rpc: vi.fn().mockResolvedValue({
+          data: { ok: true, idempotent: false, submittedAt: '2026-11-04T12:00:00.000000Z' },
+          error: null,
+        }),
         from: vi.fn((table: string) => {
           if (table === 'zones') {
             return {
@@ -999,6 +1125,9 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                 }),
               }),
             };
+          }
+          if (table === 'courier_documents') {
+            return { insert: vi.fn().mockResolvedValue({ error: null }) };
           }
           if (table === 'profiles' || table === 'merchants' || table === 'couriers') {
             return { upsert: vi.fn().mockResolvedValue({ error: null }) };

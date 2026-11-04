@@ -48,7 +48,7 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
               table === 'merchants'
                 ? { default_pickup_address: 'Av. San Martín 123' }
                 : table === 'couriers'
-                  ? { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' }
+                  ? { application_submitted: true }
                   : { role: 'merchant', consent_status: 'active' },
             error: null,
           }),
@@ -84,7 +84,7 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
             maybeSingle: vi.fn().mockResolvedValue({
               data:
                 table === 'couriers'
-                  ? { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' }
+                  ? { application_submitted: true }
                   : { role: 'courier', consent_status: 'active' },
               error: null,
             }),
@@ -171,7 +171,7 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
               select: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   maybeSingle: vi.fn().mockResolvedValue({
-                    data: { dni_hmac: null, vehicle_type: null },
+                    data: { application_submitted: false },
                     error: null,
                   }),
                 }),
@@ -253,7 +253,7 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
               select: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   maybeSingle: vi.fn().mockResolvedValue({
-                    data: { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' },
+                    data: { application_submitted: true },
                     error: null,
                   }),
                 }),

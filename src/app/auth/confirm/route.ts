@@ -104,11 +104,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   } else if (roleParsed.data === 'courier') {
     const { data: courier } = await supabase
       .from('couriers')
-      .select('dni_hmac, vehicle_type')
+      .select('application_submitted')
       .eq('profile_id', userData.user.id)
-      .maybeSingle<{ dni_hmac: string | null; vehicle_type: string | null }>();
+      .maybeSingle<{ application_submitted: boolean }>();
 
-    const isOnboardingComplete = Boolean(courier?.dni_hmac && courier?.vehicle_type);
+    // CC-043: la postulación enviada es la marca de onboarding completo (no el DNI ni el vehículo).
+    const isOnboardingComplete = courier?.application_submitted === true;
     if (!isOnboardingComplete) {
       destination = '/courier/onboarding/identity';
     } else if (consentParsed.success) {

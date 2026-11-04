@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   from: vi.fn(),
   vehicleType: 'motorcycle' as string | null,
+  applicationSubmitted: true,
   courierStatus: 'pending' as string,
   documents: [] as Array<{ kind: string; status: DocumentReviewStatus }>,
 }));
@@ -41,6 +42,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
     vi.clearAllMocks();
     mocks.documents = [];
     mocks.vehicleType = 'motorcycle';
+    mocks.applicationSubmitted = true;
     mocks.courierStatus = 'pending';
     mocks.getCourierApprovedAvatarUrl.mockResolvedValue(
       'https://test-storage.local/courier-docs/avatar.jpg?token=valid'
@@ -59,6 +61,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
               ? { display_name: 'Repartidor de prueba', role: 'courier' }
               : {
                   vehicle_type: mocks.vehicleType,
+                  application_submitted: mocks.applicationSubmitted,
                   vehicle_plate: null,
                   license_status: 'none',
                   insurance_status: 'none',
@@ -90,8 +93,15 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
     });
   });
 
-  it('T-334: vehicle_type null indica onboarding incompleto', async () => {
+  it('CC-043: sin postulación enviada el onboarding está incompleto', async () => {
     mocks.vehicleType = null;
+    mocks.applicationSubmitted = false;
+
+    expect(await renderPage()).toMatchObject({ onboardingComplete: false });
+  });
+
+  it('CC-043: un vehículo cargado sin postulación enviada no completa el onboarding', async () => {
+    mocks.applicationSubmitted = false;
 
     expect(await renderPage()).toMatchObject({ onboardingComplete: false });
   });
@@ -238,6 +248,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
                 ? { display_name: 'Repartidor de prueba', role: 'courier', phone: '3865123456' }
                 : {
                     vehicle_type: mocks.vehicleType,
+                    application_submitted: mocks.applicationSubmitted,
                     vehicle_plate: null,
                     license_status: 'none',
                     insurance_status: 'none',
@@ -277,6 +288,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
                 ? { display_name: 'Repartidor de prueba', role: 'courier', phone: null }
                 : {
                     vehicle_type: mocks.vehicleType,
+                    application_submitted: mocks.applicationSubmitted,
                     vehicle_plate: null,
                     license_status: 'none',
                     insurance_status: 'none',

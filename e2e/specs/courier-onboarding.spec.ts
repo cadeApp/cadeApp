@@ -7,6 +7,8 @@ import {
   generateTotp,
   seedDeliveryRequestInState,
   seedOffersForFirstRequest,
+  seedStagingData,
+  type StagingSeedContext,
   type UserCredentials,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
@@ -94,28 +96,26 @@ async function expectStoredPdf(storagePath: string, sent: Buffer): Promise<void>
  */
 
 /**
- * Restablece al repartidor a la precondición inicial previa al onboarding (H03).
+ * CC-043 (H03): el envío de la postulación no se deshace, así que la precondición «sin onboarding» es un repartidor
+ * nuevo que nunca envió. Lo siembra en la misma corrida (lo limpia el teardown) y lo pone en el lugar `index`, para que
+ * `loginAsCourier(index)` entre con él.
  */
-async function resetCourierToPendingOnboarding(courierId: string): Promise<void> {
-  const dbAdmin = createAdminClient();
-  await dbAdmin.from('courier_documents').delete().eq('courier_id', courierId);
-  const { error } = await dbAdmin
-    .from('couriers')
-    .update({
-      status: 'pending',
-      available: false,
-      vehicle_type: null,
-      vehicle_plate: null,
-      dni_hmac: null,
-      decided_at: null,
-      decided_by: null,
-    })
-    .eq('profile_id', courierId);
+async function usePendingOnboardingCourier(context: StagingSeedContext, index: number): Promise<UserCredentials> {
+  const couriers = context.courierUsers ?? [];
+  await seedStagingData(context, { couriersCount: couriers.length + 1, courierApplication: 'not_submitted' });
+  const fresh = context.courierUsers?.pop();
+  if (!fresh || !context.courierUsers) {
+    throw new Error('[E2E Seed Error] No se pudo sembrar el postulante sin envío');
+  }
+  context.courierUsers[index] = fresh;
+  return fresh;
+}
 
+/** Borra los documentos del repartidor antes de que la prueba siembre los suyos (índice único de vigentes). */
+async function clearCourierDocuments(courierId: string): Promise<void> {
+  const { error } = await createAdminClient().from('courier_documents').delete().eq('courier_id', courierId);
   if (error) {
-    throw new Error(
-      `[E2E Reset Error] Falló restablecimiento de courier ${courierId}: ${error.message}`
-    );
+    throw new Error(`[E2E Reset Error] No se pudieron borrar los documentos de ${courierId}: ${error.message}`);
   }
 }
 
@@ -230,12 +230,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const unElevatedClient = await createAuthenticatedClient(adminCredentials);
 
     // Preparar repartidor postulante en estado pending con precondición limpia (H03)
-    const courier = stagingContext.courierUsers?.[0];
-    if (!courier) {
-      throw new Error('[E2E Error] Se requiere al menos un courier en stagingContext');
-    }
-
-    await resetCourierToPendingOnboarding(courier.id);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
     const dbAdmin = createAdminClient();
 
     // 3. Intento de aprobación por admin con AAL1: el backend rechaza incondicionalmente
@@ -305,7 +300,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     loginAsCourier,
   }) => {
     const courier1 = stagingContext.courierUsers?.[0];
-    const courier2 = stagingContext.courierUsers?.[1];
+    const courier2 = await usePendingOnboardingCourier(stagingContext, 1);
     if (!courier1 || !courier2) {
       throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
     }
@@ -333,7 +328,6 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     }
 
     // 2. Restablecer courier 2 a estado inicial sin onboarding completado (H03)
-    await resetCourierToPendingOnboarding(courier2.id);
 
     // 3. Courier 2 inicia sesión en el navegador
     await loginAsCourier(1, page);
@@ -431,17 +425,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     stagingContext,
     loginAsCourier,
   }) => {
-    const courier = stagingContext.courierUsers?.[0];
-    if (!courier) {
-      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
-    }
+    // Precondición limpia: postulante sin onboarding completado (H03, CC-043)
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
 
     const dbAdmin = createAdminClient();
     let uploadedDocs: Record<string, string> = {};
 
     try {
-      // Precondición limpia: postulante sin onboarding completado (H03)
-      await resetCourierToPendingOnboarding(courier.id);
 
       // 1. Iniciar sesión como repartidor en el navegador
       await loginAsCourier(0, page);
@@ -604,7 +594,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
       const { data: courierRow, error: courierErr } = await dbAdmin
         .from('couriers')
-        .select('status, vehicle_type, vehicle_plate, dni_hmac')
+        .select('status, vehicle_type, vehicle_plate, dni_hmac, application_submitted, submitted_at')
         .eq('profile_id', courier.id)
         .single();
 
@@ -612,6 +602,11 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       expect(courierRow?.vehicle_type).toBe('moto');
       expect(courierRow?.vehicle_plate).toBe('AB 123 CD');
       expect(courierRow?.dni_hmac).toBeTruthy();
+      // CC-043: el envío real lo registró finalize_courier_application con la hora del servidor.
+      expect(courierRow?.application_submitted).toBe(true);
+      expect(courierRow?.submitted_at).toBeTruthy();
+      const submittedAtMs = Date.parse(courierRow?.submitted_at ?? '');
+      expect(Math.abs(Date.now() - submittedAtMs)).toBeLessThan(10 * 60_000);
     } finally {
       // 8. Cleanup aislado: eliminar filas de courier_documents y archivos físicos en Storage
       await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id);
@@ -629,8 +624,6 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         const filesToDelete = fileList.map((f) => `courier/${courier.id}/${f.name}`);
         await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove(filesToDelete);
       }
-
-      await resetCourierToPendingOnboarding(courier.id);
     }
   });
 
@@ -643,7 +636,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     loginAsCourier,
   }) => {
     const courier1 = stagingContext.courierUsers?.[0];
-    const courier2 = stagingContext.courierUsers?.[1];
+    const courier2 = await usePendingOnboardingCourier(stagingContext, 1);
     if (!courier1 || !courier2) {
       throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
     }
@@ -665,7 +658,6 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     }
 
     // Restablecer courier 2 a precondición limpia (H03)
-    await resetCourierToPendingOnboarding(courier2.id);
 
     // 2. Iniciar sesión como courier 2 en el navegador
     await loginAsCourier(1, page);
@@ -746,12 +738,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
   }) => {
     // 1. Crear admin y courier postulante en estado pending con reset limpio (H03)
     const admin = await seedAdminUser(stagingContext);
-    const courier = stagingContext.courierUsers?.[0];
-    if (!courier) {
-      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
-    }
-
-    await resetCourierToPendingOnboarding(courier.id);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
     const dbAdmin = createAdminClient();
 
     // 2. Enrolar y verificar factor TOTP para la cuenta del admin conservando secret (H04)
@@ -856,11 +843,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     stagingContext,
     loginAsCourier,
   }) => {
-    const courier = stagingContext.courierUsers?.[0];
-    if (!courier) {
-      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
-    }
-    await resetCourierToPendingOnboarding(courier.id);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
     await loginAsCourier(0, page);
 
     await page.goto('/courier/onboarding/identity');
@@ -935,8 +918,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const dbAdmin = createAdminClient();
 
     try {
-      // 1. Precondición en DB: repartidor con onboarding completo y moto
-      await resetCourierToPendingOnboarding(courier.id);
+      // 1. Precondición en DB: repartidor con onboarding completo (enviado por el seed, CC-043) y moto
+      await clearCourierDocuments(courier.id);
       const uniqueDni = `39${Math.floor(100000 + Math.random() * 900000)}`;
       const secret = process.env.DNI_HMAC_SECRET ?? 'development_dni_hmac_secret_cadeapp';
       const dniHmac = createHmac('sha256', secret).update(uniqueDni).digest('hex');
@@ -1186,7 +1169,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       }
     } finally {
       // Limpieza de datos en DB y Storage
-      await resetCourierToPendingOnboarding(courier.id);
+      await clearCourierDocuments(courier.id);
       const { data: files } = await dbAdmin.storage
         .from(COURIER_DOCS_BUCKET)
         .list(`courier/${courier.id}`);
@@ -1391,15 +1374,10 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     stagingContext,
     loginAsCourier,
   }) => {
-    const courier2 = stagingContext.courierUsers?.[1];
-    if (!courier2) {
-      throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
-    }
-
     const dbAdmin = createAdminClient();
 
-    // Precondición: postulante con onboarding incompleto (vehicle_type nulo)
-    await resetCourierToPendingOnboarding(courier2.id);
+    // Precondición: postulante con onboarding incompleto (sin postulación enviada, CC-043)
+    const courier2 = await usePendingOnboardingCourier(stagingContext, 1);
 
     // 1. Iniciar sesión como courier 2
     await loginAsCourier(1, page);

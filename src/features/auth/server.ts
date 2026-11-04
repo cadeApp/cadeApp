@@ -86,7 +86,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     } else if (session.role === 'courier') {
       onboarding = await supabase
         .from('couriers')
-        .select('vehicle_type')
+        .select('application_submitted')
         .eq('profile_id', session.userId)
         .maybeSingle();
     }

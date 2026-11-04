@@ -1,5 +1,5 @@
 import 'server-only';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { publicEnv } from '@/lib/env.public';
 import { createAdminClient } from '@/server/supabase/admin';
@@ -37,6 +37,11 @@ export interface SeedStagingOptions {
   dropoffZoneId?: string;
   withMerchant?: boolean;
   couriersCount?: number;
+  /**
+   * CC-043: `submitted` (por defecto) siembra repartidores aprobados que enviaron su postulación por la RPC;
+   * `not_submitted`, postulantes pendientes que todavía no terminaron el onboarding (sin vehículo ni DNI).
+   */
+  courierApplication?: 'submitted' | 'not_submitted';
   withAdmin?: boolean;
   recipientPhone?: string;
   recipientName?: string;
@@ -356,6 +361,45 @@ async function finalizeSeededRequestState(
  * - Si Supabase devuelve error, FALLA y no registra entidades inexistentes.
  * - Solo registra en context.createdRequestIds tras confirmar la inserción exitosa.
  */
+/**
+ * CC-043: termina el envío de la postulación de un repartidor sembrado por el mismo camino que la app: los cuatro
+ * documentos obligatorios vigentes y `finalize_courier_application` (solo `service_role`). El DNI es un HMAC
+ * aleatorio de prueba; nunca se escribe `application_submitted` ni `submitted_at` a mano.
+ */
+export async function finalizeSeededCourierApplication(
+  admin: AdminClientType,
+  courierId: string,
+  vehicleType: 'walk' | 'bike' | 'moto' | 'car',
+  vehiclePlate: string | null
+): Promise<void> {
+  assertValidUuid(courierId, 'courierId');
+  const kinds = ['dni_front', 'dni_back', 'selfie', 'avatar'] as const;
+  const { error: docsErr } = await admin.from('courier_documents').insert(
+    kinds.map((kind) => ({
+      courier_id: courierId,
+      kind,
+      storage_path: `courier/${courierId}/${kind}_1730000000000.jpg`,
+      status: 'submitted' as const,
+    }))
+  );
+  if (docsErr) {
+    throw new Error(`[E2E Seed Error] Falló el alta de documentos del courier ${courierId}: ${docsErr.message}`);
+  }
+
+  const { error: finalizeErr } = await admin.rpc(
+    'finalize_courier_application',
+    {
+      p_courier_id: courierId,
+      p_dni_hmac: randomBytes(32).toString('hex'),
+      p_vehicle_type: vehicleType,
+      p_vehicle_plate: vehiclePlate,
+    } as never
+  );
+  if (finalizeErr) {
+    throw new Error(`[E2E Seed Error] Falló el envío de la postulación del courier ${courierId}: ${finalizeErr.message}`);
+  }
+}
+
 export async function seedStagingData(
   context: StagingSeedContext,
   options?: SeedStagingOptions,
@@ -550,14 +594,42 @@ export async function seedStagingData(
         );
       }
 
+      if (options?.courierApplication === 'not_submitted') {
+        const { error: pendingRowErr } = await admin.from('couriers').upsert({
+          profile_id: courierUserId,
+          status: 'pending',
+          available: false,
+          vehicle_type: null,
+          vehicle_plate: null,
+          license_status: 'none',
+          insurance_status: 'none',
+        });
+        if (pendingRowErr) {
+          throw new Error(
+            `[E2E Seed Error] Falló el upsert del postulante sin envío (${i}): ${pendingRowErr.message}`
+          );
+        }
+        context.courierUsers.push({
+          id: courierUserId,
+          email: courierEmail,
+          password: courierPassword,
+          role: 'courier',
+          displayName,
+          phone: courierPhone,
+        });
+        continue;
+      }
+
       // Courier habilitado para ofertar. Courier 0: doc_level 2, Courier 1: doc_level 0
       const isDoc2 = i === 0;
+      // CC-043: patente argentina válida (formato «AB 123 CD»), la misma que valida finalize_courier_application.
+      const vehiclePlate = `AE ${String(i).padStart(3, '0')} EE`;
       const { error: courierRowErr } = await admin.from('couriers').upsert({
         profile_id: courierUserId,
         status: 'approved',
         available: true,
         vehicle_type: 'moto',
-        vehicle_plate: `E2E-${i}`,
+        vehicle_plate: vehiclePlate,
         license_status: isDoc2 ? 'verified' : 'none',
         insurance_status: isDoc2 ? 'verified' : 'none',
       });
@@ -566,6 +638,10 @@ export async function seedStagingData(
           `[E2E Seed Error] Falló el upsert en couriers (${i}): ${courierRowErr.message}`
         );
       }
+
+      // CC-043: el repartidor sembrado envía su postulación como la app (cuatro documentos vigentes y la RPC de
+      // finalización); si no, el guard lo devuelve al onboarding. Los documentos se borran en cascada con el courier.
+      await finalizeSeededCourierApplication(admin, courierUserId, 'moto', vehiclePlate);
 
       // Guardar credenciales estrictamente en memoria del contexto
       if (!context.courierUsers) context.courierUsers = [];

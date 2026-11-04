@@ -1310,10 +1310,10 @@ describe('T-334: loginAction manda al onboarding cuando está incompleto', () =>
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
   });
 
-  it('repartidor recién registrado (vehicle_type null) → /courier/onboarding/identity', async () => {
+  it('repartidor recién registrado (sin postulación enviada) → /courier/onboarding/identity', async () => {
     mockLoginClient({
       profiles: { role: 'courier', consent_status: 'active' },
-      couriers: { vehicle_type: null },
+      couriers: { application_submitted: false },
     });
 
     const result = await loginAction({ email: 'nuevo@test.com', password: 'password123' });
@@ -1342,7 +1342,7 @@ describe('T-334: loginAction manda al onboarding cuando está incompleto', () =>
   it('con onboarding completo conserva el destino por defecto', async () => {
     mockLoginClient({
       profiles: { role: 'courier', consent_status: 'active' },
-      couriers: { vehicle_type: 'bike' },
+      couriers: { application_submitted: true },
     });
 
     const result = await loginAction({ email: 'nuevo@test.com', password: 'password123' });
@@ -1396,7 +1396,7 @@ describe('T-334: updatePasswordAction también respeta onboarding incompleto', (
 
   it.each([
     ['merchant', { business_name: '' }, '/merchant/onboarding', 'merchants'],
-    ['courier', { vehicle_type: null }, '/courier/onboarding/identity', 'couriers'],
+    ['courier', { application_submitted: false }, '/courier/onboarding/identity', 'couriers'],
   ] as const)(
     '%s incompleto vuelve a su onboarding después de resetear contraseña',
     async (role, marker, expected, table) => {
@@ -1414,7 +1414,7 @@ describe('T-334: updatePasswordAction también respeta onboarding incompleto', (
   );
 
   it('courier completo conserva /courier/feed después del reset', async () => {
-    mockResetClient('courier', { vehicle_type: 'bike' });
+    mockResetClient('courier', { application_submitted: true });
 
     const result = await updatePasswordAction({
       password: 'nuevaPassword123',
