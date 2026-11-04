@@ -81,7 +81,6 @@ begin
     from public.couriers c
     join public.profiles p on p.id = c.profile_id
     where c.status::text = p_status
-      and (p_status <> 'pending' or c.application_submitted)
       and (v_needle is null or strpos(app_private.search_normalize(p.display_name), v_needle) > 0)
   ),
   page as (
