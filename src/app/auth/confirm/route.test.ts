@@ -278,6 +278,45 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
     );
   });
 
+  describe('CC-043: marca de onboarding del repartidor', () => {
+    function mockCourierRow(result: { data: unknown; error: unknown }) {
+      mockFrom.mockImplementation((table: string) => ({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue(
+              table === 'profiles' ? { data: { role: 'courier', consent_status: 'active' }, error: null } : result
+            ),
+          }),
+        }),
+      }));
+    }
+
+    it('un vehículo cargado sin postulación enviada va al onboarding', async () => {
+      mockCourierRow({ data: { application_submitted: false, vehicle_type: 'moto' }, error: null });
+
+      const response = await GET(new NextRequest('http://localhost:3000/auth/confirm?code=pkce-courier-vehicle'));
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/courier/onboarding/identity');
+    });
+
+    it('un error de lectura no fuerza el onboarding (fail-open de T-334)', async () => {
+      mockCourierRow({ data: null, error: { message: 'read failed' } });
+
+      const response = await GET(new NextRequest('http://localhost:3000/auth/confirm?code=pkce-courier-error'));
+
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe('http://localhost:3000/courier/feed');
+    });
+
+    it('sin fila de courier va al onboarding', async () => {
+      mockCourierRow({ data: null, error: null });
+
+      const response = await GET(new NextRequest('http://localhost:3000/auth/confirm?code=pkce-courier-none'));
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/courier/onboarding/identity');
+    });
+  });
+
   describe('Verificación con token_hash y type', () => {
     it('token_hash con type=signup válido intercambia y redirige por rol', async () => {
       const request = new NextRequest(

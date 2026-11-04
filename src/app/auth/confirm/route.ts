@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { type EmailOtpType } from '@supabase/supabase-js';
 import { createClient } from '@/server/supabase/server';
 import { consentStatusSchema, profileRoleSchema } from '@/domain/schemas';
-import { resolvePostLoginRedirect, getRoleDefaultPath } from '@/features/auth';
+import { resolvePostLoginRedirect, getRoleDefaultPath, parseOnboardingComplete } from '@/features/auth';
 
 const ALLOWED_NEXT_PATHS = new Set<string>(['/reset-password']);
 const ALLOWED_OTP_TYPES = new Set<string>(['signup', 'email', 'recovery']);
@@ -102,15 +102,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       destination = getRoleDefaultPath(roleParsed.data);
     }
   } else if (roleParsed.data === 'courier') {
-    const { data: courier } = await supabase
+    const { data: courier, error: courierError } = await supabase
       .from('couriers')
       .select('application_submitted')
       .eq('profile_id', userData.user.id)
       .maybeSingle<{ application_submitted: boolean }>();
 
-    // CC-043: la postulación enviada es la marca de onboarding completo (no el DNI ni el vehículo).
-    const isOnboardingComplete = courier?.application_submitted === true;
-    if (!isOnboardingComplete) {
+    // CC-043: la postulación enviada es la marca de onboarding completo (no el DNI ni el vehículo). Un error de
+    // lectura deja el estado desconocido y no fuerza el onboarding (fail-open de T-334, como el guard).
+    const onboardingComplete = courierError ? undefined : parseOnboardingComplete('courier', courier ?? null);
+    if (onboardingComplete === false) {
       destination = '/courier/onboarding/identity';
     } else if (consentParsed.success) {
       destination = resolvePostLoginRedirect(null, roleParsed.data, consentParsed.data);

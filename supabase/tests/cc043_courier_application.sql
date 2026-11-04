@@ -80,6 +80,18 @@ select has_column('public', 'couriers', 'application_submitted', 'couriers.appli
 select col_not_null('public', 'couriers', 'application_submitted', 'application_submitted no admite null');
 select col_default_is('public', 'couriers', 'application_submitted', 'false', 'application_submitted arranca en false');
 select has_column('public', 'couriers', 'submitted_at', 'couriers.submitted_at existe');
+-- PR588-H02: la RPC serializa con el lock de couriers (misma sentencia) antes de leer profiles y courier_documents.
+create function pg_temp.finalize_def() returns text language sql as $$
+  select pg_get_functiondef('public.finalize_courier_application(uuid, text, public.vehicle_type, text)'::regprocedure)
+$$;
+select ok(
+  pg_temp.finalize_def() ~* 'from\s+public\.couriers\s+where\s+profile_id\s*=\s*p_courier_id\s+for\s+update\s*;'
+  and strpos(pg_temp.finalize_def(), 'from public.couriers') > 0
+  and strpos(pg_temp.finalize_def(), 'from public.couriers') < strpos(pg_temp.finalize_def(), 'from public.profiles')
+  and strpos(pg_temp.finalize_def(), 'from public.couriers') < strpos(pg_temp.finalize_def(), 'from public.courier_documents')
+  and substring(pg_temp.finalize_def() from '(?i)from\s+public\.couriers[^;]*;') ~* 'for\s+update\s*;$',
+  'finalize bloquea couriers antes de profiles/documentos'
+);
 select ok((select prosecdef from pg_proc where oid = 'public.finalize_courier_application(uuid, text, public.vehicle_type, text)'::regprocedure),
   'finalize_courier_application es security definer');
 select ok((select proconfig @> array['search_path=public, pg_temp'] from pg_proc
