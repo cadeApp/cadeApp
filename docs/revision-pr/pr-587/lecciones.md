@@ -31,3 +31,10 @@ Se detectaron riesgos del diseño futuro por inspección; no se ejecutó SQL ni 
 - **PR587-H08:** el reviewers anterior no había enumerado la **clase de transiciones de rollout**: schema nuevo + acción vieja + lectores nuevos. No basta afirmar que migrate precede al deploy; un éxito del writer viejo puede dejar el nuevo marcador falso. **Lección:** diseñar y probar el par expand/contract, incluida la versión anterior de cada escritor.
 - **PR587-H09:** un escritor `service_role` puede no pasar por la validación Zod del formulario. **Lección:** al mover una escritura crítica a una RPC privilegiada, trasladar los invariantes de las columnas al SQL, aunque el cliente existente ya valide.
 - **No agregar aún AG nuevo:** una PR documental sola no constituye un patrón repetido en múltiples PRs. Candidatos: P08 y AG-37 ya existentes.
+
+## Ronda 3 — cierre sin nuevos patrones
+
+- **H08** necesitó enumerar no solo el writer de la nueva versión, sino el exacto `UPDATE` del writer que quedará un corto tiempo con esquema migrado. La guarda fail-closed evita éxito silencioso. No confundir el **fallo controlado** durante despliegue con una postulación completada.
+- **H09** recibió una definición SQL de la patente derivada de `ARGENTINA_PLATE_REGEX`, que debe probarse en PostgreSQL en la implementación. Validación Zod = ayuda UX, **no** garantía de base de datos.
+- **H01–H09** se cierran **documentalmente**, no como prueba runtime. El diseño puede aprobarse sin confundirlo con código auditado. El autor no debe tocar `docs/revision-pr/**` al implementar T-421.
+- Candidatos existentes AG-37/P06 y P08 son suficientes. No se crea regla AG nueva ni se modifica `AGENTS.md` por una sola PR.

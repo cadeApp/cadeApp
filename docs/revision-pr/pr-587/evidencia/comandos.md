@@ -207,3 +207,113 @@ if(green!==checks.length || red!==checks.length) process.exitCode=1;
 | walk | `null` | acepta |
 
 Mutación: quitar la validación SQL de patente e invalidar `pgTAP` por una aserción sobre el dato escrito, no por un `TypeError`. No adulterar tests, expectations, mocks ni fingir RED/GREEN.
+
+---
+
+
+## Ronda 3 — evidencia independiente sobre SHA a3fe70ee3336b65ffb2390044857afcf71430a09
+
+**Ejecución realizada:** en el conector GitHub se leyeron CC-043, CC-044, T-421, T-403, T-404, la fila de plan y la bitácora; se comprobó el delta remoto R2→R3 (solo 3 documentos). Los 12 controles de consistencia documental fueron conformes.
+
+**Checks en el modelo de los requisitos publicados** (NO SQL real):
+- Patente: **13/13** casos correctos al ejecutar en JS el regex extraído **literalmente** del Markdown CC-043 tras normalizar; 4 casos fallaron con mutante que acepta cualquier patente no vacía.
+- Guarda H08: **5/5** transiciones correctas según el predicado *descrito* en CC-043; 3 casos fallaron con mutante que quita el guard.
+- No se ejecutó SQL ni pgTAP, no se arrancó Supabase ni se tocaron secretos; los tests declarados por el autor (91) no se reprodujeron.
+
+**Harness íntegro, reproducible en un clon del SHA indicado:**
+\`\`\`bash
+git fetch origin
+git worktree add /tmp/wt-pr587-r3 a3fe70ee3336b65ffb2390044857afcf71430a09
+node /tmp/pr587-r3-contract-model.mjs /tmp/wt-pr587-r3
+git worktree remove /tmp/wt-pr587-r3
+\`\`\`
+
+Guardar el siguiente programa completo como \`/tmp/pr587-r3-contract-model.mjs\`:
+\`\`\`js
+import fs from 'node:fs';
+import path from 'node:path';
+const root=path.resolve(process.argv[2] ?? '.');
+const cc=fs.readFileSync(path.join(root,'docs/contracts/CC-043.md'),'utf8');
+const task=fs.readFileSync(path.join(root,'docs/tasks/T-421.md'),'utf8');
+const ts=fs.readFileSync(path.join(root,'src/features/courier-onboarding/schemas.ts'),'utf8');
+const regexLine=cc.split('\\n').find(x=>x.includes('[A-Z]{2}') && x.includes('[0-9]{3}'));
+const pattern=regexLine?.match(/\x60(\^\([^\\x60]+\)\$)\x60/)?.[1];
+if(!pattern) throw new Error('SQL plate regex not found in CC-043');
+const plateRe=new RegExp(pattern);
+const normalize=p=>p==null?null:(p.trim().toUpperCase()||null);
+const validPlate=(type,raw)=>{
+  const p=normalize(raw);
+  return ['moto','car'].includes(type) ? (p!==null && plateRe.test(p)) :
+    ['bike','walk'].includes(type) ? p===null : false;
+};
+const plateCases=[
+  ['moto','AB 123 CD',true],['moto','A 123 BCD',true],
+  ['moto','ABC 123',true],['moto','123 ABC',true],
+  ['car','ab123cd',true],['car','abc123',true],
+  ['car',null,false],['moto','NOT_A_PLATE',false],
+  ['car','XX-999-ZZ',false],['bike','AB 123 CD',false],
+  ['walk','AB 123 CD',false],['walk',null,true],['bike',null,true]
+];
+const mutantPlate=(t,p)=>['moto','car'].includes(t)?normalize(p)!==null:
+  ['walk','bike'].includes(t)?true:false;
+let greenPlate=0, redPlate=0;
+for(const [type,p,want] of plateCases){
+  if(validPlate(type,p)===want) greenPlate++;
+  if(mutantPlate(type,p)!==want) redPlate++;
+}
+if(!cc.includes('Guarda de compatibilidad (fail-closed)') ||
+   !cc.includes('INVALID_STATE_TRANSITION') ||
+   !task.includes('guarda de compatibilidad:')) {
+  throw new Error('The declared compatibility guard or DoD is missing');
+}
+const protectedByGuard=(old,n,authorized)=>
+  !authorized && !old.application_submitted && !n.application_submitted &&
+  n.dni_hmac!==null && n.vehicle_type!==null &&
+  (old.dni_hmac!==n.dni_hmac || old.vehicle_type!==n.vehicle_type);
+const h='a'.repeat(64);
+const guardCases=[
+  ['legacy-both-null',{application_submitted:false,dni_hmac:null,vehicle_type:null},
+   {application_submitted:false,dni_hmac:h,vehicle_type:'moto'},true,false],
+  ['legacy-hmac-preexisting',{application_submitted:false,dni_hmac:h,vehicle_type:null},
+   {application_submitted:false,dni_hmac:h,vehicle_type:'moto'},true,false],
+  ['legacy-vehicle-preexisting',{application_submitted:false,dni_hmac:null,vehicle_type:'moto'},
+   {application_submitted:false,dni_hmac:h,vehicle_type:'moto'},true,false],
+  ['CC042-vehicle-only',{application_submitted:false,dni_hmac:null,vehicle_type:null},
+   {application_submitted:false,dni_hmac:null,vehicle_type:'moto'},false,false],
+  ['authorized-finalization',{application_submitted:false,dni_hmac:null,vehicle_type:null},
+   {application_submitted:true,dni_hmac:h,vehicle_type:'moto'},false,true]
+];
+let greenGuard=0, redGuard=0;
+for(const [name,old,n,want,authorized] of guardCases){
+  if(protectedByGuard(old,n,authorized)===want) greenGuard++;
+  if(false!==want) redGuard++; // mutación que elimina la guarda
+}
+const claims=[
+  cc.includes("un histórico devuelve \x60submittedAt: null\x60 y sigue \x60null\x60"),
+  cc.includes("\x60current_user\x60 es el dueño de \x60finalize_courier_application\x60"),
+  cc.includes("Guarda de compatibilidad (fail-closed)"),
+  cc.includes("La guarda de compatibilidad lo rechaza"),
+  cc.includes("Para \x60walk\x60 y \x60bike\x60 tiene que ser"),
+  task.includes("guarda de compatibilidad:"),
+  task.includes("patente: los cuatro formatos argentinos válidos"),
+  ts.includes("ARGENTINA_PLATE_REGEX")
+];
+console.log({plate:{passed:greenPlate,total:plateCases.length,mutantRed:redPlate},
+ guard:{passed:greenGuard,total:guardCases.length,mutantRed:redGuard},
+ claims:{passed:claims.filter(Boolean).length,total:claims.length}});
+if(greenPlate!==plateCases.length || greenGuard!==guardCases.length ||
+   claims.some(x=>!x) || redPlate<1 || redGuard<1) process.exitCode=1;
+\`\`\`
+
+**Nota sobre el harness:** modela la condición en prosa del trigger, no extrae ni ejecuta un trigger SQL futuro. Una mutación de ese modelo es solo evidencia contra el modelo; pgTAP + mutaciones SQL reales quedan en el DoD de T-421.
+
+**Para la PR posterior de implementación:**
+\`\`\`bash
+pnpm db:types
+pnpm typecheck
+pnpm lint
+pnpm test
+# pnpm test:db solo en CI, con evidencia de job + mutaciones RED
+node docs/revision-pr/analizar.mjs verificacion
+\`\`\`
+No presentar estos comandos como ejecutados por la revisión de esta PR.
