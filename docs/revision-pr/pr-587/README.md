@@ -7,7 +7,7 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `cc/CC-043-044-postulantes` → `develop` |
 | **Base** | `146c9f9749dbc7fa20b63583cbc9b3c939cdc339` |
-| **SHA revisado** | `9f87b18f79525e64f4ac8c2ec9b9ae7e9e206c3f` |
+| **SHA revisado (ronda 2)** | `2512a3735ff7ce10d67a0e846218a6f3e4e74e36` |
 | **Alcance** | PR documental; revisión en `docs/revision-pr/pr-587/` |
 | **Estado** | **R2: CON BLOQUEANTES (2 nuevos)** — documentación, aún no se valida implementación |
 
