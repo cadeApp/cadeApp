@@ -74,3 +74,136 @@ grep -E 'Test Files|Tests |PASS|FAIL' /tmp/pr587-vitest.log | tail -15
 ```
 
 Para la futura PR de implementación: pgTAP con bypass `authenticated`, admin `aal1/aal2`, `service_role`, pruebas de históricos, carrera, marcador, cursor y total. Mutaciones de SQL se hacen solo en PR `review/...` aislada NEVER MERGE conforme a la ficha; **no** se corre Supabase ni Docker local sin permiso.
+
+---
+
+## Ronda 2 — harness independiente de lectura/mutaciones de contratos
+
+Se ejecutó con documentos traídos directamente de GitHub por conector, todos con `ref=2512a3735ff7ce10d67a0e846218a6f3e4e74e36`: **12 baseline GREEN y 12 RED cuando se eliminó en memoria la cláusula correspondiente**. No se ejecutó código SQL ni aplicación. Los siguientes controles son **de existencia textual**, no tests reales de conducta. No son evidencia suficiente para aprobar una migración.
+
+Reproducción en clon del SHA, sin tocar archivos:
+```bash
+git fetch origin
+git worktree add /tmp/wt-pr587-r2 2512a3735ff7ce10d67a0e846218a6f3e4e74e36
+node /tmp/pr587-r2-document-controls.mjs /tmp/wt-pr587-r2
+git worktree remove /tmp/wt-pr587-r2
+```
+
+Guardá este programa en `/tmp/pr587-r2-document-controls.mjs` (si no hay clon, no afirmes haberlo corrido). Lee solo documentos versionados; hace sustituciones **en memoria**.
+
+```js
+import fs from 'node:fs';
+import path from 'node:path';
+const root=path.resolve(process.argv[2] ?? '.');
+const paths={
+  cc043:'docs/contracts/CC-043.md',
+  cc044:'docs/contracts/CC-044.md',
+  t421:'docs/tasks/T-421.md',
+};
+const doc=Object.fromEntries(Object.entries(paths).map(([k,p])=>[k,fs.readFileSync(path.join(root,p),'utf8')]));
+const checks=[
+  {
+    "file": "cc043",
+    "name": "RPC de servicio",
+    "re": "grant execute … to service_role"
+  },
+  {
+    "file": "cc043",
+    "name": "guarda dual",
+    "re": "current_setting('app.courier_application_finalize', true) = 'on'"
+  },
+  {
+    "file": "cc043",
+    "name": "fecha del primer envío",
+    "re": "Solo la transición `false → true` fija la fecha"
+  },
+  {
+    "file": "cc043",
+    "name": "histórico sin fecha",
+    "re": "un histórico devuelve `submittedAt: null` y sigue `null`"
+  },
+  {
+    "file": "cc043",
+    "name": "lectores auth",
+    "re": "`updateSession`, `loginAction` y `updatePasswordAction` seleccionan `application_submitted`"
+  },
+  {
+    "file": "cc043",
+    "name": "CC-042",
+    "re": "`finalize_courier_application` marca el envío"
+  },
+  {
+    "file": "cc043",
+    "name": "fixtures sin reset",
+    "re": "pasan a usar un repartidor nuevo sin envío"
+  },
+  {
+    "file": "cc043",
+    "name": "backfill",
+    "re": "`submitted_at` queda `null`"
+  },
+  {
+    "file": "cc043",
+    "name": "diagnóstico",
+    "re": "`raise notice` con la **cantidad** de filas"
+  },
+  {
+    "file": "cc044",
+    "name": "pending",
+    "re": "En `pending` se suma `c.application_submitted`"
+  },
+  {
+    "file": "cc044",
+    "name": "MFA directo",
+    "re": "un admin `aal1` todavía puede leer nombres por PostgREST"
+  },
+  {
+    "file": "t421",
+    "name": "bypass del dueño",
+    "re": "trigger sin la condición de dueño"
+  }
+];
+let green=0, red=0;
+for(const test of checks){
+  const original=doc[test.file];
+  const needle=test.re;
+  const pass=original.includes(needle);
+  // Reemplaza todas las copias exactas en memoria para no dar un falso verde por duplicados.
+  const mutant=original.split(needle).join('[REMOVED_MUTANT]');
+  const killed=pass && !mutant.includes(needle);
+  console.log(test.name+': '+(pass?'GREEN':'FAIL')+' -> '+(killed?'RED':'BLIND'));
+  if(pass) green++;
+  if(killed) red++;
+}
+console.log('SUMMARY '+green+'/'+checks.length+' GREEN; '+red+'/'+checks.length+' RED');
+if(green!==checks.length || red!==checks.length) process.exitCode=1;
+```
+
+### H08: caso real a probar en implementación
+
+```sql
+-- Después de la migración, como service_role, simular EXACTAMENTE
+-- el UPDATE anterior de actions.ts sobre una cuenta recién registrada:
+-- update couriers set dni_hmac=?, vehicle_type='moto', vehicle_plate='AB 123 CD'
+-- where profile_id=? and status in ('pending','approved');
+-- El pgTAP debe afirmar:
+-- 1) o bien se produce un error del dominio, reintentable al deploy;
+-- 2) o bien éxito Y application_submitted=true Y submitted_at real.
+-- PROHIBIDO dar éxito con application_submitted=false.
+```
+
+### H09: tabla de casos que debe matar una mutación real
+
+| Vehículo | Patente | Resultado esperado |
+|---|---|---|
+| moto | `AB 123 CD` | acepta |
+| moto | `ABC 123` | acepta (vieja) |
+| car | `A 123 BCD` | acepta |
+| car | `123 ABC` | acepta |
+| moto | `NOT_A_PLATE` | `VALIDATION_ERROR` |
+| car | `null` | `VALIDATION_ERROR` |
+| bike | `AB 123 CD` | `VALIDATION_ERROR` |
+| walk | `AB 123 CD` | `VALIDATION_ERROR` |
+| walk | `null` | acepta |
+
+Mutación: quitar la validación SQL de patente e invalidar `pgTAP` por una aserción sobre el dato escrito, no por un `TypeError`. No adulterar tests, expectations, mocks ni fingir RED/GREEN.

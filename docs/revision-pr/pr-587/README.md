@@ -9,7 +9,7 @@
 | **Base** | `146c9f9749dbc7fa20b63583cbc9b3c939cdc339` |
 | **SHA revisado** | `9f87b18f79525e64f4ac8c2ec9b9ae7e9e206c3f` |
 | **Tamaño** | 6 archivos, +560/-24 líneas |
-| **Estado** | **CON BLOQUEANTES** — documentación, aún no se valida implementación |
+| **Estado** | **R2: CON BLOQUEANTES (2 nuevos)** — documentación, aún no se valida implementación |
 
 ## Rondas
 
@@ -27,20 +27,22 @@
 
 | ID | Título | Severidad | Estado |
 |---|---|---|---|
-| PR587-H01 | El contrato no contempla la RPC/alcance D01-C | alto | abierto |
-| PR587-H02 | Idempotencia histórica falsificaría `submitted_at` | alto | abierto |
-| PR587-H03 | La UI/rutas siguen usando `vehicle_type` | alto | abierto |
-| PR587-H04 | Flag GUC no equivale a frontera de permisos | alto | abierto |
-| PR587-H05 | CC-042 y fixtures E2E contradicen el nuevo evento | medio | abierto |
-| PR587-H06 | Descripción MFA exagera protección de RLS | medio | abierto |
-| PR587-H07 | Backfill por `vehicle_type` admite históricos inconsistentes | bajo | abierto (mejora) |
+| PR587-H01 | El contrato no contempla la RPC/alcance D01-C | alto | arreglado-verificado en contrato R2 (NO SQL) |
+| PR587-H02 | Idempotencia histórica falsificaría `submitted_at` | alto | arreglado-verificado en contrato R2 (NO SQL) |
+| PR587-H03 | La UI/rutas siguen usando `vehicle_type` | alto | arreglado-verificado en contrato R2 (NO SQL) |
+| PR587-H04 | Flag GUC no equivale a frontera de permisos | alto | arreglado-verificado en contrato R2 (NO SQL) |
+| PR587-H05 | CC-042 y fixtures E2E contradicen el nuevo evento | medio | arreglado-verificado en contrato R2 (NO SQL) |
+| PR587-H06 | Descripción MFA exagera protección de RLS | medio | arreglado-verificado en contrato R2 (NO SQL) |
+| PR587-H07 | Backfill por `vehicle_type` admite históricos inconsistentes | bajo | arreglado-verificado en contrato R2 (NO SQL) |
+
+| PR587-H08 | Ventana de rollout acepta envío viejo sin marcar | alto | abierto |
+| PR587-H09 | La RPC no valida formato/relación de patente | medio | abierto |
 
 Datos: [hallazgos.jsonl](hallazgos.jsonl) · Método y pruebas documentales: [evidencia/comandos.md](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
 ## Qué falta
 
-1. El agy corrige **solo documentación** con el prompt publicado en la conversación del PR.
-2. Revisión independiente nueva sobre el siguiente SHA; luego recién podrá mergearse el contrato a criterio de Lautaro073.
-3. T-421 implementará migraciones, servicio, cambios en auth, tests SQL/unitarios/E2E con revisión separada.
+1. Corregir H08 (rollout sin éxito silencioso) y H09 (validación de patente en la RPC) **solo en contratos y ficha**.
+2. Nueva revisión sobre el SHA resultante; después, implementación T-421 separada.
 
-**Limitaciones:** sin clon local por fallo DNS a github.com; no se ejecutó `git merge-tree`, `pnpm` ni pgTAP. El compare remoto mostró 1 commit ahead y 0 behind; GitHub reportó mergeable, lo que no sustituye un `merge-tree` local. La batería textual se ejecutó sobre documentos recuperados desde el SHA, no sobre el runtime.
+**Limitación de ronda 2:** se verificó documentalmente sobre el SHA indicado, con 12 controles textuales y sus mutaciones. No se ejecutó SQL, pgTAP, E2E ni Vitest del autor por bloqueo DNS del clon.

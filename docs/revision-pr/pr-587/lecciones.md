@@ -24,3 +24,10 @@ No agregamos un número AG nuevo: es una PR de diseño documental y no se pudo e
 ## Advertencias
 
 Se detectaron riesgos del diseño futuro por inspección; no se ejecutó SQL ni se declaró bypass explotable desde la API. No trasladar «RED confirmado de texto» a «RED confirmado de seguridad».
+
+## Ronda 2 — evolución y huecos encontrados
+
+- **H01–H07:** el autor corrigió el contrato y amplió la ficha; se reconocen resueltos en **documentación**, sin declarar probada ninguna migración. La guarda de H04 (GUC + dueño de la función) es más sólida que un flag aislado y la limitación del rol privilegiado quedó explícita.
+- **PR587-H08:** el reviewers anterior no había enumerado la **clase de transiciones de rollout**: schema nuevo + acción vieja + lectores nuevos. No basta afirmar que migrate precede al deploy; un éxito del writer viejo puede dejar el nuevo marcador falso. **Lección:** diseñar y probar el par expand/contract, incluida la versión anterior de cada escritor.
+- **PR587-H09:** un escritor `service_role` puede no pasar por la validación Zod del formulario. **Lección:** al mover una escritura crítica a una RPC privilegiada, trasladar los invariantes de las columnas al SQL, aunque el cliente existente ya valide.
+- **No agregar aún AG nuevo:** una PR documental sola no constituye un patrón repetido en múltiples PRs. Candidatos: P08 y AG-37 ya existentes.
