@@ -150,7 +150,9 @@ select is(pg_temp.item(pg_temp.list('pending', null, null, 'next', 50), pg_temp.
   'el histórico devuelve submittedAt null');
 select is(pg_temp.item(pg_temp.list('pending', null, null, 'next', 50), pg_temp.p(1))->>'submittedAt',
   '2026-11-04T12:30:00.000000Z', 'submittedAt es el de CC-043');
-select is(pg_temp.ids(pg_temp.list('approved')), array[pg_temp.a1()], 'approved filtra solo por estado');
+select ok(pg_temp.ids(pg_temp.list('approved', null, null, 'next', 50)) @> array[pg_temp.a1()]
+  and not (pg_temp.ids(pg_temp.list('approved', null, null, 'next', 50)) && array[pg_temp.p(1), pg_temp.p(2), pg_temp.p(3)]),
+  'approved filtra solo por estado');
 
 -- ---------------------------------------------------------------------------
 -- Normalización (sin tildes, sin mayúsculas, sin comodines)

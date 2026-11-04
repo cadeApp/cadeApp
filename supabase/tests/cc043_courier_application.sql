@@ -99,15 +99,15 @@ select ok(not has_function_privilege('authenticated', 'app_private.couriers_guar
   'los clientes no ejecutan el helper del trigger');
 select is((select count(*)::integer from public.couriers where submitted_at is not null and not application_submitted), 0,
   'ninguna fila tiene fecha sin envío');
--- Backfill: la migración marcó los envíos previos (vehículo no nulo) sin inventarles fecha.
-select is((select count(*)::integer from public.couriers
-  where vehicle_type is not null and profile_id not in (select pg_temp.c(n) from generate_series(1, 13) n)
-    and (not application_submitted or submitted_at is not null)), 0,
-  'backfill: las filas previas con vehículo quedan enviadas y sin fecha');
-select is((select count(*)::integer from public.couriers
-  where vehicle_type is null and application_submitted and submitted_at is null
-    and profile_id not in (select pg_temp.c(n) from generate_series(1, 13) n)), 0,
-  'backfill: las filas previas sin vehículo no quedan enviadas');
+-- El backfill corre una sola vez, sobre las filas que existen al migrar (en CI la base está vacía): no se puede
+-- observar acá. Las filas creadas después de la migración, aun con vehículo, nacen sin envío.
+select pg_temp.as_service();
+select lives_ok($$ update public.couriers set vehicle_type = 'bike' where profile_id = pg_temp.c(11) $$,
+  'service_role guarda un vehículo en una cuenta nueva');
+select pg_temp.as_postgres();
+select is((select application_submitted from public.couriers where profile_id = pg_temp.c(11)), false,
+  'una cuenta creada después de la migración con vehículo no queda enviada');
+update public.couriers set vehicle_type = null where profile_id = pg_temp.c(11);
 select is((select application_submitted from public.couriers where profile_id = pg_temp.c(1)), false,
   'una cuenta nueva arranca sin envío');
 
