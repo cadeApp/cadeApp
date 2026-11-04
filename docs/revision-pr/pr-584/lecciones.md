@@ -27,3 +27,16 @@ La batería estructural de cuatro mutaciones corre por lectura de clases y no su
 - **Mutaciones CSS:** ante imposibilidad de compilar local, probar estilos computados mediante CSS en Preview puede validar sensibilidad de aserciones, pero no equivale a un commit TSX mutado; conservar script completo facilitaría reproducir. No calificar RED del autor como comprobación independiente.
 - **H02 / P15:** generar capturas y adjuntarlas son tareas distintas; si contienen datos sensibles hay que publicar solo copias revisadas.
 - La verificación independiente real de E2E y CI sigue pendiente; no exigir un CI nuevo por commit que solo toca docs/revision-pr.
+
+
+---
+
+## Ronda 3
+
+- **H01/P08 cerrado por CI independiente:** la revisión verificó en el log de e2e-preview el checkout exacto de `4a265745` y los dos casos de admin-nav-mobile en verde, evitando confundir `repository_dispatch.head_sha` de develop con la rama efectivamente testeada.
+- **H02/P15 cerrado por evidencia real:** se inspeccionaron las 15 capturas, tamaños y contenido; la publicación en el repositorio fue expresamente autorizada, no un cambio unilateral del agente. El texto histórico «DNI Hash: Pendiente» no contiene valores de hash, aunque T-401 lo elimina al integrar.
+- **H03/P15 pendiente:** una rama con CI verde puede quedar inmergeable cuando develop acepta otra tarea que toca la misma feature. La revisión de cierre debe volver a consultar mergeabilidad y las diferencias de la base, no fiarse del CI anterior. T-401 y T-402 agregan código en la misma región de queries.test; el merge debe conservar ambas suites y no reintroducir DNI hash.
+- **QA separado:** un E2E heredado que pasa recién en retry #2 no debe esconderse detrás del color verde; se abrió [#585](https://github.com/cadeApp/cadeApp/issues/585) sin atribuir causalidad a T-402.
+- **Presupuesto advisory:** se compararon rutas contra el build base, no el color del job; los 263 kB en varias rutas son preexistentes y el delta de esta tarea fue 0 kB. Aplica AG-92, no se agrega regla nueva.
+
+Sin lección AG numerada nueva en esta ronda.

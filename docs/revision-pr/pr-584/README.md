@@ -46,3 +46,18 @@ Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl). Evidencia: [evidencia/c
 **Estado actual:** con bloqueante de entrega (H02); H01 = arreglado-sin-verificar. El commit del autor de ronda 2 cambió únicamente \`e2e/specs/admin-nav-mobile.spec.ts\` (+59) y \`docs/tasks/log/T-402.md\` (+28). La revisión de ronda 1 no fue tocada.
 
 **D01** autorizada: 7 secciones y \`getAdminOperatorName\`. **Acción humana imprescindible:** Lautaro073 debe revisar la privacidad y adjuntar las 15 capturas a la PR, no al repositorio. Falta verificación independiente E2E y revisión del CI aplicable al SHA de código, no al commit documental.
+
+
+---
+
+## Ronda 3 — 2026-11-04 (SHA de código `c4eba54c8e3d0b1936b5de9d0ca12dfab91c2c34`)
+
+| Ronda | SHA revisado | Resultado | Informe |
+|---|---|---|---|
+| 3 | `c4eba54c8e3d0b1936b5de9d0ca12dfab91c2c34` | H01 y H02 cerrados/verificados; **H03 bloqueante de integración con develop** | [revisiones/ronda-3.md](revisiones/ronda-3.md) |
+
+**Estado de cierre:** **CON BLOQUEANTE (1)**. H01 verificado con job oficial E2E del SHA `4a265745`, H02 verificado visualmente en las 15 capturas del SHA `c4eba54c`, y D01 aceptada por Lautaro073. **H03** permanece abierto: GitHub muestra `mergeable_state=dirty` respecto de `develop` `ceec11ef`. No aprobar/mergear hasta resolver conflictos y revisar la integración.
+
+**Seguimiento QA fuera de T-402:** [#585](https://github.com/cadeApp/cadeApp/issues/585), flake de `admin-trips.spec.ts`; no se modifica desde esta PR. El presupuesto de bundle muestra advertencias pero no hay diferencia en las rutas comparadas contra la base.
+
+**Próximo paso del agente:** incorporar `origin/develop` con `git merge`, sin rebase/force, conservando tanto los cambios de T-401 (ocultar DNI hash; alta incompleta) como T-402 (navegación/operador); correr y reportar CI/E2E contra el nuevo SHA. Ver el prompt exacto del comentario de ronda 3. No editar las rondas anteriores.

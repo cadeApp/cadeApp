@@ -175,3 +175,69 @@ Bitácora: control Preview 1 passed; (1) \`lg:hidden→md:hidden\` hace fallar M
     pnpm exec playwright test e2e/specs/admin-nav-mobile.spec.ts --project=chromium --workers=1 --retries=0 > /tmp/pr584-e2e.log 2>&1
 
 Usar worktree limpio, entorno autorizado Develop y jamás claves en logs. CI/e2e se coteja con SHA de código, no se requiere repetirlo por este commit documental.
+
+
+---
+
+# Ronda 3 — evidencia de capturas, CI exact-SHA y conflicto
+
+## Verificación independiente y fuentes
+
+- SHA inspeccionado de capturas: `c4eba54c8e3d0b1936b5de9d0ca12dfab91c2c34`; carpeta `docs/tasks/log/T-402-capturas/` con 15 archivos.
+- Los 15 PNG se inspeccionaron visualmente desde GitHub (7 escritorio 1280×800, 8 móvil 390×844). No se observó información personal real ni valores DNI/hash. La ficha confirma que las capturas son datos de E2E; inspección propia corrobora apariencia.
+- Comparación de commits `4a265745..c4eba54c`: solo 15 PNG, `docs/tasks/T-402.md` y `docs/tasks/log/T-402.md`.
+- CI [41742808125](https://github.com/cadeApp/cadeApp/actions/runs/41742808125): jobs typecheck/lint/unit/build/audit/db-tests/bundle-budget success. Unit [job 126288272508](https://github.com/cadeApp/cadeApp/actions/runs/41742808125/job/126288272508): 189 Test Files, 3459 Tests passed. DB [job 126288272114](https://github.com/cadeApp/cadeApp/actions/runs/41742808125/job/126288272114): Files=40, Tests=3252, Result PASS, comparación db types.
+- Gate E2E [41742929749, job 126288767541](https://github.com/cadeApp/cadeApp/actions/runs/41742929749/job/126288767541): workflow repository_dispatch tiene `head_sha=2ed5ef`, pero job hace `git fetch` + checkout exacto de **4a265745**; `admin-nav-mobile.spec.ts:72` y `:109` pasaron sin retries; summary chromium 113 passed, 1 flaky admin-trips (dos fallos, éxito en retry #2); global-settings 6 passed.
+- QA [issue #585](https://github.com/cadeApp/cadeApp/issues/585): primer fallo de admin-trips `getByText('Entrega 1 entregada')` resuelve a dos nodos (strict mode); retry #1 timeout esperando `filter=all`; retry #2 verde. No atribuir a cambios T-402.
+- Bundle advisory: /admin/applicants =263 kB tanto en base `2ed5ef` como en `4a265745`; /admin/trips=157; /admin/incidents=174; /merchant/dashboard=292; /courier/feed=263. Delta observado 0 kB.
+- Integración: [GitHub PR #584](https://api.github.com/repos/cadeApp/cadeApp/pulls/584) devuelve `mergeable_state=dirty` en `c4eba54c`; develop avanzó a `ceec11ef`. El diff de develop añade cambios T-401 a `src/features/admin/{copy,queries,queries.test}.ts`. No se ejecutó git merge-tree en contenedor.
+
+## Harness completo para comprobar en un worktree limpio las 15 capturas (no lee .env)
+
+Crear archivo temporal en /tmp y ejecutarlo desde la raíz del repositorio, usando la biblioteca estándar Python; el script no escribe en el repo:
+
+```bash
+cat >/tmp/pr584-r3-png.py <<'PY'
+from pathlib import Path
+import struct
+root = Path.cwd() / "docs/tasks/log/T-402-capturas"
+sections = ("announcements", "applicants", "audit", "incidents", "merchants", "settings", "trips")
+expected = {f"t402-1280-{part}.png": (1280, 800) for part in sections}
+expected.update({f"t402-390-{part}.png": (390, 844) for part in sections})
+expected["t402-390-menu-abierto.png"] = (390, 844)
+present = {f.name for f in root.glob("*.png")}
+assert present == set(expected), f"Faltantes: {set(expected)-present}; extras: {present-set(expected)}"
+for name, dim in expected.items():
+    data = (root / name).read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", f"Firma PNG inválida: {name}"
+    width, height = struct.unpack(">II", data[16:24])
+    assert (width, height) == dim, f"Dimensiones inesperadas: {name} {(width, height)}"
+    assert len(data) > 100, f"Imagen vacía: {name}"
+print("PNG 15/15, dimensiones 7×1280×800 y 8×390×844, OK")
+PY
+python3 /tmp/pr584-r3-png.py
+```
+
+**Ejecución equivalente de verificación:** los bytes PNG se consultaron a través de GitHub, se inspeccionó la cabecera IHDR de cada imagen y se abrió cada PNG para revisión visual. El harness de Python anterior es reproducible para inspección local; no se lo presenta como una ejecución Python hecha en este entorno.
+
+## Comandos de integración solicitados al agy
+
+```bash
+git fetch origin
+git checkout feat/T-402-admin-shell
+git pull --ff-only origin feat/T-402-admin-shell
+git merge origin/develop    # merge, NUNCA rebase
+# Resolver solo conflictos; conservar T-401 y T-402
+pnpm exec vitest run src/features/admin/queries.test.ts src/app/\(admin\)/admin-nav.test.tsx
+pnpm typecheck > /tmp/t402-typecheck.log 2>&1
+pnpm lint > /tmp/t402-lint.log 2>&1
+pnpm test > /tmp/t402-test.log 2>&1
+pnpm exec vitest run tools/verify-fichas.test.ts > /tmp/t402-fichas.log 2>&1
+git merge-tree --write-tree origin/develop HEAD
+git status --short
+# Una vez verificada la integración y sin archivos indebidos:
+git push origin feat/T-402-admin-shell
+git ls-remote origin refs/heads/feat/T-402-admin-shell
+```
+
+Los E2E Preview/CI deben ejecutarse por la infraestructura normal al nuevo SHA después del merge; no disparar workflows manualmente ni usar credenciales remotas privadas. Mantener los logs largos en /tmp y reportar solo sumarios.
