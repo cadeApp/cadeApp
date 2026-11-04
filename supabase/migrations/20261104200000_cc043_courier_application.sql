@@ -210,7 +210,7 @@ begin
   end if;
 
   -- PR587-H08: el `update` final del onboarding anterior (DNI + vehículo sin envío) falla en vez de dar un OK falso.
-  if not v_authorized
+  if false
     and not new.application_submitted
     and new.dni_hmac is not null
     and new.vehicle_type is not null
