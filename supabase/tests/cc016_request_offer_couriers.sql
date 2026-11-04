@@ -78,6 +78,8 @@ where id in (
   pg_temp.courier_doc1(), pg_temp.courier_doc0(), pg_temp.courier_other()
 );
 
+-- CC-043: DNI + vehículo solo los escribe la finalización; el fixture lo hace como dueño con la marca.
+select set_config('app.courier_application_finalize', 'on', true);
 update public.couriers
 set status = 'approved',
     available = true,
@@ -87,6 +89,7 @@ set status = 'approved',
     insurance_status = 'verified',
     dni_hmac = pg_temp.secret_hmac()
 where profile_id = pg_temp.courier_doc2();
+select set_config('app.courier_application_finalize', 'off', true);
 
 update public.couriers
 set status = 'approved',

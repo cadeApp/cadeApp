@@ -240,6 +240,7 @@ export type Database = {
       }
       couriers: {
         Row: {
+          application_submitted: boolean
           available: boolean
           deactivated_at: string | null
           decided_at: string | null
@@ -250,10 +251,12 @@ export type Database = {
           license_status: Database["public"]["Enums"]["document_review_status"]
           profile_id: string
           status: Database["public"]["Enums"]["courier_status"]
+          submitted_at: string | null
           vehicle_plate: string | null
           vehicle_type: Database["public"]["Enums"]["vehicle_type"] | null
         }
         Insert: {
+          application_submitted?: boolean
           available?: boolean
           deactivated_at?: string | null
           decided_at?: string | null
@@ -264,10 +267,12 @@ export type Database = {
           license_status?: Database["public"]["Enums"]["document_review_status"]
           profile_id: string
           status?: Database["public"]["Enums"]["courier_status"]
+          submitted_at?: string | null
           vehicle_plate?: string | null
           vehicle_type?: Database["public"]["Enums"]["vehicle_type"] | null
         }
         Update: {
+          application_submitted?: boolean
           available?: boolean
           deactivated_at?: string | null
           decided_at?: string | null
@@ -278,6 +283,7 @@ export type Database = {
           license_status?: Database["public"]["Enums"]["document_review_status"]
           profile_id?: string
           status?: Database["public"]["Enums"]["courier_status"]
+          submitted_at?: string | null
           vehicle_plate?: string | null
           vehicle_type?: Database["public"]["Enums"]["vehicle_type"] | null
         }
@@ -1471,6 +1477,17 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_list_applicants: {
+        Args: {
+          p_cursor_created_at?: string
+          p_cursor_id?: string
+          p_direction?: string
+          p_limit?: number
+          p_query?: string
+          p_status: string
+        }
+        Returns: Json
+      }
       admin_list_incidents: {
         Args: {
           p_cursor_created_at?: string
@@ -1605,6 +1622,15 @@ export type Database = {
       }
       dismiss_announcement: {
         Args: { p_announcement_id: string }
+        Returns: Json
+      }
+      finalize_courier_application: {
+        Args: {
+          p_courier_id: string
+          p_dni_hmac: string
+          p_vehicle_plate: string
+          p_vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+        }
         Returns: Json
       }
       get_merchant_request_private_fields: {

@@ -4,6 +4,7 @@ import {
   aguilaresLatSchema,
   aguilaresLngSchema,
   courierDocumentKindSchema,
+  courierStatusSchema,
   deliveryRequestStatusSchema,
   documentRejectionCodeSchema,
   documentReviewStatusSchema,
@@ -871,6 +872,59 @@ export const adminTripListItemSchema = z
 export const adminListTripsOutputSchema = z.object({
   items: z.array(adminTripListItemSchema),
   nextCursor: adminTripsCursorSchema.nullable(),
+});
+
+// 20c. admin_list_applicants (CC-044): cola de postulantes con búsqueda por nombre sin tildes en Postgres, total exacto
+// y keyset (profiles.created_at DESC, profile_id DESC) en los dos sentidos. «pending» lista solo postulaciones enviadas
+// (CC-043). La salida nunca trae el hash del DNI ni rutas de documentos.
+export const adminApplicantsDirectionSchema = z.enum(['next', 'prev']);
+export type AdminApplicantsDirection = z.infer<typeof adminApplicantsDirectionSchema>;
+export const adminListApplicantsCursorSchema = z.object({
+  createdAt: isoTimestampSchema,
+  id: uuidSchema,
+});
+export type AdminListApplicantsCursor = z.infer<typeof adminListApplicantsCursorSchema>;
+export const adminListApplicantsInputSchema = z
+  .object({
+    status: courierStatusSchema,
+    query: z.string().trim().max(80).optional(),
+    cursor: adminListApplicantsCursorSchema.nullable().optional(),
+    direction: adminApplicantsDirectionSchema.optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  })
+  .refine((input) => input.direction !== 'prev' || Boolean(input.cursor), {
+    message: '«prev» necesita un cursor.',
+    path: ['cursor'],
+  });
+export const adminApplicantListItemSchema = z
+  .object({
+    id: uuidSchema,
+    displayName: z.string(),
+    phone: z.string().nullable(),
+    vehicleType: vehicleTypeSchema.nullable(),
+    status: courierStatusSchema,
+    hasDni: z.boolean(),
+    docLevel: z.number().int().min(0).max(2),
+    licenseStatus: documentReviewStatusSchema,
+    insuranceStatus: documentReviewStatusSchema,
+    createdAt: isoTimestampSchema,
+    submittedAt: isoTimestampSchema.nullable(),
+    documents: z
+      .object({
+        dniFront: z.boolean(),
+        dniBack: z.boolean(),
+        selfie: z.boolean(),
+        license: z.boolean(),
+        insurance: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+export const adminListApplicantsOutputSchema = z.object({
+  items: z.array(adminApplicantListItemSchema),
+  total: z.number().int().nonnegative(),
+  nextCursor: adminListApplicantsCursorSchema.nullable(),
+  prevCursor: adminListApplicantsCursorSchema.nullable(),
 });
 
 // update_my_merchant_profile (CC-028)
@@ -1788,6 +1842,17 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  // CC-044 (T-421): misma precedencia que admin_list_trips.
+  admin_list_applicants: {
+    inputSchema: adminListApplicantsInputSchema,
+    outputSchema: adminListApplicantsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   // CC-029 (T-369). Precedencia de las RPC admin: UNAUTHENTICATED → UNAUTHORIZED_ACTOR → AAL2_REQUIRED →
   // VALIDATION_ERROR → NOT_FOUND → IDEMPOTENCY_CONFLICT / PLAN_INACTIVE / PLAN_IN_USE.
   admin_upsert_publication_plan: {
@@ -1999,6 +2064,7 @@ export const ALL_RPC_NAMES = [
   'admin_resolve_incident',
   'admin_list_incidents',
   'admin_list_trips',
+  'admin_list_applicants',
   'admin_upsert_publication_plan',
   'admin_grant_publication_credits',
   'admin_register_plan_period',
