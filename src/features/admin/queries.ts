@@ -163,7 +163,7 @@ export async function getApplicantsQueue(
     return {
       id: c.profile_id,
       fullName: profile?.display_name ?? 'Repartidor',
-      dniHash: c.dni_hmac ? `${c.dni_hmac.slice(0, 8)}...` : 'Pendiente',
+      hasDni: Boolean(c.dni_hmac),
       phone: profile?.phone ?? '',
       vehicleType: (c.vehicle_type as 'walk' | 'bike' | 'moto' | 'car') ?? 'bike',
       status: c.status as AdminApplicantTab,
@@ -277,7 +277,7 @@ export async function getApplicantDetail(
   return {
     id: c.profile_id,
     fullName: profile?.display_name ?? 'Repartidor',
-    dniHash: c.dni_hmac ? `${c.dni_hmac.slice(0, 12)}...` : 'Pendiente',
+    hasDni: Boolean(c.dni_hmac),
     phone: profile?.phone ?? '',
     vehicleType: (c.vehicle_type as 'walk' | 'bike' | 'moto' | 'car') ?? 'bike',
     vehiclePlate: c.vehicle_plate,
@@ -401,7 +401,8 @@ export async function getAdminMerchants(
 
   const items: AdminMerchantListItem[] = visibleRows.map((row) => ({
     id: row.profile_id,
-    businessName: row.business_name,
+    businessName: merchantDisplayName(row.business_name),
+    signupIncomplete: !row.business_name.trim(),
     ownerName: row.profiles?.display_name ?? '',
     phone: row.profiles?.phone ?? '',
     pickupZoneName: row.zones?.name ?? null,
@@ -823,6 +824,11 @@ export function parsePublicationPlansParams(raw: {
   };
 }
 
+/** T-401: un comercio con el alta sin completar (`business_name` vacío) nunca se muestra con nombre vacío. */
+function merchantDisplayName(businessName: string): string {
+  return businessName.trim() || ADMIN_COPY.merchants.incompleteSignup;
+}
+
 /** Nombre del comercio para el encabezado del detalle de créditos (RLS de admin). */
 export async function getAdminMerchantHeader(merchantId: string): Promise<AdminMerchantHeader | null> {
   const supabase = await createClient();
@@ -834,7 +840,7 @@ export async function getAdminMerchantHeader(merchantId: string): Promise<AdminM
   if (error) {
     throw new Error(`Error al consultar el comercio: ${error.message}`);
   }
-  return data ? { id: data.profile_id, businessName: data.business_name } : null;
+  return data ? { id: data.profile_id, businessName: merchantDisplayName(data.business_name) } : null;
 }
 
 /** Saldo, plan y libro paginado de un comercio vía `admin_get_merchant_publication_credits` (AAL2 en la RPC). */

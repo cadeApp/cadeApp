@@ -32,6 +32,7 @@ const result: AdminMerchantsResult = {
       paidUntil: null,
       deliveredCount: 42,
       createdAt: '2026-10-01T12:00:00+00:00',
+      signupIncomplete: false,
     },
   ],
   pageSize: 20,
@@ -193,5 +194,46 @@ describe('T-123: MerchantsTable (A03)', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(trigger);
     });
+  });
+});
+
+describe('T-401: comercio con el alta sin completar', () => {
+  const incomplete: AdminMerchantsResult = {
+    items: [
+      {
+        id: MERCHANT_ID,
+        businessName: 'Alta sin completar',
+        ownerName: 'Rosa Díaz',
+        phone: '3865551234',
+        pickupZoneName: null,
+        subscriptionStatus: 'pilot',
+        paidUntil: null,
+        deliveredCount: 0,
+        createdAt: '2026-10-01T12:00:00+00:00',
+        signupIncomplete: true,
+      },
+    ],
+    pageSize: 20,
+    nextCursor: null,
+    hasNextPage: false,
+  };
+
+  it('la celda «Comercio» muestra «Alta sin completar» como etiqueta secundaria y el nombre del responsable', () => {
+    render(<MerchantsTable result={incomplete} />);
+    const [, merchantCell] = within(screen.getByRole('table')).getAllByRole('cell');
+    if (!merchantCell) throw new Error('falta la celda del comercio');
+    expect(within(merchantCell).queryByText('Rosa Díaz')).not.toBeNull();
+    const label = within(merchantCell).queryByText('Alta sin completar');
+    expect(label).not.toBeNull();
+    expect(label?.className ?? '').toMatch(/text-muted-foreground/);
+  });
+
+  it('«Créditos y plan», «Abono y piloto» y el diálogo usan el texto de respaldo, nunca un nombre vacío', async () => {
+    render(<MerchantsTable result={incomplete} />);
+    expect(screen.getByRole('link', { name: /créditos y plan de alta sin completar/i })).toBeTruthy();
+    const edit = screen.getByRole('button', { name: /abono y piloto de alta sin completar/i });
+    fireEvent.click(edit);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading').textContent).toMatch(/Alta sin completar$/);
   });
 });

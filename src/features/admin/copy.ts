@@ -63,7 +63,8 @@ export const ADMIN_COPY = {
       date: 'Alta',
       action: 'Acción',
     },
-    dniHashLabel: 'DNI Hash',
+    dniLoaded: 'DNI cargado',
+    dniPending: 'DNI pendiente',
     dniBadge: 'DNI',
     selfieBadge: 'Selfie con el DNI',
     licenseBadge: 'Licencia',
@@ -80,7 +81,6 @@ export const ADMIN_COPY = {
   detail: {
     backToList: '← Volver a la lista de postulantes',
     labels: {
-      dniHash: 'DNI Hash',
       phone: 'Teléfono',
       vehicle: 'Vehículo',
       level: 'Nivel',
@@ -219,6 +219,7 @@ export const ADMIN_COPY = {
       cancelled: 'Cancelado',
     },
     empty: '—',
+    incompleteSignup: 'Alta sin completar',
     emptyTitle: 'No hay comercios adheridos',
     emptyDescription: 'Cuando un comercio de Aguilares se registre, va a aparecer acá.',
     editPlan: 'Abono y piloto',
