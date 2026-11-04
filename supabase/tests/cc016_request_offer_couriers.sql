@@ -84,15 +84,17 @@ insert into public.courier_documents (courier_id, kind, storage_path, status)
 select pg_temp.courier_doc2(), kind::public.courier_document_kind,
   'courier/' || pg_temp.courier_doc2()::text || '/' || kind || '_1730000000000.jpg', 'submitted'
 from unnest(array['dni_front', 'dni_back', 'selfie', 'avatar']) as kind;
-set local role service_role;
-select public.finalize_courier_application(pg_temp.courier_doc2(), pg_temp.secret_hmac(), 'moto', 'ABC 123');
-set local role postgres;
+select set_config('app.courier_application_finalize', 'on', true);
 update public.couriers
 set status = 'approved',
     available = true,
+    vehicle_type = 'moto',
+    vehicle_plate = 'ABC 123',
     license_status = 'verified',
-    insurance_status = 'verified'
+    insurance_status = 'verified',
+    dni_hmac = pg_temp.secret_hmac()
 where profile_id = pg_temp.courier_doc2();
+select set_config('app.courier_application_finalize', 'off', true);
 select ok(
   (select application_submitted and submitted_at is not null and dni_hmac = pg_temp.secret_hmac()
      and vehicle_type = 'moto' and vehicle_plate = 'ABC 123'
