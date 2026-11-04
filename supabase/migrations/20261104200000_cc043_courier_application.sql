@@ -107,8 +107,6 @@ begin
       or v_plate !~ '^([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2}|[A-Z]\s?[0-9]{3}\s?[A-Z]{3}|[A-Z]{3}\s?[0-9]{3}|[0-9]{3}\s?[A-Z]{3})$' then
       raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
     end if;
-  elsif v_plate is not null then
-    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
   -- 4. Ya enviada: reintento idéntico sin escribir; datos distintos se rechazan. Un histórico sigue sin fecha.
