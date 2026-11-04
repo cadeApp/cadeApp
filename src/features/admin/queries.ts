@@ -16,6 +16,7 @@ import {
   adminListPublicationPlansRpc,
   type SupabaseRpcCaller,
 } from '@/server/rpc/admin';
+import { adminListApplicantsRpc } from '@/server/rpc/admin-applicants';
 import { createClient } from '@/server/supabase/server';
 import { ADMIN_COPY } from './copy';
 import { updatePlatformSettingSchema, type AdminAuditFilters } from './schemas';
@@ -34,20 +35,28 @@ import type {
   AdminMerchantHeader,
   ApplicantDetail,
   ApplicantDocumentDetail,
-  ApplicantListItem,
+  ApplicantQueueItem,
   CourierDocLevel,
 } from './types';
 
 export interface GetApplicantsQueueOptions {
+  /** Cursor «fecha~id» ya validado (`adminApplicantsCursorSchema`). */
   readonly cursor?: string;
+  readonly direction?: 'next' | 'prev';
+  /** Término de búsqueda por nombre; la RPC lo normaliza (sin tildes ni mayúsculas). */
+  readonly query?: string;
   readonly pageSize?: number;
 }
 
 export interface ApplicantsQueueResult {
-  readonly items: readonly ApplicantListItem[];
+  readonly items: readonly ApplicantQueueItem[];
   readonly pageSize: number;
+  /** Cantidad exacta del estado con la búsqueda aplicada (en «pending», solo postulaciones enviadas). */
+  readonly total: number;
   readonly nextCursor: string | null;
+  readonly prevCursor: string | null;
   readonly hasNextPage: boolean;
+  readonly hasPrevPage: boolean;
 }
 
 interface ProfileRow {
@@ -59,19 +68,6 @@ interface ProfileRow {
 interface CourierDocRow {
   kind: string;
   status: string;
-}
-
-interface CourierQueueRow {
-  profile_id: string;
-  status: string;
-  vehicle_type: string | null;
-  vehicle_plate: string | null;
-  dni_hmac: string | null;
-  doc_level: number | null;
-  license_status: string | null;
-  insurance_status: string | null;
-  profiles: ProfileRow | null;
-  courier_documents: CourierDocRow[] | null;
 }
 
 interface CourierDetailRow {
@@ -101,91 +97,51 @@ export async function getApplicantsQueue(
   options?: GetApplicantsQueueOptions
 ): Promise<ApplicantsQueueResult> {
   const pageSize = Math.min(Math.max(1, Math.floor(options?.pageSize ?? 20)), 50);
-
   const supabase = await createClient();
 
-  let query = supabase
-    .from('couriers')
-    .select(
-      `
-      profile_id,
-      status,
-      vehicle_type,
-      vehicle_plate,
-      dni_hmac,
-      doc_level,
-      license_status,
-      insurance_status,
-      profiles!couriers_profile_id_fkey!inner (
-        display_name,
-        phone,
-        created_at
-      ),
-      courier_documents (
-        kind,
-        status
-      )
-    `
-    )
-    .eq('status', tab)
-    .order('profiles(created_at)', { ascending: false })
-    .order('profile_id', { ascending: false });
-
-  if (options?.cursor) {
-    query = query.or(registeredCursorFilter(options.cursor), { referencedTable: 'profiles' });
-  }
-
-  query = query.limit(pageSize + 1);
-
-  const { data: couriers, error } = await query;
-
-  if (error) {
-    throw new Error(`Error al consultar la cola de postulantes: ${error.message}`);
-  }
-
-  const typedCouriers = (couriers ?? []) as unknown as CourierQueueRow[];
-  const hasNextPage = typedCouriers.length > pageSize;
-  const visibleRows = typedCouriers.slice(0, pageSize);
-  const lastRow = visibleRows[visibleRows.length - 1];
-  const nextCursor =
-    hasNextPage && lastRow?.profiles ? serializeRegisteredCursor(lastRow.profiles.created_at, lastRow.profile_id) : null;
-
-  const items: ApplicantListItem[] = visibleRows.map((c) => {
-    const profile = c.profiles;
-    const docs = c.courier_documents ?? [];
-
-    const hasDniFront = docs.some((d) => d.kind === 'dni_front');
-    const hasDniBack = docs.some((d) => d.kind === 'dni_back');
-    const hasSelfie = docs.some((d) => d.kind === 'selfie');
-    const hasLicense = docs.some((d) => d.kind === 'license');
-    const hasInsurance = docs.some((d) => d.kind === 'insurance');
-
-    return {
-      id: c.profile_id,
-      fullName: profile?.display_name ?? 'Repartidor',
-      hasDni: Boolean(c.dni_hmac),
-      phone: profile?.phone ?? '',
-      vehicleType: (c.vehicle_type as 'walk' | 'bike' | 'moto' | 'car') ?? 'bike',
-      status: c.status as AdminApplicantTab,
-      docLevel: (c.doc_level ?? 0) as CourierDocLevel,
-      createdAt: profile?.created_at ?? new Date().toISOString(),
-      licenseStatus: (c.license_status as 'none' | 'submitted' | 'verified' | 'rejected') ?? 'none',
-      insuranceStatus: (c.insurance_status as 'none' | 'submitted' | 'verified' | 'rejected') ?? 'none',
-      documentsSummary: {
-        hasDniFront,
-        hasDniBack,
-        hasSelfie,
-        hasLicense,
-        hasInsurance,
-      },
-    };
+  // T-403 / CC-044: estado, búsqueda sin tildes, total y keyset en los dos sentidos se resuelven en PostgreSQL; la
+  // RPC exige admin con aal2. El cursor de la URL es «fecha~id» (T-420).
+  const [cursorCreatedAt, cursorId] = options?.cursor ? options.cursor.split('~') : [];
+  const result = await adminListApplicantsRpc(supabase, {
+    status: tab,
+    query: options?.query || undefined,
+    cursor: cursorCreatedAt && cursorId ? { createdAt: cursorCreatedAt, id: cursorId } : null,
+    direction: options?.direction ?? 'next',
+    limit: pageSize,
   });
 
+  if (!result.ok) {
+    throw new Error(`Error al consultar la cola de postulantes: ${result.code}`);
+  }
+
+  const { items, total, nextCursor, prevCursor } = result.data;
   return {
-    items,
+    items: items.map((row) => ({
+      id: row.id,
+      fullName: row.displayName || 'Repartidor',
+      hasDni: row.hasDni,
+      phone: row.phone ?? '',
+      vehicleType: row.vehicleType,
+      status: row.status,
+      docLevel: row.docLevel as CourierDocLevel,
+      createdAt: row.createdAt,
+      submittedAt: row.submittedAt,
+      licenseStatus: row.licenseStatus,
+      insuranceStatus: row.insuranceStatus,
+      documentsSummary: {
+        hasDniFront: row.documents.dniFront,
+        hasDniBack: row.documents.dniBack,
+        hasSelfie: row.documents.selfie,
+        hasLicense: row.documents.license,
+        hasInsurance: row.documents.insurance,
+      },
+    })),
     pageSize,
-    nextCursor,
-    hasNextPage,
+    total,
+    nextCursor: nextCursor ? serializeRegisteredCursor(nextCursor.createdAt, nextCursor.id) : null,
+    prevCursor: prevCursor ? serializeRegisteredCursor(prevCursor.createdAt, prevCursor.id) : null,
+    hasNextPage: nextCursor !== null,
+    hasPrevPage: prevCursor !== null,
   };
 }
 

@@ -3,6 +3,7 @@ import {
   approxDistanceLabel,
   formatApproxDistanceKm,
   formatArs,
+  formatRelativeTime,
   formatDate,
   formatPhone,
   whatsappLink,
@@ -76,5 +77,26 @@ describe('T-388: distancia aproximada (D15) con una sola regla de formato', () =
     expect(approxDistanceLabel('3,5')).toBe('≈ 3,5 km');
     expect(approxDistanceLabel('0,0')).toBe('Menos de 0,5 km');
     expect(approxDistanceLabel(null)).toBe('Distancia no calculada');
+  });
+});
+
+describe('T-403: formatRelativeTime con reloj fijo', () => {
+  const now = new Date('2026-11-04T15:00:00.000Z');
+
+  it('minutos, horas y días en es-AR', () => {
+    expect(formatRelativeTime('2026-11-04T14:59:30.000Z', now)).toBe('recién');
+    expect(formatRelativeTime('2026-11-04T14:55:00.000Z', now)).toBe('hace 5 min');
+    expect(formatRelativeTime('2026-11-04T13:00:00.000Z', now)).toBe('hace 2 h');
+    expect(formatRelativeTime('2026-11-03T14:00:00.000Z', now)).toBe('hace 1 día');
+    expect(formatRelativeTime('2026-11-01T15:00:00.000Z', now)).toBe('hace 3 días');
+  });
+
+  it('una fecha futura (reloj desfasado) es «recién» y pasados 30 días muestra la fecha', () => {
+    expect(formatRelativeTime('2026-11-04T15:05:00.000Z', now)).toBe('recién');
+    expect(formatRelativeTime('2026-09-01T12:00:00.000Z', now)).toBe('01/09/2026');
+  });
+
+  it('una fecha inválida lanza RangeError', () => {
+    expect(() => formatRelativeTime('no-es-fecha', now)).toThrow(RangeError);
   });
 });

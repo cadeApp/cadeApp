@@ -70,6 +70,27 @@ export function formatDate(
 }
 
 /**
+ * T-403: tiempo transcurrido en es-AR («recién», «hace 5 min», «hace 2 h», «hace 3 días»). Pasados 30 días muestra la
+ * fecha. `now` es explícito para que el servidor y el cliente den el mismo texto y para probarlo con reloj fijo.
+ */
+export function formatRelativeTime(dateInput: Date | string | number, now: Date | string | number): string {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  const reference = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(date.getTime()) || Number.isNaN(reference.getTime())) {
+    throw new RangeError(`Fecha inválida: ${String(dateInput)}`);
+  }
+
+  const minutes = Math.floor((reference.getTime() - date.getTime()) / 60_000);
+  if (minutes < 1) return 'recién';
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days <= 30) return days === 1 ? 'hace 1 día' : `hace ${days} días`;
+  return formatDate(date, 'date');
+}
+
+/**
  * Extrae los 10 dígitos nacionales de un número móvil argentino (ej. 3865123456),
  * limpiando prefijos internacionales (+54, 549), 0 de larga distancia y 15 móvil.
  */

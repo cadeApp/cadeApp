@@ -29,17 +29,39 @@ export const adminRegisteredCursorSchema = z
 
 export const adminApplicantsCursorSchema = adminRegisteredCursorSchema.optional();
 
-export const adminApplicantsSearchParamsSchema = z.object({
-  tab: adminApplicantTabSchema,
-  cursor: adminApplicantsCursorSchema.catch(undefined),
-});
+/** T-403: término «Buscar por nombre» (`?q=`): recortado, hasta 80 caracteres; vacío o inválido = sin búsqueda. */
+export const adminApplicantsQuerySchema = z
+  .string()
+  .trim()
+  .max(80)
+  .transform((value) => value || undefined)
+  .optional();
+
+export const adminApplicantsSearchParamsSchema = z
+  .object({
+    tab: adminApplicantTabSchema,
+    cursor: adminApplicantsCursorSchema.catch(undefined),
+    // T-403: «prev» vuelve a la página anterior desde el primer ítem; sin cursor no hay a dónde volver.
+    dir: z.enum(['next', 'prev']).catch('next').optional(),
+    q: adminApplicantsQuerySchema.catch(undefined),
+  })
+  .transform(({ tab, cursor, dir, q }) => ({
+    tab,
+    cursor,
+    direction: cursor && dir === 'prev' ? ('prev' as const) : ('next' as const),
+    query: q,
+  }));
 
 export function parseAdminApplicantsSearchParams(raw: {
   tab?: unknown;
   cursor?: unknown;
+  dir?: unknown;
+  q?: unknown;
 }): {
   tab: AdminApplicantTab;
   cursor?: string;
+  direction: 'next' | 'prev';
+  query?: string;
 } {
   return adminApplicantsSearchParamsSchema.parse(raw);
 }
