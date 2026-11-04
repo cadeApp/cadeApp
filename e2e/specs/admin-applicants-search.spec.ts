@@ -77,12 +77,31 @@ test.describe('T-403 — búsqueda sin tildes y contador de postulantes', () => 
     // El courier sembrado ya envió su postulación (seed de T-421); se lo nombra con tildes y sigue aprobado.
     await renameProfile(applicant.id, `José Búsqueda ${token}`);
 
-    // Una cuenta homónima que nunca envió la postulación (pendiente, sin vehículo ni DNI).
+    // Una cuenta homónima que nunca envió la postulación pero ya cargó un vehículo (DNI nulo: la guarda de CC-043 lo
+    // permite sin marcar el envío, como el alta de vehículo de CC-042). Distingue application_submitted de
+    // vehicle_type: una cola que filtrara por vehículo la contaría.
     const seededCount = stagingContext.courierUsers?.length ?? 0;
     await seedStagingData(stagingContext, { couriersCount: seededCount + 1, courierApplication: 'not_submitted' });
     const unsubmitted = stagingContext.courierUsers?.[seededCount];
     if (!unsubmitted) throw new Error('[E2E Seed Error] No se sembró la cuenta sin envío');
     await renameProfile(unsubmitted.id, `José Búsqueda ${token} sin envío`);
+    const { data: partialCourier, error: partialError } = await createAdminClient()
+      .from('couriers')
+      .update({ vehicle_type: 'moto', vehicle_plate: 'AE 002 EE', dni_hmac: null })
+      .eq('profile_id', unsubmitted.id)
+      .select('status, vehicle_type, vehicle_plate, dni_hmac, application_submitted, submitted_at')
+      .single();
+    if (partialError || !partialCourier) {
+      throw new Error(`[E2E Seed Error] No se persistió el vehículo sin envío: ${partialError?.message ?? 'sin fila'}`);
+    }
+    expect(partialCourier).toMatchObject({
+      status: 'pending',
+      vehicle_type: 'moto',
+      vehicle_plate: 'AE 002 EE',
+      dni_hmac: null,
+      application_submitted: false,
+      submitted_at: null,
+    });
 
     const { credentials, totpSecret } = await seedAdminWithTotp(stagingContext);
     await loginAdminWithMfa(page, credentials, totpSecret);
