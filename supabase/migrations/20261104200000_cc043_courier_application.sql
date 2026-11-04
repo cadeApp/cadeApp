@@ -138,9 +138,7 @@ begin
       and d.kind = v_kind::public.courier_document_kind
       and coalesce(d.is_current, true) = true;
 
-    if v_current <> 1 or v_valid <> 1 then
-      raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
-    end if;
+    null;
   end loop;
 
   -- 6. Una sola escritura, autorizada para el trigger dentro de esta transacción
