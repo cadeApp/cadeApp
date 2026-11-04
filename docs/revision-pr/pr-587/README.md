@@ -8,7 +8,7 @@
 | **Rama** | `cc/CC-043-044-postulantes` → `develop` |
 | **Base** | `146c9f9749dbc7fa20b63583cbc9b3c939cdc339` |
 | **SHA revisado** | `9f87b18f79525e64f4ac8c2ec9b9ae7e9e206c3f` |
-| **Tamaño** | 6 archivos, +560/-24 líneas |
+| **Alcance** | PR documental; revisión en `docs/revision-pr/pr-587/` |
 | **Estado** | **R2: CON BLOQUEANTES (2 nuevos)** — documentación, aún no se valida implementación |
 
 ## Rondas
@@ -16,6 +16,7 @@
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `9f87b18f79525e64f4ac8c2ec9b9ae7e9e206c3f` | 6 bloqueantes + 1 mejora | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `2512a3735ff7ce10d67a0e846218a6f3e4e74e36` | H01–H07 corregidos en documentación; H08–H09 abiertos | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Decisiones de Lautaro073 (recibidas antes del cierre)
 
@@ -34,7 +35,6 @@
 | PR587-H05 | CC-042 y fixtures E2E contradicen el nuevo evento | medio | arreglado-verificado en contrato R2 (NO SQL) |
 | PR587-H06 | Descripción MFA exagera protección de RLS | medio | arreglado-verificado en contrato R2 (NO SQL) |
 | PR587-H07 | Backfill por `vehicle_type` admite históricos inconsistentes | bajo | arreglado-verificado en contrato R2 (NO SQL) |
-
 | PR587-H08 | Ventana de rollout acepta envío viejo sin marcar | alto | abierto |
 | PR587-H09 | La RPC no valida formato/relación de patente | medio | abierto |
 
