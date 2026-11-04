@@ -61,3 +61,18 @@ Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl). Evidencia: [evidencia/c
 **Seguimiento QA fuera de T-402:** [#585](https://github.com/cadeApp/cadeApp/issues/585), flake de `admin-trips.spec.ts`; no se modifica desde esta PR. El presupuesto de bundle muestra advertencias pero no hay diferencia en las rutas comparadas contra la base.
 
 **Próximo paso del agente:** incorporar `origin/develop` con `git merge`, sin rebase/force, conservando tanto los cambios de T-401 (ocultar DNI hash; alta incompleta) como T-402 (navegación/operador); correr y reportar CI/E2E contra el nuevo SHA. Ver el prompt exacto del comentario de ronda 3. No editar las rondas anteriores.
+
+
+---
+
+## Ronda 4 — 2026-11-04 · Integración verificada por inspección y CI parcial
+
+| Ronda | SHA revisado | Resultado | Informe |
+|---|---|---|---|
+| 4 | `e15734e5ed48ad275083ff6d6224fe44d3465513` | **SIN BLOQUEANTES de código** detectados; H03 arreglado y verificado; gates finales aún pendientes | [revisiones/ronda-4.md](revisiones/ronda-4.md) |
+
+**Estado técnico actual:** H01, H02 y H03 = `arreglado-verificado`; D01 aceptada. GitHub muestra `mergeable=true`, base `develop` `ceec11ef`. El merge real `8ef49640` conserva T-401 y T-402 sin cambios de código adicionales en el último commit de bitácora.
+
+**CI del SHA de código `e15734e5`:** typecheck, lint, unit (189 archivos, **3467 tests**), build, audit y bundle-budget fueron verificados en verde mediante GitHub Actions; db-tests y e2e-preview seguían pendientes de finalizar al redactar la revisión. **No interpretar «SIN BLOQUEANTES» como gate final aprobado ni mergear mientras los checks exigidos sigan pending/error.** `approval-policy` exige este informe con resultado sin bloqueantes; el cuerpo de la PR se actualiza para expresar fielmente el estado.
+
+**QA:** [#585](https://github.com/cadeApp/cadeApp/issues/585) sigue como seguimiento del flake de un spec T-410, ajeno a los cambios funcionales T-402. Capturas H02 15/15 y D01 autorizada se conservan. **No se pide nueva modificación funcional ni nueva decisión.**

@@ -241,3 +241,93 @@ git ls-remote origin refs/heads/feat/T-402-admin-shell
 ```
 
 Los E2E Preview/CI deben ejecutarse por la infraestructura normal al nuevo SHA después del merge; no disparar workflows manualmente ni usar credenciales remotas privadas. Mantener los logs largos en /tmp y reportar solo sumarios.
+
+
+---
+
+# Ronda 4 — merge T-401 + T-402: revisión independiente
+
+**SHA de código:** `e15734e5ed48ad275083ff6d6224fe44d3465513`.  
+**Merge commit:** `8ef49640645af3e51619e957e2fba0b42b5ea3b3` con padres `29c8a61b` (T-402) y `ceec11ef` (develop con T-401).
+
+## Verificado por el revisor
+
+- GitHub API: base develop `ceec11ef`; PR mergeable=true, 10 commits ahead / 0 behind. El último commit del autor posterior al merge solo agrega la bitácora.
+- Barrido de consultas, pruebas, copy, nav y E2E en el SHA real: **14/14** guardas GREEN, **8/8** mutantes independientes estáticos RED por el atributo esperado. No ejecutar consultas remotas. No se atribuyen estos resultados a Vitest.
+- CI de SHA exacto [run 41754008650](https://github.com/cadeApp/cadeApp/actions/runs/41754008650): `typecheck`, `lint`, `unit`, `build`, `audit`, `bundle-budget` success. `unit` (job 126326131930): `Test Files 189 passed`, `Tests 3467 passed`. `db-tests` pendiente al redactar. Vercel deployment success y `e2e-preview=pending` [run 41754128185](https://github.com/cadeApp/cadeApp/actions/runs/41754128185).
+- El autor declara 3 casos E2E locales en Preview del SHA de merge: no se contabilizan como independientes. El gate anterior de E2E se verificó en ronda 3 sobre `4a265745`, pero no acredita el merge.
+
+## Harness reproducible, propio, mutaciones en memoria (Node integrado)
+
+Desde un worktree limpio de `e15734e5` ejecutar lo siguiente. El script no modifica archivos ni requiere .env ni pnpm:
+
+~~~bash
+cat >/tmp/pr584-r4-integration.mjs <<'NODE'
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const root = process.env.REPO_PATH || process.cwd();
+const read = p => readFileSync(join(root,p),'utf8');
+const q = read('src/features/admin/queries.ts');
+const qt = read('src/features/admin/queries.test.ts');
+const c = read('src/features/admin/copy.ts');
+const nav = read('src/app/(admin)/admin-nav.tsx');
+const e2e = read('e2e/specs/admin-nav-mobile.spec.ts');
+
+function guards(q,qt,c,nav,e2e) {
+  return {
+    t401BooleanTwice: (q.match(/hasDni:\s*Boolean\(c\.dni_hmac\)/g)||[]).length===2,
+    t401NoDniHash: !q.includes('dniHash')&&!c.includes('dniHash'),
+    t401MerchantFallback: q.includes('merchantDisplayName(row.business_name)')&&q.includes('signupIncomplete: !row.business_name.trim()'),
+    t401CreditHeader: q.includes('businessName: merchantDisplayName(data.business_name)'),
+    t401UnitTests: qt.includes("describe('T-401: el hash del DNI no viaja al cliente'")&&qt.includes("not.toHaveProperty('dniHash')")&&qt.includes('expect(JSON.stringify(items)).not.toContain('),
+    t401MerchantTests: qt.includes("describe('T-401: comercio con el alta sin completar'")&&qt.includes('getAdminMerchantHeader(MERCHANT_A)')&&qt.includes('signupIncomplete'),
+    t402Session: q.includes('export async function getAdminOperatorName()')&&q.includes('await supabase.auth.getUser()')&&q.includes(".select('display_name')")&&q.includes(".eq('id', user.id)"),
+    t402Fallback: q.includes('data?.display_name?.trim() || ADMIN_COPY.audit.unnamedOperator'),
+    t402Tests: qt.includes("describe('T-402: getAdminOperatorName")&&qt.includes('createAdminClient).not.toHaveBeenCalled()')&&qt.includes("resolves.toBe('Operador sin nombre')"),
+    t402Copy: c.includes("menuButton: 'Menú'")&&c.includes("menuTitle: 'Secciones del panel'"),
+    t402Viewport: e2e.includes('[1023, 1024, 1280]')&&e2e.includes('width: 390'),
+    t402Nav: nav.includes('lg:hidden')&&nav.includes('lg:flex')&&nav.includes('lg:w-64'),
+    bothImports: qt.includes('getAdminOperatorName,')&&qt.includes('getAdminMerchantHeader,'),
+    noConflictMarkers: !(/^(<<<<<<<|=======|>>>>>>>)/m).test(q+'\n'+qt+'\n'+c)
+  };
+}
+const original = guards(q,qt,c,nav,e2e);
+if (!Object.values(original).every(Boolean)) throw Error('CONTROL RED: '+JSON.stringify(original));
+console.log('CONTROL GREEN 14/14');
+const mutationList = [
+  ['hasDni boolean alterado','q','hasDni: Boolean(c.dni_hmac)','hasDni: true','t401BooleanTwice'],
+  ['hash DNI expuesto','q','hasDni: Boolean(c.dni_hmac)','dniHash: c.dni_hmac','t401NoDniHash'],
+  ['fallback crédito suprimido','q','merchantDisplayName(data.business_name)','data.business_name','t401CreditHeader'],
+  ['getUser sustituido','q','await supabase.auth.getUser()','await supabase.auth.getSession()','t402Session'],
+  ['fallback operador eliminado','q',"data?.display_name?.trim() || ADMIN_COPY.audit.unnamedOperator","data?.display_name?.trim() || ''",'t402Fallback'],
+  ['suite privacidad T-401 suprimida','qt',"describe('T-401: el hash del DNI no viaja al cliente'","describe('T-XXX: el hash del DNI no viaja al cliente'",'t401UnitTests'],
+  ['suite operador T-402 suprimida','qt',"describe('T-402: getAdminOperatorName","describe('T-XXX: getAdminOperatorName",'t402Tests'],
+  ['label Menú removida','c',"menuButton: 'Menú'","menuButton: ''",'t402Copy']
+];
+for(const [name,file,from,to,key] of mutationList) {
+  const source={q,qt,c,nav,e2e},old=source[file];
+  source[file]=old.replace(from,to);
+  if (source[file]===old) throw Error('SIN OBJETIVO: '+name);
+  if (guards(source.q,source.qt,source.c,source.nav,source.e2e)[key]) throw Error('MUTANTE SOBREVIVIÓ: '+name);
+  console.log('GUARDA RED: '+name);
+}
+console.log('8/8 GUARDAS MUTADAS RED (estático, no Vitest)');
+NODE
+node /tmp/pr584-r4-integration.mjs
+~~~
+
+**Resultado realmente observado en JS con contenido fuente obtenido de GitHub para el SHA exacto:** control 14/14 GREEN, 8/8 mutaciones de guardas de texto RED; sin objetivo 0. **Estos son controles estructurales propios, no RED runtime de Vitest ni compilación mutada.**
+
+## Verificaciones finales de integración y gate
+
+~~~bash
+git fetch origin
+git ls-remote origin refs/heads/feat/T-402-admin-shell
+git merge-tree --write-tree origin/develop e15734e5ed48ad275083ff6d6224fe44d3465513
+pnpm exec vitest run src/features/admin/queries.test.ts "src/app/(admin)/admin-nav.test.tsx"
+pnpm typecheck
+pnpm lint
+pnpm test
+~~~
+
+**No ejecutados desde un clon de este runtime**, son comandos reproducibles. Los jobs de CI oficiales deben verificarse por SHA: [CI 41754008650](https://github.com/cadeApp/cadeApp/actions/runs/41754008650), [E2E 41754128185](https://github.com/cadeApp/cadeApp/actions/runs/41754128185). No se exige un nuevo CI verde únicamente por el commit documental del revisor. Verificar **approval-policy** después de editar el cuerpo, sin dispararlo manualmente.

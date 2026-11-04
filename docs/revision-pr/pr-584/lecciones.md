@@ -40,3 +40,14 @@ La batería estructural de cuatro mutaciones corre por lectura de clases y no su
 - **Presupuesto advisory:** se compararon rutas contra el build base, no el color del job; los 263 kB en varias rutas son preexistentes y el delta de esta tarea fue 0 kB. Aplica AG-92, no se agrega regla nueva.
 
 Sin lección AG numerada nueva en esta ronda.
+
+
+---
+
+## Ronda 4 — cierre técnico del merge
+
+- **H03 arreglado en merge real:** la verificación independiente de la estructura de los dos padres, de `mergeable=true` y de los dos conjuntos de exports, tests y mapeos evita confundir un simple «sin conflictos» con preservación del contrato. El autor resolvió el único conflicto en tests conservando simultáneamente T-401 y T-402.
+- **No convertir tests de strings en tests de ejecución:** 14/14 invariantes y 8/8 mutantes estáticos son evidencia específica de estructura; la validación semántica viene de los 3467 tests del CI en SHA e15734e5 (cotejar en job unit). Los mutantes no se afirman como ejecución Vitest.
+- **Gates versus bloqueantes técnicos:** una PR puede estar `mergeable=true` y sin hallazgos de código con `e2e-preview=pending`, pero no está lista para merge. El informe de review puede decir «SIN BLOQUEANTES» con la condición explícita de esperar los gates. El revisor no debe disimular un status pending.
+- **CI solo documental:** el commit de los archivos de revisión dispara otra ronda de workflows. La regla 10 evita exigir verde nuevo por esos documentos; se debe identificar el SHA de código ya probado y conservar el vínculo.
+- D01 autorizada, QA #585 pendiente independiente. No se propone un AG numerado nuevo.
