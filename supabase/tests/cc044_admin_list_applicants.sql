@@ -31,6 +31,14 @@ begin
   set local role postgres;
   perform set_config('request.jwt.claims', '', true);
 end $$;
+-- Dueño de la sesión con los claims del admin aal2: la RPC autoriza por auth.uid()/aal, y la tabla temporal y el
+-- orden esperado se leen sin depender de los permisos de authenticated.
+create function pg_temp.as_admin_owner() returns void language plpgsql as $$
+begin
+  set local role postgres;
+  perform set_config('request.jwt.claims',
+    jsonb_build_object('sub', '00000000-0000-4000-8000-0000000044a1', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+end $$;
 
 create function pg_temp.ids(p_result jsonb) returns uuid[] language sql as $$
   select coalesce(array_agg((e->>'id')::uuid order by ord), '{}')
@@ -49,14 +57,16 @@ $$;
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
 select id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', email, 'pwd', meta::jsonb
-from (values
+from (
+  select * from (values
   (pg_temp.admin(), 'cc044.admin@example.test', '{"role":"merchant"}'),
   (pg_temp.merchant(), 'cc044.merchant@example.test', '{"role":"merchant"}'),
   (pg_temp.a1(), 'cc044.a1@example.test', '{"role":"courier"}'),
   (pg_temp.n1(), 'cc044.n1@example.test', '{"role":"courier"}')
-) as t(id, email, meta)
-union all
-select pg_temp.p(n), 'cc044.p' || n || '@example.test', '{"role":"courier"}' from generate_series(1, 6) n;
+) as fixed(id, email, meta)
+  union all
+  select pg_temp.p(n), 'cc044.p' || n || '@example.test', '{"role":"courier"}' from generate_series(1, 6) n
+) as t(id, email, meta);
 
 update public.profiles set consent_status = 'active'
 where id in (pg_temp.admin(), pg_temp.merchant(), pg_temp.a1(), pg_temp.n1())
@@ -162,13 +172,14 @@ select is(pg_temp.list('pending', '   ')->>'total', '6', 'un término en blanco 
 -- ---------------------------------------------------------------------------
 -- Paginación en los dos sentidos
 -- ---------------------------------------------------------------------------
+select pg_temp.as_admin_owner();
 create temporary table cc044_pages on commit drop as
 with p1 as (select pg_temp.list('pending', null, null, 'next', 2) as r),
      p2 as (select pg_temp.list('pending', null, (select r->'nextCursor' from p1), 'next', 2) as r),
      p3 as (select pg_temp.list('pending', null, (select r->'nextCursor' from p2), 'next', 2) as r)
 select (select r from p1) as p1, (select r from p2) as p2, (select r from p3) as p3;
 
--- El admin lee couriers y profiles por RLS: el orden esperado sale de la misma tabla.
+-- El orden esperado sale de la misma tabla.
 select is(
   (select pg_temp.ids(p1) || pg_temp.ids(p2) || pg_temp.ids(p3) from cc044_pages),
   (select array_agg(c.profile_id order by p.created_at desc, c.profile_id desc)
@@ -191,6 +202,7 @@ select is(
   'null'::jsonb, 'volver a la primera página deja prevCursor null');
 
 -- Con búsqueda
+select pg_temp.act_as(pg_temp.admin(), 'aal2');
 select is(pg_temp.ids(pg_temp.list('pending', 'jose', null, 'next', 1)), array[pg_temp.p(1)], 'jose, página 1');
 select is(
   pg_temp.ids(pg_temp.list('pending', 'jose', pg_temp.list('pending', 'jose', null, 'next', 1)->'nextCursor', 'next', 1)),

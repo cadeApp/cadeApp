@@ -52,13 +52,14 @@ $$;
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
 select id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', email, 'pwd', meta::jsonb
-from (values
+from (
+  select * from (values
   (pg_temp.admin(), 'cc043.admin@example.test', '{"role":"merchant"}'),
   (pg_temp.merchant(), 'cc043.merchant@example.test', '{"role":"merchant"}')
-) as t(id, email, meta)
-union all
-select pg_temp.c(n), 'cc043.c' || n || '@example.test', '{"role":"courier"}'
-from generate_series(1, 13) as n;
+) as fixed(id, email, meta)
+  union all
+  select pg_temp.c(n), 'cc043.c' || n || '@example.test', '{"role":"courier"}' from generate_series(1, 13) as n
+) as t(id, email, meta);
 
 update public.profiles set consent_status = 'active'
 where id in (pg_temp.admin(), pg_temp.merchant()) or id in (select pg_temp.c(n) from generate_series(1, 13) n);
