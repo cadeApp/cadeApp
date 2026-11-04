@@ -82,7 +82,6 @@ begin
     join public.profiles p on p.id = c.profile_id
     where c.status::text = p_status
       and (p_status <> 'pending' or c.application_submitted)
-      and (v_needle is null or strpos(app_private.search_normalize(p.display_name), v_needle) > 0)
   ),
   page as (
     select b.*
@@ -138,6 +137,7 @@ begin
       where d.courier_id = page.profile_id
         and coalesce(d.is_current, true) = true
     ) docs on true
+    where v_needle is null or strpos(app_private.search_normalize(page.display_name), v_needle) > 0
   )
   select
     coalesce((select jsonb_agg(r.item order by r.created_at desc, r.profile_id desc) from rendered r), '[]'::jsonb),
