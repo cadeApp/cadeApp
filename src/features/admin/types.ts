@@ -25,7 +25,8 @@ export type CourierDocLevel = 0 | 1 | 2;
 export interface ApplicantListItem {
   readonly id: string;
   readonly fullName: string;
-  readonly dniHash: string;
+  /** T-401: si el DNI está cargado; el hash nunca sale del servidor. */
+  readonly hasDni: boolean;
   readonly phone: string;
   readonly vehicleType: 'walk' | 'bike' | 'moto' | 'car';
   readonly status: AdminApplicantTab;
@@ -55,7 +56,8 @@ export interface ApplicantDocumentDetail {
 export interface ApplicantDetail {
   readonly id: string;
   readonly fullName: string;
-  readonly dniHash: string;
+  /** T-401: si el DNI está cargado; el hash nunca sale del servidor. */
+  readonly hasDni: boolean;
   readonly phone: string;
   readonly vehicleType: 'walk' | 'bike' | 'moto' | 'car';
   readonly vehiclePlate: string | null;
@@ -90,6 +92,8 @@ export interface AdminMerchantListItem {
   readonly deliveredCount: number;
   /** T-420: fecha de registro del comercio (`profiles.created_at`). */
   readonly createdAt: string | null;
+  /** T-401: `business_name` vacío; `businessName` trae entonces el texto de respaldo. */
+  readonly signupIncomplete: boolean;
 }
 
 export interface AdminMerchantsResult {

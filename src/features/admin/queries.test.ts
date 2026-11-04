@@ -6,6 +6,7 @@ import {
   getApplicantDetail,
   getAdminMerchants,
   getAdminOperatorName,
+  getAdminMerchantHeader,
   getAuditActors,
   getAuditLog,
   getPlatformSettings,
@@ -657,6 +658,7 @@ describe('T-123: getAdminMerchants (A03)', () => {
         paidUntil: '2026-10-31',
         deliveredCount: 42,
         createdAt: '2026-10-01T12:00:00+00:00',
+        signupIncomplete: false,
       },
     ]);
     expect(result.hasNextPage).toBe(true);
@@ -706,6 +708,97 @@ describe('T-402: getAdminOperatorName (pie de la barra lateral)', () => {
     withUser(anonymous.client, null);
     await expect(getAdminOperatorName()).resolves.toBe('Operador sin nombre');
     expect(anonymous.calls).toEqual([]);
+  });
+});
+
+describe('T-401: el hash del DNI no viaja al cliente', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const HMAC = '97b2a93e5f0c4d1e8a7b6c5d4e3f2a1b';
+  const COURIER = 'c0000000-0000-4000-8000-000000000401';
+  const COURIER_B401 = 'c0000000-0000-4000-8000-000000000402';
+
+  function queueRow(dniHmac: string | null) {
+    return {
+      profile_id: COURIER,
+      status: 'pending',
+      vehicle_type: 'moto',
+      vehicle_plate: 'A123BCD',
+      dni_hmac: dniHmac,
+      doc_level: 1,
+      license_status: 'none',
+      insurance_status: 'none',
+      profiles: { display_name: 'Juan Perez', phone: '3865123456', created_at: '2026-10-01T12:00:00Z' },
+      courier_documents: [],
+    };
+  }
+
+  it('la cola devuelve si el DNI está cargado, sin la propiedad dniHash ni el hash', async () => {
+    mockClient({ couriers: { data: [queueRow(HMAC), { ...queueRow(null), profile_id: COURIER_B401 }], error: null } });
+
+    const { items } = await getApplicantsQueue('pending');
+
+    expect(items.map((item) => item.hasDni)).toEqual([true, false]);
+    for (const item of items) expect(item).not.toHaveProperty('dniHash');
+    expect(JSON.stringify(items)).not.toContain(HMAC.slice(0, 8));
+  });
+
+  it('el detalle devuelve si el DNI está cargado, sin la propiedad dniHash ni el hash', async () => {
+    const decision = { decided_at: null, decided_by: null, deactivated_at: null };
+    mockClient({
+      couriers: { data: { ...queueRow(HMAC), ...decision }, error: null },
+      courier_documents: { data: [], error: null },
+    });
+
+    const detail = await getApplicantDetail(COURIER);
+
+    expect(detail?.hasDni).toBe(true);
+    expect(detail).not.toHaveProperty('dniHash');
+    expect(JSON.stringify(detail)).not.toContain(HMAC.slice(0, 8));
+
+    mockClient({
+      couriers: { data: { ...queueRow(null), ...decision }, error: null },
+      courier_documents: { data: [], error: null },
+    });
+    expect((await getApplicantDetail(COURIER))?.hasDni).toBe(false);
+  });
+});
+
+describe('T-401: comercio con el alta sin completar', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('un business_name vacío o en blanco se devuelve con el texto de respaldo y marcado como alta sin completar', async () => {
+    mockClient({
+      merchants: {
+        data: [
+          merchantRow(MERCHANT_A, { business_name: '' }),
+          merchantRow(MERCHANT_B, { business_name: '   ' }),
+          merchantRow('f0000000-0000-4000-8000-00000000000c', { business_name: '  Kiosco Centro ' }),
+        ],
+        error: null,
+      },
+    });
+
+    const { items } = await getAdminMerchants();
+
+    expect(items.map((item) => [item.businessName, item.signupIncomplete])).toEqual([
+      ['Alta sin completar', true],
+      ['Alta sin completar', true],
+      ['Kiosco Centro', false],
+    ]);
+    expect(items[0]?.ownerName).toBe('Rosa Díaz');
+  });
+
+  it('el encabezado de créditos usa el mismo texto de respaldo', async () => {
+    mockClient({ merchants: { data: { profile_id: MERCHANT_A, business_name: ' ' }, error: null } });
+    await expect(getAdminMerchantHeader(MERCHANT_A)).resolves.toEqual({
+      id: MERCHANT_A,
+      businessName: 'Alta sin completar',
+    });
   });
 });
 
