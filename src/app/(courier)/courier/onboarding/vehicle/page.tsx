@@ -24,19 +24,20 @@ export default async function CanonicalCourierOnboardingVehiclePage(
 
   const { data: courier, error: courierError } = await supabase
     .from('couriers')
-    .select('vehicle_type, vehicle_plate, status')
+    .select('vehicle_type, vehicle_plate, status, application_submitted')
     .eq('profile_id', user.id)
     .maybeSingle<{
       vehicle_type: VehicleType | null;
       vehicle_plate: string | null;
       status: string;
+      application_submitted: boolean;
     }>();
 
   if (courierError) {
     throw new Error('No se pudo consultar el legajo del repartidor.');
   }
-  // An URL parameter is not proof of completed onboarding.
-  const isEditing = Boolean(courier?.vehicle_type);
+  // An URL parameter is not proof of completed onboarding; CC-043: only a submitted application is.
+  const isEditing = courier?.application_submitted === true;
 
   return (
     <div className="flex flex-col items-center justify-start px-4 py-6">

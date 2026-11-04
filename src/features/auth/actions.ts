@@ -85,7 +85,7 @@ export async function loginAction(
             .maybeSingle()
         : await supabase
             .from('couriers')
-            .select('vehicle_type')
+            .select('application_submitted')
             .eq('profile_id', data.user.id)
             .maybeSingle();
     if (!onboarding.error) {
@@ -333,7 +333,7 @@ export async function updatePasswordAction(
               .maybeSingle()
           : await supabase
               .from('couriers')
-              .select('vehicle_type')
+              .select('application_submitted')
               .eq('profile_id', data.user.id)
               .maybeSingle();
 

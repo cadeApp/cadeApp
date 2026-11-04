@@ -36,7 +36,7 @@ export default async function CourierProfilePage() {
       .maybeSingle<{ display_name: string | null; role: string; phone: string | null }>(),
     supabase
       .from('couriers')
-      .select('vehicle_type, vehicle_plate, license_status, insurance_status, status, dni_hmac')
+      .select('vehicle_type, vehicle_plate, license_status, insurance_status, status, dni_hmac, application_submitted')
       .eq('profile_id', user.id)
       .maybeSingle<{
         vehicle_type: string | null;
@@ -45,6 +45,7 @@ export default async function CourierProfilePage() {
         insurance_status: DocumentReviewStatus;
         status: CourierReviewStatus;
         dni_hmac: string | null;
+        application_submitted: boolean;
       }>(),
     supabase
       .from('courier_documents')
@@ -157,8 +158,8 @@ export default async function CourierProfilePage() {
           )
         : null,
     courierStatus: courier.status,
-    // T-334: misma definición que el guard (`parseOnboardingComplete`): sin vehículo declarado no hay registro enviado.
-    onboardingComplete: courier.vehicle_type !== null,
+    // CC-043: misma definición que el guard (`parseOnboardingComplete`): sin postulación enviada no hay registro.
+    onboardingComplete: courier.application_submitted === true,
     documents: currentDocs.map((d) => ({
       kind: d.kind as import('@/domain/schemas').CourierDocumentKind,
       status: d.status,

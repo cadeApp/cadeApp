@@ -60,6 +60,7 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
                 vehicle_type: 'moto',
                 vehicle_plate: 'AB 123 CD',
                 status: 'approved',
+                application_submitted: true,
               },
               error: null,
             }),
@@ -98,6 +99,7 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
                 vehicle_type: null,
                 vehicle_plate: null,
                 status: 'pending',
+                application_submitted: false,
               },
               error: null,
             }),
@@ -123,7 +125,7 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
         maybeSingle: vi.fn().mockResolvedValue({
-          data: { vehicle_type: null, vehicle_plate: null, status: 'pending' }, error: null,
+          data: { vehicle_type: null, vehicle_plate: null, status: 'pending', application_submitted: false }, error: null,
         }),
       }),
     } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);

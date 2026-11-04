@@ -209,6 +209,11 @@ export interface FakeSeedCourier {
   readonly phone?: string | null;
   readonly vehicleType?: VehicleType | null;
   readonly vehiclePlate?: string | null;
+  // CC-043/CC-044: alta de la cuenta, envío de la postulación y DNI cargado (solo los lee admin_list_applicants).
+  readonly createdAt?: string;
+  readonly applicationSubmitted?: boolean;
+  readonly submittedAt?: string | null;
+  readonly hasDni?: boolean;
 }
 
 export interface FakeCourierRecord {
@@ -221,6 +226,10 @@ export interface FakeCourierRecord {
   phone: string | null;
   vehicleType: VehicleType | null;
   vehiclePlate: string | null;
+  createdAt: string;
+  applicationSubmitted: boolean;
+  submittedAt: string | null;
+  hasDni: boolean;
 }
 
 export interface FakeSeedMerchant {
@@ -502,6 +511,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_resolve_incident: ['admin'],
   admin_list_incidents: ['admin'],
   admin_list_trips: ['admin'],
+  admin_list_applicants: ['admin'],
   admin_upsert_publication_plan: ['admin'],
   admin_grant_publication_credits: ['admin'],
   admin_register_plan_period: ['admin'],
@@ -583,6 +593,28 @@ function nextPublicationPlanCode(base: string, codes: readonly string[]): string
     return match ? Math.max(acc, Number(match[1])) : acc;
   }, 1);
   return `${base}-${max + 1}`;
+}
+
+// CC-044: la misma normalización que app_private.search_normalize (NFD, sin U+0300–U+036F, espacios colapsados,
+// minúsculas).
+export function normalizeApplicantSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+// CC-044: keyset de admin_list_applicants (profiles.created_at DESC, profile_id DESC).
+function compareApplicantKeysetDesc(
+  a: { readonly createdAt: string; readonly courierId: string },
+  b: { readonly createdAt: string; readonly courierId: string }
+): number {
+  const aMicros = isoTimestampToEpochMicros(a.createdAt);
+  const bMicros = isoTimestampToEpochMicros(b.createdAt);
+  if (aMicros !== bMicros) return aMicros > bMicros ? -1 : 1;
+  return a.courierId < b.courierId ? 1 : a.courierId > b.courierId ? -1 : 0;
 }
 
 // CC-037: keyset de admin_list_trips (created_at DESC, id DESC) con precisión de microsegundos.
@@ -1295,6 +1327,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       // `null` es un valor explícito (onboarding incompleto); solo `undefined` toma el previo o el default.
       vehicleType: c.vehicleType === undefined ? (prev?.vehicleType ?? 'moto') : c.vehicleType,
       vehiclePlate: c.vehiclePlate ?? prev?.vehiclePlate ?? 'AA123BB',
+      createdAt: c.createdAt ?? prev?.createdAt ?? '2026-09-22T14:00:00.000Z',
+      // Sin dato explícito, como el backfill de CC-043: con vehículo cuenta como enviada (sin fecha).
+      applicationSubmitted:
+        c.applicationSubmitted ??
+        prev?.applicationSubmitted ??
+        (c.vehicleType === undefined ? (prev?.vehicleType ?? 'moto') : c.vehicleType) !== null,
+      submittedAt: c.submittedAt === undefined ? (prev?.submittedAt ?? null) : c.submittedAt,
+      hasDni: c.hasDni ?? prev?.hasDni ?? false,
     });
   }
 
@@ -3963,6 +4003,56 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             reporterName: incident.reporterName,
           })),
           nextCursor: ordered.length > limit && last ? { createdAt: last.createdAt, id: last.incidentId } : null,
+        });
+      }),
+
+    // CC-044: mismo filtro de estado y envío, búsqueda normalizada, total y keyset en los dos sentidos que la RPC SQL.
+    admin_list_applicants: (rawInput) =>
+      executeRpc('admin_list_applicants', rawInput, true, (input) => {
+        const limit = input.limit ?? DEFAULT_INCIDENTS_PAGE_SIZE;
+        const direction = input.direction ?? 'next';
+        const cursorKey = input.cursor ? { createdAt: input.cursor.createdAt, courierId: input.cursor.id } : null;
+        const needle = input.query ? normalizeApplicantSearch(input.query) : '';
+
+        const base = [...couriers.values()]
+          .filter((courier) => courier.status === input.status)
+          .filter((courier) => input.status !== 'pending' || courier.applicationSubmitted)
+          .filter((courier) => needle === '' || normalizeApplicantSearch(courier.displayName).includes(needle))
+          .sort(compareApplicantKeysetDesc);
+
+        const after = base.filter((row) => !cursorKey || compareApplicantKeysetDesc(row, cursorKey) > 0);
+        const before = base.filter((row) => cursorKey !== null && compareApplicantKeysetDesc(row, cursorKey) < 0);
+        const page = direction === 'prev' ? before.slice(Math.max(0, before.length - limit)) : after.slice(0, limit);
+        const first = page[0];
+        const last = page[page.length - 1];
+        const toCursor = (row: FakeCourierRecord) => ({ createdAt: row.createdAt, id: row.courierId });
+        const hasDocument = (courierId: string, kind: CourierDocumentKind) =>
+          [...documents.values()].some((doc) => doc.courierId === courierId && doc.kind === kind && doc.isCurrent);
+
+        return ok({
+          items: page.map((row) => ({
+            id: row.courierId,
+            displayName: row.displayName,
+            phone: row.phone,
+            vehicleType: row.vehicleType,
+            status: row.status,
+            hasDni: row.hasDni,
+            docLevel: (row.licenseStatus === 'verified' ? 1 : 0) + (row.insuranceStatus === 'verified' ? 1 : 0),
+            licenseStatus: row.licenseStatus,
+            insuranceStatus: row.insuranceStatus,
+            createdAt: row.createdAt,
+            submittedAt: row.submittedAt,
+            documents: {
+              dniFront: hasDocument(row.courierId, 'dni_front'),
+              dniBack: hasDocument(row.courierId, 'dni_back'),
+              selfie: hasDocument(row.courierId, 'selfie'),
+              license: hasDocument(row.courierId, 'license'),
+              insurance: hasDocument(row.courierId, 'insurance'),
+            },
+          })),
+          total: base.length,
+          nextCursor: last && base.some((row) => compareApplicantKeysetDesc(row, last) > 0) ? toCursor(last) : null,
+          prevCursor: first && base.some((row) => compareApplicantKeysetDesc(row, first) < 0) ? toCursor(first) : null,
         });
       }),
 
