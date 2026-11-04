@@ -141,7 +141,8 @@ begin
   )
   select
     coalesce((select jsonb_agg(r.item order by r.created_at desc, r.profile_id desc) from rendered r), '[]'::jsonb),
-    (select count(*)::integer from base),
+    (select count(*)::integer from public.couriers c where c.status::text = p_status
+      and (p_status <> 'pending' or c.application_submitted)),
     (select r.cursor from rendered r order by r.created_at desc, r.profile_id desc limit 1),
     (select r.cursor from rendered r order by r.created_at asc, r.profile_id asc limit 1),
     exists (
