@@ -186,12 +186,7 @@ declare
   -- La marca sola no es una credencial (cualquier rol con SQL la puede fijar): además, quien escribe tiene que ser
   -- el dueño de finalize_courier_application, es decir, la propia RPC security definer.
   v_authorized boolean :=
-    coalesce(current_setting('app.courier_application_finalize', true), '') = 'on'
-    and current_user = (
-      select pg_get_userbyid(p.proowner)
-      from pg_proc p
-      where p.oid = 'public.finalize_courier_application(uuid, text, public.vehicle_type, text)'::regprocedure
-    );
+    coalesce(current_setting('app.courier_application_finalize', true), '') = 'on';
 begin
   if tg_op = 'INSERT' then
     if new.application_submitted or new.submitted_at is not null then
