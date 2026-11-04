@@ -116,6 +116,8 @@ begin
     if v_courier.dni_hmac is not distinct from p_dni_hmac
       and v_courier.vehicle_type is not distinct from p_vehicle_type
       and v_courier.vehicle_plate is not distinct from v_plate then
+      perform set_config('app.courier_application_finalize', 'on', true);
+      update public.couriers set submitted_at = coalesce(submitted_at, now()) where profile_id = p_courier_id;
       return jsonb_build_object(
         'ok', true,
         'idempotent', true,
