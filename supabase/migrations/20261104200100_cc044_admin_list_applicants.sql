@@ -50,8 +50,6 @@ declare
   v_has_before boolean;
   v_has_after boolean;
 begin
-  perform app_private.assert_admin_aal2();
-
   if p_status is null
     or p_status not in ('pending', 'approved', 'rejected', 'suspended')
     or (p_cursor_created_at is null) <> (p_cursor_id is null)
