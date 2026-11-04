@@ -7,6 +7,8 @@ export const ADMIN_COPY = {
     badgeText: 'Admin (Aguilares)',
     logoutButton: 'Salir',
     ariaLabel: 'Navegación principal de administración',
+    menuButton: 'Menú',
+    menuTitle: 'Secciones del panel',
     tabs: {
       applicants: 'Postulantes',
       merchants: 'Comercios',

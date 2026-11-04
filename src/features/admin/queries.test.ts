@@ -5,6 +5,7 @@ import {
   getApplicantsQueue,
   getApplicantDetail,
   getAdminMerchants,
+  getAdminOperatorName,
   getAdminMerchantHeader,
   getAuditActors,
   getAuditLog,
@@ -668,6 +669,45 @@ describe('T-123: getAdminMerchants (A03)', () => {
   it('propaga el error de base para el error boundary', async () => {
     mockClient({ merchants: { data: null, error: { message: 'boom' } } });
     await expect(getAdminMerchants()).rejects.toThrow();
+  });
+});
+
+describe('T-402: getAdminOperatorName (pie de la barra lateral)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const ADMIN_ID = 'a0000000-0000-4000-8000-000000000402';
+
+  function withUser(client: object, id: string | null) {
+    Object.assign(client, {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: id ? { id } : null }, error: null }) },
+    });
+  }
+
+  it('lee el display_name del admin de la sesión con el cliente de sesión', async () => {
+    const { client, calls } = mockClient({ profiles: { data: { display_name: '  Lautaro  ' }, error: null } });
+    withUser(client, ADMIN_ID);
+
+    await expect(getAdminOperatorName()).resolves.toBe('Lautaro');
+    expect(callsOf(calls, 'profiles', 'eq')[0]?.args).toEqual(['id', ADMIN_ID]);
+    expect(String(callsOf(calls, 'profiles', 'select')[0]?.args[0])).toBe('display_name');
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('sin nombre, sin sesión o con error de base devuelve «Operador sin nombre» sin romper el panel', async () => {
+    const empty = mockClient({ profiles: { data: { display_name: ' ' }, error: null } });
+    withUser(empty.client, ADMIN_ID);
+    await expect(getAdminOperatorName()).resolves.toBe('Operador sin nombre');
+
+    const broken = mockClient({ profiles: { data: null, error: { message: 'boom' } } });
+    withUser(broken.client, ADMIN_ID);
+    await expect(getAdminOperatorName()).resolves.toBe('Operador sin nombre');
+
+    const anonymous = mockClient({});
+    withUser(anonymous.client, null);
+    await expect(getAdminOperatorName()).resolves.toBe('Operador sin nombre');
+    expect(anonymous.calls).toEqual([]);
   });
 });
 

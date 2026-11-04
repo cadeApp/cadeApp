@@ -751,6 +751,26 @@ export async function getRecentSettingChanges(
 }
 
 /**
+ * T-402: nombre del admin de la sesión para el pie de la barra lateral. Es un dato de lectura: si falta o la base
+ * falla, el panel muestra «Operador sin nombre» en vez de romperse.
+ */
+export async function getAdminOperatorName(): Promise<string> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return ADMIN_COPY.audit.unnamedOperator;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('display_name')
+    .eq('id', user.id)
+    .maybeSingle<{ display_name: string | null }>();
+  if (error) return ADMIN_COPY.audit.unnamedOperator;
+  return data?.display_name?.trim() || ADMIN_COPY.audit.unnamedOperator;
+}
+
+/**
  * A06: operadores (admins) para el filtro de auditoría; solo id y nombre.
  */
 export async function getAuditActors(): Promise<readonly AuditActorOption[]> {
