@@ -221,23 +221,26 @@ Mutación: quitar la validación SQL de patente e invalidar `pgTAP` por una aser
 - No se ejecutó SQL ni pgTAP, no se arrancó Supabase ni se tocaron secretos; los tests declarados por el autor (91) no se reprodujeron.
 
 **Harness íntegro, reproducible en un clon del SHA indicado:**
-\`\`\`bash
+```bash
 git fetch origin
 git worktree add /tmp/wt-pr587-r3 a3fe70ee3336b65ffb2390044857afcf71430a09
 node /tmp/pr587-r3-contract-model.mjs /tmp/wt-pr587-r3
 git worktree remove /tmp/wt-pr587-r3
-\`\`\`
+```
 
-Guardar el siguiente programa completo como \`/tmp/pr587-r3-contract-model.mjs\`:
-\`\`\`js
+Guardar el siguiente programa completo como `/tmp/pr587-r3-contract-model.mjs`:
+```js
 import fs from 'node:fs';
 import path from 'node:path';
 const root=path.resolve(process.argv[2] ?? '.');
 const cc=fs.readFileSync(path.join(root,'docs/contracts/CC-043.md'),'utf8');
 const task=fs.readFileSync(path.join(root,'docs/tasks/T-421.md'),'utf8');
 const ts=fs.readFileSync(path.join(root,'src/features/courier-onboarding/schemas.ts'),'utf8');
-const regexLine=cc.split('\\n').find(x=>x.includes('[A-Z]{2}') && x.includes('[0-9]{3}'));
-const pattern=regexLine?.match(/\x60(\^\([^\\x60]+\)\$)\x60/)?.[1];
+const regexLine=cc.split('\n').find(x=>x.includes('[A-Z]{2}') && x.includes('[0-9]{3}'));
+const tick=String.fromCharCode(96);
+const first=regexLine?.indexOf(tick+'^(') ?? -1;
+const last=first<0 ? -1 : regexLine.indexOf(tick,first+1);
+const pattern=first<0 || last<0 ? null : regexLine.slice(first+1,last);
 if(!pattern) throw new Error('SQL plate regex not found in CC-043');
 const plateRe=new RegExp(pattern);
 const normalize=p=>p==null?null:(p.trim().toUpperCase()||null);
@@ -303,17 +306,17 @@ console.log({plate:{passed:greenPlate,total:plateCases.length,mutantRed:redPlate
  claims:{passed:claims.filter(Boolean).length,total:claims.length}});
 if(greenPlate!==plateCases.length || greenGuard!==guardCases.length ||
    claims.some(x=>!x) || redPlate<1 || redGuard<1) process.exitCode=1;
-\`\`\`
+```
 
 **Nota sobre el harness:** modela la condición en prosa del trigger, no extrae ni ejecuta un trigger SQL futuro. Una mutación de ese modelo es solo evidencia contra el modelo; pgTAP + mutaciones SQL reales quedan en el DoD de T-421.
 
 **Para la PR posterior de implementación:**
-\`\`\`bash
+```bash
 pnpm db:types
 pnpm typecheck
 pnpm lint
 pnpm test
 # pnpm test:db solo en CI, con evidencia de job + mutaciones RED
 node docs/revision-pr/analizar.mjs verificacion
-\`\`\`
+```
 No presentar estos comandos como ejecutados por la revisión de esta PR.
