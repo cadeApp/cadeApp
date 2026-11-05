@@ -1418,6 +1418,26 @@ test('T-422: Maps and push get the same public config as the Preview, and the VA
   assert.doesNotMatch(e2eJob, /e2e-intercepted-maps-key/);
 });
 
+test('PR612-H01: Maps config fails fast when either public variable is missing', () => {
+  const e2eJob = job(workflow('e2e-preview.yml'), 'e2e').replace(/\r\n/g, '\n');
+  const guard = step(e2eJob, 'Validate Maps public configuration');
+  const guardAt = e2eJob.indexOf('- name: Validate Maps public configuration');
+  assert.ok(guardAt !== -1 && guardAt < e2eJob.indexOf('- name: Build PR'), 'la validación corre antes del build');
+
+  assert.doesNotMatch(guard, /\$\{\{ secrets\./);
+  const commands = shellCommands(guard);
+  for (const name of ['NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID']) {
+    assert.ok(guard.includes(`\n          ${name}: \${{ vars.${name} }}\n`), `${name} sale de vars`);
+    const at = commands.indexOf(`if [ -z "$${name}" ]; then`);
+    assert.notEqual(at, -1, `falta la guarda de ${name}`);
+    assert.match(commands[at + 1] ?? '', new RegExp(`^echo '::error::.*${name}`));
+    assert.equal(commands[at + 2], 'exit 1', `la guarda de ${name} corta el job`);
+    assert.equal(commands[at + 3], 'fi');
+  }
+  // Nunca imprime el valor de la clave.
+  assert.ok(commands.every((command) => !/^echo .*\$NEXT_PUBLIC_GOOGLE_MAPS/.test(command)));
+});
+
 test('preview E2E refuses to seed unless the develop environment points to Supabase Develop', () => {
   const e2eJob = job(workflow('e2e-preview.yml'), 'e2e').replace(/\r\n/g, '\n');
   const verify = step(e2eJob, 'Verify Supabase Develop target');

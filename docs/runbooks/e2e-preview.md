@@ -77,11 +77,14 @@ unitarias.
   service role nunca es `NEXT_PUBLIC_*`.
 - **Base correcta:** antes de sembrar se exige `NEXT_PUBLIC_SUPABASE_URL == https://<SUPABASE_DEVELOP_PROJECT_REF>.supabase.co`
   y que ese ref sea distinto al de staging (`SUPABASE_PROJECT_REF`).
-- **Google Maps:** el build usa `vars.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` y `vars.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` del
-  Environment `develop`, los mismos valores públicos que el Preview. La primera corrida real (PR #611) usó una
-  clave falsa: los specs que no interceptan Google (incidentes, flujo principal) cargaban Google con una clave
-  inválida y la vista de viaje se trababa. Sin Map ID, además, el mapa usa marcadores clásicos sin los
-  `data-testid` que busca `map-privacy`.
+- **Google Maps (D01 de T-422):** el build usa `vars.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` y
+  `vars.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` del Environment `develop`, ya cargadas con los mismos valores públicos que
+  el Preview. El step `Validate Maps public configuration` corta antes del build si alguna está vacía, nombrando
+  la variable y sin imprimir su valor. La primera corrida real (PR #611) usó una clave falsa: los specs que no
+  interceptan Google (incidentes, flujo principal) cargaban Google con una clave inválida y la vista de viaje se
+  trababa. Sin Map ID, además, el mapa usa marcadores clásicos sin los `data-testid` que busca `map-privacy`.
+  La clave del Preview podría no aceptar el origen `http://localhost:3100` (todavía no se vio): si Google
+  responde `RefererNotAllowedMapError`, o si el consumo compartido molesta, se pasa a una clave exclusiva de CI.
 - **Avisos push:** un par VAPID descartable por corrida (`Generate throwaway VAPID keys`, con `web-push`). La pública
   va al build y al servidor; la privada, enmascarada, solo al step del servidor.
 - **Serialización:** un grupo de `concurrency` fijo, `cadeapp-develop-e2e`, igual para todas las PR y para
@@ -117,7 +120,7 @@ No se implementa una cola propia. Lo que sí se garantiza:
 |---|---|---|
 | GitHub · Environment `develop` | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_PASSWORD`, `DNI_HMAC_SECRET`, `CRON_SECRET` | secretos (ya existen) |
 | GitHub · Environment `develop` | `SUPABASE_DEVELOP_PROJECT_REF` | variable (ya existe) |
-| GitHub · Environment `develop` | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | variables públicas, con los valores del Preview de Vercel (T-422) |
+| GitHub · Environment `develop` | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | variables públicas, ya cargadas con los valores del Preview de Vercel (T-422); clave exclusiva de CI solo si aparece `RefererNotAllowedMapError` o el consumo compartido molesta |
 | GitHub · repositorio | `SUPABASE_PROJECT_REF` (staging), `SUPABASE_ACCESS_TOKEN` | ya existen |
 | Vercel · `cadeapp-develop` | Ignored Build Step | después del primer `e2e-preview` GREEN de T-422: solo `develop` |
 
