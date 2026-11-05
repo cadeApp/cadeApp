@@ -83,6 +83,8 @@ export function AuditLogTable({ result, filters, actors }: AuditLogTableProps) {
   );
   const actorKnown = !filters.actorId || actors.some((actor) => actor.id === filters.actorId);
   const actionKnown = !filters.action || actionOptions.includes(filters.action);
+  // PR617-H02: un cursor sin filas (enlace viejo) igual deja volver al inicio con los filtros.
+  const emptyAfterCursor = filters.cursor !== undefined && result.items.length === 0;
 
   return (
     <div className="space-y-6">
@@ -291,9 +293,9 @@ export function AuditLogTable({ result, filters, actors }: AuditLogTableProps) {
         </Card>
       )}
 
-      {result.hasPrevPage || result.hasNextPage || (result.items.length === 0 && filters.cursor !== undefined) ? (
+      {result.hasPrevPage || result.hasNextPage || emptyAfterCursor ? (
         <nav className="flex items-center justify-end gap-3" aria-label={COPY.paginationLabel}>
-          {result.items.length === 0 && filters.cursor !== undefined ? (
+          {emptyAfterCursor ? (
             <Link href={buildAuditHref(filters)} className={PAGE_LINK_CLASS}>
               {COPY.firstPage}
             </Link>
