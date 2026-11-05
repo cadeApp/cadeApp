@@ -16,3 +16,11 @@
 
 No se crea un número `AG-xx` nuevo en esta ronda, porque los patrones refuerzan lecciones existentes; la numeración global remota se exige solo para lecciones nuevas.
 
+## Ronda 2 — verificación y omisión descubierta
+
+- H01 refuerza `pr-56/AG-37`: para clasificar una acción enumerar sus estados de dominio, no inferirlos de su nombre.
+- H02 refuerza `pr-82/AG-76`: un control debe cubrir página sin filas **y con cursor**, distinto del vacío inicial; reutilizar serializador de URL evita perder filtros.
+- H03 es una omisión previa de la propia revisión: el mapa de valores A06 no incluye estados de incidentes que sí están traducidos en A05. Para auditar una interfaz, enumerar no solo las variantes de color sino también los textos de cada transición.
+- La batería en Code Mode ejecutó los cuerpos reales de funciones recuperadas por GitHub pero no sustituye un Vitest/React/E2E completo. Los RED informados por el autor se mantienen separados.
+
+No se asignan números AG nuevos: los patrones refuerzan reglas existentes y las ramas paralelas pueden colisionar.

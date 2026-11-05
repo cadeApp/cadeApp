@@ -82,3 +82,61 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 CI oficial y `e2e-preview`: verificar su SHA y log real recién cuando la ronda esté sin bloqueantes. No usar Supabase ni Docker local ni secretos.
+
+---
+
+## Evidencia ronda 2 — `f4a5a1fca3b836e9ee39077e26a63a92f4da900b`
+
+**Ejecutado realmente por el revisor mediante GitHub + V8:**
+
+- H01: función literal `auditActionTone` y maps/set extraídos del SHA, **6/6** casos de comportamiento GREEN; mutaciones independientes `resolved→neutral` y quitar acción del set, ambas detectadas.
+- H02: expresión real `emptyAfterCursor` probada en **3** escenarios; cuerpo literal `buildAuditHref` ejecutado conservando siete filtros y sin `cursor`/`dir`; JSX revisado. Mutantes conceptuales propios: quitar condición de cursor o reintroducir cursor en href; sus salidas violan las aserciones.
+- H03: cuerpo literal de `formatAuditValue` devuelve `dismissed` y `resolved` sin traducción. `INCIDENTS_COPY.statuses` de A05 proporciona `Cerrado sin sanción` y `Resuelto`.
+
+**Evidencia exclusiva del autor:** bitácora del SHA: H01 RED 1/8 y GREEN; H02 RED 1/20 y GREEN; mutaciones RED 1/29 y GREEN 30; admin 462 tests; typecheck/lint. No se ejecutó su Vitest aquí; el harness anterior no corrió tal cual por restricciones del entorno del autor.
+
+**Límite:** Git desde el contenedor sin DNS. No hay worktree para `pnpm`, React, Playwright ni merge-tree. Los checks funcionales de V8 son acotados y no dan el gate por verde.
+
+### Reproductor completo de los controles aislados (no ejecutado tal cual en un clon en esta sesión)
+
+Copiar el bloque a un script en `/tmp` y ejecutar con Node con `cwd` en la raíz del repositorio; no necesita dependencias del proyecto ni modifica archivos.
+
+```js
+// Nodo independiente: ejecutar desde raíz de cadeApp, sin mutar archivos.
+const fs=require('node:fs');
+const read=p=>fs.readFileSync(p,'utf8');
+const fmt=read('src/features/admin/audit-format.ts');
+const ui=read('src/features/admin/components/audit-log-table.tsx');
+const copy=read('src/features/admin/copy.ts');
+const ok=(x,m)=>{if(!x)throw Error(m)};
+function body(s,n){const p=s.indexOf('export function '+n+'(');ok(p>=0,'missing '+n);const a=s.indexOf('{',p);let d=0;for(let i=a;i<s.length;i++){d+=s[i]==='{'?1:s[i]==='}'?-1:0;if(!d)return s.slice(a+1,i)}throw Error('unclosed');}
+function map(name){const p=fmt.indexOf('const '+name+':');ok(p>=0,name);const a=fmt.indexOf('= {',p)+2,b=fmt.indexOf('};',a)+1;return new Function('return ('+fmt.slice(a,b)+')')();}
+function setOf(name){const p=fmt.indexOf('const '+name+':'),a=fmt.indexOf('new Set([',p),b=fmt.indexOf(']);',a)+2;return new Function('return '+fmt.slice(a,b))();}
+const statuses=map('STATUS_TONES'), actions=map('ACTION_TONES'),set=setOf('STATUS_DRIVEN_ACTIONS');
+const toneOf=(o,k)=>Object.prototype.hasOwnProperty.call(o,k)?o[k]??'neutral':'neutral';
+const toneBody=body(fmt,'auditActionTone');
+const tone=(item,states=statuses,acts=set)=>new Function('item','STATUS_DRIVEN_ACTIONS','STATUS_TONES','ACTION_TONES','toneOf',toneBody)(item,acts,states,actions,toneOf);
+const evt=(act,st)=>({action:act,changes:st===null?[]:[{field:'status',after:st}]});
+for(const [a,st,want] of [['admin_resolve_incident','resolved','positive'],['admin_resolve_incident','dismissed','neutral'],['admin_resolve_incident',null,'neutral'],['admin_decide_courier','approved','positive'],['admin_decide_courier','rejected','negative'],['view_courier_document',null,'access']])ok(tone(evt(a,st))===want,'H01 '+st);
+ok(tone(evt('admin_resolve_incident','resolved'),{...statuses,resolved:'neutral'})!=='positive','mutant resolved survives');
+ok(tone(evt('admin_resolve_incident','resolved'),statuses,new Set([...set].filter(x=>x!=='admin_resolve_incident')))!=='positive','mutant action survives');
+const expr=ui.match(/const emptyAfterCursor = ([^;]+);/)?.[1];ok(expr,'no guard');const guard=new Function('filters','result','return '+expr);
+ok(guard({cursor:5},{items:[]})===true,'cursor+empty');ok(guard({},{items:[]})===false,'initial empty');ok(guard({cursor:5},{items:[{id:1}]})===false,'has rows');
+ok(ui.includes('result.hasPrevPage || result.hasNextPage || emptyAfterCursor'),'missing fallback in nav');
+ok(ui.includes('<Link href={buildAuditHref(filters)} className={PAGE_LINK_CLASS}>'),'incorrect link');
+const href=new Function('filters','cursor','direction','URLSearchParams','AUDIT_PATH',body(ui,'buildAuditHref'));
+const q={actorId:'a',action:'b',targetType:'c',courierId:'d',targetId:'e',from:'2026-10-21',to:'2026-10-22',cursor:5,direction:'prev'};
+const url=new URL(href(q,undefined,undefined,URLSearchParams,'/admin/audit'),'http://localhost');
+for(const [f,p] of [['actorId','actor'],['action','action'],['targetType','entity'],['courierId','courier'],['targetId','target'],['from','from'],['to','to']])ok(url.searchParams.get(p)===q[f],'missing '+p);
+ok(!url.searchParams.has('cursor')&&!url.searchParams.has('dir'),'stale paging');
+ok(href(q,q.cursor,'prev',URLSearchParams,'/admin/audit').includes('cursor=5'),'mutant cursor');
+const audit=copy.slice(copy.indexOf('\n  audit: {'),copy.indexOf('\n  credits: {'));
+const values=audit.match(/\n    values: \{([\s\S]*?)\n    \},/);ok(values,'no values');
+const translated=new Function('return ({'+values[1]+'})')();
+ok(!Object.prototype.hasOwnProperty.call(translated,'dismissed'),'H03 changed; re-review');
+console.log('H01/H02 aislados GREEN; H03 estados aún sin traducir');
+```
+
+### Gates
+
+`CI` en progreso para `f4a5a1fca3b836e9ee39077e26a63a92f4da900b` al consultar GitHub; el contexto Vercel success era un despliegue ignorado. `e2e-preview` del SHA no confirmado. El revisor no disparó workflows ni usó Docker/Supabase.
