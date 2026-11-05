@@ -15,7 +15,7 @@
 
 ## Ambientes remotos
 - Tres proyectos remotos separados (T-327, `docs/runbooks/e2e-preview.md`):
-  - Supabase Develop: `feat/*`, los Vercel Preview de cada PR y `develop`. El E2E por PR (`e2e-preview`) corre acá.
+  - Supabase Develop: `feat/*`, el build de cada PR en el runner de CI y `develop`. El E2E por PR (`e2e-preview`) corre acá.
   - Supabase Staging (`cadeapp-staging`): solo la rama `staging`, para checkpoints y release candidates.
   - Producción: `main`. No participa del desarrollo ni de las pruebas.
 - Un Preview o una rama de feature nunca aplica migraciones a un proyecto remoto: Supabase Develop se migra solo

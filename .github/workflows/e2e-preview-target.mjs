@@ -3,21 +3,17 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Decide si un deployment de Vercel habilita el E2E privilegiado contra su Preview.
+ * Decide si una corrida terminada de CI habilita el E2E privilegiado sobre el SHA de su PR.
  *
- * El evento es el `repository_dispatch` que publica la integración Vercel ↔ GitHub
- * (`client_payload`: https://github.com/vercel/repository-dispatch). Corre siempre con el workflow de la rama
- * por defecto, así que esta decisión no la puede reescribir la PR que se está probando. Todo lo que llega en
- * el payload es dato: se valida y se cruza contra GitHub antes de entregar un secreto a código de una rama.
+ * El evento es `workflow_run` (T-422): corre siempre con el workflow de la rama por defecto, así que esta decisión
+ * no la puede reescribir la PR que se está probando. Todo lo que llega en el evento es dato: se valida y se cruza
+ * contra GitHub antes de entregar un secreto a código de una rama.
  */
 
 export const STATUS_CONTEXT = 'e2e-preview';
 export const BLOCKED_BY_MIGRATION = 'BLOCKED / REQUIRES DEVELOP MIGRATION';
 
 const SHA = /^[0-9a-f]{40}$/;
-// Solo el origen de un deployment de Vercel: sin path, query, puerto ni credenciales.
-const PREVIEW_URL = /^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.vercel\.app$/;
-const DEPLOYMENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * @typedef {{ full_name: string } | null} ApiRepo
@@ -27,9 +23,8 @@ const DEPLOYMENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
  *   base: { ref: string, repo: ApiRepo },
  *   head: { sha: string, repo: ApiRepo },
  * }} ApiPull
- * @typedef {{ sha: string, url: string, deploymentId: string, pullNumber: number }} PreviewTarget
- * @typedef {{ outcome: 'skip' | 'reject', reason: string } | { outcome: 'match', reason: string, target: PreviewTarget }} MatchResult
- * @typedef {{ context: string, description: string }} ApiStatus
+ * @typedef {{ sha: string, pullNumber: number }} PullTarget
+ * @typedef {{ outcome: 'skip' | 'reject', reason: string } | { outcome: 'match', reason: string, target: PullTarget }} MatchResult
  */
 
 /** @param {unknown} value @returns {string} */
@@ -72,40 +67,27 @@ export function parsePull(item) {
   };
 }
 
-/** @param {unknown} payload @returns {string} */
-function payloadSha(payload) {
-  return text(record(record(payload).git).sha);
-}
-
-/** @param {string} deploymentId */
-export function deploymentMarker(deploymentId) {
-  return `[${deploymentId}]`;
+/** @param {unknown} run @returns {string} */
+export function runSha(run) {
+  return text(record(run).head_sha);
 }
 
 /**
- * @param {{ payload: unknown, expectedProjectId: string, repository: string, pulls: ApiPull[] }} input
+ * @param {{ run: unknown, repository: string, pulls: ApiPull[] }} input
  * @returns {MatchResult}
  */
-export function matchPreview({ payload, expectedProjectId, repository, pulls }) {
-  if (!expectedProjectId) {
-    return { outcome: 'reject', reason: 'Falta VERCEL_PROJECT_ID en el Environment develop.' };
+export function matchPullRequest({ run, repository, pulls }) {
+  const data = record(run);
+  // Solo una corrida de CI disparada por una PR y en verde: un push a develop, un CI rojo o cancelado no.
+  if (text(data.event) !== 'pull_request') {
+    return { outcome: 'skip', reason: 'La corrida de CI no viene de una PR.' };
   }
-  const data = record(payload);
-  // Otro proyecto de Vercel conectado al mismo repo (por ejemplo staging) no es asunto de este gate.
-  if (text(record(data.project).id) !== expectedProjectId) {
-    return { outcome: 'skip', reason: 'El deployment no pertenece al proyecto Vercel de develop.' };
+  if (text(data.conclusion) !== 'success') {
+    return { outcome: 'skip', reason: 'El CI de la PR no terminó en verde.' };
   }
 
-  const sha = payloadSha(payload);
-  const url = text(data.url);
-  const deploymentId = text(data.id);
-  if (!SHA.test(sha)) return { outcome: 'reject', reason: 'El payload no trae un SHA completo.' };
-  if (!PREVIEW_URL.test(url)) {
-    return { outcome: 'reject', reason: 'La URL del deployment no es un origen *.vercel.app.' };
-  }
-  if (!DEPLOYMENT_ID.test(deploymentId)) {
-    return { outcome: 'reject', reason: 'El payload no trae un id de deployment válido.' };
-  }
+  const sha = runSha(run);
+  if (!SHA.test(sha)) return { outcome: 'reject', reason: 'La corrida no trae un SHA completo.' };
 
   const candidates = pulls.filter(
     (pull) =>
@@ -127,31 +109,36 @@ export function matchPreview({ payload, expectedProjectId, repository, pulls }) 
   if (!Number.isSafeInteger(pull.number) || pull.number <= 0) {
     return { outcome: 'reject', reason: 'La PR encontrada no trae un número válido.' };
   }
+  // PR610-H02: el mismo SHA puede ser head de otra PR (por ejemplo, contra staging). La corrida tiene que ser la
+  // de esta PR. El `repo` de estas entradas no trae `full_name`: el repo ya se validó con la PR de la API.
+  const associations = Array.isArray(data.pull_requests) ? data.pull_requests.map(record) : [];
+  const [association] = associations;
+  if (
+    associations.length !== 1 ||
+    !association ||
+    association.number !== pull.number ||
+    text(record(association.base).ref) !== 'develop' ||
+    text(record(association.head).sha) !== sha
+  ) {
+    return { outcome: 'skip', reason: 'La corrida de CI no la disparó esa PR contra develop.' };
+  }
   return {
     outcome: 'match',
     reason: `PR interna #${pull.number} contra develop.`,
-    target: { sha, url, deploymentId, pullNumber: pull.number },
+    target: { sha, pullNumber: pull.number },
   };
 }
 
 /**
- * @param {{ target: PreviewTarget, changedFiles: string[], statuses: ApiStatus[], runAttempt: number }} input
- * @returns {{ outcome: 'run' | 'blocked' | 'duplicate', reason: string }}
+ * @param {{ changedFiles: string[] }} input
+ * @returns {{ outcome: 'run' | 'blocked', reason: string }}
  */
-export function gatePreview({ target, changedFiles, statuses, runAttempt }) {
-  // Vercel puede avisar el mismo deployment con más de un tipo de evento. Un re-run manual sí vuelve a correr.
-  const marker = deploymentMarker(target.deploymentId);
-  const alreadyHandled = statuses.some(
-    (status) => status.context === STATUS_CONTEXT && status.description.includes(marker)
-  );
-  if (runAttempt === 1 && alreadyHandled) {
-    return { outcome: 'duplicate', reason: 'Ese deployment ya tiene una corrida de e2e-preview.' };
-  }
+export function gatePullRequest({ changedFiles }) {
   // Supabase Develop es compartido: una rama no le aplica esquema. Sin ese esquema el E2E no es evidencia.
   if (changedFiles.some((file) => file.startsWith('supabase/migrations/'))) {
     return { outcome: 'blocked', reason: BLOCKED_BY_MIGRATION };
   }
-  return { outcome: 'run', reason: 'Preview listo para E2E.' };
+  return { outcome: 'run', reason: 'PR lista para E2E.' };
 }
 
 /**
@@ -198,18 +185,17 @@ async function main() {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Repositorio inválido.');
   /** @type {unknown} */
   const event = JSON.parse(readFileSync(eventPath, 'utf8'));
-  const payload = record(event).client_payload;
-  const expectedProjectId = process.env.VERCEL_PROJECT_ID ?? '';
+  const run = record(event).workflow_run;
 
   // El SHA se valida antes de usarlo en una ruta; con un SHA inválido no hay PR que buscar.
-  const sha = payloadSha(payload);
+  const sha = runSha(run);
   const pulls = SHA.test(sha)
     ? (await githubList(repository, token, `/commits/${sha}/pulls`)).map(parsePull)
     : [];
-  const match = matchPreview({ payload, expectedProjectId, repository, pulls });
+  const match = matchPullRequest({ run, repository, pulls });
   console.log(match.reason);
   if (match.outcome !== 'match') {
-    if (match.outcome === 'reject') throw new Error('Preview rechazado (fail-closed).');
+    if (match.outcome === 'reject') throw new Error('Corrida rechazada (fail-closed).');
     appendFileSync(outputPath, 'run=false\n');
     return;
   }
@@ -218,23 +204,10 @@ async function main() {
   const files = (await githubList(repository, token, `/pulls/${target.pullNumber}/files`)).map(
     record
   );
-  const statuses = (await githubList(repository, token, `/commits/${target.sha}/statuses`)).map(
-    record
-  );
-  const gate = gatePreview({
-    target,
+  const gate = gatePullRequest({
     changedFiles: files.flatMap((file) => [text(file.filename), text(file.previous_filename)]),
-    statuses: statuses.map((status) => ({
-      context: text(status.context),
-      description: text(status.description),
-    })),
-    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? '1'),
   });
   console.log(gate.reason);
-  if (gate.outcome === 'duplicate') {
-    appendFileSync(outputPath, 'run=false\n');
-    return;
-  }
 
   const blocked = gate.outcome === 'blocked';
   await githubApi(repository, token, `/statuses/${target.sha}`, {
@@ -243,20 +216,15 @@ async function main() {
       context: STATUS_CONTEXT,
       // `error`, no `success`: un E2E que no corrió no es evidencia verde.
       state: blocked ? 'error' : 'pending',
-      description: `${blocked ? BLOCKED_BY_MIGRATION : 'E2E contra el Preview en cola'} ${deploymentMarker(target.deploymentId)}`,
+      description: blocked ? BLOCKED_BY_MIGRATION : 'E2E contra el build del runner en cola',
       target_url: `https://github.com/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`,
     }),
   });
   appendFileSync(
     outputPath,
-    [
-      `run=${blocked ? 'false' : 'true'}`,
-      `sha=${target.sha}`,
-      `url=${target.url}`,
-      `deployment_id=${target.deploymentId}`,
-      `pr=${target.pullNumber}`,
-      '',
-    ].join('\n')
+    [`run=${blocked ? 'false' : 'true'}`, `sha=${target.sha}`, `pr=${target.pullNumber}`, ''].join(
+      '\n'
+    )
   );
 }
 
