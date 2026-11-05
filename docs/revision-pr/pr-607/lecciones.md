@@ -18,3 +18,12 @@
 
 - No se afirma ninguna prueba ejecutada ni mutación RED independiente en esta ronda: el DNS del contenedor impidió clonar GitHub, y no se dispuso de entorno con dependencias para reproducir autor M1–M4.
 - No se cambió `AGENTS.md`, ni contratos, ni código de la tarea. El seguimiento del CC quedó en issue [#609](https://github.com/cadeApp/cadeApp/issues/609).
+
+## Ronda 2 — comprobación de correcciones
+
+- **H01:** el arreglo evita el recorte total y prueba explícitamente los límites de 49/50 filas. Los tests del autor pasan en CI oficial (3568/3568), pero no se repitieron sus mutaciones en un checkout independiente: el estado queda `arreglado-sin-verificar`, no se confunde CI con mutaciones propias.
+- **H02:** `applicantAuditFilter` compartido evita dos expresiones divergentes; el filtro llega a PostgREST antes de `limit(pageSize+1)`. El E2E nuevo cubre un evento de tipo `courier` pero no prueba la rama `courier_document`, una segunda página, ni la exclusión de otro courier con datos reales. Se deja como riesgo de cobertura para la próxima ronda/seguimiento, sin inventar fallos del producto.
+- **H03:** la autorización humana D01=C quedó visible y enlazada al issue #609; no se cambiaron contratos en T-404.
+- **Deuda cuantitativa preexistente:** el job `bundle-budget` termina success y avisa 267 kB en ambas rutas de admin contra 180 kB, idéntico a los SHAs `e5ca27ad` y `7cc21d39`. La R02 no añadió peso detectable con la métrica publicada. No confundir éxito del job con cumplimiento del objetivo; evaluar presupuesto en tarea independiente si corresponde.
+
+No asignar numeración AG nueva en esta ronda: no hay un patrón nuevo demostrado más allá de P08/P10 documentados en R01.
