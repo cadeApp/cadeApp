@@ -1070,23 +1070,21 @@ test('CI build supplies required public env and propagates next build failures t
 
 const PREVIEW_REPOSITORY = 'cadeApp/cadeApp';
 const PREVIEW_SHA = 'a'.repeat(40);
-const PREVIEW_PROJECT = 'project-under-test';
-const PREVIEW_TARGET = {
-  sha: PREVIEW_SHA,
-  url: 'https://cadeapp-develop-abc123-team.vercel.app',
-  deploymentId: 'dpl_example123',
-  pullNumber: 321,
-};
+const PREVIEW_TARGET = { sha: PREVIEW_SHA, pullNumber: 321 };
 
-/** @param {Record<string, unknown>} [overrides] */
-function previewPayload(overrides = {}) {
+/**
+ * La parte de `workflow_run` que lee el resolvedor (T-422): una corrida de CI terminada.
+ * @param {Record<string, unknown>} [overrides]
+ */
+function ciRun(overrides = {}) {
   return {
-    environment: 'preview',
-    git: { ref: 'fix/T-999-example', sha: PREVIEW_SHA, shortSha: PREVIEW_SHA.slice(0, 7) },
-    id: PREVIEW_TARGET.deploymentId,
-    project: { id: PREVIEW_PROJECT, name: 'cadeapp-develop' },
-    state: { type: 'success' },
-    url: PREVIEW_TARGET.url,
+    id: 9001,
+    name: 'CI',
+    event: 'pull_request',
+    status: 'completed',
+    conclusion: 'success',
+    head_branch: 'fix/T-999-example',
+    head_sha: PREVIEW_SHA,
     ...overrides,
   };
 }
@@ -1107,18 +1105,14 @@ function previewPull({
   };
 }
 
-/** @param {{ payload?: unknown, expectedProjectId?: string, pulls?: import('./e2e-preview-target.mjs').ApiPull[] }} [overrides] */
-async function matchPreviewWith({
-  payload = previewPayload(),
-  expectedProjectId = PREVIEW_PROJECT,
-  pulls = [previewPull()],
-} = {}) {
-  const { matchPreview } = await import('./e2e-preview-target.mjs');
-  return matchPreview({ payload, expectedProjectId, repository: PREVIEW_REPOSITORY, pulls });
+/** @param {{ run?: unknown, pulls?: import('./e2e-preview-target.mjs').ApiPull[] }} [overrides] */
+async function matchPullWith({ run = ciRun(), pulls = [previewPull()] } = {}) {
+  const { matchPullRequest } = await import('./e2e-preview-target.mjs');
+  return matchPullRequest({ run, repository: PREVIEW_REPOSITORY, pulls });
 }
 
-test('preview gate matches the internal PR whose head is the exact deployed SHA', async () => {
-  const result = await matchPreviewWith();
+test('preview gate matches the internal PR whose head is the exact SHA of the green CI run', async () => {
+  const result = await matchPullWith();
   assert.equal(result.outcome, 'match');
   assert.deepEqual(result.outcome === 'match' && result.target, PREVIEW_TARGET);
 
@@ -1128,75 +1122,56 @@ test('preview gate matches the internal PR whose head is the exact deployed SHA'
     previewPull({ state: 'closed' }),
     previewPull({ baseRef: 'staging' }),
   ]) {
-    const other = await matchPreviewWith({ pulls: [pull] });
+    const other = await matchPullWith({ pulls: [pull] });
     assert.equal(other.outcome, 'skip', JSON.stringify(pull));
   }
 });
 
 test('preview gate never hands develop secrets to a fork pull request', async () => {
   for (const headRepo of ['someone/cadeApp', null]) {
-    const result = await matchPreviewWith({ pulls: [previewPull({ headRepo })] });
+    const result = await matchPullWith({ pulls: [previewPull({ headRepo })] });
     assert.equal(result.outcome, 'skip', `head repo ${headRepo}`);
     assert.ok(!('target' in result), 'un fork no produce target');
   }
 });
 
-test('preview gate ignores other Vercel projects and fails closed without the configured id', async () => {
-  const staging = await matchPreviewWith({
-    payload: previewPayload({ project: { id: 'another-project', name: 'cadeapp-staging' } }),
-  });
-  assert.equal(staging.outcome, 'skip');
-  const missingProject = await matchPreviewWith({
-    payload: previewPayload({ project: undefined }),
-  });
-  assert.equal(missingProject.outcome, 'skip');
-  // Sin el id configurado, un payload sin proyecto no puede "coincidir" con vacío.
-  const unconfigured = await matchPreviewWith({
-    payload: previewPayload({ project: { id: '' } }),
-    expectedProjectId: '',
-  });
-  assert.equal(unconfigured.outcome, 'reject');
+test('T-422: only a green CI run triggered by a pull request enables the E2E', async () => {
+  // Un push a develop, un CI rojo, cancelado o sin terminar no corre E2E ni publica estado.
+  for (const overrides of [
+    { event: 'push' },
+    { event: 'workflow_dispatch' },
+    { event: 'pull_request_target' },
+    { conclusion: 'failure' },
+    { conclusion: 'cancelled' },
+    { conclusion: 'skipped' },
+    { conclusion: null },
+  ]) {
+    const result = await matchPullWith({ run: ciRun(overrides) });
+    assert.equal(result.outcome, 'skip', JSON.stringify(overrides));
+    assert.ok(!('target' in result), JSON.stringify(overrides));
+  }
 });
 
-test('preview gate rejects ambiguous pull requests and untrusted payload shapes', async () => {
-  const ambiguous = await matchPreviewWith({
+test('preview gate rejects ambiguous pull requests and untrusted run shapes', async () => {
+  const ambiguous = await matchPullWith({
     pulls: [previewPull(), previewPull({ number: 322 })],
   });
   assert.equal(ambiguous.outcome, 'reject');
 
-  for (const url of [
-    'https://cadeapp-staging.vercel.app/path',
-    'http://cadeapp-develop-abc.vercel.app',
-    'https://evil.example.com',
-    'https://cadeapp-develop-abc.vercel.app.evil.example.com',
-    'https://user@cadeapp-develop-abc.vercel.app',
-    'https://cadeapp-develop-abc.vercel.app\nrun=true',
-  ]) {
-    const result = await matchPreviewWith({ payload: previewPayload({ url }) });
-    assert.equal(result.outcome, 'reject', url);
+  for (const head_sha of ['abc1234', `${PREVIEW_SHA}\nrun=true`, 'A'.repeat(40), undefined]) {
+    const result = await matchPullWith({ run: ciRun({ head_sha }) });
+    assert.equal(result.outcome, 'reject', JSON.stringify(head_sha));
   }
-  for (const git of [{ sha: 'abc1234' }, { sha: `${PREVIEW_SHA}\nrun=true` }, undefined]) {
-    const result = await matchPreviewWith({ payload: previewPayload({ git }) });
-    assert.equal(result.outcome, 'reject', JSON.stringify(git));
-  }
-  const badId = await matchPreviewWith({ payload: previewPayload({ id: 'dpl_1\nrun=true' }) });
-  assert.equal(badId.outcome, 'reject');
 });
 
 test('preview gate blocks pull requests with migrations instead of reporting green', async () => {
-  const { gatePreview, BLOCKED_BY_MIGRATION } = await import('./e2e-preview-target.mjs');
-  const clean = gatePreview({
-    target: PREVIEW_TARGET,
+  const { gatePullRequest, BLOCKED_BY_MIGRATION } = await import('./e2e-preview-target.mjs');
+  const clean = gatePullRequest({
     changedFiles: ['src/features/offers/queries.ts', 'docs/supabase/migrations/notes.md'],
-    statuses: [],
-    runAttempt: 1,
   });
   assert.equal(clean.outcome, 'run');
-  const withMigration = gatePreview({
-    target: PREVIEW_TARGET,
+  const withMigration = gatePullRequest({
     changedFiles: ['src/app/page.tsx', 'supabase/migrations/20261002120000_example.sql'],
-    statuses: [],
-    runAttempt: 1,
   });
   assert.equal(withMigration.outcome, 'blocked');
   assert.equal(withMigration.reason, BLOCKED_BY_MIGRATION);
@@ -1209,93 +1184,52 @@ test('preview gate blocks pull requests with migrations instead of reporting gre
   assert.doesNotMatch(script, /state: '?success/);
 });
 
-test('preview gate runs once per deployment but honours a manual re-run', async () => {
-  const { gatePreview, STATUS_CONTEXT, deploymentMarker } =
-    await import('./e2e-preview-target.mjs');
-  const handled = [
-    {
-      context: STATUS_CONTEXT,
-      description: `en cola ${deploymentMarker(PREVIEW_TARGET.deploymentId)}`,
-    },
-  ];
-  const input = { target: PREVIEW_TARGET, changedFiles: [], statuses: handled };
-  assert.equal(gatePreview({ ...input, runAttempt: 1 }).outcome, 'duplicate');
-  assert.equal(gatePreview({ ...input, runAttempt: 2 }).outcome, 'run');
-  // Un deployment nuevo del mismo SHA, o el status de otro check, no cuenta como ya corrido.
-  const others = [
-    { context: STATUS_CONTEXT, description: `en cola ${deploymentMarker('dpl_other')}` },
-    { context: 'Vercel', description: deploymentMarker(PREVIEW_TARGET.deploymentId) },
-  ];
-  assert.equal(gatePreview({ ...input, statuses: others, runAttempt: 1 }).outcome, 'run');
-});
-
-test('preview workflow only reacts to the Vercel deployment event and never deploys', () => {
+test('T-422: preview workflow only reacts to a completed CI run and never deploys', () => {
   const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
   const trigger = preview.slice(preview.indexOf('\non:\n'), preview.indexOf('\npermissions:'));
   assert.equal(
     trigger.trim(),
-    [
-      'on:',
-      '  repository_dispatch:',
-      '    types:',
-      '      - vercel.deployment.success',
-      '      - vercel.deployment.ready',
-    ].join('\n'),
-    'un único disparador: el aviso de Vercel. Sin pull_request_target ni workflow_dispatch con URL libre'
+    ['on:', '  workflow_run:', '    workflows: [CI]', '    types: [completed]'].join('\n'),
+    'un único disparador: el fin del CI. Sin pull_request, pull_request_target ni workflow_dispatch'
   );
+  assert.match(workflow('ci.yml'), /^name: CI$/m, 'el nombre que escucha workflow_run es el de ci.yml');
   assert.match(preview, /^permissions: \{\}$/m, 'cada job declara lo mínimo');
   assert.doesNotMatch(preview, /continue-on-error/);
   assert.doesNotMatch(preview, /\bsleep\b/);
-  // Vercel despliega por Git Integration: acá no hay CLI, ni token, ni build.
+  // Vercel no participa: ni CLI, ni token, ni URL de un deployment.
   assert.doesNotMatch(
     preview,
     /pnpm dlx vercel|vercel@|vercel (deploy|build|pull)|--prebuilt|--prod/
   );
-  assert.doesNotMatch(preview, /VERCEL_TOKEN|VERCEL_ORG_ID/);
+  assert.doesNotMatch(preview, /VERCEL_TOKEN|VERCEL_ORG_ID|VERCEL_PROJECT_ID|vercel\.app/);
   // Una feature PR no muta Supabase Develop.
   assert.doesNotMatch(preview, /supabase (db push|link|migration)/);
   assert.doesNotMatch(preview, /SUPABASE_ACCESS_TOKEN|SUPABASE_DB_PASSWORD/);
 });
 
-test('preview target is resolved by trusted code with the project id from the develop environment', () => {
+test('preview target is resolved by trusted code with no secrets', () => {
   const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
   const resolveJob = job(preview, 'resolve');
-  assert.match(resolveJob, /^ {4}environment: develop$/m);
+  assert.doesNotMatch(resolveJob, /environment:/, 'resolver la PR no necesita el Environment develop');
+  assert.doesNotMatch(resolveJob, /\$\{\{ secrets\./, 'el resolvedor no recibe secretos');
   const checkout = step(resolveJob, 'Checkout trusted default branch');
   assert.doesNotMatch(checkout, /\bref:/, 'el resolvedor corre el código de la rama por defecto');
-  const target = step(resolveJob, 'Resolve trusted preview target');
+  const target = step(resolveJob, 'Resolve trusted pull request target');
   assert.match(target, /run: node \.github\/workflows\/e2e-preview-target\.mjs\n/);
-  assert.ok(
-    target.includes('\n          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}\n'),
-    'el Project ID sale del secreto existente del Environment develop'
-  );
-  assert.equal(
-    [...resolveJob.matchAll(/\$\{\{ secrets\.(\w+) \}\}/g)].map((match) => match[1]).join(),
-    'VERCEL_PROJECT_ID',
-    'el resolvedor no recibe ningún otro secreto'
-  );
 
-  // Nada del payload se interpola en shell ni llega directo al job con secretos: solo nombra un grupo.
-  const payloadUses = preview
+  // Nada del evento se interpola en el YAML: el SHA probado sale del resolvedor, que lo cruzó con GitHub.
+  const eventUses = preview
     .split('\n')
-    .filter((line) => line.includes('client_payload') && !line.trimStart().startsWith('#'));
-  assert.deepEqual(payloadUses, [
-    '      group: e2e-preview-resolve-${{ github.event.client_payload.git.sha }}',
-  ]);
+    .filter((line) => line.includes('github.event') && !line.trimStart().startsWith('#'));
+  assert.deepEqual(eventUses, []);
 
-  // Ni el id ni una URL quedan escritos en el repo.
   for (const name of readdirSync(new URL('.', import.meta.url))) {
     if (name === 'verify-workflows.test.mjs') continue;
     assert.doesNotMatch(workflow(name), /prj_[A-Za-z0-9]{6,}/, `${name}: Project ID hardcodeado`);
   }
-  assert.doesNotMatch(
-    preview,
-    /https:\/\/[\w.-]+\.vercel\.app/,
-    'sin URL fija de develop ni de staging'
-  );
 });
 
-test('preview E2E runs every chromium spec and then the serial global-settings project against the resolved SHA and URL', () => {
+test('T-422: preview E2E builds the resolved SHA in the runner and runs every chromium spec, then global-settings, against it', () => {
   const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
   const e2eJob = job(preview, 'e2e');
   assert.match(e2eJob, /^ {4}needs: resolve$/m);
@@ -1307,7 +1241,6 @@ test('preview E2E runs every chromium spec and then the serial global-settings p
   assert.match(e2eJob, /^ {4}environment: develop$/m);
   assert.doesNotMatch(e2eJob, /environment: (staging|production)/);
   assert.match(e2eJob, /^ {10}ref: \$\{\{ needs\.resolve\.outputs\.sha \}\}$/m);
-  assert.match(e2eJob, /^ {6}PREVIEW_URL: \$\{\{ needs\.resolve\.outputs\.url \}\}$/m);
   assert.match(
     e2eJob,
     /^ {4}permissions:\n {6}contents: read\n {4}# /m,
@@ -1316,39 +1249,49 @@ test('preview E2E runs every chromium spec and then the serial global-settings p
   assert.match(
     e2eJob,
     /^ {4}concurrency:\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false$/m,
-    'un grupo fijo, igual para todas las PR, y en cola'
+    'un grupo fijo, igual para todas las PR y que e2e-mutation, y en cola'
   );
 
   const run = step(e2eJob, 'Run preview E2E gate');
   assertSpecsDiscoveredByProject(run, 'preview E2E');
-  const chromiumAt = run.search(chromiumProjectRun);
-  const globalSettingsAt = run.search(globalSettingsProjectRun);
-  assert.notEqual(
-    globalSettingsAt,
-    -1,
-    'every *.global-settings.spec.ts of the exact Preview SHA must run serially; none is not a failure'
-  );
-  assert.ok(chromiumAt < globalSettingsAt, 'global-settings runs after the chromium project');
+  const commands = shellCommands(run);
+  const at = (/** @type {RegExp} */ pattern) => commands.findIndex((command) => pattern.test(command));
+  const build = at(/^pnpm build$/);
+  const start = at(/^pnpm start -H 127\.0\.0\.1 -p 3100 > "\$RUNNER_TEMP\/next-start\.log" 2>&1 &$/);
+  const health = at(/"\$APP_URL\/api\/health"/);
+  const chromium = at(chromiumProjectRun);
+  const globalSettings = at(globalSettingsProjectRun);
   assert.ok(
-    run.includes('\n          PLAYWRIGHT_TEST_BASE_URL: ${{ needs.resolve.outputs.url }}\n'),
-    'Playwright apunta al Preview resuelto'
+    build === 0 && build < start && start < health && health < chromium && chromium < globalSettings,
+    'build del SHA, servidor solo en loopback, health 200, chromium y después global-settings'
   );
+  // El health check exige 200 y corta antes de Playwright.
+  assert.equal(commands[health + 1], `if [ "$code" != '200' ]; then`);
+  assert.ok(commands.slice(health + 2, commands.indexOf('fi')).includes('exit 1'));
+  assert.match(run, /^ {8}shell: bash$/m, 'bash -e: un build roto corta el step');
+
+  assert.match(e2eJob, /^ {6}APP_URL: http:\/\/localhost:3100$/m);
+  for (const line of [
+    'PLAYWRIGHT_TEST_BASE_URL: http://localhost:3100',
+    'NEXT_PUBLIC_APP_URL: http://localhost:3100',
+  ]) {
+    assert.ok(run.includes(`\n          ${line}\n`), line);
+  }
   assert.match(
     workflow('../../playwright.config.ts'),
     /baseURL: process\.env\.PLAYWRIGHT_TEST_BASE_URL \|\|/,
     'esa es la variable que lee playwright.config.ts'
   );
 
-  // Los secretos privilegiados solo existen en el step de Playwright, no en install ni en el resto del job.
+  // Los secretos solo existen en el step que hace build, levanta el servidor y corre Playwright.
   const outsideRun = e2eJob.replace(run, '');
   assert.doesNotMatch(outsideRun, /SUPABASE_SERVICE_ROLE_KEY|DNI_HMAC_SECRET|CRON_SECRET/);
   assert.doesNotMatch(preview, /NEXT_PUBLIC_\w*(SERVICE|SECRET)/);
-
-  // El health check exige 200: el 302 de Vercel Authentication no pasa por sano.
-  const health = shellCommands(step(e2eJob, 'Health check'));
-  assert.ok(health[0]?.includes('"$PREVIEW_URL/api/health"'));
-  assert.equal(health[1], `if [ "$code" != '200' ]; then`);
-  assert.ok(health.slice(2, health.indexOf('fi')).includes('exit 1'));
+  // La salida del servidor puede llevar secretos: no se sube; el artifact es solo el reporte de Playwright.
+  assert.deepEqual(
+    [...e2eJob.matchAll(/^ {10}path: (.*)$/gm)].map((match) => match[1]),
+    ['playwright-report/']
+  );
 });
 
 test('preview E2E refuses to seed unless the develop environment points to Supabase Develop', () => {
@@ -1469,32 +1412,24 @@ test('develop is not deployed from Actions and staging keeps its own gate', () =
   assert.doesNotMatch(stagingE2e, /cadeapp-develop-e2e|SUPABASE_DEVELOP_PROJECT_REF/);
 });
 
-test('preview gate stays fail-closed for payloads and API items of the wrong shape', async () => {
+test('preview gate stays fail-closed for runs and API items of the wrong shape', async () => {
   const { parsePull } = await import('./e2e-preview-target.mjs');
 
-  // Payloads que no son un objeto, o cuyos campos anidados no lo son: nunca coinciden ni lanzan.
-  for (const payload of [null, 'dpl_example123', 42, [previewPayload()]]) {
-    const result = await matchPreviewWith({ payload });
-    assert.equal(result.outcome, 'skip', `payload ${JSON.stringify(payload)}`);
+  // Corridas que no son un objeto, o con campos de otro tipo: nunca coinciden ni lanzan.
+  for (const run of [null, 'CI', 42, [ciRun()]]) {
+    const result = await matchPullWith({ run });
+    assert.equal(result.outcome, 'skip', `run ${JSON.stringify(run)}`);
   }
   for (const overrides of [
-    { project: PREVIEW_PROJECT },
-    { project: [{ id: PREVIEW_PROJECT }] },
-    { project: { id: { toString: () => PREVIEW_PROJECT } } },
+    { event: ['pull_request'] },
+    { event: { toString: () => 'pull_request' } },
+    { conclusion: ['success'] },
   ]) {
-    const result = await matchPreviewWith({ payload: previewPayload(overrides) });
+    const result = await matchPullWith({ run: ciRun(overrides) });
     assert.equal(result.outcome, 'skip', JSON.stringify(overrides));
   }
-  for (const overrides of [
-    { git: PREVIEW_SHA },
-    { git: [PREVIEW_SHA] },
-    { git: { sha: 123 } },
-    { url: { href: PREVIEW_TARGET.url } },
-    { url: [PREVIEW_TARGET.url] },
-    { id: 7 },
-    { id: null },
-  ]) {
-    const result = await matchPreviewWith({ payload: previewPayload(overrides) });
+  for (const overrides of [{ head_sha: [PREVIEW_SHA] }, { head_sha: 123 }, { head_sha: null }]) {
+    const result = await matchPullWith({ run: ciRun(overrides) });
     assert.equal(result.outcome, 'reject', JSON.stringify(overrides));
   }
 
@@ -1510,12 +1445,12 @@ test('preview gate stays fail-closed for payloads and API items of the wrong sha
     { number: 321 },
     { base: 'develop', head: PREVIEW_SHA },
   ]) {
-    const result = await matchPreviewWith({ pulls: [parsePull(item)] });
+    const result = await matchPullWith({ pulls: [parsePull(item)] });
     assert.equal(result.outcome, 'skip', `item ${JSON.stringify(item)}`);
   }
   // Una PR que coincide en todo pero sin número utilizable no puede terminar en un target.
   for (const number of ['321', 3.5, null, -1]) {
-    const result = await matchPreviewWith({
+    const result = await matchPullWith({
       pulls: [parsePull({ ...previewPull(), number })],
     });
     assert.equal(result.outcome, 'reject', `number ${JSON.stringify(number)}`);
@@ -1525,7 +1460,7 @@ test('preview gate stays fail-closed for payloads and API items of the wrong sha
     ...previewPull(),
     head: { sha: PREVIEW_SHA, repo: { full_name: [PREVIEW_REPOSITORY] } },
   });
-  assert.equal((await matchPreviewWith({ pulls: [oddRepo] })).outcome, 'skip');
+  assert.equal((await matchPullWith({ pulls: [oddRepo] })).outcome, 'skip');
 });
 
 test('preview target helper declares no any in its types', () => {

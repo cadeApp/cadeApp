@@ -1,49 +1,40 @@
 name: e2e-preview
 
-# Las PR internas se validan contra su propio Vercel Preview, con Supabase Develop compartido. Vercel despliega
-# solo (Git Integration); acá no se despliega nada: se espera el aviso de Vercel y se prueba esa URL.
+# Las PR internas se validan contra un build del SHA exacto hecho en este runner, con Supabase Develop compartido
+# (T-422). Vercel ya no construye un Preview por PR: los minutos de build de Vercel se cobran y los de Actions no.
 #
-# `repository_dispatch` y no `deployment_status`: el GitHub Deployment que crea Vercel no trae el Project ID
-# (payload `{}`), y este evento sí (`client_payload.project.id`). Además corre siempre con el workflow de la
-# rama por defecto, así que la PR bajo prueba no puede reescribir este gate.
+# `workflow_run` del CI y no `pull_request`: corre siempre con el workflow de la rama por defecto, así que la PR
+# bajo prueba no puede reescribir este gate ni el código que decide si recibe secretos. Arranca solo cuando el CI
+# de la PR terminó en verde.
 on:
-  repository_dispatch:
-    types:
-      - vercel.deployment.success
-      - vercel.deployment.ready
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 permissions: {}
 
 jobs:
   resolve:
-    name: resolve-preview
+    name: resolve-pull-request
     runs-on: ubuntu-latest
-    # Solo para leer VERCEL_PROJECT_ID. Este job no hace checkout de la PR ni ejecuta código suyo.
-    environment: develop
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
       statuses: write
-    concurrency:
-      group: e2e-preview-resolve-${{ github.event.client_payload.git.sha }}
-      cancel-in-progress: false
     outputs:
       run: ${{ steps.target.outputs.run }}
       sha: ${{ steps.target.outputs.sha }}
-      url: ${{ steps.target.outputs.url }}
-      deployment_id: ${{ steps.target.outputs.deployment_id }}
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Resolve trusted preview target
+      - name: Resolve trusted pull request target
         id: target
         run: node .github/workflows/e2e-preview-target.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
   e2e:
     name: e2e-preview
@@ -60,7 +51,9 @@ jobs:
       group: cadeapp-develop-e2e
       cancel-in-progress: false
     env:
-      PREVIEW_URL: ${{ needs.resolve.outputs.url }}
+      # El servidor escucha solo en 127.0.0.1; el browser entra por localhost porque NextURL canoniza los hosts
+      # loopback a localhost y la redirección del middleware no puede cambiar de origen (perdería la sesión).
+      APP_URL: http://localhost:3100
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -94,17 +87,12 @@ jobs:
             echo '::error::NEXT_PUBLIC_SUPABASE_URL del Environment develop no apunta a SUPABASE_DEVELOP_PROJECT_REF.'
             exit 1
           fi
-      - name: Health check
-        run: |
-          code="$(curl --silent --output /dev/null --write-out '%{http_code}' --retry 6 --retry-delay 10 --retry-all-errors --max-time 15 "$PREVIEW_URL/api/health")"
-          if [ "$code" != '200' ]; then
-            echo "::error::$PREVIEW_URL/api/health respondió $code. Un 302 o 401 es Vercel Authentication protegiendo el Preview."
-            exit 1
-          fi
       - name: Run preview E2E gate
         env:
-          PLAYWRIGHT_TEST_BASE_URL: ${{ needs.resolve.outputs.url }}
-          NEXT_PUBLIC_APP_URL: ${{ needs.resolve.outputs.url }}
+          PLAYWRIGHT_TEST_BASE_URL: http://localhost:3100
+          NEXT_PUBLIC_APP_URL: http://localhost:3100
+          # Clave falsa a propósito: map-privacy intercepta Google Maps y sin una clave el mapa no se monta.
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: e2e-intercepted-maps-key
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -113,9 +101,17 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           E2E_TEST: 'true'
         shell: bash
-        # T-331: los specs se descubren por proyecto de playwright.config.ts: chromium corre todos los del SHA
-        # exacto y global-settings, después y en serie. Un spec nuevo entra solo, sin tocar .github/**.
+        # Build, servidor y Playwright en un solo step: los secretos no existen en ningún otro. La salida del
+        # servidor queda en RUNNER_TEMP y nunca se sube. T-331: los specs se descubren por proyecto de
+        # playwright.config.ts: chromium corre todos los del SHA exacto y global-settings, después y en serie.
         run: |
+          pnpm build
+          pnpm start -H 127.0.0.1 -p 3100 > "$RUNNER_TEMP/next-start.log" 2>&1 &
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' --retry 12 --retry-delay 5 --retry-all-errors --max-time 15 "$APP_URL/api/health")"
+          if [ "$code" != '200' ]; then
+            echo "::error::$APP_URL/api/health respondió $code: el build del runner no levantó."
+            exit 1
+          fi
           pnpm exec playwright test --project=chromium --workers=1
           pnpm exec playwright test --project=global-settings --workers=1 --pass-with-no-tests
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -140,14 +136,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ needs.e2e.result }}
           TARGET_SHA: ${{ needs.resolve.outputs.sha }}
-          DEPLOYMENT_ID: ${{ needs.resolve.outputs.deployment_id }}
         run: |
           case "$RESULT" in
-            success) state=success; description='trusted E2E gate GREEN contra el Preview' ;;
-            failure) state=failure; description='trusted E2E gate RED contra el Preview' ;;
+            success) state=success; description='trusted E2E gate GREEN contra el build del runner' ;;
+            failure) state=failure; description='trusted E2E gate RED contra el build del runner' ;;
             *) state=error; description="E2E no corrió ($RESULT): re-ejecutar el run" ;;
           esac
           gh api --silent --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
             -f context=e2e-preview -f state="$state" \
-            -f description="$description [$DEPLOYMENT_ID]" \
+            -f description="$description" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

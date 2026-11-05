@@ -1,6 +1,6 @@
 # e2e/ — pruebas de punta a punta (dueña de la carpeta: P3)
 
-- Corre en CI contra el Vercel Preview de cada PR interna con Supabase Develop (`e2e-preview`), contra staging en
+- Corre en CI contra un build de cada PR interna hecho en el runner, con Supabase Develop (`e2e-preview`, T-422), contra staging en
   checkpoints y release candidates (`e2e-staging`), o local con seed. Cada gate va serializado por `concurrency`
   y con `--workers=1`. Nunca contra producción.
 - Specs: `e2e/specs/<flujo>.spec.ts`, uno por flujo. Los escriben P2 o P3 según la ficha; P3 da visto bueno y aprueba Lautaro073.
