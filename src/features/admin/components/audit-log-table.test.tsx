@@ -35,6 +35,8 @@ const result: AuditLogResult = {
   pageSize: 2,
   nextCursor: 89,
   hasNextPage: true,
+  prevCursor: null,
+  hasPrevPage: false,
 };
 
 describe('T-123: AuditLogTable (A06)', () => {
@@ -121,7 +123,7 @@ describe('T-123: AuditLogTable (A06)', () => {
   it('muestra un estado vacío sin link de siguiente página', () => {
     render(
       <AuditLogTable
-        result={{ items: [], pageSize: 20, nextCursor: null, hasNextPage: false }}
+        result={{ items: [], pageSize: 20, nextCursor: null, hasNextPage: false, prevCursor: null, hasPrevPage: false }}
         filters={{}}
         actors={[]}
       />
@@ -177,6 +179,8 @@ describe('T-400: AuditLogTable (auditoría legible)', () => {
     pageSize: 20,
     nextCursor: null,
     hasNextPage: false,
+    prevCursor: null,
+    hasPrevPage: false,
   };
 
   function rowWith(text: string): HTMLElement {
@@ -226,10 +230,10 @@ describe('PR607-D02: filtro por repartidor', () => {
     return new URL(href ?? '', 'http://localhost').searchParams.get('courier');
   }
 
-  it('«Siguiente» y «Primera página» conservan ?courier= y el formulario lo reenvía oculto', () => {
+  it('«Siguiente» y «Anterior» conservan ?courier= y el formulario lo reenvía oculto', () => {
     const { container } = render(
       <AuditLogTable
-        result={result}
+        result={{ ...result, prevCursor: 90, hasPrevPage: true }}
         filters={{ courierId: COURIER, action: 'admin_suspend_courier', cursor: 95 }}
         actors={[]}
       />
@@ -254,5 +258,85 @@ describe('PR607-D02: filtro por repartidor', () => {
     const { container } = render(<AuditLogTable result={result} filters={{}} actors={[]} />);
     expect(container.querySelector('input[name="courier"]')).toBeNull();
     expect(screen.queryByText(/eventos de un repartidor/i)).toBeNull();
+  });
+});
+
+describe('T-407: AuditLogTable (A06: fechas, entidad, etiquetas y paginación)', () => {
+  const TARGET = 'c0000000-0000-4000-8000-000000000407';
+  const filters = {
+    action: 'admin_update_setting',
+    targetType: 'courier',
+    targetId: TARGET,
+    from: '2026-10-21',
+    to: '2026-10-22',
+  } as const;
+  const middle: AuditLogResult = { ...result, prevCursor: 90, hasPrevPage: true };
+
+  function params(name: RegExp): URLSearchParams {
+    const href = screen.getByRole('link', { name }).getAttribute('href') ?? '';
+    return new URL(href, 'http://localhost').searchParams;
+  }
+
+  it('«Anterior» y «Siguiente» llevan el cursor en ambos sentidos sin perder ningún filtro', () => {
+    render(<AuditLogTable result={middle} filters={{ ...filters, cursor: 91 }} actors={[]} />);
+
+    const prev = params(/anterior/i);
+    expect(prev.get('cursor')).toBe('90');
+    expect(prev.get('dir')).toBe('prev');
+    const next = params(/siguiente/i);
+    expect(next.get('cursor')).toBe('89');
+    expect(next.get('dir')).toBeNull();
+    for (const search of [prev, next]) {
+      expect(search.get('action')).toBe('admin_update_setting');
+      expect(search.get('entity')).toBe('courier');
+      expect(search.get('target')).toBe(TARGET);
+      expect(search.get('from')).toBe('2026-10-21');
+      expect(search.get('to')).toBe('2026-10-22');
+    }
+  });
+
+  it('la primera página no muestra «Anterior»', () => {
+    render(<AuditLogTable result={result} filters={{}} actors={[]} />);
+    expect(screen.queryByRole('link', { name: /anterior/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /siguiente/i })).toBeTruthy();
+  });
+
+  it('Desde y Hasta son campos de fecha del formulario GET con los valores activos', () => {
+    const { container } = render(<AuditLogTable result={result} filters={filters} actors={[]} />);
+    expect(screen.getByLabelText('Desde').getAttribute('type')).toBe('date');
+    expect((screen.getByLabelText('Desde') as HTMLInputElement).value).toBe('2026-10-21');
+    expect((screen.getByLabelText('Hasta') as HTMLInputElement).value).toBe('2026-10-22');
+    expect(container.querySelector('input[type="hidden"][name="target"]')?.getAttribute('value')).toBe(TARGET);
+    expect(screen.getByText('Mostrando los eventos de una sola entidad.')).toBeTruthy();
+  });
+
+  it('un rango inválido se avisa con texto y deja ofrecer «Limpiar filtros»', () => {
+    render(<AuditLogTable result={result} filters={{ invalidDateRange: true }} actors={[]} />);
+    expect(screen.getByRole('alert').textContent).toMatch(/366 días/);
+    expect(screen.getByRole('link', { name: 'Limpiar filtros' })).toBeTruthy();
+  });
+
+  it('T-407-D01: no promete inmutabilidad mientras audit_log siga editable (SEC-02, T-408)', () => {
+    render(<AuditLogTable result={result} filters={{}} actors={[]} />);
+    expect(screen.queryByText(/no se puede editar ni borrar/i)).toBeNull();
+  });
+
+  it('la acción es una etiqueta con su texto visible y una variante por tipo', () => {
+    const [base] = result.items;
+    if (!base) throw new Error('fixture vacío');
+    const items: AuditLogResult['items'] = [
+      { ...base, id: 3, action: 'admin_decide_courier', changes: [{ field: 'status', before: 'pending', after: 'rejected' }] },
+      { ...base, id: 2, action: 'view_courier_document', changes: [] },
+      { ...base, id: 1, action: 'admin_reinstate_courier', changes: [] },
+    ];
+    render(<AuditLogTable result={{ ...result, items }} filters={{}} actors={[]} />);
+
+    const badge = (label: string) => {
+      const cell = screen.getAllByRole('cell').find((node) => node.textContent === label);
+      return cell?.querySelector('span');
+    };
+    expect(badge('Decidió una postulación')?.className).toMatch(/badge-danger/);
+    expect(badge('Vio un documento')?.className).toMatch(/bg-secondary/);
+    expect(badge('Reactivó un repartidor')?.className).toMatch(/badge-success/);
   });
 });

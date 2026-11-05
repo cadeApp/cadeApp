@@ -174,6 +174,54 @@ export interface AdminAuditFilters {
   readonly targetType?: AuditTargetType;
   /** PR607-D02: eventos de un repartidor y de sus documentos (`?courier=<uuid>`). */
   readonly courierId?: string;
+  /** T-407: `prev` lee las filas más nuevas que `cursor` («Anterior»); sin valor, las más viejas. */
+  readonly direction?: 'prev';
+  /** T-407: eventos de una entidad concreta (`?target=<uuid>`), p. ej. desde «Ver todo en Auditoría». */
+  readonly targetId?: string;
+  /** T-407: fechas civiles de Argentina (`YYYY-MM-DD`), ambas inclusive. */
+  readonly from?: string;
+  readonly to?: string;
+  /** T-407: la URL traía un rango que no se pudo usar; se descartó entero para no filtrar a medias. */
+  readonly invalidDateRange?: true;
+}
+
+/** T-407: máximo de días del rango, contando Desde y Hasta. */
+export const AUDIT_MAX_RANGE_DAYS = 366;
+const DAY_MS = 86_400_000;
+
+/**
+ * T-407: inicio del día civil de Argentina en UTC.
+ * shortcut: Argentina usa UTC-3 fijo (sin horario de verano desde 2009), igual que `src/lib/format`; si vuelve el
+ * horario de verano, calcular el desplazamiento con Intl para cada fecha.
+ */
+function argentinaDayStart(civilDate: string): Date {
+  return new Date(`${civilDate}T00:00:00-03:00`);
+}
+
+/**
+ * T-407: el rango de A06 como intervalo semiabierto `[gte, lt)` en UTC. `lt` es el inicio del día siguiente a Hasta:
+ * nunca `lte` a las 23:59:59, que perdería las filas del último segundo.
+ */
+export function auditDateRangeBounds(filters: Pick<AdminAuditFilters, 'from' | 'to'>): {
+  gte?: string;
+  lt?: string;
+} {
+  return {
+    ...(filters.from ? { gte: argentinaDayStart(filters.from).toISOString() } : {}),
+    ...(filters.to ? { lt: new Date(argentinaDayStart(filters.to).getTime() + DAY_MS).toISOString() } : {}),
+  };
+}
+
+/** T-407: Desde y Hasta juntos; un campo vacío del formulario es «sin borde», no un error. */
+function parseAuditDateRange(rawFrom: unknown, rawTo: unknown): Pick<AdminAuditFilters, 'from' | 'to' | 'invalidDateRange'> {
+  const isBlank = (raw: unknown) => raw === undefined || raw === '';
+  const from = isBlank(rawFrom) ? undefined : parseParam(civilDateSchema, rawFrom);
+  const to = isBlank(rawTo) ? undefined : parseParam(civilDateSchema, rawTo);
+  const invalidDate = (!isBlank(rawFrom) && from === undefined) || (!isBlank(rawTo) && to === undefined);
+  const days =
+    from && to ? Math.round((argentinaDayStart(to).getTime() - argentinaDayStart(from).getTime()) / DAY_MS) + 1 : 1;
+  if (invalidDate || days < 1 || days > AUDIT_MAX_RANGE_DAYS) return { invalidDateRange: true };
+  return { ...(from ? { from } : {}), ...(to ? { to } : {}) };
 }
 
 const uuidParamSchema = z.string().guid();
@@ -217,15 +265,23 @@ export function parseAdminAuditSearchParams(raw: {
   action?: unknown;
   entity?: unknown;
   courier?: unknown;
+  dir?: unknown;
+  target?: unknown;
+  from?: unknown;
+  to?: unknown;
 }): AdminAuditFilters {
   const cursor = parseParam(auditCursorParamSchema, raw.cursor);
   const actorId = parseParam(uuidParamSchema, raw.actor);
   const action = parseParam(auditActionParamSchema, raw.action);
   const targetType = parseParam(auditEntityParamSchema, raw.entity);
   const courierId = parseParam(uuidParamSchema, raw.courier);
+  const targetId = parseParam(uuidParamSchema, raw.target);
 
   return {
     ...(cursor !== undefined ? { cursor } : {}),
+    ...(cursor !== undefined && raw.dir === 'prev' ? { direction: 'prev' as const } : {}),
+    ...(targetId !== undefined ? { targetId } : {}),
+    ...parseAuditDateRange(raw.from, raw.to),
     ...(actorId !== undefined ? { actorId } : {}),
     ...(action !== undefined ? { action } : {}),
     ...(targetType !== undefined ? { targetType } : {}),

@@ -17,6 +17,10 @@ interface AuditPageProps {
     action?: string | string[];
     entity?: string | string[];
     courier?: string | string[];
+    dir?: string | string[];
+    target?: string | string[];
+    from?: string | string[];
+    to?: string | string[];
   }>;
 }
 
