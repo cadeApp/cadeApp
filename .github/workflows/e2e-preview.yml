@@ -42,7 +42,8 @@ jobs:
     if: needs.resolve.outputs.run == 'true'
     runs-on: ubuntu-latest
     environment: develop
-    timeout-minutes: 45
+    # Build, chromium (~40 min en serie en el runner) y global-settings: con 45 el segundo proyecto no entraba.
+    timeout-minutes: 75
     permissions:
       contents: read
     # Un solo grupo para todas las PR y e2e-mutation: Supabase Develop es compartido y `--workers=1` solo serializa
