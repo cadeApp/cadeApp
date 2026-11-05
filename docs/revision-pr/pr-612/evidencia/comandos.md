@@ -96,3 +96,71 @@ Sobre `aa2357d`, `Verify Supabase Develop target` comprueba los refs de Supabase
 ## Evidencia que todavía no existe
 
 La primera corrida real del gate actualizado desde `develop`, con valores Maps A, no ocurrió en el SHA revisado. La evidencia de que la API key funciona en `localhost:3100` y de que las ocho fallas iniciales desaparecieron requiere esa corrida **después** del merge. No habilitar prematuramente Ignored Build Step solo `develop`.
+
+
+---
+
+## Ronda 2 — harness independiente estructural, SHA 4dfca216
+
+Se ejecutó sobre los bytes del YAML devueltos por GitHub, en memoria: **GREEN basal, 9/9 mutaciones detectadas**. No se modificó el repositorio ni se ejecutó E2E. Para reproducirlo sobre una copia limpia del SHA (solo Git y Node 22, sin secretos ni Supabase):
+
+```bash
+git show 4dfca21602da7fc067bae4c82ba04c1e1fcd2366:.github/workflows/e2e-preview.yml > /tmp/pr612-r2-workflow.yml
+node - /tmp/pr612-r2-workflow.yml <<'NODE'
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const yaml = fs.readFileSync(process.argv[2], 'utf8');
+const names = ['NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID'];
+const guardName = '- name: Validate Maps public configuration';
+const buildName = '- name: Build PR without privileged secrets';
+function part(s,a,b) {
+  const i=s.indexOf(a), j=s.indexOf(b,i+a.length);
+  return i>=0&&j>i?s.slice(i,j):null;
+}
+function audit(s) {
+  const errors=[];
+  const positions=['- name: Verify Supabase Develop target','- name: Generate throwaway VAPID keys',
+    guardName,buildName,'- name: Run preview E2E gate'].map(x=>s.indexOf(x));
+  if(positions.some((v,i)=>v<0||(i>0&&v<=positions[i-1])))errors.push('order');
+  const g=part(s,guardName,buildName);
+  if(!g)return [...errors,'guard absent'];
+  if(!g.includes('shell: bash'))errors.push('shell');
+  if(/secrets\.|SUPABASE_SERVICE_ROLE_KEY|DNI_HMAC_SECRET/.test(g))errors.push('privilege');
+  if(/continue-on-error:\s*true/.test(g))errors.push('continue-on-error');
+  for(const name of names){
+    if(!g.includes('          '+name+': ${{ vars.'+name+' }}')) errors.push('env '+name);
+    const re=new RegExp('if \\[ -z "\\$'+name+'" \\]; then\\n\\s+echo \'::error::[^\\n]*'+name+
+      '[^\\n]*\'\\n\\s+exit 1\\n\\s+fi');
+    if(!re.test(g))errors.push('ineffective guard '+name);
+  }
+  const index=g.indexOf('        run: |\n');
+  if(index<0)return [...errors,'run absent'];
+  const commands=g.slice(index+15).split('\n').map(x=>x.trim()).filter(Boolean);
+  if(commands[0]!=='if [ -z "$'+names[0]+'" ]; then')errors.push('pre-guard');
+  if(commands.some(x=>/^(echo|printf|cat).*\$NEXT_PUBLIC_GOOGLE_MAPS/.test(x)))errors.push('leak');
+  return errors;
+}
+const muts=[
+ ['key guard bypass',s=>s.replace('if [ -z "$'+names[0]+'" ]; then','if false; then')],
+ ['id guard bypass',s=>s.replace('if [ -z "$'+names[1]+'" ]; then','if false; then')],
+ ...names.map(n=>['exit 0 '+n,s=>s.replace("echo '::error::Falta la variable "+n+" en el Environment develop.'\n            exit 1",
+      "echo '::error::Falta la variable "+n+" en el Environment develop.'\n            exit 0")]),
+ ['guard after build',s=>{const block=part(s,guardName,buildName);return s.replace(block,'').replace(buildName,buildName+'\n'+block)}],
+ ['secret in guard',s=>s.replace('          '+names[1]+':','          DNI_HMAC_SECRET: ${{ secrets.DNI_HMAC_SECRET }}\n          '+names[1]+':')],
+ ['continue-on-error',s=>s.replace(guardName,guardName+'\n        continue-on-error: true')],
+ ['logging key',s=>s.replace('if [ -z "$'+names[0]+'" ]; then','echo "$'+names[0]+'"\n          if [ -z "$'+names[0]+'" ]; then')],
+ ['pre-guard exit',s=>s.replace('if [ -z "$'+names[0]+'" ]; then','exit 0\n          if [ -z "$'+names[0]+'" ]; then')],
+];
+assert.deepEqual(audit(yaml), [], 'baseline GREEN');
+console.log('GREEN basal');
+for(const [name,change] of muts){
+  const mutated=change(yaml);
+  assert.notEqual(mutated,yaml,'sin objetivo: '+name);
+  assert(audit(mutated).length>0,'FALSE GREEN '+name);
+  console.log('RED',name,audit(mutated).join(', '));
+}
+console.log('9/9 mutaciones estructurales detectadas');
+NODE
+```
+
+**Nota:** el harness estructural independiente no es la ejecución local del test de Node que hizo el agy. Su bitácora registra dos RED de 84 tests / 83 pass / 1 fail, original 84/84. En CI run 42056929601 el archivo original pasó 84/84; Vitest pasó 3568/3568 en 193 archivos. El job `db-tests` terminó en **success**: `Files=42, Tests=3396, Result: PASS`, concurrencia completada y comparación de tipos sin diferencias. **7/7 jobs del CI completos y verdes**.

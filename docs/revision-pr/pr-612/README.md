@@ -1,4 +1,4 @@
-# PR #612 — T-422 · Configuración de Maps y push del runner E2E
+# PR #612 — T-422 · Maps y push del runner E2E
 
 | Campo | Valor |
 |---|---|
@@ -6,38 +6,30 @@
 | Tarea | T-422 · Fase 4 |
 | Autor | @Lautaro073 |
 | Rama | `fix/T-422-runner-env` → `develop` |
-| Base | `1105eaf42ae457b68cfd004ae182acebae68f3c7` |
-| Head inspeccionado | `aa2357d3646e3e963941c979d8ddb452489d313c` |
-| Tamaño original | 4 archivos · +92 / -10 |
-| Estado de la ronda 1 | **SIN BLOQUEANTES** · 2 mejoras propuestas · D01 aceptada |
+| Base develop | `1105eaf42ae457b68cfd004ae182acebae68f3c7` |
+| Estado | **Ronda 2: SIN BLOQUEANTES**; H01/H02 verificados y D01 aceptada |
 
 ## Rondas
 
-| Ronda | SHA inspeccionado | Hallazgos | Informe |
+| Ronda | SHA de código revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `aa2357d3646e3e963941c979d8ddb452489d313c` | H01 y H02 (mejoras); H03 (decisión A→B aceptada) | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `aa2357d3646e3e963941c979d8ddb452489d313c` | H01/H02 mejoras; D01 aceptada | [Ronda 1](revisiones/ronda-1.md) |
+| 2 | `4dfca21602da7fc067bae4c82ba04c1e1fcd2366` | **SIN BLOQUEANTES** | [Ronda 2](revisiones/ronda-2.md) |
 
-## Estado por hallazgo
+## Estado de hallazgos
 
-| ID | Tema | Severidad | Estado |
+| ID | Descripción | Severidad | Estado |
 |---|---|---|---|
-| PR612-H01 | Validar presencia de variables públicas Maps antes del build | medio · MEJORA | abierto |
-| PR612-H02 | Reconciliar ficha, runbook y bitácora con Maps real y A→B | bajo · MEJORA | abierto |
-| PR612-H03 | D01: A primera corrida, B solo si hay bloqueo de referer o consumo molesto | decisión | aceptado; documentación pendiente |
+| PR612-H01 | Guardas de Maps antes del build | medio | arreglado-verificado en 4dfca216 |
+| PR612-H02 | D01 en ficha, runbook y bitácora | bajo | arreglado-verificado en 4dfca216 |
+| PR612-H03 | Reusar clave Preview ahora; CI propia solo ante error/consumo | decisión | aceptado, no equivale a activar B |
 
-## Qué está comprobado
+[Datos estructurados](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
-- El CI del SHA de código `aa2357d` terminó **success** (run 41982718298): 7/7 jobs; workflow tests 83/83 y db-tests con `Files=42, Tests=3396, Result: PASS`.
-- La ejecución anterior del gate nuevo (run 41977303708, PR #611) terminó con **108 passing, 8 failing**. Esa evidencia no equivale a certificar el nuevo gate.
-- Inspección: clave VAPID pública en build y servidor, privada únicamente en step con secretos; Maps API key y Map ID consumidos de `vars.*`.
-- Siete mutaciones estructurales de revisión, realizadas en memoria, quedaron detectadas por controles independientes; no se corrieron tests E2E remotos ni se levantó Supabase/Docker.
-- D01 resuelta personalmente por Lautaro073 el 2026-11-05: las dos variables ya existen en GitHub Environment `develop` y corresponden al Preview. Usar A primero; cambiar a B ante `RefererNotAllowedMapError` o consumo compartido problemático.
+## Pendientes operativos
 
-## Pendiente operacional
+- CI [42056929601](https://github.com/cadeApp/cadeApp/actions/runs/42056929601): **7/7 jobs en success**, incluido `db-tests` con **Files=42, Tests=3396, Result: PASS**; en `unit`, Vitest 193/193 archivos, 3568/3568 tests y workflows 84/84.
+- La primera ejecución de E2E **con este YAML** es posterior al merge (por `workflow_run` desde `develop`). Solo tras un `e2e-preview success` se desactivan los Previews por rama de Vercel.
+- Si aparece `RefererNotAllowedMapError` o problemas medidos de consumo compartido, aplicar la contingencia B autorizada. No alterar ahora claves, referrers ni cuotas.
 
-1. El agy agrega guarda fail-fast de configuración Maps con test que falla por mutación; documenta D01 en ficha, runbook y bitácora, y completa la plantilla del cuerpo de la PR.
-2. Tras el merge que decida Lautaro073, ejecutar de forma natural el gate nuevo desde la rama por defecto y comprobar todos los E2E; **no** dar GREEN por supuesto antes.
-3. El Ignored Build Step de Vercel pasa a construir solo `develop` **después** del primer gate real GREEN, nunca antes.
-4. La revisión no aprobó ni mergeó nada. El commit de esta carpeta mueve el head, no cambia qué SHA fue revisado.
-
-[Datos estructurados](hallazgos.jsonl) · [Evidencia y harness](evidencia/comandos.md) · [Lecciones](lecciones.md).
+La carpeta la escribe el revisor, no el agente implementador. El SHA de verificación corresponde al código inspeccionado, no al commit de la carpeta. No se aprobó ni mergeó la PR.
