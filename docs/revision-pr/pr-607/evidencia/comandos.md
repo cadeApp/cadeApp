@@ -138,3 +138,21 @@ node docs/revision-pr/analizar.mjs verificacion
 - P4: quitar `if (filters.courierId) params.set('courier', filters.courierId)` de `buildAuditHref`; los tests de paginación deben rojo causal.
 - P5: quitar `<input type="hidden" name="courier" ... />` del formulario; el test de persistencia debe rojo.
 En todos: baseline GREEN, mutación temporal con guardias de coincidencia exacta, RED y restaurar desde memoria, baseline GREEN final; logs bajo `/tmp`. El harness completo de R01 sigue en la sección anterior, pero no se presenta como ejecutado en R02.
+
+---
+
+## Cierre de R02 (revalidación final 2026-11-04; ejecución CI en UTC 2026-11-05)
+
+**Regla de SHA:** código y tests de T-404 en `1d4fcc2900c8c6720cb486bb9bb8d9436bf3c5fc`; head anterior al cierre `ccc8965ad052f77917ebf9f5eaf043ad9fa99925`. `compare_commits(base=1d4fcc29,head=ccc8965a)` devolvió ahead_by=1, behind_by=0; **los únicos 5 archivos afectados pertenecen a `docs/revision-pr/pr-607/`**. No hubo un commit de código posterior al verificado. El siguiente commit de cierre también será solamente documental.
+
+**Evidencia del CI oficial terminada:** `GET /repos/cadeApp/cadeApp/actions/runs/41947713873` => `status=completed`, `conclusion=success`, `head_sha=1d4fcc2900c8c6720cb486bb9bb8d9436bf3c5fc`. Jobs `unit`, `typecheck`, `db-tests`, `lint`, `build`, `audit`, `bundle-budget` todos `success`. Log `unit` job `126983938716`: `Test Files 193 passed (193)` / `Tests 3568 passed (3568)`. Log `db-tests` job `126983939061`: `Files=42, Tests=3396`, `Result: PASS` (las líneas "Failed test" anteriores son parte de mutaciones negativas del propio arnés de DB, restauradas; no son fallos del job final).
+
+**Evidencia E2E autenticada y ligada al SHA:** `GET /repos/cadeApp/cadeApp/actions/runs/41947878934` => `status=completed`, `conclusion=success`; `resolve-preview`, `e2e-preview` y `report-preview-status` todos `success`. El propio log del job `126984567642` tiene `ref: 1d4fcc2900c8c6720cb486bb9bb8d9436bf3c5fc` y `HEAD is now at 1d4fcc2`. `Playwright chromium`: `2 flaky` y `114 passed (34.5m)`; `global-settings`: `6 passed (2.6m)`. `courier-onboarding.spec.ts:838` T-404 pasó de primera, incluido «Ver todo en Auditoría».
+
+**Flaky 1:** `admin-courier-reinstate.spec.ts:100` (`T-380`), 2 badges `Aprobado` y `strict mode violation` para `getByText('Aprobado', { exact:true })`; 2 intentos fallidos y éxito retry #2. Se comparó directamente la línea 100 en `develop`, anterior a T-404. **Flaky 2:** `admin-trips.spec.ts:167` (`T-410`), timeout de `page.waitForURL` y éxito retry #1. Los dos son legítimamente flaky, no *todos passing first attempt*.
+
+**Status firmado por workflow**: `GET /repos/cadeApp/cadeApp/commits/1d4fcc2900c8c6720cb486bb9bb8d9436bf3c5fc/status` → `state=success`; `e2e-preview`: `state=success`, `description="trusted E2E gate GREEN contra el Preview [dpl_A8iAyU7PgiqoeH6eGPmC6VckoxGq]"`; `report-preview-status` publicó `RESULT=success`, `TARGET_SHA=1d4fcc2900c8c6720cb486bb9bb8d9436bf3c5fc` el 2026-11-05T02:00 UTC.
+
+**El head documental no necesita un nuevo E2E**: `e2e-preview` de `ccc8965a` run `41949087182` terminó `cancelled`, al tiempo que CI de documentación `41948938243` terminó con todos sus jobs verdes. `approval-policy` del HEAD quedó rojo porque `hasCompleteReport` lee solo los seis marcadores de la sección `### Informe de revisión de agy` del **cuerpo**. Se actualizará el cuerpo con el informe aprobado; el comentario por sí mismo no satisface ese check. No afirmar que se tornó verde antes de comprobar el nuevo evento.
+
+**Método y limitación:** revisor leyó logs de GitHub Actions y códigos reales; no corrió nuevas mutaciones ni worktree local ni cambió archivos de aplicación. H01/H02 pasan a `arreglado-verificado` con el SHA de código, H03 permanece `aceptado` por decisión autorizada. Una limitación explícita del E2E: se ejercitó la fila `courier` y navegación, pero no se exigió una fila `courier_document` ni la página 2 con datos reales.

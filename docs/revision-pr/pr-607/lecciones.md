@@ -27,3 +27,12 @@
 - **Deuda cuantitativa preexistente:** el job `bundle-budget` termina success y avisa 267 kB en ambas rutas de admin contra 180 kB, idéntico a los SHAs `e5ca27ad` y `7cc21d39`. La R02 no añadió peso detectable con la métrica publicada. No confundir éxito del job con cumplimiento del objetivo; evaluar presupuesto en tarea independiente si corresponde.
 
 No asignar numeración AG nueva en esta ronda: no hay un patrón nuevo demostrado más allá de P08/P10 documentados en R01.
+
+## Cierre de la revisión — E2E y hallazgos
+
+- **H01/H02** avanzan a `arreglado-verificado` tras la comprobación del CI unitario del SHA de código y el E2E de navegador real T-404, ambos oficiales de GitHub Actions. Es importante registrar `verificado_en_sha=1d4fcc29` **y no** el head documental. Las mutaciones del agente no se convirtieron retrospectivamente en pruebas propias.
+- **Dos flakies recuperados** pueden convivir con una ejecución `success`: un selector no acotado a un badge específico en T-380 (existía en develop) y un timeout de navegación en T-410. Los logs distinguen `114 passed + 2 flaky`; el seguimiento debe apuntar a la propiedad inestable del test, no borrar el conteo.
+- **Approval-policy consume el cuerpo del PR, no comentarios.** Un informe completo de revisión publicado únicamente como comentario no basta; el cuerpo requiere la sección `### Informe de revisión de agy` con `Informe revisar-pr — T-xxx`, `Resultado: SIN BLOQUEANTES`, `Checks locales:`, `BLOQUEANTES:`, `MEJORAS:` y `No revisado / dudas para Lautaro073:`. Este procedimiento es propio del flujo del repo, no motivo para cambiar el workflow en T-404.
+- **Revalidar solo el SHA con cambios de código:** un E2E cancelado para el siguiente commit exclusivo de revisión no invalida el `success` publicado al SHA de código y confirmado con checkout explícito; este dato evita pedir workflows de forma artificial.
+
+Las deudas de E2E documental, selector T-380 y bundle budget son observaciones no bloqueantes de la presente revisión, no un pretexto para ampliar archivos permitidos o contratos de T-404.
