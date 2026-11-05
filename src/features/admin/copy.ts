@@ -520,6 +520,11 @@ export const ADMIN_COPY = {
       matched: 'Asignada',
       in_transit: 'En viaje',
       delivered: 'Entregada',
+      /** PR617-H03: estados de incidentes, como en A05 (`INCIDENTS_COPY.statuses`). */
+      open: 'Abierto',
+      reviewing: 'En revisión',
+      resolved: 'Resuelto',
+      dismissed: 'Cerrado sin sanción',
     },
     noValue: '—',
     reason: 'Motivo',

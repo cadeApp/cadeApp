@@ -74,3 +74,18 @@ describe('T-407: auditActionTone (etiqueta de acción por tipo)', () => {
     expect(auditActionTone({ action: 'constructor', changes: [] })).toBe('neutral');
   });
 });
+
+describe('PR617-H03: estados de incidentes en español', () => {
+  const incident = { targetType: 'incident', targetRef: 'd0000000' } as const;
+
+  it('open → resolved y open → dismissed se leen como en A05', () => {
+    expect(describeAuditChange(incident, { field: 'status', before: 'open', after: 'resolved' })).toEqual({
+      before: 'Abierto',
+      after: 'Resuelto',
+    });
+    expect(describeAuditChange(incident, { field: 'status', before: 'reviewing', after: 'dismissed' })).toEqual({
+      before: 'En revisión',
+      after: 'Cerrado sin sanción',
+    });
+  });
+});
