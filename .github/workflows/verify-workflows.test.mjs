@@ -1073,6 +1073,26 @@ const PREVIEW_SHA = 'a'.repeat(40);
 const PREVIEW_TARGET = { sha: PREVIEW_SHA, pullNumber: 321 };
 
 /**
+ * Una entrada de `workflow_run.pull_requests` con la forma real de la API: `repo` trae id, name y url, sin
+ * `full_name`.
+ * @param {{ number?: unknown, baseRef?: unknown, headSha?: unknown }} [overrides]
+ */
+function runPull({
+  number = PREVIEW_TARGET.pullNumber,
+  baseRef = 'develop',
+  headSha = PREVIEW_SHA,
+} = {}) {
+  const repo = { id: 1, name: 'cadeApp', url: 'https://api.github.com/repos/cadeApp/cadeApp' };
+  return {
+    id: 7001,
+    number,
+    url: `https://api.github.com/repos/cadeApp/cadeApp/pulls/${String(number)}`,
+    head: { ref: 'fix/T-999-example', sha: headSha, repo },
+    base: { ref: baseRef, sha: 'c'.repeat(40), repo },
+  };
+}
+
+/**
  * La parte de `workflow_run` que lee el resolvedor (T-422): una corrida de CI terminada.
  * @param {Record<string, unknown>} [overrides]
  */
@@ -1085,6 +1105,7 @@ function ciRun(overrides = {}) {
     conclusion: 'success',
     head_branch: 'fix/T-999-example',
     head_sha: PREVIEW_SHA,
+    pull_requests: [runPull()],
     ...overrides,
   };
 }
@@ -1149,6 +1170,34 @@ test('T-422: only a green CI run triggered by a pull request enables the E2E', a
     const result = await matchPullWith({ run: ciRun(overrides) });
     assert.equal(result.outcome, 'skip', JSON.stringify(overrides));
     assert.ok(!('target' in result), JSON.stringify(overrides));
+  }
+});
+
+test('PR610-H02: the CI run must have been triggered by that exact pull request against develop', async () => {
+  assert.equal((await matchPullWith()).outcome, 'match', 'control: la asociación correcta habilita');
+
+  // El SHA de la PR #321 contra develop también es head de otra PR: el CI que terminó es el de esa otra.
+  /** @type {[string, unknown][]} */
+  const otherPrs = [
+    ['CI de una PR a staging con el mismo SHA', [runPull({ number: 1000, baseRef: 'staging' })]],
+    ['CI de una PR a main con el mismo SHA', [runPull({ number: 1001, baseRef: 'main' })]],
+    ['PR distinta contra develop', [runPull({ number: 999 })]],
+    ['misma PR, base staging', [runPull({ baseRef: 'staging' })]],
+    ['misma PR, base main', [runPull({ baseRef: 'main' })]],
+    ['misma PR, otro SHA', [runPull({ headSha: 'b'.repeat(40) })]],
+    ['sin asociación', []],
+    ['varias asociaciones', [runPull(), runPull({ number: 1000, baseRef: 'staging' })]],
+    ['número como texto', [runPull({ number: '321' })]],
+    ['entrada que no es objeto', ['321']],
+  ];
+  for (const [label, pull_requests] of otherPrs) {
+    const result = await matchPullWith({ run: ciRun({ pull_requests }) });
+    assert.notEqual(result.outcome, 'match', label);
+    assert.ok(!('target' in result), label);
+  }
+  for (const pull_requests of [undefined, null, 'PR #321', { number: 321 }]) {
+    const result = await matchPullWith({ run: ciRun({ pull_requests }) });
+    assert.notEqual(result.outcome, 'match', JSON.stringify(pull_requests));
   }
 });
 
@@ -1248,27 +1297,26 @@ test('T-422: preview E2E builds the resolved SHA in the runner and runs every ch
   );
   assert.match(
     e2eJob,
-    /^ {4}concurrency:\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false$/m,
-    'un grupo fijo, igual para todas las PR y que e2e-mutation, y en cola'
+    /^ {4}concurrency:\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false\n {6}queue: max\n/m,
+    'D03=B: un grupo fijo, igual para todas las PR y que e2e-mutation, en cola de hasta 100'
   );
 
   const run = step(e2eJob, 'Run preview E2E gate');
   assertSpecsDiscoveredByProject(run, 'preview E2E');
   const commands = shellCommands(run);
   const at = (/** @type {RegExp} */ pattern) => commands.findIndex((command) => pattern.test(command));
-  const build = at(/^pnpm build$/);
   const start = at(/^pnpm start -H 127\.0\.0\.1 -p 3100 > "\$RUNNER_TEMP\/next-start\.log" 2>&1 &$/);
   const health = at(/"\$APP_URL\/api\/health"/);
   const chromium = at(chromiumProjectRun);
   const globalSettings = at(globalSettingsProjectRun);
   assert.ok(
-    build === 0 && build < start && start < health && health < chromium && chromium < globalSettings,
-    'build del SHA, servidor solo en loopback, health 200, chromium y después global-settings'
+    start === 0 && start < health && health < chromium && chromium < globalSettings,
+    'servidor solo en loopback, health 200, chromium y después global-settings'
   );
   // El health check exige 200 y corta antes de Playwright.
   assert.equal(commands[health + 1], `if [ "$code" != '200' ]; then`);
   assert.ok(commands.slice(health + 2, commands.indexOf('fi')).includes('exit 1'));
-  assert.match(run, /^ {8}shell: bash$/m, 'bash -e: un build roto corta el step');
+  assert.match(run, /^ {8}shell: bash$/m, 'bash -e: un servidor caído corta el step');
 
   assert.match(e2eJob, /^ {6}APP_URL: http:\/\/localhost:3100$/m);
   for (const line of [
@@ -1283,7 +1331,7 @@ test('T-422: preview E2E builds the resolved SHA in the runner and runs every ch
     'esa es la variable que lee playwright.config.ts'
   );
 
-  // Los secretos solo existen en el step que hace build, levanta el servidor y corre Playwright.
+  // Los secretos privilegiados solo existen en el step que levanta el servidor y corre Playwright.
   const outsideRun = e2eJob.replace(run, '');
   assert.doesNotMatch(outsideRun, /SUPABASE_SERVICE_ROLE_KEY|DNI_HMAC_SECRET|CRON_SECRET/);
   assert.doesNotMatch(preview, /NEXT_PUBLIC_\w*(SERVICE|SECRET)/);
@@ -1292,6 +1340,43 @@ test('T-422: preview E2E builds the resolved SHA in the runner and runs every ch
     [...e2eJob.matchAll(/^ {10}path: (.*)$/gm)].map((match) => match[1]),
     ['playwright-report/']
   );
+});
+
+test('PR610-H01: the PR is built in its own step, before the gate, without privileged secrets', () => {
+  const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
+  const e2eJob = job(preview, 'e2e');
+  const build = step(e2eJob, 'Build PR without privileged secrets');
+  const run = step(e2eJob, 'Run preview E2E gate');
+  const verifyAt = e2eJob.indexOf('- name: Verify Supabase Develop target');
+  const buildAt = e2eJob.indexOf('- name: Build PR without privileged secrets');
+  const runAt = e2eJob.indexOf('- name: Run preview E2E gate');
+  assert.ok(verifyAt < buildAt && buildAt < runAt, 'verificar la base, compilar y después levantar y probar');
+  assert.match(build, /\n {8}run: pnpm build$/m);
+
+  // El env del build: exactamente las públicas que se embeben en el bundle.
+  const buildEnv = build.slice(build.indexOf('\n        env:\n'), build.indexOf('\n        run:'));
+  assert.deepEqual(
+    [...buildEnv.matchAll(/^ {10}(\w+):/gm)].map((match) => match[1]),
+    [
+      'NEXT_PUBLIC_APP_URL',
+      'NEXT_PUBLIC_SUPABASE_URL',
+      'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+      'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY',
+    ]
+  );
+
+  // Ni el step, ni el job ni el workflow le heredan un privilegio al build.
+  const privileged =
+    /SUPABASE_SERVICE_ROLE_KEY|DNI_HMAC_SECRET|CRON_SECRET|SUPABASE_DB_PASSWORD|SUPABASE_ACCESS_TOKEN/;
+  assert.doesNotMatch(build, privileged);
+  const jobEnv = e2eJob.slice(e2eJob.indexOf('\n    env:\n'), e2eJob.indexOf('\n    steps:\n'));
+  assert.doesNotMatch(jobEnv, privileged, 'env del job');
+  assert.doesNotMatch(jobEnv, /\$\{\{ secrets\./, 'el job no hereda secretos a ningún step');
+  assert.doesNotMatch(preview.slice(0, preview.indexOf('\njobs:\n')), /^env:/m, 'sin env de workflow');
+
+  // El step con secretos no vuelve a compilar: levanta el build ya hecho.
+  assert.match(run, privileged, 'el seed y el cleanup sí necesitan la service role');
+  assert.ok(!shellCommands(run).some((command) => /\bpnpm (run )?build\b|next build/.test(command)));
 });
 
 test('preview E2E refuses to seed unless the develop environment points to Supabase Develop', () => {
@@ -2222,7 +2307,11 @@ test('e2e-mutation workflow keeps minimal permissions, the develop environment a
   assert.match(mutationJob, /\n {4}permissions:\n {6}contents: read\n {4}\S/);
   assert.doesNotMatch(yaml, /statuses|: write\b|id-token/);
   assert.match(mutationJob, /\n {4}environment: develop\n/);
-  assert.match(mutationJob, /\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false\n/);
+  // D03=B: el mismo lock que e2e-preview, con la cola de hasta 100 pendientes.
+  assert.match(
+    mutationJob,
+    /\n {4}concurrency:\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false\n {6}queue: max\n/
+  );
   assert.match(mutationJob, /timeout-minutes: 30\n/);
 });
 

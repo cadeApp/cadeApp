@@ -45,11 +45,12 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-    # Un solo grupo para todas las PR: Supabase Develop es compartido y `--workers=1` solo serializa adentro
-    # de una corrida.
+    # Un solo grupo para todas las PR y e2e-mutation: Supabase Develop es compartido y `--workers=1` solo serializa
+    # adentro de una corrida. `queue: max` deja hasta 100 corridas pendientes en vez de una (D03=B).
     concurrency:
       group: cadeapp-develop-e2e
       cancel-in-progress: false
+      queue: max
     env:
       # El servidor escucha solo en 127.0.0.1; el browser entra por localhost porque NextURL canoniza los hosts
       # loopback a localhost y la redirección del middleware no puede cambiar de origen (perdería la sesión).
@@ -87,12 +88,20 @@ jobs:
             echo '::error::NEXT_PUBLIC_SUPABASE_URL del Environment develop no apunta a SUPABASE_DEVELOP_PROJECT_REF.'
             exit 1
           fi
+      # PR610-H01: el build del código de la PR solo ve variables públicas; las NEXT_PUBLIC_* quedan embebidas en el
+      # bundle, así que se fijan acá y no en el arranque.
+      - name: Build PR without privileged secrets
+        env:
+          NEXT_PUBLIC_APP_URL: http://localhost:3100
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          # Clave falsa a propósito: map-privacy intercepta Google Maps y sin una clave el mapa no se monta.
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: e2e-intercepted-maps-key
+        run: pnpm build
       - name: Run preview E2E gate
         env:
           PLAYWRIGHT_TEST_BASE_URL: http://localhost:3100
           NEXT_PUBLIC_APP_URL: http://localhost:3100
-          # Clave falsa a propósito: map-privacy intercepta Google Maps y sin una clave el mapa no se monta.
-          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: e2e-intercepted-maps-key
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -101,11 +110,10 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           E2E_TEST: 'true'
         shell: bash
-        # Build, servidor y Playwright en un solo step: los secretos no existen en ningún otro. La salida del
-        # servidor queda en RUNNER_TEMP y nunca se sube. T-331: los specs se descubren por proyecto de
-        # playwright.config.ts: chromium corre todos los del SHA exacto y global-settings, después y en serie.
+        # Servidor y Playwright: los secretos privilegiados no existen en ningún otro step. La salida del servidor
+        # queda en RUNNER_TEMP y nunca se sube. T-331: los specs se descubren por proyecto de playwright.config.ts:
+        # chromium corre todos los del SHA exacto y global-settings, después y en serie.
         run: |
-          pnpm build
           pnpm start -H 127.0.0.1 -p 3100 > "$RUNNER_TEMP/next-start.log" 2>&1 &
           code="$(curl --silent --output /dev/null --write-out '%{http_code}' --retry 12 --retry-delay 5 --retry-all-errors --max-time 15 "$APP_URL/api/health")"
           if [ "$code" != '200' ]; then

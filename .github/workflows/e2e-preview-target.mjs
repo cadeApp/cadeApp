@@ -109,6 +109,19 @@ export function matchPullRequest({ run, repository, pulls }) {
   if (!Number.isSafeInteger(pull.number) || pull.number <= 0) {
     return { outcome: 'reject', reason: 'La PR encontrada no trae un número válido.' };
   }
+  // PR610-H02: el mismo SHA puede ser head de otra PR (por ejemplo, contra staging). La corrida tiene que ser la
+  // de esta PR. El `repo` de estas entradas no trae `full_name`: el repo ya se validó con la PR de la API.
+  const associations = Array.isArray(data.pull_requests) ? data.pull_requests.map(record) : [];
+  const [association] = associations;
+  if (
+    associations.length !== 1 ||
+    !association ||
+    association.number !== pull.number ||
+    text(record(association.base).ref) !== 'develop' ||
+    text(record(association.head).sha) !== sha
+  ) {
+    return { outcome: 'skip', reason: 'La corrida de CI no la disparó esa PR contra develop.' };
+  }
   return {
     outcome: 'match',
     reason: `PR interna #${pull.number} contra develop.`,

@@ -28,9 +28,9 @@ push a la rama de la PR
   → CI (ci.yml) corre sobre la PR
   → CI termina → workflow_run completed
   → e2e-preview.yml · resolve-pull-request: ¿el CI vino de una PR y terminó en verde? ¿hay UNA PR interna abierta
-    contra develop cuyo head es ese SHA? ¿toca supabase/migrations?
-  → e2e-preview.yml · e2e-preview: checkout del SHA, pnpm build, pnpm start en 127.0.0.1:3100, health check,
-    proyecto chromium y después global-settings, con --workers=1
+    contra develop cuyo head es ese SHA, y es la PR que disparó ese CI? ¿toca supabase/migrations?
+  → e2e-preview.yml · e2e-preview: checkout del SHA, pnpm build sin secretos privilegiados, pnpm start en
+    127.0.0.1:3100, health check, proyecto chromium y después global-settings, con --workers=1
   → commit status `e2e-preview` en el SHA de la PR
 ```
 
@@ -62,26 +62,35 @@ unitarias.
 - **SHA exacto:** el `head_sha` de la corrida se busca en GitHub; tiene que ser el head de exactamente una PR
   abierta contra `develop`. Más de una: falla. El checkout y el status usan ese mismo SHA. Nada del evento se
   interpola en el YAML.
+- **PR que disparó el CI (PR610-H02):** `workflow_run.pull_requests` tiene que traer una sola entrada, con el mismo
+  número de esa PR, base `develop` y el mismo SHA. Si el mismo commit es head de otra PR (por ejemplo, contra
+  `staging`) y el CI que terminó es el de esa otra, no hay E2E. Esas entradas no traen `full_name`: el repo ya se
+  validó con la PR que devuelve la API.
 - **Forks:** si el head de la PR no es `cadeApp/cadeApp`, no hay E2E ni secretos. No se usa `pull_request_target`.
 - **Servidor:** escucha solo en `127.0.0.1:3100`; el browser entra por `localhost`. Su salida queda en
   `RUNNER_TEMP` y nunca se sube: el único artifact es `playwright-report/`.
-- **Secretos:** `environment: develop`, solo en el job de E2E y solo en el step que hace build, levanta el servidor
-  y corre Playwright. El resolvedor no recibe ninguno. La service role nunca es `NEXT_PUBLIC_*`.
+- **Secretos (PR610-H01):** `environment: develop`, solo en el job de E2E. El step `Build PR without privileged
+  secrets` compila con las cuatro variables públicas que se embeben en el bundle (`NEXT_PUBLIC_APP_URL`,
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y la clave falsa de Maps). La service role,
+  `DNI_HMAC_SECRET` y `CRON_SECRET` existen solo en el step siguiente, que levanta ese build y corre Playwright sin
+  volver a compilar. Ni el job ni el workflow heredan secretos. El resolvedor no recibe ninguno. La service role
+  nunca es `NEXT_PUBLIC_*`.
 - **Base correcta:** antes de sembrar se exige `NEXT_PUBLIC_SUPABASE_URL == https://<SUPABASE_DEVELOP_PROJECT_REF>.supabase.co`
   y que ese ref sea distinto al de staging (`SUPABASE_PROJECT_REF`).
 - **Google Maps:** el build usa una clave falsa a propósito. `map-privacy` intercepta todas las llamadas a Google y,
   sin una clave, el mapa no se monta.
 - **Serialización:** un grupo de `concurrency` fijo, `cadeapp-develop-e2e`, igual para todas las PR y para
-  `e2e-mutation`, con `cancel-in-progress: false`. Ver «Concurrency» más abajo: no es una cola FIFO.
+  `e2e-mutation`, con `cancel-in-progress: false` y `queue: max`. Ver «Concurrency» más abajo.
 - **Seed/cleanup:** los de T-303 (`e2e/fixtures`, `src/server/e2e/staging-seed.ts`), sin cambios.
 
-## Concurrency (decisión P1 5-A)
+## Concurrency (decisión P1 5-A, ampliada por D03=B de T-422)
 
-GitHub Actions admite, por grupo, **una corrida en ejecución y una pendiente**. `cancel-in-progress: false`
-garantiza que la corrida en ejecución nunca se corta. No garantiza nada sobre la pendiente: si llega una tercera
-corrida mientras hay una esperando, GitHub cancela la que esperaba y deja la nueva en su lugar.
+`e2e-preview` y `e2e-mutation` comparten el grupo `cadeapp-develop-e2e` con `cancel-in-progress: false` y
+`queue: max`. La corrida en ejecución nunca se corta, y el grupo acepta hasta 100 corridas pendientes (antes de
+`queue: max`, una sola: una tercera cancelaba a la que esperaba). Con la cola llena, una corrida nueva se cancela.
+GitHub no promete un orden estricto por hora de llegada entre las pendientes.
 
-No se implementa una cola FIFO propia. Lo que sí se garantiza:
+No se implementa una cola propia. Lo que sí se garantiza:
 
 - Dos E2E nunca corren a la vez contra Supabase Develop.
 - Una corrida reemplazada, cancelada o que no llegó a ejecutarse deja el status `e2e-preview` en `error`
@@ -127,8 +136,8 @@ puede declarar `environment: develop` y recibir esos secretos. `e2e-preview` (`w
 
 ## Límites conocidos
 
-- `concurrency` no es FIFO: ver «Concurrency». Con tres PR esperando, la del medio queda en `error` hasta
-  re-ejecutarla.
+- La cola es de hasta 100 pendientes y sin orden estricto: ver «Concurrency». Una corrida cancelada por cola llena
+  queda en `error` hasta re-ejecutarla.
 - El E2E corre contra `next start` en el runner, no contra la infraestructura de Vercel (funciones, CDN, headers de
   `vercel.json`). Esa diferencia la cubren `e2e-staging` y el deployment de `develop`.
 - Sin Preview por PR no hay una URL para mirar los cambios visuales de una PR: se revisan en local o en `develop`.
