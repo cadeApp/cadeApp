@@ -121,6 +121,17 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
       await expect(page.getByText(/inconveniente inesperado/i)).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Suspender repartidor' })).toBeVisible();
 
+      // T-404: el historial del detalle muestra la suspensión y la reactivación, en orden y con sus motivos.
+      const history = page.getByRole('list', { name: 'Historial del postulante' });
+      const suspension = history.getByRole('listitem').filter({ hasText: 'Suspendió un repartidor' });
+      const reinstatement = history.getByRole('listitem').filter({ hasText: 'Reactivó un repartidor' });
+      await expect(suspension.last()).toContainText(`Motivo: Suspensión E2E ${stagingContext.testRunId}`);
+      await expect(reinstatement).toHaveCount(1);
+      await expect(reinstatement).toContainText(`Motivo: ${reason}`);
+      const items = await history.getByRole('listitem').allTextContents();
+      const lastIndexWith = (label: string) => items.map((text) => text.includes(label)).lastIndexOf(true);
+      expect(lastIndexWith('Reactivó un repartidor')).toBeGreaterThan(lastIndexWith('Suspendió un repartidor'));
+
       // Lo que dejó la RPC: aprobado, sin disponibilidad y una auditoría con el motivo.
       const admin = createAdminClient();
       const { data: courierRow, error: courierErr } = await admin

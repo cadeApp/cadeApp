@@ -835,6 +835,77 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     expect(auditLogEntry?.actor_id).toBe(admin.id);
   });
 
+  test('T-404: Admin en UI rechaza con un motivo de la lista y el motivo compuesto queda en la auditoría y el historial', async ({
+    page,
+    stagingContext,
+  }) => {
+    const admin = await seedAdminUser(stagingContext);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
+    const { secret } = await enrollAdminTotpFactor(admin);
+
+    await page.goto(`/login?redirectTo=${encodeURIComponent(`/admin/applicants/${courier.id}`)}`);
+    await waitForNoSkeletons(page);
+    const loginSubmitBtn = page.getByRole('button', { name: /iniciar sesión|ingresar|continuar/i });
+    await waitForFormHydration(loginSubmitBtn);
+    await page.getByLabel(/^email$/i).fill(admin.email);
+    await page.getByLabel(/^contraseña$/i).fill(admin.password);
+    await loginSubmitBtn.click();
+    await page.waitForURL((url) => url.pathname.includes('/login/mfa'), { timeout: 15000 });
+    const totpInput = page.locator('#totp-code');
+    await waitForFormHydration(totpInput);
+    await totpInput.fill(generateTotp(secret));
+    await page.getByRole('button', { name: new RegExp(ADMIN_COPY.mfa.verifyButton, 'i') }).click();
+    await page.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+
+    await page.goto(`/admin/applicants/${courier.id}`);
+    await waitForNoSkeletons(page);
+
+    // Barra fija de un pendiente: Rechazar / Aprobar, sin Suspender.
+    const toolbar = page.getByRole('toolbar', { name: ADMIN_COPY.detail.actionsBarLabel });
+    await expect(toolbar.getByRole('button')).toHaveText([
+      ADMIN_COPY.detail.applicantActions.reject,
+      ADMIN_COPY.detail.applicantActions.approve,
+    ]);
+
+    const dialog = page.getByRole('dialog');
+    await expect(async () => {
+      await toolbar.getByRole('button', { name: ADMIN_COPY.detail.applicantActions.reject }).click();
+      await expect(dialog).toBeVisible({ timeout: 1_000 });
+    }).toPass();
+
+    // «Otro» sin mensaje no se envía.
+    await dialog.getByRole('combobox', { name: ADMIN_COPY.detail.rejectApplicant.optionLabel }).click();
+    await page.getByRole('option', { name: 'Otro' }).click();
+    await dialog.getByRole('button', { name: ADMIN_COPY.detail.rejectApplicant.confirm, exact: true }).click();
+    await expect(dialog.getByText('Con «Otro», escribí el mensaje para el postulante.')).toBeVisible();
+
+    // «Foto ilegible» con mensaje: el motivo que llega a la RPC es «<opción>: <mensaje>».
+    const message = `La foto del DNI dorso está borrosa (E2E ${stagingContext.testRunId}).`;
+    await dialog.getByRole('combobox', { name: ADMIN_COPY.detail.rejectApplicant.optionLabel }).click();
+    await page.getByRole('option', { name: 'Foto ilegible' }).click();
+    await dialog.getByLabel(ADMIN_COPY.detail.rejectApplicant.messageLabel).fill(message);
+    await dialog.getByRole('button', { name: ADMIN_COPY.detail.rejectApplicant.confirm, exact: true }).click();
+    await expect(dialog).toBeHidden();
+
+    const composed = `Foto ilegible: ${message}`;
+    await expect(toolbar.getByRole('button')).toHaveText([ADMIN_COPY.detail.applicantActions.reconsider]);
+
+    const { data: auditRows, error: auditErr } = await createAdminClient()
+      .from('audit_log')
+      .select('actor_id, after')
+      .eq('action', 'admin_decide_courier')
+      .eq('target_id', courier.id);
+    if (auditErr) throw new Error(`[E2E Inspect Error] ${auditErr.message}`);
+    expect(auditRows).toEqual([{ actor_id: admin.id, after: expect.objectContaining({ status: 'rejected', reason: composed }) }]);
+
+    // El historial del detalle muestra la decisión real con su motivo.
+    const history = page.getByRole('list', { name: ADMIN_COPY.detail.historyListLabel });
+    const decision = history.getByRole('listitem').filter({ hasText: 'Decidió una postulación' });
+    await expect(decision).toHaveCount(1);
+    await expect(decision).toContainText(`Motivo: ${composed}`);
+    await expect(history.getByRole('listitem').first()).toContainText(ADMIN_COPY.detail.historyRegistered);
+  });
+
   // ---------------------------------------------------------------------------
   // T-353: Validación semántica en UI de onboarding (PR362-H06)
   // ---------------------------------------------------------------------------

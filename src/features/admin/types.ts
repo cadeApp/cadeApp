@@ -76,8 +76,34 @@ export interface ApplicantDetail {
   readonly decidedBy: string | null;
   readonly deactivatedAt: string | null;
   readonly createdAt: string;
+  /** CC-043: primer envío completo de la postulación; `null` en las previas a CC-043 o sin envío. */
+  readonly submittedAt?: string | null;
   readonly documents: readonly ApplicantDocumentDetail[];
+  /** T-404: consentimientos aceptados, leídos con la RLS del admin. */
+  readonly consents?: readonly ApplicantConsent[];
+  /** T-404: eventos reales del postulante, del más viejo al más nuevo (últimas 50 entradas). */
+  readonly history?: readonly ApplicantHistoryEvent[];
 }
+
+export interface ApplicantConsent {
+  readonly document: 'tos' | 'privacy' | 'courier_contract' | 'pilot_terms';
+  readonly version: string;
+  readonly acceptedAt: string;
+}
+
+export type ApplicantHistoryEvent =
+  | { readonly kind: 'registered'; readonly id: string; readonly at: string }
+  | { readonly kind: 'submitted'; readonly id: string; readonly at: string }
+  | {
+      readonly kind: 'audit';
+      readonly id: string;
+      readonly at: string;
+      /** Etiqueta de T-400 (`auditActionLabel`). */
+      readonly label: string;
+      readonly detail: string | null;
+      readonly reason: string | null;
+      readonly actorName: string | null;
+    };
 
 /** T-387: cómo se muestra el documento firmado; lo decide el servidor por el path guardado. */
 export type DocumentContentType = 'image' | 'pdf';

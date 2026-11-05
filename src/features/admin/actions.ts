@@ -22,12 +22,15 @@ import {
   adminMfaSchema,
   viewCourierDocumentSchema,
   decideCourierSchema,
+  rejectCourierSchema,
+  composeRejectionReason,
   suspendCourierSchema,
   reinstateCourierSchema,
   verifyCourierDocumentSchema,
   type AdminMfaInput,
   type ViewCourierDocumentInput,
   type DecideCourierInput,
+  type RejectCourierInput,
   type SuspendCourierInput,
   type ReinstateCourierInput,
   type VerifyCourierDocumentInput,
@@ -269,6 +272,24 @@ export async function decideCourierAction(
   revalidatePath('/admin/applicants');
   revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
   return ok({ success: true });
+}
+
+/**
+ * T-404 (A02-rechazar): rechaza con un motivo de la lista. El motivo que recibe `admin_decide_courier` es
+ * «<opción>: <mensaje>», o solo la opción si no hay mensaje; con «Otro», el mensaje es obligatorio.
+ */
+export async function rejectCourierAction(
+  input: RejectCourierInput
+): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+  const parsed = rejectCourierSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+  return decideCourierAction({
+    courierId: parsed.data.courierId,
+    decision: 'rejected',
+    reason: composeRejectionReason(parsed.data.option, parsed.data.message),
+  });
 }
 
 /**

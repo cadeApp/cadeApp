@@ -5,6 +5,7 @@ import * as adminSupabase from '@/server/supabase/admin';
 import * as adminRpc from '@/server/rpc/admin';
 import {
   decideCourierAction,
+  rejectCourierAction,
   reinstateCourierAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
@@ -235,6 +236,44 @@ describe('Admin Actions (T-122 DoD & PR106-H13)', () => {
         reason: 'DNI y selfie coinciden perfectamente',
       });
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['Foto ilegible', 'La foto del DNI dorso está borrosa.', 'Foto ilegible: La foto del DNI dorso está borrosa.'],
+      ['Documento vencido', '   ', 'Documento vencido'],
+      ['Otro', ' No coincide el barrio declarado. ', 'Otro: No coincide el barrio declarado.'],
+    ] as const)(
+      'T-404: rejectCourierAction con «%s» manda a la RPC el motivo compuesto',
+      async (option, message, reason) => {
+        const mockSupabase = setupAal2Admin();
+        vi.mocked(adminRpc.adminDecideCourierRpc).mockResolvedValue({
+          ok: true,
+          data: { courierId: VALID_COURIER_ID, status: 'rejected', decidedAt: new Date().toISOString() },
+        });
+
+        const result = await rejectCourierAction({ courierId: VALID_COURIER_ID, option, message });
+
+        expect(result.ok).toBe(true);
+        expect(adminRpc.adminDecideCourierRpc).toHaveBeenCalledWith(mockSupabase, {
+          courierId: VALID_COURIER_ID,
+          decision: 'rejected',
+          reason,
+        });
+      }
+    );
+
+    it('T-404: rejectCourierAction con «Otro» sin mensaje o con una opción fuera de la lista no llega a la RPC', async () => {
+      setupAal2Admin();
+      const sinMensaje = await rejectCourierAction({ courierId: VALID_COURIER_ID, option: 'Otro', message: '  ' });
+      const fueraDeLista = await rejectCourierAction({
+        courierId: VALID_COURIER_ID,
+        option: 'Me cayó mal' as 'Otro',
+        message: 'x',
+      });
+
+      expect(sinMensaje).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(fueraDeLista).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(adminRpc.adminDecideCourierRpc).not.toHaveBeenCalled();
     });
 
     it('suspendCourierAction rechaza courierId no UUID con VALIDATION_ERROR', async () => {
