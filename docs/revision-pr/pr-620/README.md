@@ -1,22 +1,29 @@
-# PR #620 — T-423 · Geocoding
-- PR: https://github.com/cadeApp/cadeApp/pull/620
-- Rama: `feat/T-423-map-geocoding` → `develop`
-- SHA funcional revisado: `d8180d88e01088691b75f05a3a3be4d19d2d1b9a`
-- Autor: Lautaro073 (agente). 15 archivos, +1571/-465. Fecha: 2026-11-05.
-- **Ronda 1: CON BLOQUEANTES (5), 1 mejora. No aprobado ni mergeado.**
-- Informe: [revisiones/ronda-1.md](revisiones/ronda-1.md). Pruebas propuestas: [evidencia/comandos.md](evidencia/comandos.md). Registros: [hallazgos.jsonl](hallazgos.jsonl).
+# PR #620 — T-423 · Geocoding de direcciones
 
-| ID | Asunto | Estado |
+- PR: https://github.com/cadeApp/cadeApp/pull/620 · Rama `feat/T-423-map-geocoding` → `develop`.
+- **Ronda 1:** [informe](revisiones/ronda-1.md), SHA `d8180d88e01088691b75f05a3a3be4d19d2d1b9a` — cinco bloqueantes y una mejora.
+- **Ronda 2:** [informe](revisiones/ronda-2.md), SHA **`9ec83512491515463beabf3627efc886b5068f83`** — seis arreglos identificados por inspección, **2 nuevos bloqueantes** H07–H08.
+- Autor: @Lautaro073 (agente). Revisión independiente por lectura vía GitHub, sin checkout local. No aprobada ni mergeada.
+
+| Hallazgo | Estado actual en R2 | Observación |
 |---|---|---|
-| PR620-H01 | Quitar pin no invalida petición | abierto, alto |
-| PR620-H02 | Callback tras unmount y refetch al reabrir mapa | abierto, alto |
-| PR620-H03 | Cambiar dirección/barrio no invalida resultado anterior | abierto, alto |
-| PR620-H04 | Biblioteca/promesa sin respuesta deja buscando | abierto, medio |
-| PR620-H05 | Query vacía no finaliza | abierto, medio |
-| PR620-H06 | ZERO_RESULTS depende de error.code | abierto, bajo, mejora |
+| PR620-H01 | arreglado-sin-verificar | invalida transición a null |
+| PR620-H02 | arreglado-sin-verificar | cleanup y cancelación de request |
+| PR620-H03 | arreglado-sin-verificar | invalida query y coordenadas autoderivadas |
+| PR620-H04 | arreglado-sin-verificar | timeout 10 s |
+| PR620-H05 | arreglado-sin-verificar | query vacía responde not_found |
+| PR620-H06 | arreglado-sin-verificar | fulfillOnZeroResults |
+| **PR620-H07** | **abierto, medio, bloqueante** | A→B→A deja pin null e impide autobúsqueda |
+| **PR620-H08** | **abierto, medio, bloqueante** | si centroide null, mapa muestra pin anterior |
+
+Detalles [hallazgos.jsonl](hallazgos.jsonl) · [comandos y evidencia](evidencia/comandos.md) · [lecciones](lecciones.md).
 
 ## Decisiones delegadas
-D04: **aceptar** `map-geocode.ts` y su incorporación a ficha/plan; evita import estático de Maps en formularios, mantiene reexports CC-045 y no cambia el DoD. D05: query vacía ⇒ `not_found` terminal, sin consultar Google. D06: usar cleanup, cancelación de peticiones, comparación de query vigente y timeout acotado en vez de un sistema global nuevo.
+D04–D06 de R1 se mantienen. **D07:** al invalidar un pin de geocodificación, reiniciar también la deduplicación de la última query, para que el siguiente blur pueda rehacer la búsqueda aunque el texto se haya revertido. **D08:** cuando una selección controlada pasa a null sin `defaultZoneCenter`, resetear el marcador visual al centro de Aguilares sin persistir coordenadas ni eliminar el marcador base, en vez de mantener el punto viejo. Justificación y alternativas en ronda 2.
 
-## Falta
-Agente corrige H01–H05 con tests RED→GREEN y anotaciones en bitácora; nueva revisión independiente verifica el SHA funcional. Confirmar CI/E2E del SHA corregido. No exigir nuevo CI solo por commit documental. Issue #619 es obligatorio antes de exponer direcciones reales a Google, con validación legal/humana. Esta revisión es **por inspección**, sin clon ni ejecución local.
+## Gates
+CI del SHA funcional: el log del job `unit` muestra **193/193 archivos y 3617/3617 tests**; typecheck/lint/build/bundle-budget success. El job db-tests continuaba pendiente y `e2e-preview` no estaba confirmado en la consulta. `approval-policy` falló por falta de informe sin bloqueantes, no por unitarias. No exigir otro CI verde por la documentación de revisión sola.
+
+**Antes de rollout real:** issue #619 (texto de privacidad/validación legal). No interpretar el merge a develop como cierre de #619.
+
+**Sin verificar independiente:** no se ejecutaron pruebas o mutaciones propias en este entorno sin acceso a un clon funcional. Los H01–H06 son fixes por inspección, no `arreglado-verificado`.
