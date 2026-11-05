@@ -40,7 +40,8 @@ jobs:
     name: e2e-preview
     needs: resolve
     if: needs.resolve.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    # ubuntu-latest pasó a 26.04 y Playwright 1.55.1 no instala Chromium ahí (run 42117303547): versión fija.
+    runs-on: ubuntu-24.04
     environment: develop
     # Build, chromium (~40 min en serie en el runner) y global-settings: con 45 el segundo proyecto no entraba.
     timeout-minutes: 75

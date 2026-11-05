@@ -24,7 +24,8 @@ concurrency:
 jobs:
   e2e:
     name: e2e-staging
-    runs-on: ubuntu-latest
+    # ubuntu-latest pasó a 26.04 y Playwright 1.55.1 no instala Chromium ahí (run 42117303547): versión fija.
+    runs-on: ubuntu-24.04
     environment: staging
     timeout-minutes: 45
     env:

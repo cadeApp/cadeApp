@@ -1418,6 +1418,19 @@ test('T-422: Maps and push get the same public config as the Preview, and the VA
   assert.doesNotMatch(e2eJob, /e2e-intercepted-maps-key/);
 });
 
+test('T-422: every job that installs Playwright runs on a runner image Playwright supports', () => {
+  // Run 42117303547: ubuntu-latest pasó a 26.04 y `playwright install --with-deps chromium` falló.
+  for (const [file, name] of /** @type {[string, string][]} */ ([
+    ['e2e-preview.yml', 'e2e'],
+    ['e2e-mutation.yml', 'mutation'],
+    ['e2e-staging.yml', 'e2e'],
+  ])) {
+    const body = job(workflow(file), name);
+    assert.match(body, /playwright install --with-deps chromium/, `${file}: el job instala Playwright`);
+    assert.match(body, /\n {4}runs-on: ubuntu-24\.04\n/, `${file}: runner fijo, no ubuntu-latest`);
+  }
+});
+
 test('T-422: the preview E2E job has room for the build and both Playwright projects', () => {
   // Run 42061362490: chromium solo tardó 39,4 min en serie; con 45 global-settings no llegaba a correr.
   assert.match(job(workflow('e2e-preview.yml'), 'e2e'), /\n {4}timeout-minutes: 75\n/);
