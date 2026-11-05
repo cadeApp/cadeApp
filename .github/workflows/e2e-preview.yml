@@ -88,15 +88,28 @@ jobs:
             echo '::error::NEXT_PUBLIC_SUPABASE_URL del Environment develop no apunta a SUPABASE_DEVELOP_PROJECT_REF.'
             exit 1
           fi
+      # Par VAPID descartable por corrida: el aviso push necesita una clave pública válida en el bundle y la privada
+      # en el servidor. No es un secreto del proyecto y muere con el runner.
+      - name: Generate throwaway VAPID keys
+        id: vapid
+        run: |
+          keys="$(node -e "const k = require('web-push').generateVAPIDKeys(); console.log(k.publicKey + ' ' + k.privateKey);")"
+          public="${keys%% *}"
+          private="${keys##* }"
+          echo "::add-mask::$private"
+          echo "public=$public" >> "$GITHUB_OUTPUT"
+          echo "private=$private" >> "$GITHUB_OUTPUT"
       # PR610-H01: el build del código de la PR solo ve variables públicas; las NEXT_PUBLIC_* quedan embebidas en el
-      # bundle, así que se fijan acá y no en el arranque.
+      # bundle, así que se fijan acá y no en el arranque. Maps usa la clave y el Map ID públicos del Environment, los
+      # mismos que el Preview: con una clave falsa, Google rompe la vista de viaje en los specs que no lo interceptan.
       - name: Build PR without privileged secrets
         env:
           NEXT_PUBLIC_APP_URL: http://localhost:3100
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          # Clave falsa a propósito: map-privacy intercepta Google Maps y sin una clave el mapa no se monta.
-          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: e2e-intercepted-maps-key
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+          NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }}
+          NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ steps.vapid.outputs.public }}
         run: pnpm build
       - name: Run preview E2E gate
         env:
@@ -106,6 +119,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ steps.vapid.outputs.public }}
+          VAPID_PRIVATE_KEY: ${{ steps.vapid.outputs.private }}
           DNI_HMAC_SECRET: ${{ secrets.DNI_HMAC_SECRET }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           E2E_TEST: 'true'

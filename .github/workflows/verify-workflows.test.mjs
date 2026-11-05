@@ -1362,6 +1362,8 @@ test('PR610-H01: the PR is built in its own step, before the gate, without privi
       'NEXT_PUBLIC_SUPABASE_URL',
       'NEXT_PUBLIC_SUPABASE_ANON_KEY',
       'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY',
+      'NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID',
+      'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
     ]
   );
 
@@ -1377,6 +1379,43 @@ test('PR610-H01: the PR is built in its own step, before the gate, without privi
   // El step con secretos no vuelve a compilar: levanta el build ya hecho.
   assert.match(run, privileged, 'el seed y el cleanup sí necesitan la service role');
   assert.ok(!shellCommands(run).some((command) => /\bpnpm (run )?build\b|next build/.test(command)));
+});
+
+test('T-422: Maps and push get the same public config as the Preview, and the VAPID pair is thrown away per run', () => {
+  const e2eJob = job(workflow('e2e-preview.yml'), 'e2e').replace(/\r\n/g, '\n');
+  const vapid = step(e2eJob, 'Generate throwaway VAPID keys');
+  const build = step(e2eJob, 'Build PR without privileged secrets');
+  const run = step(e2eJob, 'Run preview E2E gate');
+  assert.ok(e2eJob.indexOf('- name: Generate throwaway VAPID keys') < e2eJob.indexOf('- name: Build PR'));
+
+  // El par se genera en el runner, la privada se enmascara y viaja solo por outputs, nunca por GITHUB_ENV.
+  assert.match(vapid, /^ {8}id: vapid$/m);
+  const commands = shellCommands(vapid);
+  assert.ok(commands[0]?.includes("require('web-push').generateVAPIDKeys()"));
+  const maskAt = commands.indexOf('echo "::add-mask::$private"');
+  const privateAt = commands.indexOf('echo "private=$private" >> "$GITHUB_OUTPUT"');
+  assert.ok(maskAt !== -1 && maskAt < privateAt, 'la privada se enmascara antes de salir del step');
+  assert.ok(commands.includes('echo "public=$public" >> "$GITHUB_OUTPUT"'));
+  assert.doesNotMatch(vapid, /GITHUB_ENV|\$\{\{ secrets\./);
+
+  // La pública va al bundle y al servidor; la privada solo al servidor, nunca al build.
+  assert.ok(build.includes('\n          NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ steps.vapid.outputs.public }}\n'));
+  assert.doesNotMatch(build, /VAPID_PRIVATE_KEY|outputs\.private/);
+  for (const line of [
+    'NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ steps.vapid.outputs.public }}',
+    'VAPID_PRIVATE_KEY: ${{ steps.vapid.outputs.private }}',
+  ]) {
+    assert.ok(run.includes(`\n          ${line}\n`), line);
+  }
+
+  // Maps: clave y Map ID públicos del Environment develop, sin una clave inventada que rompa la vista de viaje.
+  for (const line of [
+    'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}',
+    'NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }}',
+  ]) {
+    assert.ok(build.includes(`\n          ${line}\n`), line);
+  }
+  assert.doesNotMatch(e2eJob, /e2e-intercepted-maps-key/);
 });
 
 test('preview E2E refuses to seed unless the develop environment points to Supabase Develop', () => {
