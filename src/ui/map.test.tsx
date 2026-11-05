@@ -12,6 +12,7 @@ import {
   aguilaresCoordinatesSchema,
   buildGeocodeQuery,
   interpretGeocodeResponse,
+  GEOCODE_TIMEOUT_MS,
   type MapCoordinates,
   type MapGeocodeOutcome,
   type MapGeocodeRequest,
@@ -73,11 +74,17 @@ let mockOnError: (() => void) | null = null;
 
 // CC-045: Geocoder simulado; cada llamada queda pendiente hasta que el test la resuelve o rechaza.
 interface PendingGeocode {
-  request: { address: string; componentRestrictions?: { country: string }; bounds?: unknown };
+  request: {
+    address: string;
+    componentRestrictions?: { country: string };
+    bounds?: unknown;
+    fulfillOnZeroResults?: boolean;
+  };
   resolve: (response: { results: unknown[] }) => void;
   reject: (error: unknown) => void;
 }
 let pendingGeocodes: PendingGeocode[] = [];
+let mockGeocodingLoads = true;
 let geocoderConstructions = 0;
 const mockGeocodingLibrary: { Geocoder: new () => { geocode: (request: PendingGeocode['request']) => Promise<{ results: unknown[] }> } } = {
   Geocoder: class {
@@ -116,7 +123,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
   },
   useApiLoadingStatus: () => mockLoadingStatus,
   useMap: () => mockMapInstance,
-  useMapsLibrary: (name: string) => (name === 'geocoding' ? mockGeocodingLibrary : null),
+  useMapsLibrary: (name: string) => (name === 'geocoding' && mockGeocodingLoads ? mockGeocodingLibrary : null),
   APIProvider: ({
     children,
     onError,
@@ -1499,6 +1506,7 @@ describe('CC-045 · Ubicar en el mapa una dirección escrita', () => {
           east: AGUILARES_BOUNDS.maxLng,
           west: AGUILARES_BOUNDS.minLng,
         },
+        fulfillOnZeroResults: true,
       });
 
       await act(async () => {
@@ -1646,11 +1654,139 @@ describe('CC-045 · Ubicar en el mapa una dirección escrita', () => {
       }
     });
 
-    it('query vacía no consulta ni responde', () => {
+    it('query vacía no consulta a Google y termina el pedido con not_found (PR620-H05)', () => {
       const onGeocodeResult = vi.fn();
-      render(<MapPicker value={null} geocodeRequest={{ id: 3, query: '  ' }} onGeocodeResult={onGeocodeResult} />);
+      const request: MapGeocodeRequest = { id: 3, query: '  ' };
+      render(<MapPicker value={null} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />);
       expect(pendingGeocodes).toHaveLength(0);
+      expect(onGeocodeResult).toHaveBeenCalledTimes(1);
+      expect(onGeocodeResult).toHaveBeenCalledWith({ status: 'not_found' }, request);
+    });
+
+    it('sin resultados con fulfillOnZeroResults (results vacío) responde not_found (PR620-H06)', async () => {
+      const onChange = vi.fn();
+      const onGeocodeResult = vi.fn();
+      const request: MapGeocodeRequest = { id: 1, query: QUERY };
+      render(
+        <MapPicker value={null} onChange={onChange} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />
+      );
+      await act(async () => {
+        pendingGeocodes[0]?.resolve({ results: [] });
+      });
+      expect(onGeocodeResult).toHaveBeenCalledWith({ status: 'not_found' }, request);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['sin centro de barrio', null],
+      ['con el centro del barrio igual al pin borrado', { lat: -27.445, lng: -65.625 }],
+    ])('borrar el pin desde afuera mientras busca invalida el resultado, %s (PR620-H01)', async (_label, zone) => {
+      const onChange = vi.fn();
+      const onGeocodeResult = vi.fn();
+      const request: MapGeocodeRequest = { id: 1, query: QUERY };
+      const pinA = { lat: -27.445, lng: -65.625 };
+      const { rerender } = render(
+        <MapPicker
+          value={pinA}
+          defaultZoneCenter={zone}
+          onChange={onChange}
+          geocodeRequest={request}
+          onGeocodeResult={onGeocodeResult}
+        />
+      );
+      rerender(
+        <MapPicker
+          value={null}
+          defaultZoneCenter={zone}
+          onChange={onChange}
+          geocodeRequest={request}
+          onGeocodeResult={onGeocodeResult}
+        />
+      );
+      await act(async () => {
+        pendingGeocodes[0]?.resolve({ results: [result(INSIDE)] });
+      });
+      expect(onChange).not.toHaveBeenCalled();
       expect(onGeocodeResult).not.toHaveBeenCalled();
+      expect(getCapturedMarkerProps()?.position).not.toEqual({ lat: -27.432157, lng: -65.616123 });
+    });
+
+    it('una respuesta que llega después de desmontar el mapa no llama a nadie (PR620-H02)', async () => {
+      const onChange = vi.fn();
+      const onGeocodeResult = vi.fn();
+      const { unmount } = render(
+        <MapPicker
+          value={null}
+          onChange={onChange}
+          geocodeRequest={{ id: 1, query: QUERY }}
+          onGeocodeResult={onGeocodeResult}
+        />
+      );
+      unmount();
+      await act(async () => {
+        pendingGeocodes[0]?.resolve({ results: [result(INSIDE)] });
+      });
+      expect(onChange).not.toHaveBeenCalled();
+      expect(onGeocodeResult).not.toHaveBeenCalled();
+    });
+
+    it('si la biblioteca no carga, el pedido termina en unavailable una vez al vencer el plazo (PR620-H04)', () => {
+      vi.useFakeTimers();
+      mockGeocodingLoads = false;
+      try {
+        const onGeocodeResult = vi.fn();
+        const request: MapGeocodeRequest = { id: 1, query: QUERY };
+        const { rerender } = render(
+          <MapPicker value={null} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />
+        );
+        act(() => {
+          vi.advanceTimersByTime(GEOCODE_TIMEOUT_MS - 1);
+        });
+        expect(onGeocodeResult).not.toHaveBeenCalled();
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(onGeocodeResult).toHaveBeenCalledTimes(1);
+        expect(onGeocodeResult).toHaveBeenCalledWith({ status: 'unavailable' }, request);
+        act(() => {
+          vi.advanceTimersByTime(GEOCODE_TIMEOUT_MS * 3);
+        });
+        expect(onGeocodeResult).toHaveBeenCalledTimes(1);
+
+        // Un reintento con otro id vuelve a tener su propio plazo.
+        const retry: MapGeocodeRequest = { id: 2, query: QUERY };
+        rerender(<MapPicker value={null} geocodeRequest={retry} onGeocodeResult={onGeocodeResult} />);
+        act(() => {
+          vi.advanceTimersByTime(GEOCODE_TIMEOUT_MS);
+        });
+        expect(onGeocodeResult).toHaveBeenLastCalledWith({ status: 'unavailable' }, retry);
+      } finally {
+        mockGeocodingLoads = true;
+        vi.useRealTimers();
+      }
+    });
+
+    it('si Google no contesta, vence el plazo y una respuesta tardía no mueve el pin (PR620-H04)', async () => {
+      vi.useFakeTimers();
+      try {
+        const onChange = vi.fn();
+        const onGeocodeResult = vi.fn();
+        const request: MapGeocodeRequest = { id: 1, query: QUERY };
+        render(
+          <MapPicker value={null} onChange={onChange} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />
+        );
+        act(() => {
+          vi.advanceTimersByTime(GEOCODE_TIMEOUT_MS);
+        });
+        expect(onGeocodeResult).toHaveBeenCalledWith({ status: 'unavailable' }, request);
+        await act(async () => {
+          pendingGeocodes[0]?.resolve({ results: [result(INSIDE)] });
+        });
+        expect(onGeocodeResult).toHaveBeenCalledTimes(1);
+        expect(onChange).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('la dirección no se escribe en console en ningún resultado', async () => {

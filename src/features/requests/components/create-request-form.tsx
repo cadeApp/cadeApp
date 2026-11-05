@@ -104,7 +104,10 @@ function DropCard({
   const [geocoding, setGeocoding] = React.useState(false);
   const [geocodeNotice, setGeocodeNotice] = React.useState<{ tone: 'info' | 'error'; text: string } | null>(null);
   const pinIsManualRef = React.useRef(false);
+  // El pin vino de una búsqueda: si la dirección o el barrio cambian, deja de corresponder y se borra (PR620-H03).
+  const pinFromGeocodeRef = React.useRef(false);
   const lastGeocodeQueryRef = React.useRef('');
+  const nextGeocodeIdRef = React.useRef(0);
   const [customChangeInput, setCustomChangeInput] = React.useState('');
 
   const dropLat = watch(`drops.${index}.dropoffLat`);
@@ -129,18 +132,41 @@ function DropCard({
     if (!query) return;
     if (!explicit && (pinIsManualRef.current || query === lastGeocodeQueryRef.current)) return;
     lastGeocodeQueryRef.current = query;
+    nextGeocodeIdRef.current += 1;
     setGeocodeNotice(null);
     setGeocoding(true);
     setShowDropoffMap(true);
-    setGeocodeRequest((previous) => ({ id: (previous?.id ?? 0) + 1, query }));
+    setGeocodeRequest({ id: nextGeocodeIdRef.current, query });
+  };
+
+  // PR620-H02: un pedido cancelado no vuelve a salir al reabrir el mapa ni pisa una selección posterior.
+  const cancelGeocode = () => {
+    setGeocodeRequest(null);
+    setGeocoding(false);
+  };
+
+  // PR620-H03: si la consulta cambia mientras busca, ese resultado ya no es de esta dirección.
+  const handleGeocodeQueryInput = (nextQuery: string) => {
+    if (geocodeRequest && nextQuery !== geocodeRequest.query) {
+      cancelGeocode();
+      setGeocodeNotice(null);
+      lastGeocodeQueryRef.current = '';
+    }
+    if (pinFromGeocodeRef.current && nextQuery !== lastGeocodeQueryRef.current) {
+      pinFromGeocodeRef.current = false;
+      setGeocodeNotice(null);
+      onSetDropoffCoords(fieldId, { lat: null, lng: null });
+    }
   };
 
   const handleGeocodeResult = React.useCallback(
     (outcome: MapGeocodeOutcome) => {
+      setGeocodeRequest(null);
       setGeocoding(false);
       if (outcome.status === 'found') {
         // El onChange del mapa que trae el resultado no es un pin manual.
         pinIsManualRef.current = false;
+        pinFromGeocodeRef.current = true;
         setDropoffCoordsError(null);
         setGeocodeNotice({
           tone: 'info',
@@ -175,7 +201,8 @@ function DropCard({
           return;
         }
         pinIsManualRef.current = true;
-        setGeocoding(false);
+        pinFromGeocodeRef.current = false;
+        cancelGeocode();
         onSetDropoffCoords(fieldId, { lat: latitude, lng: longitude });
         setDropoffCoordsError(null);
       },
@@ -249,7 +276,12 @@ function DropCard({
           </label>
           <select
             id={`dropoff-zone-${fieldId}`}
-            {...register(`drops.${index}.dropoffZoneId`)}
+            {...register(`drops.${index}.dropoffZoneId`, {
+              onChange: (event: React.ChangeEvent<HTMLSelectElement>) =>
+                handleGeocodeQueryInput(
+                  buildGeocodeQuery(dropAddress ?? '', zones.find((z) => z.id === event.target.value)?.name)
+                ),
+            })}
             aria-invalid={Boolean(dropErrors?.dropoffZoneId)}
             className="flex h-12 w-full rounded-lg border border-input bg-card px-3.5 py-2 text-base text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -279,7 +311,11 @@ function DropCard({
           </label>
           <Input
             id={`dropoff-address-${fieldId}`}
-            {...register(`drops.${index}.dropoffAddress`, { onBlur: () => requestGeocode(false) })}
+            {...register(`drops.${index}.dropoffAddress`, {
+              onBlur: () => requestGeocode(false),
+              onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+                handleGeocodeQueryInput(buildGeocodeQuery(event.target.value, dropZone?.name)),
+            })}
             placeholder={copy.dropoffAddressPlaceholder}
             maxLength={200}
             aria-invalid={Boolean(dropErrors?.dropoffAddress)}
@@ -298,7 +334,10 @@ function DropCard({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setShowDropoffMap((prev) => !prev)}
+              onClick={() => {
+                if (showDropoffMap) cancelGeocode();
+                setShowDropoffMap(!showDropoffMap);
+              }}
               className="min-h-12 gap-2 text-sm"
             >
               <MapPin className="h-4 w-4 text-primary-dark" />
@@ -342,7 +381,8 @@ function DropCard({
                 onChange={(coords) => {
                   // Una selección manual mientras busca invalida esa búsqueda (CC-045): no queda pendiente.
                   pinIsManualRef.current = true;
-                  setGeocoding(false);
+                  pinFromGeocodeRef.current = false;
+                  cancelGeocode();
                   onSetDropoffCoords(fieldId, coords);
                   setDropoffCoordsError(null);
                 }}

@@ -1033,6 +1033,46 @@ describe('T-423: la dirección de retiro habitual se ubica en el mapa (CC-045)',
     );
   });
 
+  it('alta: editar la dirección mientras busca cancela ese pedido (PR620-H03)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequest).not.toBeNull();
+
+    fireEvent.change(input, { target: { value: 'Mitre 10' } });
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ubicar en el mapa' })).toBeDefined();
+
+    fireEvent.blur(input);
+    expect(mockGeocodeRequest?.query).toMatch(/^Mitre 10, (Centro, )?Aguilares, Tucumán, Argentina$/);
+  });
+
+  it('alta: un pin que vino de la búsqueda se borra si cambia la dirección (PR620-H03)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify(FOUND));
+
+    fireEvent.change(input, { target: { value: 'Mitre 10' } });
+    expect(screen.getByTestId('map-value').textContent).toBe('null');
+  });
+
+  it('alta: un pin manual mientras busca cancela el pedido (PR620-H02)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByTestId('simulate-map-pin'));
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify({ lat: -27.435, lng: -65.615 }));
+  });
+
   it('alta: un pin movido a mano no se pisa al salir del campo', async () => {
     render(<MerchantOnboardingForm zones={[zoneCentro]} />);
     await screen.findByTestId('map-picker');

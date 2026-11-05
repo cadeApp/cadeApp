@@ -82,6 +82,9 @@ export function isWithinAguilaresBounds(lat: number, lng: number): boolean {
   );
 }
 
+/** CC-045 / PR620-H04: plazo de una búsqueda antes de responder `unavailable`. */
+export const GEOCODE_TIMEOUT_MS = 10_000;
+
 function sameCoordinates(a: MapCoordinates, b: MapCoordinates): boolean {
   return a.lat === b.lat && a.lng === b.lng;
 }
@@ -127,18 +130,19 @@ function MapGeocoder({
   onOutcome: (outcome: MapGeocodeOutcome, request: MapGeocodeRequest) => void;
 }) {
   const geocoding = useMapsLibrary('geocoding');
-  const startedIdRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
-    if (!geocoding || startedIdRef.current === request.id) return;
-    startedIdRef.current = request.id;
-    if (!request.query.trim()) return;
+    // MapPicker responde la consulta vacía (`not_found`) sin llegar a Google.
+    if (!geocoding || !request.query.trim()) return;
+    let active = true;
     let pending: Promise<{ results: readonly GeocoderResultLike[] }>;
     try {
       pending = new geocoding.Geocoder().geocode({
         address: request.query,
         componentRestrictions: { country: 'AR' },
         bounds: AGUILARES_LAT_LNG_BOUNDS,
+        // Sin resultados, Google resuelve con `results: []` en vez de rechazar (PR620-H06).
+        fulfillOnZeroResults: true,
       });
     } catch {
       // Biblioteca incompleta o caída: el formulario sigue con la dirección escrita.
@@ -153,7 +157,13 @@ function MapGeocoder({
           return interpretGeocodeResponse(null, code);
         }
       )
-      .then((outcome: MapGeocodeOutcome) => onOutcome(outcome, request));
+      .then((outcome: MapGeocodeOutcome) => {
+        // Desmontado o con otro pedido: la respuesta ya no le corresponde a nadie (PR620-H02).
+        if (active) onOutcome(outcome, request);
+      });
+    return () => {
+      active = false;
+    };
   }, [geocoding, request, onOutcome]);
 
   return null;
@@ -334,6 +344,20 @@ export function MapPicker({
     value ?? defaultZoneCenter ?? null
   );
 
+  // CC-045 / PR620-H01: un cambio de `value` que no es el eco de nuestro onChange (incluido A → null) cuenta como
+  // selección externa. Corre antes de la sincronización para comparar contra el pin vigente.
+  const previousValueRef = React.useRef<MapCoordinates | null>(value ?? null);
+  React.useEffect(() => {
+    const previous = previousValueRef.current;
+    const next = value ?? null;
+    previousValueRef.current = next;
+    const changed = previous === null || next === null ? previous !== next : !sameCoordinates(previous, next);
+    if (!changed) return;
+    if (next === null || !sameCoordinates(next, activeCoordsRef.current)) {
+      selectionEpochRef.current += 1;
+    }
+  }, [value]);
+
   React.useEffect(() => {
     const next = value ?? defaultZoneCenter ?? null;
     if (next === null) {
@@ -394,9 +418,18 @@ export function MapPicker({
   );
 
   React.useEffect(() => {
-    if (geocodeRequest && geocodeRequest.query.trim() && !isMapAvailable) {
-      answerGeocode({ status: 'unavailable' }, geocodeRequest);
+    if (!geocodeRequest) return;
+    if (!geocodeRequest.query.trim()) {
+      answerGeocode({ status: 'not_found' }, geocodeRequest);
+      return;
     }
+    if (!isMapAvailable) {
+      answerGeocode({ status: 'unavailable' }, geocodeRequest);
+      return;
+    }
+    // PR620-H04: si la biblioteca no carga o Google no contesta, el pedido termina igual.
+    const timer = setTimeout(() => answerGeocode({ status: 'unavailable' }, geocodeRequest), GEOCODE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
   }, [geocodeRequest, isMapAvailable, answerGeocode]);
 
   // CC-027: Ocultar pin ficticio si showMarkerWhenEmpty es false y value es null.
