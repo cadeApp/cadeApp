@@ -1418,6 +1418,11 @@ test('T-422: Maps and push get the same public config as the Preview, and the VA
   assert.doesNotMatch(e2eJob, /e2e-intercepted-maps-key/);
 });
 
+test('T-422: the preview E2E job has room for the build and both Playwright projects', () => {
+  // Run 42061362490: chromium solo tardó 39,4 min en serie; con 45 global-settings no llegaba a correr.
+  assert.match(job(workflow('e2e-preview.yml'), 'e2e'), /\n {4}timeout-minutes: 75\n/);
+});
+
 test('PR612-H01: Maps config fails fast when either public variable is missing', () => {
   const e2eJob = job(workflow('e2e-preview.yml'), 'e2e').replace(/\r\n/g, '\n');
   const guard = step(e2eJob, 'Validate Maps public configuration');
