@@ -140,3 +140,72 @@ console.log('H01/H02 aislados GREEN; H03 estados aún sin traducir');
 ### Gates
 
 `CI` en progreso para `f4a5a1fca3b836e9ee39077e26a63a92f4da900b` al consultar GitHub; el contexto Vercel success era un despliegue ignorado. `e2e-preview` del SHA no confirmado. El revisor no disparó workflows ni usó Docker/Supabase.
+
+---
+
+## Ronda 3 — verificación independiente de H03
+
+**SHA de aplicación:** `d0b408f03aa7ff3e88b82401be69d5b62834e77d` · **2026-11-05**. Leídos por conector: `src/features/admin/copy.ts`, `src/features/admin/audit-format.ts`, sus tests y `src/features/incidents/copy.ts` de A05.
+
+### Realmente ejecutado por el revisor (V8, funciones extraídas)
+
+- **GREEN 4/4:** se ejecutaron los cuerpos literales `describeAuditChange` + `formatAuditValue` con el mapa real: `open→resolved` (Abierto→Resuelto); `reviewing→dismissed` (En revisión→Cerrado sin sanción); `open→dismissed`; estado solo `after='dismissed'`.
+- **Igualdad con A05 4/4:** `open:'Abierto'`, `reviewing:'En revisión'`, `resolved:'Resuelto'`, `dismissed:'Cerrado sin sanción'` iguales a `INCIDENTS_COPY.statuses`.
+- **Mutaciones propias:** en memoria (i) `dismissed:'Desestimado'`, (ii) `resolved:'resolved'`, (iii) eliminación de `dismissed`. En los tres casos el oráculo devuelve una salida que viola la expectativa correcta. No se editó ni se restauró ningún archivo del repositorio.
+
+**Evidencia exclusiva del autor:** en bitácora RED inicial `expected { before: 'open', after: 'resolved' }` → GREEN; mutación `dismissed:'Desestimado'` produce `Tests 1 failed | 9 passed (10)` y luego se restaura; admin `463 passed`, typecheck/lint OK. No se hizo pasar estas ejecuciones como propias del revisor.
+
+**Límite:** este harness ejecutó las funciones TypeScript sin los tipos en V8 (el cuerpo de las funciones es JavaScript válido); no ejecutó Vitest completo, build, React ni E2E. No se consumieron secretos.
+
+### Reproductor independiente autocontenido (no ejecutado tal cual en un checkout en esta sesión)
+
+Copiar solo el script a `/tmp/pr617-h03-oracle.cjs` y correr `node /tmp/pr617-h03-oracle.cjs` desde el directorio raíz de cadeApp. No instala dependencias ni modifica el árbol.
+
+```js
+// Reproductor de H03. Desde la raíz del repositorio, sin imports externos.
+const fs = require('node:fs');
+const src = fs.readFileSync('src/features/admin/audit-format.ts','utf8');
+const copy = fs.readFileSync('src/features/admin/copy.ts','utf8');
+const a05 = fs.readFileSync('src/features/incidents/copy.ts','utf8');
+const ok = (pass,msg) => { if(!pass)throw Error(msg); };
+function body(s,name){
+  const p=s.indexOf('export function '+name+'('); ok(p>=0,'missing '+name);
+  const a=s.indexOf('{',p); let depth=0;
+  for(let i=a;i<s.length;i++){ depth+=s[i]==='{'?1:s[i]==='}'?-1:0;
+    if(depth===0)return s.slice(a+1,i);}
+  throw Error('unclosed function '+name);
+}
+const aud=copy.slice(copy.indexOf('\n  audit: {'),copy.indexOf('\n  credits: {'));
+const match=aud.match(/\n    values: \{([\s\S]*?)\n    \},/);ok(match,'no A06 values');
+const values=new Function('return ({'+match[1]+'})')();
+const status=a05.match(/statuses:\s*\{([\s\S]*?)\n  \} satisfies Record<IncidentStatus/);ok(status,'no A05 statuses');
+const labels=new Function('return ({'+status[1]+'})')();
+for(const state of ['open','reviewing','resolved','dismissed'])ok(values[state]===labels[state], 'mismatch A05 '+state);
+const lookup=(obj,key)=>Object.prototype.hasOwnProperty.call(obj,key)?obj[key]:undefined;
+const fvBody=body(src,'formatAuditValue'),descBody=body(src,'describeAuditChange');
+function check(change,v=values){
+  const ADMIN_COPY={audit:{values:v,noValue:'—'},settings:{pilotOn:'Sí',pilotOff:'No'},documentKind:{}};
+  const value=(item,field,arg)=>new Function('item','field','value','ADMIN_COPY','lookup','CIVIL_DATE','formatArs','formatCivilDate',fvBody)(
+    item,field,arg,ADMIN_COPY,lookup,/^\d{4}-\d{2}-\d{2}$/,()=>{throw Error('unexpected ars')},()=>{throw Error('unexpected date')});
+  return new Function('item','change','formatAuditValue',descBody)({targetType:'incident',targetRef:'x'},change,value);
+}
+const cases=[
+  {label:'open→resolved',input:{field:'status',before:'open',after:'resolved'},want:{before:'Abierto',after:'Resuelto'}},
+  {label:'reviewing→dismissed',input:{field:'status',before:'reviewing',after:'dismissed'},want:{before:'En revisión',after:'Cerrado sin sanción'}},
+  {label:'open→dismissed',input:{field:'status',before:'open',after:'dismissed'},want:{before:'Abierto',after:'Cerrado sin sanción'}},
+  {label:'dismissed solo after',input:{field:'status',after:'dismissed'},want:{value:'Cerrado sin sanción'}},
+];
+for(const t of cases)ok(JSON.stringify(check(t.input))===JSON.stringify(t.want),'GREEN failed '+t.label);
+for(const [mutant,input] of [
+  [{...values,dismissed:'Desestimado'},cases[1]],
+  [{...values,resolved:'resolved'},cases[0]],
+  [Object.fromEntries(Object.entries(values).filter(([k])=>k!=='dismissed')),cases[2]]
+])ok(JSON.stringify(check(input.input,mutant))!==JSON.stringify(input.want),'mutation survived');
+console.log('H03: 4/4 casos GREEN, 4 etiquetas iguales a A05, 3 mutaciones detectadas');
+```
+
+### CI / E2E
+
+- Al documentar se observó el workflow [CI #42116063239](https://github.com/cadeApp/cadeApp/actions/runs/42116063239) para `d0b408f03aa7ff3e88b82401be69d5b62834e77d` **en progreso**; no hay declaración de GREEN final.
+- `e2e-preview` del SHA todavía no confirmado. El estado verde de Vercel no reemplaza el gate E2E.
+- La primera corrida del spec en un SHA anterior tampoco valida automáticamente los cambios del SHA nuevo.

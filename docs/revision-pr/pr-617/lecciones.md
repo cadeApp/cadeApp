@@ -24,3 +24,11 @@ No se crea un número `AG-xx` nuevo en esta ronda, porque los patrones refuerzan
 - La batería en Code Mode ejecutó los cuerpos reales de funciones recuperadas por GitHub pero no sustituye un Vitest/React/E2E completo. Los RED informados por el autor se mantienen separados.
 
 No se asignan números AG nuevos: los patrones refuerzan reglas existentes y las ramas paralelas pueden colisionar.
+
+## Ronda 3 — H03 solucionado
+
+- Los estados administrativos de A06 se agregaron con los **mismos cuatro textos** que A05. La batería aislada de revisión tuvo 4/4 casos correctos y detectó tres mutaciones en memoria, incluidas una de localización y otra por clave omitida.
+- El test nuevo del autor cubre dos transiciones diferentes, no solo la mera existencia de las claves. La bitácora deja RED previo, GREEN y la mutación `Desestimado` restaurada.
+- Ya no hay hallazgos abiertos de código en esta PR; no se confunda esto con el estado de CI/E2E, que requiere logs oficiales del SHA con cambios de aplicación.
+
+No se asigna un AG nuevo por el arreglo de una sola PR.
