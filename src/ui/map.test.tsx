@@ -10,7 +10,11 @@ import {
   AGUILARES_BOUNDS,
   isWithinAguilaresBounds,
   aguilaresCoordinatesSchema,
+  buildGeocodeQuery,
+  interpretGeocodeResponse,
   type MapCoordinates,
+  type MapGeocodeOutcome,
+  type MapGeocodeRequest,
 } from './map';
 import { AGUILARES_BOUNDS as DOMAIN_AGUILARES_BOUNDS } from '@/domain/schemas';
 import { MapSkeleton } from './map-skeleton';
@@ -67,6 +71,27 @@ let mockMapInstance = {
 
 let mockOnError: (() => void) | null = null;
 
+// CC-045: Geocoder simulado; cada llamada queda pendiente hasta que el test la resuelve o rechaza.
+interface PendingGeocode {
+  request: { address: string; componentRestrictions?: { country: string }; bounds?: unknown };
+  resolve: (response: { results: unknown[] }) => void;
+  reject: (error: unknown) => void;
+}
+let pendingGeocodes: PendingGeocode[] = [];
+let geocoderConstructions = 0;
+const mockGeocodingLibrary: { Geocoder: new () => { geocode: (request: PendingGeocode['request']) => Promise<{ results: unknown[] }> } } = {
+  Geocoder: class {
+    constructor() {
+      geocoderConstructions += 1;
+    }
+    geocode(request: PendingGeocode['request']) {
+      return new Promise<{ results: unknown[] }>((resolve, reject) => {
+        pendingGeocodes.push({ request, resolve, reject });
+      });
+    }
+  },
+};
+
 vi.mock('@/lib/env.public', () => ({
   publicEnv: {
     get NEXT_PUBLIC_GOOGLE_MAPS_API_KEY() {
@@ -91,6 +116,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
   },
   useApiLoadingStatus: () => mockLoadingStatus,
   useMap: () => mockMapInstance,
+  useMapsLibrary: (name: string) => (name === 'geocoding' ? mockGeocodingLibrary : null),
   APIProvider: ({
     children,
     onError,
@@ -1371,6 +1397,279 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
       expect(getCapturedMarkerProps()).not.toBeNull();
       expect(capturedAdvancedMarkerProps?.position).toEqual(ZONE_CENTER);
       expect(screen.queryByTestId('mock-advanced-marker')).not.toBeNull();
+    });
+  });
+});
+
+describe('CC-045 · Ubicar en el mapa una dirección escrita', () => {
+  const INSIDE = { lat: -27.43215678, lng: -65.61612345 };
+  const result = (coords: { lat: number; lng: number }, locationType = 'ROOFTOP', partial = false) => ({
+    geometry: { location: { lat: () => coords.lat, lng: () => coords.lng }, location_type: locationType },
+    partial_match: partial,
+  });
+  const QUERY = 'San Martín 123, Centro, Aguilares, Tucumán, Argentina';
+
+  beforeEach(() => {
+    mockPublicApiKey = 'test-google-maps-api-key';
+    mockPublicMapId = 'test-map-id';
+    capturedAdvancedMarkerProps = null;
+    capturedLegacyMarkerProps = null;
+    mockPanTo.mockClear();
+    pendingGeocodes = [];
+    geocoderConstructions = 0;
+    Object.defineProperty(navigator, 'onLine', { value: true, writable: true, configurable: true });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  describe('buildGeocodeQuery', () => {
+    it('arma «dirección, barrio, Aguilares, Tucumán, Argentina» y omite el barrio vacío', () => {
+      expect(buildGeocodeQuery('  San Martín 123 ', 'Centro')).toBe(QUERY);
+      expect(buildGeocodeQuery('San Martín 123', null)).toBe('San Martín 123, Aguilares, Tucumán, Argentina');
+    });
+
+    it('sin dirección no hay consulta', () => {
+      expect(buildGeocodeQuery('   ', 'Centro')).toBe('');
+    });
+  });
+
+  describe('interpretGeocodeResponse', () => {
+    it('dentro de Aguilares: found, exacto y con 6 decimales', () => {
+      expect(interpretGeocodeResponse([result(INSIDE)], 'OK')).toEqual({
+        status: 'found',
+        coords: { lat: -27.432157, lng: -65.616123 },
+        approximate: false,
+      });
+    });
+
+    it('solo ROOFTOP sin partial_match es exacto; el resto es aproximado', () => {
+      expect(interpretGeocodeResponse([result(INSIDE, 'GEOMETRIC_CENTER')], 'OK')).toMatchObject({ approximate: true });
+      expect(interpretGeocodeResponse([result(INSIDE, 'APPROXIMATE')], 'OK')).toMatchObject({ approximate: true });
+      expect(interpretGeocodeResponse([result(INSIDE, 'ROOFTOP', true)], 'OK')).toMatchObject({ approximate: true });
+      expect(interpretGeocodeResponse([result(INSIDE, 'RANGE_INTERPOLATED')], 'OK')).toMatchObject({
+        approximate: true,
+      });
+      expect(interpretGeocodeResponse([result(INSIDE, 'ROOFTOP')], 'OK')).toMatchObject({ approximate: false });
+    });
+
+    it('coordenadas inválidas: unavailable', () => {
+      expect(interpretGeocodeResponse([result({ lat: Number.NaN, lng: -65.6 })], 'OK')).toEqual({
+        status: 'unavailable',
+      });
+    });
+
+    it('fuera de Aguilares: outside', () => {
+      expect(interpretGeocodeResponse([result({ lat: -26.8241, lng: -65.2226 })], 'OK')).toEqual({
+        status: 'outside',
+      });
+    });
+
+    it('sin resultados: not_found; error de Google: unavailable', () => {
+      expect(interpretGeocodeResponse(null, 'ZERO_RESULTS')).toEqual({ status: 'not_found' });
+      expect(interpretGeocodeResponse([], 'OK')).toEqual({ status: 'not_found' });
+      expect(interpretGeocodeResponse(null, 'OVER_QUERY_LIMIT')).toEqual({ status: 'unavailable' });
+      expect(interpretGeocodeResponse(null, '')).toEqual({ status: 'unavailable' });
+    });
+  });
+
+  describe('MapPicker con geocodeRequest', () => {
+    it('sin geocodeRequest no crea el Geocoder', () => {
+      render(<MapPicker value={null} />);
+      expect(geocoderConstructions).toBe(0);
+    });
+
+    it('un id nuevo busca con país AR y límites de Aguilares; found mueve el pin, llama onChange y avisa', async () => {
+      const onChange = vi.fn();
+      const onGeocodeResult = vi.fn();
+      const request: MapGeocodeRequest = { id: 1, query: QUERY };
+      render(
+        <MapPicker value={null} onChange={onChange} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />
+      );
+
+      expect(pendingGeocodes).toHaveLength(1);
+      expect(pendingGeocodes[0]?.request).toEqual({
+        address: QUERY,
+        componentRestrictions: { country: 'AR' },
+        bounds: {
+          north: AGUILARES_BOUNDS.maxLat,
+          south: AGUILARES_BOUNDS.minLat,
+          east: AGUILARES_BOUNDS.maxLng,
+          west: AGUILARES_BOUNDS.minLng,
+        },
+      });
+
+      await act(async () => {
+        pendingGeocodes[0]?.resolve({ results: [result(INSIDE)] });
+      });
+      const coords = { lat: -27.432157, lng: -65.616123 };
+      const expected: MapGeocodeOutcome = { status: 'found', coords, approximate: false };
+      expect(onChange).toHaveBeenCalledWith(coords);
+      expect(onGeocodeResult).toHaveBeenCalledWith(expected, request);
+      expect(getCapturedMarkerProps()?.position).toEqual(coords);
+      expect(mockPanTo).toHaveBeenCalledWith(coords);
+    });
+
+    it('sin resultados no toca el pin ni llama onChange', async () => {
+      const onChange = vi.fn();
+      const onGeocodeResult = vi.fn();
+      const request: MapGeocodeRequest = { id: 1, query: QUERY };
+      render(
+        <MapPicker value={null} onChange={onChange} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />
+      );
+      await act(async () => {
+        pendingGeocodes[0]?.reject({ code: 'ZERO_RESULTS' });
+      });
+      expect(onGeocodeResult).toHaveBeenCalledWith({ status: 'not_found' }, request);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('solo cuenta la última búsqueda: la respuesta tardía de un id viejo se descarta', async () => {
+      const onChange = vi.fn();
+      const onGeocodeResult = vi.fn();
+      const first: MapGeocodeRequest = { id: 1, query: QUERY };
+      const second: MapGeocodeRequest = { id: 2, query: 'Belgrano 50, Aguilares, Tucumán, Argentina' };
+      const { rerender } = render(
+        <MapPicker value={null} onChange={onChange} geocodeRequest={first} onGeocodeResult={onGeocodeResult} />
+      );
+      rerender(
+        <MapPicker value={null} onChange={onChange} geocodeRequest={second} onGeocodeResult={onGeocodeResult} />
+      );
+      expect(pendingGeocodes).toHaveLength(2);
+
+      await act(async () => {
+        pendingGeocodes[1]?.resolve({ results: [result({ lat: -27.44, lng: -65.62 })] });
+      });
+      await act(async () => {
+        pendingGeocodes[0]?.resolve({ results: [result(INSIDE)] });
+      });
+
+      expect(onGeocodeResult).toHaveBeenCalledTimes(1);
+      expect(onGeocodeResult).toHaveBeenCalledWith(
+        { status: 'found', coords: { lat: -27.44, lng: -65.62 }, approximate: false },
+        second
+      );
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(getCapturedMarkerProps()?.position).toEqual({ lat: -27.44, lng: -65.62 });
+    });
+
+    it.each([
+      [
+        'click en el mapa',
+        () => {
+          act(() => {
+            capturedMapProps?.onClick?.({ detail: { latLng: { lat: -27.441, lng: -65.621 } } });
+          });
+        },
+      ],
+      [
+        'flecha del teclado',
+        () => {
+          fireEvent.keyDown(screen.getByTestId('map-container'), { key: 'ArrowUp' });
+        },
+      ],
+      [
+        'arrastre del pin',
+        () => {
+          act(() => {
+            getCapturedMarkerProps()?.onDragEnd?.({ latLng: { lat: -27.442, lng: -65.622 } });
+          });
+        },
+      ],
+    ])('una %s mientras busca invalida el resultado: no pisa el pin ni avisa', async (_label, select) => {
+      const onChange = vi.fn();
+      const onGeocodeResult = vi.fn();
+      render(
+        <MapPicker
+          value={null}
+          onChange={onChange}
+          geocodeRequest={{ id: 1, query: QUERY }}
+          onGeocodeResult={onGeocodeResult}
+        />
+      );
+      select();
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const manual = onChange.mock.calls[0]?.[0];
+
+      await act(async () => {
+        pendingGeocodes[0]?.resolve({ results: [result(INSIDE)] });
+      });
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onGeocodeResult).not.toHaveBeenCalled();
+      expect(getCapturedMarkerProps()?.position).toEqual(manual);
+    });
+
+    it('un cambio externo de coordenadas mientras busca invalida el resultado', async () => {
+      const onChange = vi.fn();
+      const onGeocodeResult = vi.fn();
+      const request: MapGeocodeRequest = { id: 1, query: QUERY };
+      const external = { lat: -27.445, lng: -65.625 };
+      const { rerender } = render(
+        <MapPicker value={null} onChange={onChange} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />
+      );
+      rerender(
+        <MapPicker value={external} onChange={onChange} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />
+      );
+      await act(async () => {
+        pendingGeocodes[0]?.resolve({ results: [result(INSIDE)] });
+      });
+      expect(onChange).not.toHaveBeenCalled();
+      expect(onGeocodeResult).not.toHaveBeenCalled();
+      expect(getCapturedMarkerProps()?.position).toEqual(external);
+    });
+
+    it('sin mapa disponible responde unavailable enseguida y no consulta a Google', () => {
+      mockPublicApiKey = '';
+      const onGeocodeResult = vi.fn();
+      const request: MapGeocodeRequest = { id: 7, query: QUERY };
+      render(<MapPicker value={null} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />);
+      expect(onGeocodeResult).toHaveBeenCalledWith({ status: 'unavailable' }, request);
+      expect(geocoderConstructions).toBe(0);
+    });
+
+    it('si la biblioteca de Google no trae un Geocoder usable responde unavailable', () => {
+      const original = mockGeocodingLibrary.Geocoder;
+      mockGeocodingLibrary.Geocoder = class {
+        geocode(): Promise<{ results: unknown[] }> {
+          throw new TypeError('geocode is not a function');
+        }
+      };
+      try {
+        const onGeocodeResult = vi.fn();
+        const request: MapGeocodeRequest = { id: 4, query: QUERY };
+        render(<MapPicker value={null} geocodeRequest={request} onGeocodeResult={onGeocodeResult} />);
+        expect(onGeocodeResult).toHaveBeenCalledWith({ status: 'unavailable' }, request);
+      } finally {
+        mockGeocodingLibrary.Geocoder = original;
+      }
+    });
+
+    it('query vacía no consulta ni responde', () => {
+      const onGeocodeResult = vi.fn();
+      render(<MapPicker value={null} geocodeRequest={{ id: 3, query: '  ' }} onGeocodeResult={onGeocodeResult} />);
+      expect(pendingGeocodes).toHaveLength(0);
+      expect(onGeocodeResult).not.toHaveBeenCalled();
+    });
+
+    it('la dirección no se escribe en console en ningún resultado', async () => {
+      const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
+        vi.spyOn(console, level).mockImplementation(() => {})
+      );
+      const { rerender } = render(<MapPicker value={null} geocodeRequest={{ id: 1, query: QUERY }} />);
+      await act(async () => {
+        pendingGeocodes[0]?.reject({ code: 'REQUEST_DENIED' });
+      });
+      rerender(<MapPicker value={null} geocodeRequest={{ id: 2, query: QUERY }} />);
+      await act(async () => {
+        pendingGeocodes[1]?.resolve({ results: [result(INSIDE)] });
+      });
+      for (const spy of spies) {
+        for (const call of spy.mock.calls) {
+          expect(JSON.stringify(call)).not.toContain('San Martín');
+        }
+      }
     });
   });
 });

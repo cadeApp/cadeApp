@@ -37,6 +37,7 @@ import { Card } from '@/ui/card';
 import { cn } from '@/ui/cn';
 import { Input } from '@/ui/input';
 import { MapSkeleton } from '@/ui/map-skeleton';
+import { buildGeocodeQuery, type MapGeocodeOutcome, type MapGeocodeRequest } from '@/ui/map-geocode';
 import { notify } from '@/ui/notify';
 import { Textarea } from '@/ui/textarea';
 import { createDeliveryRequestAction } from '../actions';
@@ -98,12 +99,19 @@ function DropCard({
   const [dropoffLocating, setDropoffLocating] = React.useState(false);
   const [dropoffCoordsError, setDropoffCoordsError] = React.useState<string | null>(null);
   const [showDropoffMap, setShowDropoffMap] = React.useState(false);
+  // T-423: búsqueda de la dirección escrita (CC-045). Un pin movido a mano o por GPS no se pisa al salir del campo.
+  const [geocodeRequest, setGeocodeRequest] = React.useState<MapGeocodeRequest | null>(null);
+  const [geocoding, setGeocoding] = React.useState(false);
+  const [geocodeNotice, setGeocodeNotice] = React.useState<{ tone: 'info' | 'error'; text: string } | null>(null);
+  const pinIsManualRef = React.useRef(false);
+  const lastGeocodeQueryRef = React.useRef('');
   const [customChangeInput, setCustomChangeInput] = React.useState('');
 
   const dropLat = watch(`drops.${index}.dropoffLat`);
   const dropLng = watch(`drops.${index}.dropoffLng`);
   const dropZoneId = watch(`drops.${index}.dropoffZoneId`);
   const dropZone = zones.find((z) => z.id === dropZoneId);
+  const dropAddress = watch(`drops.${index}.dropoffAddress`);
   const dropZoneCenter =
     dropZone?.centroidLat != null && dropZone?.centroidLng != null
       ? { lat: dropZone.centroidLat, lng: dropZone.centroidLng }
@@ -115,6 +123,40 @@ function DropCard({
   const cashChangeAmount = watch(`drops.${index}.cashChangeAmount`);
 
   const dropErrors = errors?.drops?.[index];
+
+  const requestGeocode = (explicit: boolean) => {
+    const query = buildGeocodeQuery(dropAddress ?? '', dropZone?.name);
+    if (!query) return;
+    if (!explicit && (pinIsManualRef.current || query === lastGeocodeQueryRef.current)) return;
+    lastGeocodeQueryRef.current = query;
+    setGeocodeNotice(null);
+    setGeocoding(true);
+    setShowDropoffMap(true);
+    setGeocodeRequest((previous) => ({ id: (previous?.id ?? 0) + 1, query }));
+  };
+
+  const handleGeocodeResult = React.useCallback(
+    (outcome: MapGeocodeOutcome) => {
+      setGeocoding(false);
+      if (outcome.status === 'found') {
+        // El onChange del mapa que trae el resultado no es un pin manual.
+        pinIsManualRef.current = false;
+        setDropoffCoordsError(null);
+        setGeocodeNotice({
+          tone: 'info',
+          text: outcome.approximate ? copy.geocodeApproximate : copy.geocodeFound,
+        });
+        return;
+      }
+      const text = {
+        outside: copy.geocodeOutside,
+        not_found: copy.geocodeNotFound,
+        unavailable: copy.geocodeUnavailable,
+      }[outcome.status];
+      setGeocodeNotice({ tone: 'error', text });
+    },
+    [copy]
+  );
 
   const handleUseMyLocationDropoff = () => {
     if (!navigator.geolocation) {
@@ -132,6 +174,8 @@ function DropCard({
           onSetDropoffCoords(fieldId, { lat: null, lng: null });
           return;
         }
+        pinIsManualRef.current = true;
+        setGeocoding(false);
         onSetDropoffCoords(fieldId, { lat: latitude, lng: longitude });
         setDropoffCoordsError(null);
       },
@@ -235,7 +279,7 @@ function DropCard({
           </label>
           <Input
             id={`dropoff-address-${fieldId}`}
-            {...register(`drops.${index}.dropoffAddress`)}
+            {...register(`drops.${index}.dropoffAddress`, { onBlur: () => requestGeocode(false) })}
             placeholder={copy.dropoffAddressPlaceholder}
             maxLength={200}
             aria-invalid={Boolean(dropErrors?.dropoffAddress)}
@@ -264,6 +308,17 @@ function DropCard({
               type="button"
               variant="outline"
               size="sm"
+              onClick={() => requestGeocode(true)}
+              disabled={geocoding || !buildGeocodeQuery(dropAddress ?? '')}
+              className="min-h-12 gap-2 text-sm"
+            >
+              <MapPin className="h-4 w-4 text-primary-dark" />
+              {geocoding ? copy.locatingAddress : copy.locateAddressButton}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={handleUseMyLocationDropoff}
               disabled={dropoffLocating}
               className="min-h-12 gap-2 text-sm"
@@ -285,14 +340,31 @@ function DropCard({
                   dropLat != null && dropLng != null ? { lat: dropLat, lng: dropLng } : null
                 }
                 onChange={(coords) => {
+                  // Una selección manual mientras busca invalida esa búsqueda (CC-045): no queda pendiente.
+                  pinIsManualRef.current = true;
+                  setGeocoding(false);
                   onSetDropoffCoords(fieldId, coords);
                   setDropoffCoordsError(null);
                 }}
                 defaultZoneCenter={dropZoneCenter}
+                geocodeRequest={geocodeRequest}
+                onGeocodeResult={handleGeocodeResult}
               />
             </div>
           )}
 
+          {geocodeNotice && (
+            <p
+              role={geocodeNotice.tone === 'error' ? 'alert' : 'status'}
+              className={
+                geocodeNotice.tone === 'error'
+                  ? 'mt-2 text-sm text-destructive'
+                  : 'mt-2 text-sm text-muted-foreground'
+              }
+            >
+              {geocodeNotice.text}
+            </p>
+          )}
           {dropoffCoordsError && (
             <p className="mt-2 text-sm text-destructive">{dropoffCoordsError}</p>
           )}
