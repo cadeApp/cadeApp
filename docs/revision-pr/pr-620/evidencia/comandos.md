@@ -58,3 +58,27 @@ git ls-remote origin feat/T-423-map-geocoding
 ```
 
 Para demostrar RED, crear primero tests de **comportamiento observable** y ejecutarlos contra el SHA R2 (o mutación equivalente con la misma falla), pegar línea `Tests ... failed`, luego arreglar y pegar `Tests ... passed`, mutar quitar guarda y comprobar rojo otra vez. No alterar assertions/mocks para forzar verde ni tests falsos, ni `.only/.skip`, ni desactivar CI. No modificar `docs/revision-pr/**` desde el agente. No usar Docker/Supabase local ni secretos.
+
+## Ronda 3 — SHA funcional `73590e4e4287b519028c9bb177d8dbc66dee75d8`
+
+Inspección GitHub del diff `aa0fe12e...73590e4`: código y tests de H07/H08 coinciden con D07/D08. **Sin checkout ejecutable (git remoto falla por DNS), por lo que NO se corrieron Vitest ni mutaciones independientes.** Un pequeño modelo JS aislado de las ramas de estado confirma transiciones previstas, pero no sustituye el test React y no se usa para declarar `arreglado-verificado`.
+
+- **RED del autor anterior a arreglos** (de `docs/tasks/log/T-423.md` sesión 3, **no re-ejecutado aquí**): map `1 failed | 80 passed (81)`, requests `1 failed | 43 passed (44)`, merchants `1 failed | 40 passed (41)`.
+- **Mutaciones del autor** (**no propias**): quitar reset lastQuery en ambos formularios da 1 failed cada uno; quitar reset activeCoords da 1 failed en map; quitar incrementos epoch da 6 failed. No inventar salida de consola adicional.
+- **CI real sobre SHA**: run `42114705941`, `unit` job `127551894663`: `Test Files 193 passed (193)`, `Tests 3624 passed (3624)`; typecheck/lint/audit success.
+- **Build real fallido:** job `127551895088` de mismo SHA, `pnpm build` → `next/font` `Montserrat` en `src/app/layout.tsx`, `Retrying 1/3...`, `TypeError: Cannot read properties of null (reading '1')` en loader de Next; `bundle-budget` skipped. No acusar cambios de mapa ni declarar root cause externo demostrado.
+- **E2E real pendiente:** los runs `workflow_run` usan base SHA de develop; no atribuirlos al SHA de la PR sin resolver target. Un workflow `success` con job e2e `skipped` no es GREEN: corrida `42114932770`, `resolve-pull-request` success pero `e2e-preview` y `report-preview-status` skipped. `.github/workflows/e2e-preview-target.mjs` línea 85: CI sin `success` = `skip`.
+- **Sin test real de mutación de revisor** y sin `git merge-tree` local; el log del agente **declara** merge-tree limpio y verificación de analizador; develop no había avanzado respecto de la base al comparar. `verificado_en_sha` debe permanecer null.
+
+### Gates para cerrar una vez esté realmente verde
+```sh
+git pull --ff-only origin feat/T-423-map-geocoding
+git rev-parse HEAD
+git diff --check
+pnpm exec vitest run src/ui/map.test.tsx src/features/requests/components/create-request-form.test.tsx src/features/merchants/components/onboarding-form.test.tsx
+pnpm typecheck && pnpm lint && pnpm test
+pnpm build
+git merge-tree --write-tree origin/develop HEAD
+node docs/revision-pr/analizar.mjs verificacion
+```
+Reproducir las mutaciones H07/H08 **en el worktree del agente si se dispone**: retirar en memoria el reset lastQuery de cada form y el reset visual del MapPicker, correr suite dirigida GREEN sin mutar y RED con una única mutación, restaurar en memoria; guardar script completo y logs reales en bitácora del agente. **No alterar expectativas/mocks, no sumar `.skip`, no desactivar el workflow, no inyectar resultados falsos al font loader para pasar.**

@@ -12,3 +12,9 @@ No se numera AG nuevo sin corroborar el máximo de **todas** las ramas remotas; 
 - **Secuencias cíclicas:** los tests A→B deben continuar hasta B→A y volver a ejecutar la acción inicial. Un `lastQuery` que se conserva mientras se invalida el estado derivado produce una trampa de deduplicación: la prueba simple de invalidación pasa (PR620-H07).
 - **Estado persistido vs estado visual:** un test que verifica coords `null` en RHF no garantiza que `MapPicker` deje de dibujar el marcador anterior, especialmente cuando `defaultZoneCenter` es null (PR620-H08).
 - **Tests medibles:** el agente documentó R11 primero verde y después rojo al agregar cobertura, práctica correcta de reconocer un agujero de test. La revisión sigue requiriendo una batería independiente y no firma como verificadas las mutaciones del autor.
+
+## Ronda 3
+- **Prueba A→B→A:** el agente incluyó controles de pin manual (en ambos formularios) y de zona con/sin centroide y marcador deshabilitado. Los RED previos al arreglo en su bitácora corresponden al comportamiento faltante; distinguirlos de las mutaciones posteriores.
+- **P15 — gate engañoso:** en un workflow encadenado `workflow_run`, conclusión `success` puede significar que el orquestador terminó, aunque `e2e-preview` y el reporter se hayan `skipped`; examinar siempre jobs y commit-status del SHA, no el color del run.
+- **P01 — next/font:** un fallo en el cargador externo de fuentes de producción no autoriza a maquillar un build con fixtures, desactivar CI ni atribuir error a rutas no tocadas. Si se repite, una tarea separada de fuentes locales puede mejorar fiabilidad.
+- **Disciplina:** RED y mutaciones del agente más CI unit GREEN no son verificación independiente de la rama mutada. Mantener `arreglado-sin-verificar` y `verificado_en_sha=null` sin clon del SHA funcional.
