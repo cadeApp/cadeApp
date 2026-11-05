@@ -156,6 +156,8 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
     }
     if (pinFromGeocodeRef.current && nextQuery !== lastGeocodeQueryRef.current) {
       pinFromGeocodeRef.current = false;
+      // Sin pin, volver a escribir la misma dirección tiene que poder buscarla de nuevo (PR620-H07).
+      lastGeocodeQueryRef.current = '';
       setGeocodeNotice(null);
       setFields({ defaultPickupLat: null, defaultPickupLng: null }, { shouldValidate: true });
     }

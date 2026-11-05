@@ -1062,6 +1062,39 @@ describe('T-423: la dirección de retiro habitual se ubica en el mapa (CC-045)',
     expect(screen.getByTestId('map-value').textContent).toBe('null');
   });
 
+  it('alta: A → B → A vuelve a buscar la dirección al salir del campo (PR620-H07)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    const first = mockGeocodeRequest;
+    answer({ status: 'found', coords: FOUND, approximate: false });
+
+    fireEvent.change(input, { target: { value: 'Mitre 10' } });
+    expect(screen.getByTestId('map-value').textContent).toBe('null');
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+
+    expect(mockGeocodeRequest?.query).toBe(first?.query);
+    expect(mockGeocodeRequest?.id).toBeGreaterThan(first?.id ?? 0);
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify(FOUND));
+  });
+
+  it('alta: A → B → A con pin manual no lo borra ni busca al salir del campo (PR620-H07)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    fireEvent.click(screen.getByTestId('simulate-map-pin'));
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.change(input, { target: { value: 'Mitre 10' } });
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify({ lat: -27.435, lng: -65.615 }));
+  });
+
   it('alta: un pin manual mientras busca cancela el pedido (PR620-H02)', async () => {
     render(<MerchantOnboardingForm zones={[zoneCentro]} />);
     await screen.findByTestId('map-picker');

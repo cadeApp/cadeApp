@@ -1628,6 +1628,33 @@ describe('CC-045 · Ubicar en el mapa una dirección escrita', () => {
       expect(getCapturedMarkerProps()?.position).toEqual(external);
     });
 
+    it('borrar el pin desde afuera sin centro de barrio deja el marcador en el centro de Aguilares (PR620-H08)', () => {
+      const onChange = vi.fn();
+      const pinA = { lat: -27.445, lng: -65.625 };
+      const { rerender } = render(<MapPicker value={pinA} defaultZoneCenter={null} onChange={onChange} />);
+      expect(getCapturedMarkerProps()?.position).toEqual(pinA);
+      rerender(<MapPicker value={null} defaultZoneCenter={null} onChange={onChange} />);
+      expect(getCapturedMarkerProps()?.position).toEqual(AGUILARES_CENTER);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('borrar el pin desde afuera con centro de barrio deja el marcador en ese centro (PR620-H08)', () => {
+      const onChange = vi.fn();
+      const pinA = { lat: -27.445, lng: -65.625 };
+      const zone = { lat: -27.43, lng: -65.61 };
+      const { rerender } = render(<MapPicker value={pinA} defaultZoneCenter={zone} onChange={onChange} />);
+      rerender(<MapPicker value={null} defaultZoneCenter={zone} onChange={onChange} />);
+      expect(getCapturedMarkerProps()?.position).toEqual(zone);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('borrar el pin desde afuera con showMarkerWhenEmpty=false no deja marcador (PR620-H08)', () => {
+      const pinA = { lat: -27.445, lng: -65.625 };
+      const { rerender } = render(<MapPicker value={pinA} defaultZoneCenter={null} showMarkerWhenEmpty={false} />);
+      rerender(<MapPicker value={null} defaultZoneCenter={null} showMarkerWhenEmpty={false} />);
+      expect(getCapturedMarkerProps()).toBeNull();
+    });
+
     it('sin mapa disponible responde unavailable enseguida y no consulta a Google', () => {
       mockPublicApiKey = '';
       const onGeocodeResult = vi.fn();

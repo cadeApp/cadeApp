@@ -154,6 +154,8 @@ function DropCard({
     }
     if (pinFromGeocodeRef.current && nextQuery !== lastGeocodeQueryRef.current) {
       pinFromGeocodeRef.current = false;
+      // Sin pin, volver a escribir la misma dirección tiene que poder buscarla de nuevo (PR620-H07).
+      lastGeocodeQueryRef.current = '';
       setGeocodeNotice(null);
       onSetDropoffCoords(fieldId, { lat: null, lng: null });
     }

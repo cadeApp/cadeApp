@@ -361,7 +361,14 @@ export function MapPicker({
   React.useEffect(() => {
     const next = value ?? defaultZoneCenter ?? null;
     if (next === null) {
+      // PR620-H08: borrado externo sin centro de barrio. El marcador vuelve al centro de Aguilares en vez de quedar
+      // en el pin borrado; no es una selección, así que no llama a onChange.
+      const wasCleared = lastIncomingCoordsRef.current !== null;
       lastIncomingCoordsRef.current = null;
+      if (wasCleared && !sameCoordinates(activeCoordsRef.current, AGUILARES_CENTER)) {
+        updateActiveCoords(AGUILARES_CENTER);
+        requestCameraSync(AGUILARES_CENTER);
+      }
       return;
     }
 

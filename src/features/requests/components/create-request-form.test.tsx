@@ -1196,6 +1196,35 @@ describe('T-423: la dirección de entrega se ubica en el mapa (CC-045)', () => {
     expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify({ lat: -27.4385, lng: -65.6185 }));
   });
 
+  it('A → B → A: volver a la dirección buscada antes de salir del campo la busca de nuevo (PR620-H07)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    answer({ status: 'found', coords: FOUND, approximate: false });
+
+    fireEvent.change(input, { target: { value: 'Mitre 450' } });
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe('null');
+    fireEvent.change(input, { target: { value: 'Av. Sarmiento 1200' } });
+    fireEvent.blur(input);
+
+    expect(mockGeocodeRequests).toHaveLength(2);
+    expect(mockGeocodeRequests[1]?.id).toBeGreaterThan(mockGeocodeRequests[0]?.id ?? 0);
+    expect(mockGeocodeRequests[1]?.query).toBe(mockGeocodeRequests[0]?.query);
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify(FOUND));
+  });
+
+  it('A → B → A con pin manual: no se borra ni dispara una búsqueda al salir del campo (PR620-H07)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.click(screen.getByRole('button', { name: /fijar en mapa interactivo/i }));
+    fireEvent.click(await screen.findByTestId('simulate-dropoff-pin'));
+    fireEvent.change(input, { target: { value: 'Mitre 450' } });
+    fireEvent.change(input, { target: { value: 'Av. Sarmiento 1200' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequests).toHaveLength(0);
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify({ lat: -27.4385, lng: -65.6185 }));
+  });
+
   it('un pin manual se conserva aunque la dirección cambie (PR620-H03)', async () => {
     const input = renderWithAddress('Av. Sarmiento 1200');
     fireEvent.click(screen.getByRole('button', { name: /fijar en mapa interactivo/i }));
