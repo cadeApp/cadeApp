@@ -121,8 +121,13 @@ test.describe('T-414 — Novedades del admin', () => {
         await expect(banner).toBeVisible();
         await expect(banner.getByRole('link', { name: 'Ver mi plan' })).toHaveAttribute('href', '/merchant/plan');
 
+        // El banner se oculta antes de que la acción termine: recargar sin esperarla la aborta y la novedad vuelve.
+        const dismissed = merchantPage.waitForResponse(
+          (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/merchant/dashboard'
+        );
         await banner.getByRole('button', { name: 'Cerrar novedad' }).click();
         await expect(banner).toHaveCount(0);
+        expect((await dismissed).ok()).toBe(true);
         await merchantPage.reload();
         await waitForNoSkeletons(merchantPage);
         await expect(
