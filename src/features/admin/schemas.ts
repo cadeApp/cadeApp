@@ -117,6 +117,36 @@ export const decisionFormSchema = z.object({
   reason: z.string().trim().min(1, 'El motivo de la decisión es obligatorio.').max(500),
 });
 
+// T-404 (A02-rechazar): el motivo del rechazo sale de una lista; con «Otro», el mensaje es obligatorio.
+export const APPLICANT_REJECTION_OPTIONS = [
+  'Foto ilegible',
+  'Datos no coinciden',
+  'Documento vencido',
+  'Otro',
+] as const;
+
+const REJECTION_MESSAGE_MAX = 450;
+
+export const rejectApplicantFormSchema = z
+  .object({
+    option: z.enum(APPLICANT_REJECTION_OPTIONS, { message: 'Elegí un motivo.' }),
+    message: z.string().trim().max(REJECTION_MESSAGE_MAX),
+  })
+  .refine((data) => data.option !== 'Otro' || data.message.length > 0, {
+    path: ['message'],
+    message: 'Con «Otro», escribí el mensaje para el postulante.',
+  });
+
+export const rejectCourierSchema = z
+  .object({ courierId: z.string().guid() })
+  .and(rejectApplicantFormSchema);
+
+/** Motivo que llega a la RPC: «<opción>: <mensaje>», o solo la opción si no hay mensaje. */
+export function composeRejectionReason(option: string, message: string): string {
+  const trimmed = message.trim();
+  return trimmed ? `${option}: ${trimmed}` : option;
+}
+
 export const adminApplicantIdSchema = z.string().guid();
 
 // T-123: las mutaciones de A03/A04 reutilizan exactamente los schemas de entrada de las RPC.
@@ -142,6 +172,8 @@ export interface AdminAuditFilters {
   readonly actorId?: string;
   readonly action?: string;
   readonly targetType?: AuditTargetType;
+  /** PR607-D02: eventos de un repartidor y de sus documentos (`?courier=<uuid>`). */
+  readonly courierId?: string;
 }
 
 const uuidParamSchema = z.string().guid();
@@ -184,17 +216,20 @@ export function parseAdminAuditSearchParams(raw: {
   actor?: unknown;
   action?: unknown;
   entity?: unknown;
+  courier?: unknown;
 }): AdminAuditFilters {
   const cursor = parseParam(auditCursorParamSchema, raw.cursor);
   const actorId = parseParam(uuidParamSchema, raw.actor);
   const action = parseParam(auditActionParamSchema, raw.action);
   const targetType = parseParam(auditEntityParamSchema, raw.entity);
+  const courierId = parseParam(uuidParamSchema, raw.courier);
 
   return {
     ...(cursor !== undefined ? { cursor } : {}),
     ...(actorId !== undefined ? { actorId } : {}),
     ...(action !== undefined ? { action } : {}),
     ...(targetType !== undefined ? { targetType } : {}),
+    ...(courierId !== undefined ? { courierId } : {}),
   };
 }
 
@@ -317,5 +352,7 @@ export type ReinstateCourierInput = z.infer<typeof reinstateCourierSchema>;
 export type VerifyCourierDocumentInput = z.infer<typeof verifyCourierDocumentSchema>;
 export type RejectDocumentFormInput = z.infer<typeof rejectDocumentFormSchema>;
 export type DecisionFormInput = z.infer<typeof decisionFormSchema>;
+export type RejectApplicantFormInput = z.infer<typeof rejectApplicantFormSchema>;
+export type RejectCourierInput = z.infer<typeof rejectCourierSchema>;
 export type SetMerchantSubscriptionInput = z.infer<typeof setMerchantSubscriptionSchema>;
 export type UpdatePlatformSettingInput = z.infer<typeof updatePlatformSettingSchema>;

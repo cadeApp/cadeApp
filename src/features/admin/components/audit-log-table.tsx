@@ -36,6 +36,7 @@ export function buildAuditHref(filters: AdminAuditFilters, cursor?: number): str
   if (filters.actorId) params.set('actor', filters.actorId);
   if (filters.action) params.set('action', filters.action);
   if (filters.targetType) params.set('entity', filters.targetType);
+  if (filters.courierId) params.set('courier', filters.courierId);
   const query = params.toString();
   return query ? `${AUDIT_PATH}?${query}` : AUDIT_PATH;
 }
@@ -51,7 +52,7 @@ export interface AuditLogTableProps {
  */
 export function AuditLogTable({ result, filters, actors }: AuditLogTableProps) {
   const actionOptions = Object.keys(COPY.actions);
-  const hasFilters = Boolean(filters.actorId || filters.action || filters.targetType);
+  const hasFilters = Boolean(filters.actorId || filters.action || filters.targetType || filters.courierId);
   const actorKnown = !filters.actorId || actors.some((actor) => actor.id === filters.actorId);
   const actionKnown = !filters.action || actionOptions.includes(filters.action);
 
@@ -71,6 +72,13 @@ export function AuditLogTable({ result, filters, actors }: AuditLogTableProps) {
           aria-label={COPY.filters.label}
           className="grid gap-4 md:grid-cols-4 md:items-end"
         >
+          {/* PR607-D02: el filtro por repartidor (desde su historial) se conserva al cambiar los demás. */}
+          {filters.courierId ? (
+            <>
+              <input type="hidden" name="courier" value={filters.courierId} />
+              <p className="text-sm text-muted-foreground md:col-span-4">{COPY.filters.courierActive}</p>
+            </>
+          ) : null}
           <div className="space-y-1.5">
             <label htmlFor="audit-filter-actor" className="block text-sm font-semibold text-foreground">
               {COPY.filters.actor}

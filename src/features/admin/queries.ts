@@ -19,6 +19,7 @@ import {
 import { adminListApplicantsRpc } from '@/server/rpc/admin-applicants';
 import { createClient } from '@/server/supabase/server';
 import { ADMIN_COPY } from './copy';
+import { auditActionLabel } from './audit-format';
 import { updatePlatformSettingSchema, type AdminAuditFilters } from './schemas';
 import type {
   AdminApplicantTab,
@@ -33,8 +34,10 @@ import type {
   PublicationPlansPage,
   PublicationPlansQuery,
   AdminMerchantHeader,
+  ApplicantConsent,
   ApplicantDetail,
   ApplicantDocumentDetail,
+  ApplicantHistoryEvent,
   ApplicantQueueItem,
   CourierDocLevel,
 } from './types';
@@ -82,6 +85,7 @@ interface CourierDetailRow {
   decided_at: string | null;
   decided_by: string | null;
   deactivated_at: string | null;
+  submitted_at: string | null;
   profiles: ProfileRow | null;
 }
 
@@ -156,7 +160,7 @@ export async function getApplicantDetail(
 ): Promise<ApplicantDetail | null> {
   const supabase = await createClient();
 
-  const [courierResult, docsResult] = await Promise.all([
+  const [courierResult, docsResult, consentsResult] = await Promise.all([
     supabase
       .from('couriers')
       .select(`
@@ -171,6 +175,7 @@ export async function getApplicantDetail(
         decided_at,
         decided_by,
         deactivated_at,
+        submitted_at,
         profiles!couriers_profile_id_fkey (
           display_name,
           phone,
@@ -184,6 +189,11 @@ export async function getApplicantDetail(
       .select('id, kind, storage_path, status, uploaded_at, is_current, rejection_code')
       .eq('courier_id', courierId)
       .order('uploaded_at', { ascending: true }),
+    supabase
+      .from('consents')
+      .select('document, version, accepted_at')
+      .eq('profile_id', courierId)
+      .order('accepted_at', { ascending: true }),
   ]);
 
   if (courierResult.error) {
@@ -192,6 +202,10 @@ export async function getApplicantDetail(
 
   if (docsResult.error) {
     throw new Error(`Error al consultar los documentos del postulante: ${docsResult.error.message}`);
+  }
+
+  if (consentsResult.error) {
+    throw new Error(`Error al consultar los consentimientos del postulante: ${consentsResult.error.message}`);
   }
 
   if (!courierResult.data) {
@@ -230,6 +244,18 @@ export async function getApplicantDetail(
     rejectionCode: d.rejection_code ?? null,
   }));
 
+  const auditRows = await getApplicantAuditRows(supabase, courierId, rawDocs.map((d) => d.id));
+  const docKinds = new Map(rawDocs.map((d) => [d.id, d.kind]));
+  const consents: ApplicantConsent[] = (
+    (consentsResult.data ?? []) as unknown as { document: ApplicantConsent['document']; version: string; accepted_at: string }[]
+  ).map((consent) => ({ document: consent.document, version: consent.version, acceptedAt: consent.accepted_at }));
+  const history = buildApplicantHistory({
+    registeredAt: profile?.created_at ?? null,
+    submittedAt: c.submitted_at,
+    auditRows,
+    docKinds,
+  });
+
   return {
     id: c.profile_id,
     fullName: profile?.display_name ?? 'Repartidor',
@@ -245,8 +271,90 @@ export async function getApplicantDetail(
     decidedBy: c.decided_by,
     deactivatedAt: c.deactivated_at,
     createdAt: profile?.created_at ?? new Date().toISOString(),
+    submittedAt: c.submitted_at,
     documents,
+    consents,
+    history,
   };
+}
+
+const APPLICANT_HISTORY_LIMIT = 50;
+
+/**
+ * T-404: filtro PostgREST de los eventos de un repartidor (`target_type = 'courier'`) y de sus documentos (por id o
+ * por `courier_id` en `before`/`after`). Lo comparten el historial del detalle y «Ver todo en Auditoría».
+ */
+function applicantAuditFilter(courierId: string, documentIds: readonly string[]): string {
+  const documentFilters = [
+    `after->>courier_id.eq.${courierId}`,
+    `before->>courier_id.eq.${courierId}`,
+    ...(documentIds.length > 0 ? [`target_id.in.(${documentIds.join(',')})`] : []),
+  ].join(',');
+  return `and(target_type.eq.courier,target_id.eq.${courierId}),and(target_type.eq.courier_document,or(${documentFilters}))`;
+}
+
+/**
+ * T-404: filas de `audit_log` del repartidor (`target_type = 'courier'`) y de sus documentos (por id o por
+ * `courier_id` en `before`/`after`), las más nuevas primero. Una de más indica que el historial está recortado.
+ */
+async function getApplicantAuditRows(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  courierId: string,
+  documentIds: readonly string[]
+): Promise<AuditRow[]> {
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select(AUDIT_SELECT)
+    .or(applicantAuditFilter(courierId, documentIds))
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(APPLICANT_HISTORY_LIMIT);
+
+  if (error) {
+    throw new Error(`Error al consultar el historial del postulante: ${error.message}`);
+  }
+  return (data ?? []) as unknown as AuditRow[];
+}
+
+/**
+ * T-404: historial solo con eventos reales, del más viejo al más nuevo. «Registrado» es `profiles.created_at`,
+ * «Postulación enviada» es `couriers.submitted_at` (CC-043) y solo aparece si no es `null`; el resto son filas
+ * de `audit_log` con las etiquetas y los motivos de T-400. No se inventa ningún evento que la base no registre.
+ * PR607-D03 = C: las 50 auditorías más nuevas más los dos hitos (máximo 52); los hitos nunca se recortan.
+ */
+function buildApplicantHistory(input: {
+  readonly registeredAt: string | null;
+  readonly submittedAt: string | null;
+  readonly auditRows: readonly AuditRow[];
+  readonly docKinds: ReadonlyMap<string, string>;
+}): ApplicantHistoryEvent[] {
+  const events: ApplicantHistoryEvent[] = [];
+  if (input.registeredAt) events.push({ kind: 'registered', id: 'registered', at: input.registeredAt });
+  if (input.submittedAt) events.push({ kind: 'submitted', id: 'submitted', at: input.submittedAt });
+
+  for (const row of input.auditRows) {
+    const item = toAuditLogItem(row, new Map());
+    const before = asRecord(row.before);
+    const after = asRecord(row.after);
+    events.push({
+      kind: 'audit',
+      id: `audit-${row.id}`,
+      at: row.created_at,
+      label: auditActionLabel(row.action),
+      detail:
+        row.target_type === 'courier_document'
+          ? documentKindLabel(after.kind ?? before.kind ?? input.docKinds.get(row.target_id))
+          : null,
+      reason: item.reason,
+      actorName: item.actorName,
+    });
+  }
+
+  // Empates deterministas: los hitos antes que la auditoría y, entre auditorías, por id.
+  const tieRank = (event: ApplicantHistoryEvent) =>
+    event.kind === 'registered' ? -2 : event.kind === 'submitted' ? -1 : Number(event.id.slice('audit-'.length));
+  events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || tieRank(a) - tieRank(b));
+  return events;
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -660,6 +768,21 @@ export async function getAuditLog(options?: GetAuditLogOptions): Promise<AuditLo
   }
   if (options?.targetType) {
     query = query.eq('target_type', options.targetType);
+  }
+  if (options?.courierId) {
+    const { data: docs, error: docsError } = await supabase
+      .from('courier_documents')
+      .select('id')
+      .eq('courier_id', options.courierId);
+    if (docsError) {
+      throw new Error(`Error al consultar los documentos del repartidor: ${docsError.message}`);
+    }
+    query = query.or(
+      applicantAuditFilter(
+        options.courierId,
+        ((docs ?? []) as unknown as { id: string }[]).map((doc) => doc.id)
+      )
+    );
   }
 
   const { data, error } = await query.limit(pageSize + 1);

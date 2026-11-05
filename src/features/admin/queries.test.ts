@@ -24,6 +24,15 @@ vi.mock('@/server/supabase/admin', () => ({
   createAdminClient: vi.fn(),
 }));
 
+/** T-404: consentimientos y auditoría vacíos para los mocks del detalle que no los miran. */
+function emptyTable() {
+  const builder: Record<string, unknown> = {
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve),
+  };
+  for (const method of ['select', 'eq', 'or', 'order', 'limit']) builder[method] = () => builder;
+  return builder;
+}
+
 describe('Admin Queries (T-122 DoD)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -182,7 +191,7 @@ describe('Admin Queries (T-122 DoD)', () => {
               }),
             };
           }
-          return {};
+          return emptyTable();
         }),
       };
 
@@ -248,7 +257,7 @@ describe('Admin Queries (T-122 DoD)', () => {
               }),
             };
           }
-          return {};
+          return emptyTable();
         }),
       };
 
@@ -333,7 +342,7 @@ describe('Admin Queries (T-122 DoD)', () => {
               }),
             };
           }
-          return {};
+          return emptyTable();
         }),
       };
 
@@ -1441,5 +1450,225 @@ describe('T-369 / CC-029: catálogo de planes y créditos del comercio', () => {
       p_before_id: 12,
     });
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('T-404: detalle con consentimientos e historial real (getApplicantDetail)', () => {
+  const COURIER = 'c0000000-0000-4000-8000-000000000404';
+  const DOC = 'd0000000-0000-4000-8000-000000000404';
+
+  function courierRow(overrides: Record<string, unknown> = {}) {
+    return {
+      profile_id: COURIER,
+      status: 'suspended',
+      vehicle_type: 'moto',
+      vehicle_plate: 'AE 404 EE',
+      dni_hmac: 'ab'.repeat(32),
+      doc_level: 1,
+      license_status: 'none',
+      insurance_status: 'none',
+      decided_at: null,
+      decided_by: null,
+      deactivated_at: null,
+      submitted_at: '2026-11-01T11:00:00+00:00',
+      profiles: { display_name: 'José Pérez', phone: '3865123456', created_at: '2026-11-01T10:00:00+00:00' },
+      ...overrides,
+    };
+  }
+
+  // Las filas llegan como las pide la consulta: las más nuevas primero.
+  const auditRows = [
+    {
+      id: 3,
+      created_at: '2026-11-03T10:00:00+00:00',
+      actor_id: 'e0000000-0000-4000-8000-000000000001',
+      action: 'admin_suspend_courier',
+      target_type: 'courier',
+      target_id: COURIER,
+      before: { status: 'approved' },
+      after: { status: 'suspended', reason: 'Reclamos reiterados' },
+      profiles: { display_name: 'Lautaro' },
+    },
+    {
+      id: 2,
+      created_at: '2026-11-02T10:00:00+00:00',
+      actor_id: 'e0000000-0000-4000-8000-000000000001',
+      action: 'view_courier_document',
+      target_type: 'courier_document',
+      target_id: DOC,
+      before: null,
+      after: { kind: 'dni_front', courier_id: COURIER },
+      profiles: { display_name: 'Lautaro' },
+    },
+  ];
+
+  function mockDetail(courier: Record<string, unknown>, audit: unknown[] = auditRows) {
+    return mockClient({
+      couriers: { data: courier, error: null },
+      courier_documents: {
+        data: [
+          { id: DOC, kind: 'dni_front', storage_path: `${COURIER}/dni_front.webp`, status: 'submitted', uploaded_at: '2026-11-01T10:30:00+00:00' },
+        ],
+        error: null,
+      },
+      consents: {
+        data: [
+          { document: 'tos', version: '2026-10', accepted_at: '2026-11-01T10:01:00+00:00' },
+          { document: 'courier_contract', version: '1', accepted_at: '2026-11-01T10:02:00+00:00' },
+        ],
+        error: null,
+      },
+      audit_log: { data: audit, error: null },
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('el historial va del más viejo al más nuevo: Registrado, Postulación enviada y las filas reales de auditoría', async () => {
+    mockDetail(courierRow());
+    const detail = await getApplicantDetail(COURIER);
+
+    expect(detail?.history?.map((event) => [event.kind, event.at])).toEqual([
+      ['registered', '2026-11-01T10:00:00+00:00'],
+      ['submitted', '2026-11-01T11:00:00+00:00'],
+      ['audit', '2026-11-02T10:00:00+00:00'],
+      ['audit', '2026-11-03T10:00:00+00:00'],
+    ]);
+    expect(detail?.history?.[2]).toMatchObject({ label: 'Vio un documento', detail: 'DNI Frente', reason: null });
+    expect(detail?.history?.[3]).toMatchObject({
+      label: 'Suspendió un repartidor',
+      reason: 'Reclamos reiterados',
+      actorName: 'Lautaro',
+    });
+  });
+
+  it('sin submitted_at no hay «Postulación enviada» ni eventos que la base no registre', async () => {
+    mockDetail(courierRow({ submitted_at: null }), []);
+    const detail = await getApplicantDetail(COURIER);
+
+    expect(detail?.history).toEqual([{ kind: 'registered', id: 'registered', at: '2026-11-01T10:00:00+00:00' }]);
+  });
+
+  /** N filas como las devuelve la consulta (`created_at DESC`, nunca más de su `limit(50)`). */
+  function auditPage(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      ...auditRows[0],
+      id: 100 - index,
+      created_at: new Date(Date.UTC(2026, 10, 3, 10, count - index)).toISOString(),
+    }));
+  }
+
+  it.each([0, 49, 50])(
+    'PR607-H01 (D03 = C): con %i filas de auditoría conserva los dos hitos, sin recortar el total',
+    async (count) => {
+      mockDetail(courierRow(), auditPage(count));
+      const history = (await getApplicantDetail(COURIER))?.history ?? [];
+
+      expect(history).toHaveLength(count + 2);
+      expect(history.filter((event) => event.kind !== 'audit').map((event) => event.kind)).toEqual([
+        'registered',
+        'submitted',
+      ]);
+      expect(history.filter((event) => event.kind === 'audit')).toHaveLength(count);
+      const times = history.map((event) => new Date(event.at).getTime());
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+    }
+  );
+
+  it('PR607-H01: los empates de fecha se ordenan igual siempre (hitos primero, auditoría por id)', async () => {
+    const at = '2026-11-01T10:00:00+00:00';
+    mockDetail(courierRow({ submitted_at: at }), [
+      { ...auditRows[0], id: 8, created_at: at },
+      { ...auditRows[0], id: 7, created_at: at },
+    ]);
+    const history = (await getApplicantDetail(COURIER))?.history ?? [];
+    expect(history.map((event) => event.id)).toEqual(['registered', 'submitted', 'audit-7', 'audit-8']);
+  });
+
+  it('la auditoría se filtra por el repartidor y sus documentos, con la sesión del admin y hasta 50 filas', async () => {
+    const { calls } = mockDetail(courierRow());
+    await getApplicantDetail(COURIER);
+
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    const [filter] = callsOf(calls, 'audit_log', 'or');
+    expect(String(filter?.args[0])).toBe(
+      `and(target_type.eq.courier,target_id.eq.${COURIER}),and(target_type.eq.courier_document,or(after->>courier_id.eq.${COURIER},before->>courier_id.eq.${COURIER},target_id.in.(${DOC})))`
+    );
+    expect(callsOf(calls, 'audit_log', 'order')[0]?.args).toEqual(['created_at', { ascending: false }]);
+    expect(callsOf(calls, 'audit_log', 'limit')[0]?.args).toEqual([50]);
+  });
+
+  it('los consentimientos salen de consents con documento, versión y fecha', async () => {
+    const { calls } = mockDetail(courierRow());
+    const detail = await getApplicantDetail(COURIER);
+
+    expect(callsOf(calls, 'consents', 'eq')[0]?.args).toEqual(['profile_id', COURIER]);
+    expect(detail?.consents).toEqual([
+      { document: 'tos', version: '2026-10', acceptedAt: '2026-11-01T10:01:00+00:00' },
+      { document: 'courier_contract', version: '1', acceptedAt: '2026-11-01T10:02:00+00:00' },
+    ]);
+  });
+});
+
+describe('PR607-D02: getAuditLog filtrado por repartidor', () => {
+  const COURIER = 'c0000000-0000-4000-8000-000000000607';
+  const DOC = 'd0000000-0000-4000-8000-000000000607';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('trae los eventos del repartidor y de sus documentos (id o courier_id), paginados por id', async () => {
+    const { calls } = mockClient({
+      courier_documents: { data: [{ id: DOC }], error: null },
+      audit_log: { data: [], error: null },
+    });
+    await getAuditLog({ courierId: COURIER, pageSize: 20 });
+
+    expect(callsOf(calls, 'courier_documents', 'eq')[0]?.args).toEqual(['courier_id', COURIER]);
+    expect(String(callsOf(calls, 'audit_log', 'or')[0]?.args[0])).toBe(
+      `and(target_type.eq.courier,target_id.eq.${COURIER}),and(target_type.eq.courier_document,or(after->>courier_id.eq.${COURIER},before->>courier_id.eq.${COURIER},target_id.in.(${DOC})))`
+    );
+    expect(callsOf(calls, 'audit_log', 'order')[0]?.args).toEqual(['id', { ascending: false }]);
+    expect(callsOf(calls, 'audit_log', 'limit')[0]?.args).toEqual([21]);
+  });
+
+  it('el filtro se aplica en la base antes del limit(pageSize + 1) y no menciona a otro repartidor', async () => {
+    const { calls } = mockClient({
+      courier_documents: { data: [], error: null },
+      audit_log: { data: [], error: null },
+    });
+    await getAuditLog({ courierId: COURIER, targetType: 'courier_document', cursor: 90 });
+
+    const auditCalls = calls.filter((call) => call.table === 'audit_log').map((call) => call.method);
+    expect(auditCalls.indexOf('or')).toBeLessThan(auditCalls.indexOf('limit'));
+    expect(callsOf(calls, 'audit_log', 'eq')[0]?.args).toEqual(['target_type', 'courier_document']);
+    expect(callsOf(calls, 'audit_log', 'lt')[0]?.args).toEqual(['id', 90]);
+    const filter = String(callsOf(calls, 'audit_log', 'or')[0]?.args[0]);
+    expect(filter).toContain(`after->>courier_id.eq.${COURIER},before->>courier_id.eq.${COURIER}`);
+    expect(filter).not.toContain('target_id.in.');
+    expect(filter.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g)).toEqual([
+      COURIER,
+      COURIER,
+      COURIER,
+    ]);
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('si falla la lectura de documentos del repartidor, el error se propaga', async () => {
+    mockClient({
+      courier_documents: { data: null, error: { message: 'permission denied' } },
+      audit_log: { data: [], error: null },
+    });
+    await expect(getAuditLog({ courierId: COURIER })).rejects.toThrow('permission denied');
+  });
+
+  it('sin filtro por repartidor no consulta documentos ni agrega el or()', async () => {
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getAuditLog();
+    expect(callsOf(calls, 'audit_log', 'or')).toHaveLength(0);
+    expect(calls.filter((call) => call.table === 'courier_documents')).toHaveLength(0);
   });
 });
