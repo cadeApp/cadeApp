@@ -9,12 +9,12 @@ import {
 describe('parseAdminApplicantsSearchParams (PR106-H07)', () => {
   it('retorna tab pending y cursor undefined para un objeto vacío {}', () => {
     const parsed = parseAdminApplicantsSearchParams({});
-    expect(parsed).toEqual({ tab: 'pending', cursor: undefined });
+    expect(parsed).toEqual({ tab: 'pending', cursor: undefined, direction: 'next', query: undefined });
   });
 
   it('retorna tab approved y cursor undefined para { tab: "approved" }', () => {
     const parsed = parseAdminApplicantsSearchParams({ tab: 'approved' });
-    expect(parsed).toEqual({ tab: 'approved', cursor: undefined });
+    expect(parsed).toEqual({ tab: 'approved', cursor: undefined, direction: 'next', query: undefined });
   });
 
   it('retorna tab pending cuando recibe tab desconocido "ghost"', () => {
@@ -45,6 +45,26 @@ describe('parseAdminApplicantsSearchParams (PR106-H07)', () => {
   it('retorna cursor undefined cuando recibe cursor malicioso "javascript:alert(1)"', () => {
     const parsed = parseAdminApplicantsSearchParams({ cursor: 'javascript:alert(1)' });
     expect(parsed.cursor).toBeUndefined();
+  });
+
+  it('T-403: q se recorta y llega como término; vacío o en blanco es sin búsqueda', () => {
+    expect(parseAdminApplicantsSearchParams({ q: '  jose  ' }).query).toBe('jose');
+    expect(parseAdminApplicantsSearchParams({ q: '   ' }).query).toBeUndefined();
+    expect(parseAdminApplicantsSearchParams({ q: '' }).query).toBeUndefined();
+  });
+
+  it('T-403: q de más de 80 caracteres o de otro tipo se descarta', () => {
+    expect(parseAdminApplicantsSearchParams({ q: 'a'.repeat(80) }).query).toHaveLength(80);
+    expect(parseAdminApplicantsSearchParams({ q: 'a'.repeat(81) }).query).toBeUndefined();
+    expect(parseAdminApplicantsSearchParams({ q: ['jose', 'ana'] }).query).toBeUndefined();
+  });
+
+  it('T-403: dir=prev solo vale con cursor; cualquier otro valor es next', () => {
+    const cursor = '2026-11-03T16:22:06.662075+00:00~a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+    expect(parseAdminApplicantsSearchParams({ cursor, dir: 'prev' }).direction).toBe('prev');
+    expect(parseAdminApplicantsSearchParams({ dir: 'prev' }).direction).toBe('next');
+    expect(parseAdminApplicantsSearchParams({ cursor, dir: 'atras' }).direction).toBe('next');
+    expect(parseAdminApplicantsSearchParams({ cursor }).direction).toBe('next');
   });
 });
 

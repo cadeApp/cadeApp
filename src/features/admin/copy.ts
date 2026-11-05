@@ -61,7 +61,6 @@ export const ADMIN_COPY = {
       applicant: 'Postulante',
       vehicle: 'Vehículo',
       documents: 'Documentación',
-      level: 'Nivel',
       date: 'Alta',
       action: 'Acción',
     },
@@ -79,6 +78,26 @@ export const ADMIN_COPY = {
       'Cuando un repartidor complete su registro o cambie de estado, aparecerá en esta lista.',
     nextButton: 'Siguiente',
     reviewButton: 'Revisar',
+    /** T-403 (A01): cantidad exacta de la pestaña activa con la búsqueda aplicada. */
+    count: (total: number, tab: 'pending' | 'approved' | 'rejected' | 'suspended') => {
+      const one = { pending: 'pendiente', approved: 'aprobado', rejected: 'rechazado', suspended: 'suspendido' }[tab];
+      return `${total} ${total === 1 ? one : `${one}s`}`;
+    },
+    searchLabel: 'Buscar por nombre',
+    searchPlaceholder: 'Buscar por nombre',
+    searchButton: 'Buscar',
+    clearSearch: 'Limpiar búsqueda',
+    emptySearchTitle: (query: string) => `No encontramos postulantes con «${query}»`,
+    emptySearchDescription: 'Probá con otra parte del nombre o revisá otra pestaña.',
+    optionalColumn: 'Opcionales',
+    submittedColumn: 'Enviado',
+    /** T-403: licencia y seguro verificados sobre 2; los enviados sin verificar se cuentan aparte. */
+    optional: (verified: number, inReview: number) =>
+      inReview > 0 ? `${verified}/2 · ${inReview} en revisión` : `${verified}/2`,
+    submittedUnknown: 'Sin fecha de envío',
+    vehicleUnknown: 'Sin vehículo',
+    prevButton: 'Anterior',
+    paginationLabel: 'Paginación de postulantes',
   },
   detail: {
     backToList: '← Volver a la lista de postulantes',

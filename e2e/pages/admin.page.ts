@@ -62,6 +62,25 @@ export class AdminPage extends BasePage {
     await this.menuNav.getByRole('link', { name: label, exact: true }).click();
   }
 
+  /** T-403: buscador «Buscar por nombre» de la cola de postulantes. */
+  get applicantsSearchInput(): Locator {
+    return this.page.getByRole('searchbox', { name: 'Buscar por nombre' });
+  }
+
+  /** T-403: contador «N pendientes» junto al título de Postulantes. */
+  get applicantsCount(): Locator {
+    return this.page.getByTestId('applicants-count');
+  }
+
+  /** T-403: busca por nombre desde la UI; reintenta hasta que React hidrata y la URL lleva `q`. */
+  async searchApplicants(term: string): Promise<void> {
+    await expect(async () => {
+      await this.applicantsSearchInput.fill(term);
+      await this.page.getByRole('button', { name: 'Buscar' }).click();
+      await expect(this.page).toHaveURL(/[?&]q=/, { timeout: 2_000 });
+    }).toPass();
+  }
+
   async navigate(): Promise<void> {
     await this.goto('/admin');
   }

@@ -29,105 +29,111 @@ describe('Admin Queries (T-122 DoD)', () => {
     vi.clearAllMocks();
   });
 
-  describe('PR106-H07 y PR106-H12: Cola de postulantes (getApplicantsQueue)', () => {
+  describe('T-403 / CC-044: Cola de postulantes (getApplicantsQueue) sobre admin_list_applicants', () => {
     const COURIER_1 = 'c0000000-0000-4000-8000-000000000001';
     const COURIER_2 = 'c0000000-0000-4000-8000-000000000002';
-    const COURIER_3 = 'c0000000-0000-4000-8000-000000000003';
 
-    function courierRow(id: string, createdAt: string) {
+    function rpcItem(id: string, overrides: Record<string, unknown> = {}) {
       return {
-        profile_id: id,
+        id,
+        displayName: 'José Pérez',
+        phone: '3865123456',
+        vehicleType: 'moto',
         status: 'pending',
-        vehicle_type: 'moto',
-        vehicle_plate: 'A123BCD',
-        dni_hmac: 'abcdef123456',
-        doc_level: 1,
-        license_status: 'submitted',
-        insurance_status: 'none',
-        profiles: { display_name: 'Juan Perez', phone: '3865123456', created_at: createdAt },
-        courier_documents: [
-          { kind: 'dni_front', status: 'submitted' },
-          { kind: 'dni_back', status: 'submitted' },
-          { kind: 'selfie', status: 'submitted' },
-        ],
+        hasDni: true,
+        docLevel: 1,
+        licenseStatus: 'verified',
+        insuranceStatus: 'submitted',
+        createdAt: '2026-11-03T16:00:00.000000Z',
+        submittedAt: '2026-11-03T18:00:00.000000Z',
+        documents: { dniFront: true, dniBack: true, selfie: true, license: true, insurance: false },
+        ...overrides,
       };
     }
 
-    it('utiliza await createClient() (sesión autenticada) y NO createAdminClient() (PR106-H12)', async () => {
-      mockClient({ couriers: { data: [], error: null } });
+    function page(overrides: Record<string, unknown> = {}) {
+      return { items: [rpcItem(COURIER_1)], total: 7, nextCursor: null, prevCursor: null, ...overrides };
+    }
+
+    it('usa la sesión del admin (createClient) y nunca createAdminClient (PR106-H12)', async () => {
+      mockClient({}, { data: page(), error: null });
       await getApplicantsQueue('pending');
       expect(serverSupabase.createClient).toHaveBeenCalled();
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
-    it('T-420: ordena por fecha de registro, de la más nueva a la más vieja, y desempata por id', async () => {
-      const { calls } = mockClient({ couriers: { data: [], error: null } });
-      await getApplicantsQueue('pending');
-
-      expect(callsOf(calls, 'couriers', 'eq')[0]?.args).toEqual(['status', 'pending']);
-      expect(callsOf(calls, 'couriers', 'order').map((call) => call.args)).toEqual([
-        ['profiles(created_at)', { ascending: false }],
-        ['profile_id', { ascending: false }],
-      ]);
-      // El perfil se embebe con !inner para que el cursor sobre profiles filtre las filas de couriers.
-      expect(String(callsOf(calls, 'couriers', 'select')[0]?.args[0])).toMatch(
-        /profiles!couriers_profile_id_fkey!inner\s*\(/
-      );
-    });
-
-    it('primera página usa limit(pageSize + 1), sin cursor ni range() (PR106-H07)', async () => {
-      const { calls } = mockClient({
-        couriers: { data: [courierRow(COURIER_1, '2026-11-03T16:00:00+00:00')], error: null },
-      });
-      const result = await getApplicantsQueue('pending', { pageSize: 20 });
-
-      expect(callsOf(calls, 'couriers', 'limit')[0]?.args).toEqual([21]);
-      expect(callsOf(calls, 'couriers', 'range')).toHaveLength(0);
-      expect(callsOf(calls, 'couriers', 'or')).toHaveLength(0);
-      expect(result.pageSize).toBe(20);
-      expect(result.hasNextPage).toBe(false);
-      expect(result.nextCursor).toBeNull();
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0]?.fullName).toBe('Juan Perez');
-      expect(result.items[0]?.createdAt).toBe('2026-11-03T16:00:00+00:00');
-      expect(result.items[0]?.documentsSummary.hasDniFront).toBe(true);
-      expect(result.items[0]?.documentsSummary.hasLicense).toBe(false);
-    });
-
-    it('T-420: con cursor sigue después de esa fecha (y del id si la fecha empata) sobre el perfil', async () => {
-      const { calls } = mockClient({ couriers: { data: [], error: null } });
+    it('la búsqueda, el estado, el cursor y la dirección llegan a la RPC; no lee couriers por PostgREST', async () => {
+      const { client, calls } = mockClient({}, { data: page(), error: null });
       const cursor = `2026-11-03T16:22:06.662075+00:00~${COURIER_2}`;
-      await getApplicantsQueue('pending', { cursor, pageSize: 20 });
 
-      expect(callsOf(calls, 'couriers', 'or')[0]?.args).toEqual([
-        `created_at.lt."2026-11-03T16:22:06.662075+00:00",and(created_at.eq."2026-11-03T16:22:06.662075+00:00",id.lt.${COURIER_2})`,
-        { referencedTable: 'profiles' },
-      ]);
-      expect(callsOf(calls, 'couriers', 'lt')).toHaveLength(0);
-      expect(callsOf(calls, 'couriers', 'limit')[0]?.args).toEqual([21]);
+      await getApplicantsQueue('approved', { cursor, direction: 'prev', query: 'jose', pageSize: 20 });
+
+      expect(client.rpc).toHaveBeenCalledTimes(1);
+      expect(client.rpc).toHaveBeenCalledWith('admin_list_applicants', {
+        p_status: 'approved',
+        p_query: 'jose',
+        p_cursor_created_at: '2026-11-03T16:22:06.662075+00:00',
+        p_cursor_id: COURIER_2,
+        p_direction: 'prev',
+        p_limit: 20,
+      });
+      // T-403: la búsqueda se resuelve en la base (CC-044); el cliente no filtra ni consulta couriers.
+      expect(calls).toEqual([]);
     });
 
-    it('calcula hasNextPage y el cursor «fecha~id» del último visible ante una fila extra (PR106-H07)', async () => {
-      mockClient({
-        couriers: {
-          data: [
-            courierRow(COURIER_3, '2026-11-03T18:00:00+00:00'),
-            courierRow(COURIER_2, '2026-11-03T17:00:00+00:00'),
-            courierRow(COURIER_1, '2026-11-03T16:00:00+00:00'),
-          ],
-          error: null,
-        },
+    it('sin búsqueda ni cursor pide la primera página hacia adelante', async () => {
+      const { client } = mockClient({}, { data: page(), error: null });
+      await getApplicantsQueue('pending');
+      expect(client.rpc).toHaveBeenCalledWith('admin_list_applicants', {
+        p_status: 'pending',
+        p_query: null,
+        p_cursor_created_at: null,
+        p_cursor_id: null,
+        p_direction: 'next',
+        p_limit: 20,
       });
+    });
+
+    it('devuelve el total, los ítems con «Enviado» y los dos cursores «fecha~id»', async () => {
+      mockClient(
+        {},
+        {
+          data: page({
+            items: [rpcItem(COURIER_1), rpcItem(COURIER_2, { submittedAt: null, vehicleType: null })],
+            nextCursor: { createdAt: '2026-11-03T15:00:00.000000Z', id: COURIER_2 },
+            prevCursor: { createdAt: '2026-11-03T16:00:00.000000Z', id: COURIER_1 },
+          }),
+          error: null,
+        }
+      );
 
       const result = await getApplicantsQueue('pending', { pageSize: 2 });
+
+      expect(result.total).toBe(7);
+      expect(result.pageSize).toBe(2);
+      expect(result.nextCursor).toBe(`2026-11-03T15:00:00.000000Z~${COURIER_2}`);
+      expect(result.prevCursor).toBe(`2026-11-03T16:00:00.000000Z~${COURIER_1}`);
       expect(result.hasNextPage).toBe(true);
-      expect(result.nextCursor).toBe(`2026-11-03T17:00:00+00:00~${COURIER_2}`);
-      expect(result.items.map((item) => item.id)).toEqual([COURIER_3, COURIER_2]);
+      expect(result.hasPrevPage).toBe(true);
+      expect(result.items[0]).toMatchObject({
+        id: COURIER_1,
+        fullName: 'José Pérez',
+        submittedAt: '2026-11-03T18:00:00.000000Z',
+        licenseStatus: 'verified',
+        insuranceStatus: 'submitted',
+        documentsSummary: { hasDniFront: true, hasDniBack: true, hasSelfie: true, hasLicense: true, hasInsurance: false },
+      });
+      expect(result.items[1]).toMatchObject({ submittedAt: null, vehicleType: null });
     });
 
-    it('propaga y lanza excepción ante error de DB en getApplicantsQueue (PR106-H08)', async () => {
-      mockClient({ couriers: { data: null, error: { message: 'Database connection failed' } } });
-      await expect(getApplicantsQueue('pending')).rejects.toThrow('Database connection failed');
+    it('un error de la RPC se propaga como excepción, solo con el código (PR106-H08)', async () => {
+      mockClient({}, { data: null, error: { code: 'P0001', message: 'AAL2_REQUIRED' } });
+      await expect(getApplicantsQueue('pending')).rejects.toThrow('AAL2_REQUIRED');
+    });
+
+    it('una salida fuera del contrato (por ejemplo con el hash del DNI) no llega a la UI', async () => {
+      mockClient({}, { data: page({ items: [rpcItem(COURIER_1, { dniHmac: 'ab'.repeat(32) })] }), error: null });
+      await expect(getApplicantsQueue('pending')).rejects.toThrow('INTERNAL_ERROR');
     });
   });
 
@@ -736,12 +742,29 @@ describe('T-401: el hash del DNI no viaja al cliente', () => {
   }
 
   it('la cola devuelve si el DNI está cargado, sin la propiedad dniHash ni el hash', async () => {
-    mockClient({ couriers: { data: [queueRow(HMAC), { ...queueRow(null), profile_id: COURIER_B401 }], error: null } });
+    const item = (id: string, hasDni: boolean) => ({
+      id,
+      displayName: 'Juan Perez',
+      phone: '3865123456',
+      vehicleType: 'moto',
+      status: 'pending',
+      hasDni,
+      docLevel: 1,
+      licenseStatus: 'none',
+      insuranceStatus: 'none',
+      createdAt: '2026-10-01T12:00:00.000000Z',
+      submittedAt: null,
+      documents: { dniFront: false, dniBack: false, selfie: false, license: false, insurance: false },
+    });
+    mockClient(
+      {},
+      { data: { items: [item(COURIER, true), item(COURIER_B401, false)], total: 2, nextCursor: null, prevCursor: null }, error: null }
+    );
 
     const { items } = await getApplicantsQueue('pending');
 
-    expect(items.map((item) => item.hasDni)).toEqual([true, false]);
-    for (const item of items) expect(item).not.toHaveProperty('dniHash');
+    expect(items.map((entry) => entry.hasDni)).toEqual([true, false]);
+    for (const entry of items) expect(entry).not.toHaveProperty('dniHash');
     expect(JSON.stringify(items)).not.toContain(HMAC.slice(0, 8));
   });
 
@@ -1266,17 +1289,6 @@ describe('T-123: getAuditActors (A06, filtro por operador)', () => {
 describe('T-321: Desambiguación de embeds PostgREST con foreign keys canónicas (DoD T-321)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('getApplicantsQueue usa profiles!couriers_profile_id_fkey y no profiles:profile_id', async () => {
-    const { calls } = mockClient({ couriers: { data: [], error: null } });
-    await getApplicantsQueue('pending');
-
-    const [select] = callsOf(calls, 'couriers', 'select');
-    expect(select).toBeDefined();
-    const selectStr = String(select?.args[0]);
-    expect(selectStr).toMatch(/profiles!couriers_profile_id_fkey(!inner)?\s*\(/);
-    expect(selectStr).not.toMatch(/profiles:profile_id/);
   });
 
   it('getApplicantDetail usa profiles!couriers_profile_id_fkey y no profiles:profile_id', async () => {

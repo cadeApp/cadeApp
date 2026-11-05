@@ -43,6 +43,13 @@ export interface ApplicantListItem {
   };
 }
 
+/** T-403: fila de la cola de postulantes, leída con `admin_list_applicants` (CC-044). */
+export interface ApplicantQueueItem extends Omit<ApplicantListItem, 'vehicleType'> {
+  readonly vehicleType: 'walk' | 'bike' | 'moto' | 'car' | null;
+  /** CC-043: primer envío de la postulación; `null` (o ausente) en las previas al contrato: sin fecha conocida. */
+  readonly submittedAt?: string | null;
+}
+
 export interface ApplicantDocumentDetail {
   readonly id: string;
   readonly documentType: 'dni_front' | 'dni_back' | 'selfie' | 'avatar' | 'license' | 'insurance';
