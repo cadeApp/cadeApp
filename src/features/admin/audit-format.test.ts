@@ -50,6 +50,13 @@ describe('T-407: auditActionTone (etiqueta de acción por tipo)', () => {
     expect(auditActionTone({ action: 'admin_verify_document', changes: status('rejected') })).toBe('negative');
   });
 
+  it('PR617-H01: resolver un incidente es positiva; desestimarlo es neutra', () => {
+    const incident = (after: string): AuditChange[] => [{ field: 'status', before: 'open', after }];
+    expect(auditActionTone({ action: 'admin_resolve_incident', changes: incident('resolved') })).toBe('positive');
+    expect(auditActionTone({ action: 'admin_resolve_incident', changes: incident('dismissed') })).toBe('neutral');
+    expect(auditActionTone({ action: 'admin_resolve_incident', changes: [] })).toBe('neutral');
+  });
+
   it('una decisión sin estado legible queda neutra', () => {
     expect(auditActionTone({ action: 'admin_decide_courier', changes: [] })).toBe('neutral');
     expect(auditActionTone({ action: 'admin_decide_courier', changes: status('raro') })).toBe('neutral');

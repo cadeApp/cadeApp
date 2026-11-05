@@ -438,6 +438,8 @@ export const ADMIN_COPY = {
     },
     /** T-407 (A06) */
     prevButton: 'Anterior',
+    /** PR617-H02: página vacía tras un cursor (p. ej. un enlace viejo). */
+    firstPage: 'Volver al inicio',
     columns: {
       date: 'Fecha y hora',
       operator: 'Operador',

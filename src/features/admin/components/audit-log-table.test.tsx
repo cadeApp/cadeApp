@@ -295,6 +295,22 @@ describe('T-407: AuditLogTable (A06: fechas, entidad, etiquetas y paginación)',
     }
   });
 
+  it('PR617-H02: una página vacía con cursor ofrece «Volver al inicio» sin cursor y con los filtros', () => {
+    const empty: AuditLogResult = { items: [], pageSize: 20, nextCursor: null, hasNextPage: false, prevCursor: null, hasPrevPage: false };
+    render(<AuditLogTable result={empty} filters={{ ...filters, cursor: 5, direction: 'prev' }} actors={[]} />);
+    const back = params(/volver al inicio/i);
+    expect(back.get('cursor')).toBeNull();
+    expect(back.get('dir')).toBeNull();
+    expect(back.get('target')).toBe(TARGET);
+    expect(back.get('from')).toBe('2026-10-21');
+  });
+
+  it('PR617-H02: la primera página vacía no ofrece «Volver al inicio»', () => {
+    const empty: AuditLogResult = { items: [], pageSize: 20, nextCursor: null, hasNextPage: false, prevCursor: null, hasPrevPage: false };
+    render(<AuditLogTable result={empty} filters={filters} actors={[]} />);
+    expect(screen.queryByRole('link', { name: /volver al inicio/i })).toBeNull();
+  });
+
   it('la primera página no muestra «Anterior»', () => {
     render(<AuditLogTable result={result} filters={{}} actors={[]} />);
     expect(screen.queryByRole('link', { name: /anterior/i })).toBeNull();

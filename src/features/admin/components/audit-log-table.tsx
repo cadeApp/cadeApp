@@ -291,8 +291,13 @@ export function AuditLogTable({ result, filters, actors }: AuditLogTableProps) {
         </Card>
       )}
 
-      {result.hasPrevPage || result.hasNextPage ? (
+      {result.hasPrevPage || result.hasNextPage || (result.items.length === 0 && filters.cursor !== undefined) ? (
         <nav className="flex items-center justify-end gap-3" aria-label={COPY.paginationLabel}>
+          {result.items.length === 0 && filters.cursor !== undefined ? (
+            <Link href={buildAuditHref(filters)} className={PAGE_LINK_CLASS}>
+              {COPY.firstPage}
+            </Link>
+          ) : null}
           {result.hasPrevPage && result.prevCursor !== null ? (
             <Link href={buildAuditHref(filters, result.prevCursor, 'prev')} className={PAGE_LINK_CLASS}>
               {COPY.prevButton}

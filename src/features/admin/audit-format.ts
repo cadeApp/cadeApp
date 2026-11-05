@@ -23,7 +23,6 @@ export type AuditActionTone = 'positive' | 'negative' | 'neutral' | 'access';
 const ACTION_TONES: Readonly<Record<string, AuditActionTone>> = {
   view_courier_document: 'access',
   admin_reinstate_courier: 'positive',
-  admin_resolve_incident: 'positive',
   admin_grant_publication_credits: 'positive',
   mark_delivered: 'positive',
   admin_suspend_courier: 'negative',
@@ -35,20 +34,28 @@ const ACTION_TONES: Readonly<Record<string, AuditActionTone>> = {
   orphan_storage_object_purged: 'negative',
 };
 
-/** Decisiones cuyo tono depende del estado al que llevaron (aprobó o rechazó). */
+/** Decisiones cuyo tono depende del estado al que llevaron (aprobó, rechazó, resolvió o desestimó). */
 const STATUS_TONES: Readonly<Record<string, AuditActionTone>> = {
   approved: 'positive',
   verified: 'positive',
   rejected: 'negative',
   suspended: 'negative',
+  resolved: 'positive',
+  dismissed: 'neutral',
 };
+
+const STATUS_DRIVEN_ACTIONS: ReadonlySet<string> = new Set([
+  'admin_decide_courier',
+  'admin_verify_document',
+  'admin_resolve_incident',
+]);
 
 function toneOf(tones: Readonly<Record<string, AuditActionTone>>, key: string): AuditActionTone {
   return Object.prototype.hasOwnProperty.call(tones, key) ? (tones[key] ?? 'neutral') : 'neutral';
 }
 
 export function auditActionTone(item: Pick<AuditLogItem, 'action' | 'changes'>): AuditActionTone {
-  if (item.action === 'admin_decide_courier' || item.action === 'admin_verify_document') {
+  if (STATUS_DRIVEN_ACTIONS.has(item.action)) {
     const status = item.changes.find((change) => change.field === 'status')?.after;
     return typeof status === 'string' ? toneOf(STATUS_TONES, status) : 'neutral';
   }
