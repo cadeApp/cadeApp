@@ -8,6 +8,8 @@ import { buildAuditHref } from './audit-log-table';
 export interface ApplicantHistoryProps {
   /** Eventos reales, del más viejo al más nuevo (los ordena el servidor). */
   readonly events: readonly ApplicantHistoryEvent[];
+  /** Repartidor del historial: «Ver todo en Auditoría» filtra sus eventos y los de sus documentos. */
+  readonly courierId: string;
 }
 
 function eventTitle(event: ApplicantHistoryEvent): string {
@@ -17,7 +19,7 @@ function eventTitle(event: ApplicantHistoryEvent): string {
 }
 
 /** T-404 (A02): línea de tiempo vertical del postulante; no agrega eventos que no vengan de la base. */
-export function ApplicantHistory({ events }: ApplicantHistoryProps) {
+export function ApplicantHistory({ events, courierId }: ApplicantHistoryProps) {
   const copy = ADMIN_COPY.detail;
   return (
     <div className="space-y-3">
@@ -41,7 +43,7 @@ export function ApplicantHistory({ events }: ApplicantHistoryProps) {
         </ol>
       )}
       <Link
-        href={buildAuditHref({ targetType: 'courier' })}
+        href={buildAuditHref({ courierId })}
         className="text-sm font-medium text-primary underline-offset-4 hover:underline"
       >
         {copy.historySeeAll}

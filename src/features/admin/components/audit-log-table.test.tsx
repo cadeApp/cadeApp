@@ -218,3 +218,41 @@ describe('T-400: AuditLogTable (auditoría legible)', () => {
     expect(items.find((text) => text.startsWith('Estado'))).toMatch(/Enviado[\s\S]*→[\s\S]*Verificado/);
   });
 });
+
+describe('PR607-D02: filtro por repartidor', () => {
+  const COURIER = 'c0000000-0000-4000-8000-000000000607';
+
+  function courierOf(href: string | null): string | null {
+    return new URL(href ?? '', 'http://localhost').searchParams.get('courier');
+  }
+
+  it('«Siguiente» y «Primera página» conservan ?courier= y el formulario lo reenvía oculto', () => {
+    const { container } = render(
+      <AuditLogTable
+        result={result}
+        filters={{ courierId: COURIER, action: 'admin_suspend_courier', cursor: 95 }}
+        actors={[]}
+      />
+    );
+    const links = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+    const paging = links.filter((href) => href !== '/admin/audit');
+    expect(paging.length).toBeGreaterThanOrEqual(2);
+    for (const href of paging) expect(courierOf(href)).toBe(COURIER);
+
+    const form = screen.getByRole('search', { name: 'Filtros de auditoría' });
+    expect(form.getAttribute('method')).toBe('get');
+    expect(container.querySelector('input[type="hidden"][name="courier"]')?.getAttribute('value')).toBe(COURIER);
+    expect(screen.getByText('Mostrando los eventos de un repartidor y de sus documentos.')).toBeTruthy();
+  });
+
+  it('«Limpiar filtros» saca también el filtro por repartidor', () => {
+    render(<AuditLogTable result={result} filters={{ courierId: COURIER }} actors={[]} />);
+    expect(screen.getByRole('link', { name: 'Limpiar filtros' }).getAttribute('href')).toBe('/admin/audit');
+  });
+
+  it('sin filtro por repartidor no hay campo oculto ni aviso', () => {
+    const { container } = render(<AuditLogTable result={result} filters={{}} actors={[]} />);
+    expect(container.querySelector('input[name="courier"]')).toBeNull();
+    expect(screen.queryByText(/eventos de un repartidor/i)).toBeNull();
+  });
+});

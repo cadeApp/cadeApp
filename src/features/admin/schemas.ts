@@ -172,6 +172,8 @@ export interface AdminAuditFilters {
   readonly actorId?: string;
   readonly action?: string;
   readonly targetType?: AuditTargetType;
+  /** PR607-D02: eventos de un repartidor y de sus documentos (`?courier=<uuid>`). */
+  readonly courierId?: string;
 }
 
 const uuidParamSchema = z.string().guid();
@@ -214,17 +216,20 @@ export function parseAdminAuditSearchParams(raw: {
   actor?: unknown;
   action?: unknown;
   entity?: unknown;
+  courier?: unknown;
 }): AdminAuditFilters {
   const cursor = parseParam(auditCursorParamSchema, raw.cursor);
   const actorId = parseParam(uuidParamSchema, raw.actor);
   const action = parseParam(auditActionParamSchema, raw.action);
   const targetType = parseParam(auditEntityParamSchema, raw.entity);
+  const courierId = parseParam(uuidParamSchema, raw.courier);
 
   return {
     ...(cursor !== undefined ? { cursor } : {}),
     ...(actorId !== undefined ? { actorId } : {}),
     ...(action !== undefined ? { action } : {}),
     ...(targetType !== undefined ? { targetType } : {}),
+    ...(courierId !== undefined ? { courierId } : {}),
   };
 }
 

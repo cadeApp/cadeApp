@@ -5,6 +5,8 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import { ApplicantHistory } from './applicant-history';
 import type { ApplicantHistoryEvent } from '../types';
 
+const COURIER = 'c0000000-0000-4000-8000-000000000404';
+
 const EVENTS: ApplicantHistoryEvent[] = [
   { kind: 'registered', id: 'registered', at: '2026-11-01T10:00:00.000Z' },
   { kind: 'submitted', id: 'submitted', at: '2026-11-01T11:00:00.000Z' },
@@ -32,7 +34,7 @@ afterEach(() => cleanup());
 
 describe('T-404: ApplicantHistory', () => {
   it('muestra los eventos en el orden que llegan, con etiqueta, fecha, quién y motivo', () => {
-    render(<ApplicantHistory events={EVENTS} />);
+    render(<ApplicantHistory events={EVENTS} courierId={COURIER} />);
     const items = within(screen.getByRole('list', { name: 'Historial del postulante' })).getAllByRole('listitem');
 
     expect(items.map((item) => item.querySelector('p')?.textContent)).toEqual([
@@ -47,16 +49,16 @@ describe('T-404: ApplicantHistory', () => {
   });
 
   it('sin «Postulación enviada» no la inventa', () => {
-    render(<ApplicantHistory events={EVENTS.filter((event) => event.kind !== 'submitted')} />);
+    render(<ApplicantHistory events={EVENTS.filter((event) => event.kind !== 'submitted')} courierId={COURIER} />);
     expect(screen.queryByText('Postulación enviada')).toBeNull();
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
   });
 
-  it('sin eventos lo dice, y siempre ofrece «Ver todo en Auditoría»', () => {
-    render(<ApplicantHistory events={[]} />);
+  it('sin eventos lo dice, y «Ver todo en Auditoría» filtra por el repartidor (PR607-D02)', () => {
+    render(<ApplicantHistory events={[]} courierId={COURIER} />);
     expect(screen.getByText('Sin eventos registrados.')).toBeDefined();
     expect(screen.getByRole('link', { name: 'Ver todo en Auditoría' }).getAttribute('href')).toBe(
-      '/admin/audit?entity=courier'
+      `/admin/audit?courier=${COURIER}`
     );
   });
 });

@@ -904,6 +904,15 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await expect(decision).toHaveCount(1);
     await expect(decision).toContainText(`Motivo: ${composed}`);
     await expect(history.getByRole('listitem').first()).toContainText(ADMIN_COPY.detail.historyRegistered);
+
+    // PR607-D02: «Ver todo en Auditoría» abre la auditoría filtrada por este repartidor, con su decisión real.
+    await page.getByRole('link', { name: ADMIN_COPY.detail.historySeeAll }).click();
+    await page.waitForURL((url) => url.pathname === '/admin/audit' && url.searchParams.get('courier') === courier.id);
+    await waitForNoSkeletons(page);
+    await expect(page.getByText(ADMIN_COPY.audit.filters.courierActive)).toBeVisible();
+    const decisionRow = page.getByRole('row').filter({ hasText: composed });
+    await expect(decisionRow).toHaveCount(1);
+    await expect(decisionRow.getByRole('cell', { name: /decidió una postulación/i })).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------

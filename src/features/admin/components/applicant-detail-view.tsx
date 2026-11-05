@@ -683,7 +683,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
             <CardTitle className="text-base font-semibold">{ADMIN_COPY.detail.historyTitle}</CardTitle>
           </CardHeader>
           <CardContent>
-            <ApplicantHistory events={applicant.history ?? []} />
+            <ApplicantHistory events={applicant.history ?? []} courierId={applicant.id} />
           </CardContent>
         </Card>
       </aside>

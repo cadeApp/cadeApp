@@ -77,4 +77,21 @@ describe('T-400: AUDIT_TARGET_TYPES (filtro de entidades)', () => {
     expect(parseAdminAuditSearchParams({ entity: 'incident' }).targetType).toBe('incident');
     expect(parseAdminAuditSearchParams({ entity: 'ghost' }).targetType).toBeUndefined();
   });
+
+  it('PR607-D02: courier acepta solo un UUID', () => {
+    const id = 'c0000000-0000-4000-8000-000000000404';
+    expect(parseAdminAuditSearchParams({ courier: id }).courierId).toBe(id);
+    expect(parseAdminAuditSearchParams({ courier: 'x),or(id.gt.0' }).courierId).toBeUndefined();
+  });
+
+  it('PR607-D02: courier convive con cursor, operador y entidad', () => {
+    const courier = 'c0000000-0000-4000-8000-000000000404';
+    const actor = 'a0000000-0000-4000-8000-000000000001';
+    expect(parseAdminAuditSearchParams({ courier, cursor: '90', actor, entity: 'courier_document' })).toEqual({
+      cursor: 90,
+      actorId: actor,
+      targetType: 'courier_document',
+      courierId: courier,
+    });
+  });
 });

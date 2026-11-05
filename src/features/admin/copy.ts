@@ -428,6 +428,7 @@ export const ADMIN_COPY = {
       allEntities: 'Todas las entidades',
       apply: 'Filtrar',
       clear: 'Limpiar filtros',
+      courierActive: 'Mostrando los eventos de un repartidor y de sus documentos.',
     },
     columns: {
       date: 'Fecha y hora',

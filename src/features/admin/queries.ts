@@ -281,6 +281,19 @@ export async function getApplicantDetail(
 const APPLICANT_HISTORY_LIMIT = 50;
 
 /**
+ * T-404: filtro PostgREST de los eventos de un repartidor (`target_type = 'courier'`) y de sus documentos (por id o
+ * por `courier_id` en `before`/`after`). Lo comparten el historial del detalle y «Ver todo en Auditoría».
+ */
+function applicantAuditFilter(courierId: string, documentIds: readonly string[]): string {
+  const documentFilters = [
+    `after->>courier_id.eq.${courierId}`,
+    `before->>courier_id.eq.${courierId}`,
+    ...(documentIds.length > 0 ? [`target_id.in.(${documentIds.join(',')})`] : []),
+  ].join(',');
+  return `and(target_type.eq.courier,target_id.eq.${courierId}),and(target_type.eq.courier_document,or(${documentFilters}))`;
+}
+
+/**
  * T-404: filas de `audit_log` del repartidor (`target_type = 'courier'`) y de sus documentos (por id o por
  * `courier_id` en `before`/`after`), las más nuevas primero. Una de más indica que el historial está recortado.
  */
@@ -289,18 +302,10 @@ async function getApplicantAuditRows(
   courierId: string,
   documentIds: readonly string[]
 ): Promise<AuditRow[]> {
-  const documentFilters = [
-    `after->>courier_id.eq.${courierId}`,
-    `before->>courier_id.eq.${courierId}`,
-    ...(documentIds.length > 0 ? [`target_id.in.(${documentIds.join(',')})`] : []),
-  ].join(',');
-
   const { data, error } = await supabase
     .from('audit_log')
     .select(AUDIT_SELECT)
-    .or(
-      `and(target_type.eq.courier,target_id.eq.${courierId}),and(target_type.eq.courier_document,or(${documentFilters}))`
-    )
+    .or(applicantAuditFilter(courierId, documentIds))
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(APPLICANT_HISTORY_LIMIT);
@@ -315,6 +320,7 @@ async function getApplicantAuditRows(
  * T-404: historial solo con eventos reales, del más viejo al más nuevo. «Registrado» es `profiles.created_at`,
  * «Postulación enviada» es `couriers.submitted_at` (CC-043) y solo aparece si no es `null`; el resto son filas
  * de `audit_log` con las etiquetas y los motivos de T-400. No se inventa ningún evento que la base no registre.
+ * PR607-D03 = C: las 50 auditorías más nuevas más los dos hitos (máximo 52); los hitos nunca se recortan.
  */
 function buildApplicantHistory(input: {
   readonly registeredAt: string | null;
@@ -344,8 +350,11 @@ function buildApplicantHistory(input: {
     });
   }
 
-  events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
-  return events.slice(-APPLICANT_HISTORY_LIMIT);
+  // Empates deterministas: los hitos antes que la auditoría y, entre auditorías, por id.
+  const tieRank = (event: ApplicantHistoryEvent) =>
+    event.kind === 'registered' ? -2 : event.kind === 'submitted' ? -1 : Number(event.id.slice('audit-'.length));
+  events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || tieRank(a) - tieRank(b));
+  return events;
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -759,6 +768,21 @@ export async function getAuditLog(options?: GetAuditLogOptions): Promise<AuditLo
   }
   if (options?.targetType) {
     query = query.eq('target_type', options.targetType);
+  }
+  if (options?.courierId) {
+    const { data: docs, error: docsError } = await supabase
+      .from('courier_documents')
+      .select('id')
+      .eq('courier_id', options.courierId);
+    if (docsError) {
+      throw new Error(`Error al consultar los documentos del repartidor: ${docsError.message}`);
+    }
+    query = query.or(
+      applicantAuditFilter(
+        options.courierId,
+        ((docs ?? []) as unknown as { id: string }[]).map((doc) => doc.id)
+      )
+    );
   }
 
   const { data, error } = await query.limit(pageSize + 1);

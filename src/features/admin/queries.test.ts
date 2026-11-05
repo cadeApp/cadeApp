@@ -1551,6 +1551,42 @@ describe('T-404: detalle con consentimientos e historial real (getApplicantDetai
     expect(detail?.history).toEqual([{ kind: 'registered', id: 'registered', at: '2026-11-01T10:00:00+00:00' }]);
   });
 
+  /** N filas como las devuelve la consulta (`created_at DESC`, nunca más de su `limit(50)`). */
+  function auditPage(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      ...auditRows[0],
+      id: 100 - index,
+      created_at: new Date(Date.UTC(2026, 10, 3, 10, count - index)).toISOString(),
+    }));
+  }
+
+  it.each([0, 49, 50])(
+    'PR607-H01 (D03 = C): con %i filas de auditoría conserva los dos hitos, sin recortar el total',
+    async (count) => {
+      mockDetail(courierRow(), auditPage(count));
+      const history = (await getApplicantDetail(COURIER))?.history ?? [];
+
+      expect(history).toHaveLength(count + 2);
+      expect(history.filter((event) => event.kind !== 'audit').map((event) => event.kind)).toEqual([
+        'registered',
+        'submitted',
+      ]);
+      expect(history.filter((event) => event.kind === 'audit')).toHaveLength(count);
+      const times = history.map((event) => new Date(event.at).getTime());
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+    }
+  );
+
+  it('PR607-H01: los empates de fecha se ordenan igual siempre (hitos primero, auditoría por id)', async () => {
+    const at = '2026-11-01T10:00:00+00:00';
+    mockDetail(courierRow({ submitted_at: at }), [
+      { ...auditRows[0], id: 8, created_at: at },
+      { ...auditRows[0], id: 7, created_at: at },
+    ]);
+    const history = (await getApplicantDetail(COURIER))?.history ?? [];
+    expect(history.map((event) => event.id)).toEqual(['registered', 'submitted', 'audit-7', 'audit-8']);
+  });
+
   it('la auditoría se filtra por el repartidor y sus documentos, con la sesión del admin y hasta 50 filas', async () => {
     const { calls } = mockDetail(courierRow());
     await getApplicantDetail(COURIER);
@@ -1573,5 +1609,66 @@ describe('T-404: detalle con consentimientos e historial real (getApplicantDetai
       { document: 'tos', version: '2026-10', acceptedAt: '2026-11-01T10:01:00+00:00' },
       { document: 'courier_contract', version: '1', acceptedAt: '2026-11-01T10:02:00+00:00' },
     ]);
+  });
+});
+
+describe('PR607-D02: getAuditLog filtrado por repartidor', () => {
+  const COURIER = 'c0000000-0000-4000-8000-000000000607';
+  const DOC = 'd0000000-0000-4000-8000-000000000607';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('trae los eventos del repartidor y de sus documentos (id o courier_id), paginados por id', async () => {
+    const { calls } = mockClient({
+      courier_documents: { data: [{ id: DOC }], error: null },
+      audit_log: { data: [], error: null },
+    });
+    await getAuditLog({ courierId: COURIER, pageSize: 20 });
+
+    expect(callsOf(calls, 'courier_documents', 'eq')[0]?.args).toEqual(['courier_id', COURIER]);
+    expect(String(callsOf(calls, 'audit_log', 'or')[0]?.args[0])).toBe(
+      `and(target_type.eq.courier,target_id.eq.${COURIER}),and(target_type.eq.courier_document,or(after->>courier_id.eq.${COURIER},before->>courier_id.eq.${COURIER},target_id.in.(${DOC})))`
+    );
+    expect(callsOf(calls, 'audit_log', 'order')[0]?.args).toEqual(['id', { ascending: false }]);
+    expect(callsOf(calls, 'audit_log', 'limit')[0]?.args).toEqual([21]);
+  });
+
+  it('el filtro se aplica en la base antes del limit(pageSize + 1) y no menciona a otro repartidor', async () => {
+    const { calls } = mockClient({
+      courier_documents: { data: [], error: null },
+      audit_log: { data: [], error: null },
+    });
+    await getAuditLog({ courierId: COURIER, targetType: 'courier_document', cursor: 90 });
+
+    const auditCalls = calls.filter((call) => call.table === 'audit_log').map((call) => call.method);
+    expect(auditCalls.indexOf('or')).toBeLessThan(auditCalls.indexOf('limit'));
+    expect(callsOf(calls, 'audit_log', 'eq')[0]?.args).toEqual(['target_type', 'courier_document']);
+    expect(callsOf(calls, 'audit_log', 'lt')[0]?.args).toEqual(['id', 90]);
+    const filter = String(callsOf(calls, 'audit_log', 'or')[0]?.args[0]);
+    expect(filter).toContain(`after->>courier_id.eq.${COURIER},before->>courier_id.eq.${COURIER}`);
+    expect(filter).not.toContain('target_id.in.');
+    expect(filter.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g)).toEqual([
+      COURIER,
+      COURIER,
+      COURIER,
+    ]);
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('si falla la lectura de documentos del repartidor, el error se propaga', async () => {
+    mockClient({
+      courier_documents: { data: null, error: { message: 'permission denied' } },
+      audit_log: { data: [], error: null },
+    });
+    await expect(getAuditLog({ courierId: COURIER })).rejects.toThrow('permission denied');
+  });
+
+  it('sin filtro por repartidor no consulta documentos ni agrega el or()', async () => {
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getAuditLog();
+    expect(callsOf(calls, 'audit_log', 'or')).toHaveLength(0);
+    expect(calls.filter((call) => call.table === 'courier_documents')).toHaveLength(0);
   });
 });

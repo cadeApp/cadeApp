@@ -16,6 +16,7 @@ interface AuditPageProps {
     actor?: string | string[];
     action?: string | string[];
     entity?: string | string[];
+    courier?: string | string[];
   }>;
 }
 
