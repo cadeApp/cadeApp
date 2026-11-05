@@ -24,6 +24,8 @@ para que cualquiera pueda continuar el trabajo de otro sin romper nada.
 - Datos sensibles del destinatario (dirección, nombre, teléfono, pin, indicaciones y monto exacto de cambio) solo en
   las tablas privadas de contactos: `delivery_request_contacts` (modelo de 1 entrega) y `delivery_request_drop_contacts`
   (varias entregas, CC-022). Jamás en logs, push, analytics, URLs ni tablas visibles antes del match.
+  Única excepción (CC-045, Lautaro073, 2026-11-05): el navegador del comercio puede mandar la dirección a Google Maps
+  Platform para ubicarla en el mapa; nunca pasa por servidores propios.
 - DNI/selfie: bucket privado `courier-docs`; lectura solo con URL firmada server-side para admin + `audit_log`.
 - Service role key solo en `src/server/supabase/admin.ts` (con `import 'server-only'`). Nunca en código cliente.
 - El envío lo paga quien recibe; cadeApp no procesa ni registra ese pago.
