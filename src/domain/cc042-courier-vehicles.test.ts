@@ -235,3 +235,139 @@ describe('CC-042 — FakeRpcClient de vehículos', () => {
     });
   });
 });
+
+describe('CC-042 — FakeRpcClient de vehículos: bordes', () => {
+  it('patente: misma patente sin cambios, inválida, nula en moto y con patente en bici', async () => {
+    const client = vehiclesClient();
+    const motoId = (await vehicleIds(client)).activeVehicleId ?? '';
+    expect(await client.update_courier_vehicle({ vehicleId: motoId, plate: ' ab 123 cd ' })).toEqual({
+      ok: true,
+      data: { vehicleId: motoId },
+    });
+    expect(client.getCourier(COURIER_ID)?.insuranceStatus).toBe('verified');
+    expect(await client.update_courier_vehicle({ vehicleId: motoId, plate: null })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(await client.add_courier_vehicle({ vehicleType: 'bike', plate: 'AB 123 CD', makeActive: false })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(await client.update_courier_vehicle({ vehicleId: '30000000-0000-4000-8000-0000000000ff', plate: 'AB 123 CD' })).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+    });
+    expect(await client.remove_courier_vehicle({ vehicleId: '30000000-0000-4000-8000-0000000000ff' })).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('un inactivo cambia de patente aunque haya ofertas; el activo y el alta con makeActive quedan bloqueados', async () => {
+    const client = vehiclesClient();
+    const motoId = (await vehicleIds(client)).activeVehicleId ?? '';
+    const car = await client.add_courier_vehicle({ vehicleType: 'car', plate: 'AB 111 CD', makeActive: false });
+    if (!car.ok) throw new Error(car.code);
+    client.seedRequest({
+      requestId: '40000000-0000-4000-8000-000000000003',
+      merchantId: MERCHANT_ID,
+      status: 'published',
+      expiresAt: null,
+    });
+    client.seedOffer({
+      offerId: '50000000-0000-4000-8000-000000000003',
+      requestId: '40000000-0000-4000-8000-000000000003',
+      courierId: COURIER_ID,
+      amountArs: 1500,
+      status: 'pending',
+    });
+    expect((await client.update_courier_vehicle({ vehicleId: car.data.vehicleId, plate: 'AB 222 CD' })).ok).toBe(true);
+    expect(await client.update_courier_vehicle({ vehicleId: motoId, plate: 'AB 999 CD' })).toEqual({
+      ok: false,
+      code: 'VEHICLE_SWITCH_BLOCKED',
+    });
+    expect(await client.add_courier_vehicle({ vehicleType: 'walk', plate: null, makeActive: true })).toEqual({
+      ok: false,
+      code: 'VEHICLE_SWITCH_BLOCKED',
+    });
+  });
+
+  it('una oferta pendiente vencida o de una solicitud desconocida no bloquea', async () => {
+    const client = vehiclesClient();
+    const bike = await client.add_courier_vehicle({ vehicleType: 'bike', plate: null, makeActive: false });
+    if (!bike.ok) throw new Error(bike.code);
+    client.seedRequest({
+      requestId: '40000000-0000-4000-8000-000000000004',
+      merchantId: MERCHANT_ID,
+      status: 'published',
+      expiresAt: '2026-11-06T11:00:00.000Z',
+    });
+    client.seedOffer({
+      offerId: '50000000-0000-4000-8000-000000000004',
+      requestId: '40000000-0000-4000-8000-000000000004',
+      courierId: COURIER_ID,
+      amountArs: 1500,
+      status: 'pending',
+    });
+    client.seedOffer({
+      offerId: '50000000-0000-4000-8000-000000000005',
+      requestId: '40000000-0000-4000-8000-0000000000ff',
+      courierId: COURIER_ID,
+      amountArs: 1500,
+      status: 'pending',
+    });
+    client.seedOffer({
+      offerId: '50000000-0000-4000-8000-000000000006',
+      requestId: '40000000-0000-4000-8000-000000000004',
+      courierId: '20000000-0000-4000-8000-0000000042c9',
+      amountArs: 1500,
+      status: 'pending',
+    });
+    expect((await client.set_active_courier_vehicle({ vehicleId: bike.data.vehicleId })).ok).toBe(true);
+  });
+
+  it('un repartidor en bici sin vehículos previos y uno sin vehículo: el primero agregado queda activo', async () => {
+    const bikeClient = createFakeRpcClient({
+      settings: SETTINGS,
+      now: () => NOW,
+      initialActor: { userId: COURIER_ID, role: 'courier', consentStatus: 'active', aal: 'aal1' },
+      initialCouriers: [
+        {
+          courierId: COURIER_ID,
+          status: 'approved',
+          available: true,
+          vehicleType: 'bike',
+          vehiclePlate: null,
+          licenseStatus: 'verified',
+          applicationSubmitted: true,
+        },
+      ],
+    });
+    const listed = await vehicleIds(bikeClient);
+    expect(listed.vehicles[0]).toMatchObject({ vehicleType: 'bike', plate: null, licenseStatus: 'none' });
+
+    const noVehicleClient = createFakeRpcClient({
+      settings: SETTINGS,
+      now: () => NOW,
+      initialActor: { userId: COURIER_ID, role: 'courier', consentStatus: 'active', aal: 'aal1' },
+      initialCouriers: [
+        { courierId: COURIER_ID, status: 'pending', available: false, vehicleType: null, applicationSubmitted: true },
+      ],
+    });
+    expect((await vehicleIds(noVehicleClient)).vehicles).toHaveLength(0);
+    const first = await noVehicleClient.add_courier_vehicle({ vehicleType: 'walk', plate: null, makeActive: false });
+    if (!first.ok) throw new Error(first.code);
+    expect((await vehicleIds(noVehicleClient)).activeVehicleId).toBe(first.data.vehicleId);
+    expect(noVehicleClient.getCourier(COURIER_ID)?.vehicleType).toBe('walk');
+  });
+
+  it('get_my_courier_vehicles rechaza a un rechazado y la lista no incluye vehículos de otro', async () => {
+    expect(await vehiclesClient({ status: 'rejected' }).get_my_courier_vehicles({})).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED_ACTOR',
+    });
+    expect(await vehiclesClient({ status: 'rejected' }).set_active_courier_vehicle({
+      vehicleId: '30000000-0000-4000-8000-0000000000ff',
+    })).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+  });
+});

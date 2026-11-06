@@ -338,7 +338,11 @@ select lives_ok($$ select public.admin_verify_document(
 select pg_temp.as_postgres();
 select is((pg_temp.courier(pg_temp.courier_a())).insurance_status::text, 'verified', 'el reflejo toma la verificación del activo');
 select is((pg_temp.courier(pg_temp.courier_a())).doc_level, 2, 'doc_level sube con el activo');
--- Rechazo y reemplazo por vehículo.
+-- Rechazo y reemplazo por vehículo. La licencia de la moto vino verificada del backfill: se la deja en revisión (como
+-- si se hubiera vuelto a cargar) para que el admin la pueda decidir.
+select pg_temp.as_postgres();
+update public.courier_documents set status = 'submitted'
+where vehicle_id = pg_temp.id('a_moto') and kind = 'license' and is_current;
 select pg_temp.act_as(pg_temp.admin(), 'aal2');
 select lives_ok($$ select public.admin_verify_document(
   (select id from public.courier_documents where vehicle_id = pg_temp.id('a_moto') and kind = 'license' and is_current), 'rejected', 'Vencida', 'expired') $$,
