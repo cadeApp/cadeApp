@@ -1670,8 +1670,6 @@ begin
           and v_courier.application_vehicle_type = p_vehicle_type
           and v_courier.application_vehicle_plate is not distinct from v_plate)
         or (v_courier.application_vehicle_type is null
-          and v_courier.submitted_at is null
-          and v_courier.active_vehicle_id is null
           and v_courier.vehicle_type is not distinct from p_vehicle_type
           and v_courier.vehicle_plate is not distinct from v_plate)
       ) then
