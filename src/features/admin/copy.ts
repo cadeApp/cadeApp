@@ -303,13 +303,32 @@ export const ADMIN_COPY = {
         paid: 'Pagado hasta',
         pilot: 'Piloto hasta',
       },
-      paymentNote: 'cadeApp no registra montos ni comprobantes de pago.',
+      paymentNote: 'No se registran montos ni comprobantes de pago en cadeApp.',
       cancel: 'Cancelar',
       save: 'Guardar',
       saving: 'Guardando...',
     },
     success: 'Abono actualizado.',
     connectionError: 'Error de conexión al actualizar el abono.',
+    /** T-405 (A03): chips de resumen por estado del plan. */
+    chips: {
+      label: 'Filtrar por estado del plan',
+      all: 'Todos',
+      pilot: 'Piloto',
+      active: 'Activos',
+      expired: 'Vencidos',
+      cancelled: 'Cancelados',
+    },
+    /** T-405 (A03): panel lateral del plan. */
+    sheet: {
+      contactLabel: 'Contacto',
+      movementsTitle: 'Últimos movimientos',
+      movementsLoading: 'Cargando los últimos movimientos',
+      movementsEmpty: 'Todavía no hay cambios de plan registrados.',
+      movementsError: 'No pudimos cargar los últimos movimientos.',
+      viewAll: 'Ver todo en Auditoría',
+      by: (name: string) => `por ${name}`,
+    },
   },
   settings: {
     title: 'Parámetros',

@@ -9,6 +9,12 @@ export function MerchantsTableSkeleton() {
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-96" />
       </div>
+      {/* T-405: chips de resumen por estado. */}
+      <div className="flex flex-wrap gap-2">
+        {[0, 1, 2, 3, 4].map((chip) => (
+          <Skeleton key={chip} className="h-12 w-28 rounded-full" />
+        ))}
+      </div>
       <div className="space-y-3">
         <Skeleton className="h-12 w-full rounded-lg" />
         <Skeleton className="h-16 w-full rounded-lg" />

@@ -5,6 +5,8 @@ import {
   getApplicantsQueue,
   getApplicantDetail,
   getAdminMerchants,
+  getMerchantStatusCounts,
+  getMerchantPlanMovements,
   getAdminOperatorName,
   getAdminMerchantHeader,
   getAuditActors,
@@ -1833,5 +1835,210 @@ describe('PR607-D02: getAuditLog filtrado por repartidor', () => {
     await getAuditLog();
     expect(callsOf(calls, 'audit_log', 'or')).toHaveLength(0);
     expect(calls.filter((call) => call.table === 'courier_documents')).toHaveLength(0);
+  });
+});
+
+describe('T-405: resumen por estado, filtro por chip y últimos movimientos (A03)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** Tabla `merchants` simulada que solo responde conteos: registra cada select y el estado pedido. */
+  function mockCounts(byStatus: Record<string, number>, total: number) {
+    const selects: { columns: unknown; options: unknown; status: string | null }[] = [];
+    const from = vi.fn(() => {
+      const entry: { columns: unknown; options: unknown; status: string | null } = {
+        columns: null,
+        options: null,
+        status: null,
+      };
+      const builder: Record<string, unknown> = {
+        select: (columns: unknown, options: unknown) => {
+          entry.columns = columns;
+          entry.options = options;
+          selects.push(entry);
+          return builder;
+        },
+        eq: (column: string, value: string) => {
+          if (column === 'subscription_status') entry.status = value;
+          return builder;
+        },
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({
+            data: null,
+            error: null,
+            count: entry.status === null ? total : (byStatus[entry.status] ?? 0),
+          }).then(resolve),
+      };
+      return builder;
+    });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ from } as unknown as ServerClient);
+    return { from, selects };
+  }
+
+  it('cuenta cada estado (incluido cancelled) y el total con head: true, sin traer filas', async () => {
+    const { selects } = mockCounts({ pilot: 12, active: 5, expired: 2, cancelled: 3 }, 22);
+    const counts = await getMerchantStatusCounts();
+
+    expect(counts).toEqual({ all: 22, pilot: 12, active: 5, expired: 2, cancelled: 3 });
+    expect(selects).toHaveLength(5);
+    for (const entry of selects) {
+      expect(entry.options).toEqual({ count: 'exact', head: true });
+    }
+    expect(selects.map((entry) => String(entry.status)).sort()).toEqual(
+      ['active', 'cancelled', 'expired', 'null', 'pilot']
+    );
+  });
+
+  it('«Todos» es el conteo sin filtro: los cancelados nunca quedan afuera', async () => {
+    mockCounts({ pilot: 1, active: 1, expired: 1, cancelled: 4 }, 7);
+    expect((await getMerchantStatusCounts()).all).toBe(7);
+  });
+
+  it('los conteos usan la misma condición que la tabla (inner join con profiles)', async () => {
+    const { selects } = mockCounts({}, 0);
+    await getMerchantStatusCounts();
+    for (const entry of selects) {
+      expect(String(entry.columns)).toMatch(/profiles!merchants_profile_id_fkey!inner/);
+    }
+  });
+
+  it('propaga el error de un conteo', async () => {
+    const from = vi.fn(() => {
+      const builder: Record<string, unknown> = {
+        select: () => builder,
+        eq: () => builder,
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({ data: null, error: { message: 'boom' }, count: null }).then(resolve),
+      };
+      return builder;
+    });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ from } as unknown as ServerClient);
+    await expect(getMerchantStatusCounts()).rejects.toThrow(/boom/);
+  });
+
+  it('el chip filtra la tabla en la base por subscription_status', async () => {
+    const { calls } = mockClient({ merchants: { data: [], error: null } });
+    await getAdminMerchants({ status: 'expired' });
+    expect(callsOf(calls, 'merchants', 'eq').map((call) => call.args)).toContainEqual([
+      'subscription_status',
+      'expired',
+    ]);
+  });
+
+  it('sin chip la tabla no filtra por estado (incluye cancelados)', async () => {
+    const { calls } = mockClient({ merchants: { data: [], error: null } });
+    await getAdminMerchants();
+    expect(
+      callsOf(calls, 'merchants', 'eq').filter((call) => call.args[0] === 'subscription_status')
+    ).toHaveLength(0);
+  });
+
+  const MERCHANT = 'f0000000-0000-4000-8000-000000000405';
+  const OTHER = 'f0000000-0000-4000-8000-000000000999';
+
+  function auditEvent(id: number, action: string, targetId: string, after: Record<string, unknown> = {}) {
+    return {
+      id,
+      created_at: `2026-11-0${(id % 9) + 1}T12:00:00.000Z`,
+      actor_id: 'a0000000-0000-4000-8000-000000000001',
+      action,
+      target_type: 'merchant',
+      target_id: targetId,
+      before: { subscription_status: 'pilot' },
+      after: { subscription_status: 'pilot', paid_until: '2026-12-31', ...after },
+      profiles: { display_name: 'Lautaro' },
+    };
+  }
+
+  /**
+   * `audit_log` simulada que aplica en memoria los filtros que recibe (eq, in, order, limit), como haría la base.
+   * Si la consulta no filtra por comercio o por acción, las filas ajenas aparecen.
+   */
+  function fakeAuditLog(rows: ReturnType<typeof auditEvent>[]) {
+    const calls: RecordedCall[] = [];
+    const from = vi.fn((table: string) => {
+      let result: Record<string, unknown>[] = table === 'audit_log' ? [...rows] : [];
+      const builder: Record<string, unknown> = {
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({ data: result, error: null }).then(resolve),
+      };
+      for (const method of CHAIN_METHODS) {
+        builder[method] = (...args: unknown[]) => {
+          calls.push({ table, method, args });
+          const column = String(args[0]);
+          if (method === 'eq') result = result.filter((row) => row[column] === args[1]);
+          if (method === 'in') result = result.filter((row) => (args[1] as unknown[]).includes(row[column]));
+          if (method === 'order') {
+            const ascending = (args[1] as { ascending?: boolean } | undefined)?.ascending ?? true;
+            result = [...result].sort((a, b) => (Number(a[column]) - Number(b[column])) * (ascending ? 1 : -1));
+          }
+          if (method === 'limit') result = result.slice(0, Number(args[0]));
+          return builder;
+        };
+      }
+      return builder;
+    });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ from } as unknown as ServerClient);
+    return { calls };
+  }
+
+  const MIXED = [
+    auditEvent(20, 'admin_grant_publication_credits', MERCHANT),
+    auditEvent(19, 'merchant_profile_update', MERCHANT),
+    auditEvent(18, 'admin_set_subscription', OTHER),
+    auditEvent(17, 'admin_set_subscription', MERCHANT, { subscription_status: 'active' }),
+    auditEvent(16, 'admin_register_plan_period', MERCHANT),
+    auditEvent(15, 'admin_set_subscription', MERCHANT),
+    auditEvent(14, 'admin_grant_publication_credits', MERCHANT),
+    auditEvent(13, 'admin_register_plan_period', OTHER),
+    auditEvent(12, 'admin_set_subscription', MERCHANT),
+    auditEvent(11, 'admin_set_subscription', MERCHANT),
+    auditEvent(10, 'admin_set_subscription', MERCHANT),
+  ];
+
+  it('trae hasta 5 cambios de plan del comercio, del más nuevo al más viejo, sin créditos, perfil ni otros comercios', async () => {
+    fakeAuditLog(MIXED);
+    const items = await getMerchantPlanMovements(MERCHANT);
+    expect(items.map((item) => item.id)).toEqual([17, 16, 15, 12, 11]);
+  });
+
+  it('filtra por entidad, comercio y acción en la base antes de limitar a 5', async () => {
+    const { calls } = fakeAuditLog(MIXED);
+    await getMerchantPlanMovements(MERCHANT);
+
+    const audit = calls.filter((call) => call.table === 'audit_log');
+    const index = (method: string) => audit.findIndex((call) => call.method === method);
+    expect(audit.filter((call) => call.method === 'eq').map((call) => call.args)).toEqual(
+      expect.arrayContaining([
+        ['target_type', 'merchant'],
+        ['target_id', MERCHANT],
+      ])
+    );
+    expect(audit.find((call) => call.method === 'in')?.args).toEqual([
+      'action',
+      ['admin_set_subscription', 'admin_register_plan_period'],
+    ]);
+    expect(audit.find((call) => call.method === 'limit')?.args).toEqual([5]);
+    expect(index('in')).toBeLessThan(index('limit'));
+  });
+
+  it('nunca lee merchant_plan_periods directo', async () => {
+    const { calls } = fakeAuditLog(MIXED);
+    await getMerchantPlanMovements(MERCHANT);
+    expect(calls.some((call) => call.table === 'merchant_plan_periods')).toBe(false);
+  });
+
+  it('formatea cada movimiento con el saneamiento de T-400 (quién y qué cambió, sin notas)', async () => {
+    fakeAuditLog([
+      auditEvent(17, 'admin_set_subscription', MERCHANT, {
+        subscription_status: 'active',
+        notes: 'tel 3865 44-1122',
+      }),
+    ]);
+    const [item] = await getMerchantPlanMovements(MERCHANT);
+    expect(item?.actorName).toBe('Lautaro');
+    expect(item?.changes).toContainEqual({ field: 'subscription_status', before: 'pilot', after: 'active' });
+    expect(JSON.stringify(item)).not.toMatch(/3865/);
   });
 });

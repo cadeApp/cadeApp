@@ -7,6 +7,8 @@ import {
   adminUpsertPublicationPlanInputSchema,
   civilDateSchema,
   isoTimestampSchema,
+  merchantSubscriptionStatusSchema,
+  type MerchantSubscriptionStatus,
 } from '@/domain';
 
 export const adminApplicantTabSchema = z
@@ -242,11 +244,14 @@ function parseParam<T>(schema: z.ZodType<T, unknown>, raw: unknown): T | undefin
   return parsed.success ? parsed.data : undefined;
 }
 
-export function parseAdminMerchantsSearchParams(raw: { cursor?: unknown }): {
+/** T-405: `?status=` del chip de A03; sin valor válido, «Todos». */
+export function parseAdminMerchantsSearchParams(raw: { cursor?: unknown; status?: unknown }): {
   cursor?: string;
+  status?: MerchantSubscriptionStatus;
 } {
   const cursor = parseParam(adminRegisteredCursorSchema, raw.cursor);
-  return cursor === undefined ? {} : { cursor };
+  const status = parseParam(merchantSubscriptionStatusSchema, raw.status);
+  return { ...(cursor !== undefined ? { cursor } : {}), ...(status !== undefined ? { status } : {}) };
 }
 
 /** CC-029: `/admin/merchants/[merchantId]/credits?before=<id>` (cursor del libro) y el id del comercio. */

@@ -8,6 +8,7 @@ import {
   ok,
   type ActionResult,
   type DomainErrorCode,
+  type MerchantSubscriptionStatus,
   type PlatformSettingKey,
   type RpcOutput,
 } from '@/domain';
@@ -25,6 +26,7 @@ import type {
   AdminApplicantTab,
   AdminMerchantListItem,
   AdminMerchantsResult,
+  MerchantStatusCounts,
   AuditActorOption,
   AuditChange,
   AuditChangeValue,
@@ -393,6 +395,8 @@ function clampPageSize(pageSize: number | undefined): number {
 export interface GetAdminMerchantsOptions {
   readonly cursor?: string;
   readonly pageSize?: number;
+  /** T-405: chip de A03; sin valor, todos los estados (incluidos los cancelados). */
+  readonly status?: MerchantSubscriptionStatus;
 }
 
 interface MerchantRow {
@@ -441,6 +445,9 @@ export async function getAdminMerchants(
     .order('profiles(created_at)', { ascending: false })
     .order('profile_id', { ascending: false });
 
+  if (options?.status) {
+    query = query.eq('subscription_status', options.status);
+  }
   if (options?.cursor) {
     query = query.or(registeredCursorFilter(options.cursor), { referencedTable: 'profiles' });
   }
@@ -494,6 +501,63 @@ export async function getAdminMerchants(
       hasNextPage && lastRow?.profiles ? serializeRegisteredCursor(lastRow.profiles.created_at, lastRow.profile_id) : null,
     hasNextPage,
   };
+}
+
+/** T-405: estados del plan que muestran los chips de A03, en orden. */
+export const MERCHANT_STATUS_FILTERS = ['pilot', 'active', 'expired', 'cancelled'] as const;
+
+/** Mismo inner join que `getAdminMerchants`: los conteos y la tabla ven las mismas filas (misma RLS). */
+const MERCHANT_COUNT_SELECT = 'profile_id, profiles!merchants_profile_id_fkey!inner ( created_at )';
+
+/**
+ * T-405 (A03): cantidad exacta por estado y el total («Todos», sin filtro, incluye cancelados). Conteos `head: true`
+ * en paralelo: no trae filas.
+ */
+export async function getMerchantStatusCounts(): Promise<MerchantStatusCounts> {
+  const supabase = await createClient();
+  const count = async (status?: MerchantSubscriptionStatus): Promise<number> => {
+    let query = supabase.from('merchants').select(MERCHANT_COUNT_SELECT, { count: 'exact', head: true });
+    if (status) query = query.eq('subscription_status', status);
+    const { count: total, error } = await query;
+    if (error) {
+      throw new Error(`Error al contar los comercios: ${error.message}`);
+    }
+    return total ?? 0;
+  };
+
+  const [all, pilot, active, expired, cancelled] = await Promise.all([
+    count(),
+    ...MERCHANT_STATUS_FILTERS.map((status) => count(status)),
+  ]);
+  return { all: all ?? 0, pilot: pilot ?? 0, active: active ?? 0, expired: expired ?? 0, cancelled: cancelled ?? 0 };
+}
+
+/** T-405: acciones de `audit_log` que cambian el plan de un comercio. */
+export const MERCHANT_PLAN_ACTIONS = ['admin_set_subscription', 'admin_register_plan_period'] as const;
+const MERCHANT_PLAN_MOVEMENTS_LIMIT = 5;
+
+/**
+ * T-405 (A03): hasta 5 cambios de plan de un comercio, del más nuevo al más viejo. Se filtra por entidad, comercio y
+ * acción en la base antes de limitar; nunca se lee `merchant_plan_periods` (sin acceso desde el cliente).
+ */
+export async function getMerchantPlanMovements(merchantId: string): Promise<readonly AuditLogItem[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select(AUDIT_SELECT)
+    .eq('target_type', 'merchant')
+    .eq('target_id', merchantId)
+    .in('action', [...MERCHANT_PLAN_ACTIONS])
+    .order('id', { ascending: false })
+    .limit(MERCHANT_PLAN_MOVEMENTS_LIMIT);
+
+  if (error) {
+    throw new Error(`Error al consultar los movimientos del plan: ${error.message}`);
+  }
+
+  const rows = (data ?? []) as unknown as AuditRow[];
+  const names = await resolveAuditTargetNames(supabase, rows);
+  return rows.map((row) => toAuditLogItem(row, names));
 }
 
 /**
