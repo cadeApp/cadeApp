@@ -285,12 +285,6 @@ begin
 
   -- PR624-H02: en bici o a pie el reflejo no conserva una licencia o un seguro viejos (doc_level sigue al activo). Los
   -- documentos quedan para la auditoría, sin vehículo.
-  update public.couriers c
-  set license_status = 'none', insurance_status = 'none'
-  from public.courier_vehicles v
-  where v.id = c.active_vehicle_id
-    and v.vehicle_type in ('bike', 'walk')
-    and (c.license_status <> 'none' or c.insurance_status <> 'none');
 
   return v_created;
 end;
