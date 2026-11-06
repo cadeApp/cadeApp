@@ -608,10 +608,6 @@ begin
     return jsonb_build_object('activeVehicleId', v_vehicle.id);
   end if;
 
-  if app_private.cc042_vehicle_switch_blocked(v_actor) then
-    raise exception using errcode = 'P0001', message = 'VEHICLE_SWITCH_BLOCKED';
-  end if;
-
   update public.couriers set active_vehicle_id = v_vehicle.id where profile_id = v_actor;
   perform app_private.cc042_sync_courier_reflection(v_actor);
 
