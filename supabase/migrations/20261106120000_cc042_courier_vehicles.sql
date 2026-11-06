@@ -1620,7 +1620,7 @@ declare
   v_vehicle_id uuid;
 begin
   select profile_id, status, application_submitted, submitted_at, dni_hmac, vehicle_type, vehicle_plate,
-         application_vehicle_type, application_vehicle_plate
+         active_vehicle_id, application_vehicle_type, application_vehicle_plate
   into v_courier
   from public.couriers
   where profile_id = p_courier_id
@@ -1661,13 +1661,20 @@ begin
   end if;
 
   if v_courier.application_submitted then
-    -- PR624-H03 (D01=A): contra el vehículo de la postulación, no contra el activo (cambia con CC-042). Sin snapshot
-    -- solo queda una postulación marcada fuera de finalize y del backfill: ahí el reflejo es el único dato que hay.
+    -- PR624-H03 (D01=A): contra el vehículo de la postulación, no contra el activo (cambia con CC-042).
+    -- PR624-R02: sin snapshot solo se acepta el histórico de CC-043 (marcado fuera de finalize, sin fecha y sin
+    -- vehículo activo), donde el reflejo todavía es el vehículo enviado; cualquier otro caso no es un reintento.
     if v_courier.dni_hmac is not distinct from p_dni_hmac
-      and (case when v_courier.application_vehicle_type is null then v_courier.vehicle_type
-                else v_courier.application_vehicle_type end) is not distinct from p_vehicle_type
-      and (case when v_courier.application_vehicle_type is null then v_courier.vehicle_plate
-                else v_courier.application_vehicle_plate end) is not distinct from v_plate then
+      and (
+        (v_courier.application_vehicle_type is not null
+          and v_courier.application_vehicle_type = p_vehicle_type
+          and v_courier.application_vehicle_plate is not distinct from v_plate)
+        or (v_courier.application_vehicle_type is null
+          and v_courier.submitted_at is null
+          and v_courier.active_vehicle_id is null
+          and v_courier.vehicle_type is not distinct from p_vehicle_type
+          and v_courier.vehicle_plate is not distinct from v_plate)
+      ) then
       return jsonb_build_object(
         'ok', true,
         'idempotent', true,

@@ -541,6 +541,50 @@ select is((select row(application_vehicle_type, application_vehicle_plate, vehic
   '(g) el snapshot del backfill se conserva aunque el activo ahora sea el auto');
 
 -- ============================================================================
+-- PR624-R02: sin snapshot solo es reintento el histórico de CC-043 (sin fecha y sin vehículo activo)
+-- ============================================================================
+
+select pg_temp.as_postgres();
+create function pg_temp.historic() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000042c8'::uuid $$;
+create function pg_temp.historic_dated() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000042c9'::uuid $$;
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
+values
+  (pg_temp.historic(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc042-h@example.test', 'pwd', '{"role":"courier"}'),
+  (pg_temp.historic_dated(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc042-hd@example.test', 'pwd', '{"role":"courier"}')
+on conflict (id) do nothing;
+update public.profiles set consent_status = 'active', role = 'courier'
+where id in (pg_temp.historic(), pg_temp.historic_dated());
+-- Después del backfill: enviados fuera de finalize, sin snapshot ni vehículo activo.
+insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
+values
+  (pg_temp.historic(), 'approved', false, 'moto', 'AB 321 CD'),
+  (pg_temp.historic_dated(), 'approved', false, 'moto', 'AB 322 CD')
+on conflict (profile_id) do update
+set status = excluded.status, available = false, vehicle_type = excluded.vehicle_type, vehicle_plate = excluded.vehicle_plate;
+select set_config('app.courier_application_finalize', 'on', true);
+update public.couriers set application_submitted = true, dni_hmac = repeat('c', 64) where profile_id = pg_temp.historic();
+update public.couriers set application_submitted = true, dni_hmac = repeat('d', 64), submitted_at = now()
+where profile_id = pg_temp.historic_dated();
+select set_config('app.courier_application_finalize', 'off', true);
+select is((select row(application_vehicle_type, submitted_at, active_vehicle_id)::text from public.couriers where profile_id = pg_temp.historic()),
+  row(null::public.vehicle_type, null::timestamptz, null::uuid)::text, 'R02: histórico sin snapshot, sin fecha y sin activo');
+
+set local role service_role;
+select is(public.finalize_courier_application(pg_temp.historic(), repeat('c', 64), 'moto', 'AB 321 CD'),
+  jsonb_build_object('ok', true, 'idempotent', true, 'submittedAt', null), 'R02: el reintento idéntico del histórico es idempotente');
+select throws_ok($$ select public.finalize_courier_application(pg_temp.historic_dated(), repeat('d', 64), 'moto', 'AB 322 CD') $$,
+  'P0001', 'INVALID_STATE_TRANSITION', 'R02: sin snapshot y con fecha nunca es reintento');
+
+select pg_temp.act_as(pg_temp.historic());
+insert into cc042_ids select 'h_bike', (public.add_courier_vehicle('bike', null, true)->>'vehicleId')::uuid;
+set local role service_role;
+select throws_ok($$ select public.finalize_courier_application(pg_temp.historic(), repeat('c', 64), 'bike', null) $$,
+  'P0001', 'INVALID_STATE_TRANSITION', 'R02: con un vehículo activo el reflejo ya no es la postulación');
+select pg_temp.as_postgres();
+select is((select row(application_vehicle_type, submitted_at, active_vehicle_id = pg_temp.id('h_bike'))::text from public.couriers where profile_id = pg_temp.historic()),
+  row(null::public.vehicle_type, null::timestamptz, true)::text, 'R02: activo, fecha y snapshot intactos');
+
+-- ============================================================================
 -- Privacidad: el comercio no ve la lista de vehículos
 -- ============================================================================
 

@@ -12,16 +12,29 @@ import { COURIER_VEHICLES_COPY } from '@/features/courier-onboarding/copy';
 
 type CourierClient = Awaited<ReturnType<typeof createAuthenticatedClient>>;
 
+/** IDs de los vehículos de un tipo del repartidor, archivados incluidos (para saber cuáles crea la prueba). */
+async function vehicleIdsOfType(courierId: string, vehicleType: 'bike' | 'car'): Promise<Set<string>> {
+  const { data, error } = await createAdminClient()
+    .from('courier_vehicles')
+    .select('id')
+    .eq('courier_id', courierId)
+    .eq('vehicle_type', vehicleType);
+  if (error) throw new Error(`[E2E Error] courier_vehicles: ${error.message}`);
+  return new Set((data ?? []).map((row) => row.id));
+}
+
 /**
- * PR624-H06: deja al repartidor como lo dejó el seed aunque la prueba falle a mitad de camino. Retira la oferta que
- * siga pendiente, vuelve a activar la moto por la RPC (no se borra un vehículo activo) y recién después borra el
- * vehículo agregado. Devuelve los errores de limpieza; si la moto no se puede reactivar (viaje activo), no borra nada.
+ * PR624-H06 / PR624-R01: deja al repartidor como lo dejó el seed aunque la prueba falle a mitad de camino. Retira la
+ * oferta que siga pendiente, vuelve a activar la moto por la RPC (no se borra un vehículo activo) y recién después
+ * borra, por id, solo los vehículos que creó la prueba (los que no estaban en `preexistingIds`): un histórico del mismo
+ * tipo no se toca. Devuelve los errores de limpieza; si la moto no se puede reactivar (viaje activo), no borra nada.
  */
 async function restoreSeedVehicle(
   courierClient: CourierClient,
   courierId: string,
   motoId: string,
   addedType: 'bike' | 'car',
+  preexistingIds: ReadonlySet<string>,
   offerId: string | null = null
 ): Promise<string[]> {
   const dbAdmin = createAdminClient();
@@ -43,12 +56,16 @@ async function restoreSeedVehicle(
     const { error } = await courierClient.rpc('set_active_courier_vehicle', { p_vehicle_id: motoId });
     if (error) return [...errors, `set_active_courier_vehicle: ${error.message}`];
   }
-  const { error: deleteError } = await dbAdmin
-    .from('courier_vehicles')
-    .delete()
-    .eq('courier_id', courierId)
-    .eq('vehicle_type', addedType);
-  if (deleteError) errors.push(`courier_vehicles ${addedType}: ${deleteError.message}`);
+  let created: string[] = [];
+  try {
+    created = [...(await vehicleIdsOfType(courierId, addedType))].filter((id) => !preexistingIds.has(id));
+  } catch (error) {
+    return [...errors, String(error)];
+  }
+  if (created.length > 0) {
+    const { error: deleteError } = await dbAdmin.from('courier_vehicles').delete().in('id', created);
+    if (deleteError) errors.push(`courier_vehicles ${created.join(', ')}: ${deleteError.message}`);
+  }
   return errors;
 }
 
@@ -92,6 +109,7 @@ test.describe('T-419 — vehículos del repartidor', () => {
       .eq('vehicle_type', 'bike')
       .is('archived_at', null);
     expect(bikes, 'precondición: el seed no tiene bici').toBe(0);
+    const preexistingBikes = await vehicleIdsOfType(courier.id, 'bike');
 
     const courierClient = await createAuthenticatedClient(courier);
     let offerId: string | null = null;
@@ -163,7 +181,75 @@ test.describe('T-419 — vehículos del repartidor', () => {
       primaryError = error;
       throw error;
     } finally {
-      reportCleanup(await restoreSeedVehicle(courierClient, courier.id, motoId, 'bike', offerId), primaryError);
+      reportCleanup(await restoreSeedVehicle(courierClient, courier.id, motoId, 'bike', preexistingBikes, offerId), primaryError);
+    }
+  });
+
+  test('PR624-R01: la limpieza, cortada con la bici activa y una oferta pendiente, restaura la moto y no toca la bici archivada', async ({
+    stagingContext,
+  }) => {
+    assertAllowedE2EEnvironment();
+    const courier = stagingContext.courierUsers?.[0];
+    const requestId = stagingContext.createdRequestIds[0];
+    if (!courier || !requestId) {
+      throw new Error('[E2E Error] Se requieren courier y una solicitud en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+    const { data: initial } = await dbAdmin
+      .from('couriers')
+      .select('active_vehicle_id')
+      .eq('profile_id', courier.id)
+      .single();
+    const motoId = initial?.active_vehicle_id;
+    if (!motoId) throw new Error('[E2E Error] El seed tiene que dejar la moto como vehículo activo');
+
+    // Histórico del mismo tipo que la prueba no creó: tiene que sobrevivir a la limpieza.
+    const { data: archived, error: archivedError } = await dbAdmin
+      .from('courier_vehicles')
+      .insert({ courier_id: courier.id, vehicle_type: 'bike', archived_at: new Date().toISOString() })
+      .select('id')
+      .single();
+    expect(archivedError).toBeNull();
+    const archivedId = archived?.id;
+    if (!archivedId) throw new Error('[E2E Error] No se pudo sembrar la bici archivada');
+
+    const courierClient = await createAuthenticatedClient(courier);
+    try {
+      const preexistingBikes = await vehicleIdsOfType(courier.id, 'bike');
+      expect(preexistingBikes.has(archivedId)).toBe(true);
+
+      // Estado de una prueba cortada a mitad de camino: bici nueva activa y oferta pendiente sin retirar.
+      const { data: added, error: addError } = await courierClient.rpc('add_courier_vehicle', {
+        p_vehicle_type: 'bike',
+        p_plate: '',
+        p_make_active: true,
+      });
+      expect(addError).toBeNull();
+      const newBikeId = (added as { vehicleId: string } | null)?.vehicleId;
+      const { data: offerData, error: offerError } = await courierClient.rpc('submit_offer', {
+        p_request_id: requestId,
+        p_amount_ars: 1500,
+        p_eta_minutes: 15,
+        p_message: 'Oferta PR624-R01',
+      });
+      expect(offerError).toBeNull();
+      const offerId = (offerData as { offerId: string } | null)?.offerId ?? null;
+      if (offerId) trackEntityForCleanup(stagingContext, 'offer', offerId);
+
+      expect(await restoreSeedVehicle(courierClient, courier.id, motoId, 'bike', preexistingBikes, offerId)).toEqual([]);
+
+      const { data: after } = await dbAdmin.from('couriers').select('active_vehicle_id').eq('profile_id', courier.id).single();
+      expect(after?.active_vehicle_id).toBe(motoId);
+      const remaining = await vehicleIdsOfType(courier.id, 'bike');
+      expect(remaining.has(archivedId)).toBe(true);
+      expect(newBikeId ? remaining.has(newBikeId) : false).toBe(false);
+      if (offerId) {
+        const { data: offer } = await dbAdmin.from('offers').select('status').eq('id', offerId).single();
+        expect(offer?.status).toBe('withdrawn');
+      }
+    } finally {
+      await dbAdmin.from('courier_vehicles').delete().eq('id', archivedId);
     }
   });
 });
