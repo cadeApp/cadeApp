@@ -102,6 +102,19 @@ describe('T-402: shell del admin (barra lateral y menú angosto)', () => {
     expect(within(nav).getByRole('link', { name: 'Comercios' }).querySelector('span')?.className).not.toContain('sr-only');
   });
 
+  it('T-427: la barra arranca contraída según la cookie y al alternar guarda la preferencia', () => {
+    // La cookie es de path=/admin y jsdom no la devuelve en su URL: se mira lo que escribe la barra.
+    const setCookie = vi.spyOn(document, 'cookie', 'set');
+    render(<AdminNav operatorName="Lautaro" initialCollapsed />);
+    const expand = sidebar().getByRole('button', { name: 'Expandir menú' });
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(expand);
+    expect(setCookie).toHaveBeenLastCalledWith(expect.stringContaining('admin_sidebar=expanded; path=/admin'));
+    fireEvent.click(sidebar().getByRole('button', { name: 'Contraer menú' }));
+    expect(setCookie).toHaveBeenLastCalledWith(expect.stringContaining('admin_sidebar=collapsed; path=/admin'));
+    setCookie.mockRestore();
+  });
+
   it('abajo de la barra lateral están el nombre del operador y «Salir»', () => {
     render(<AdminNav operatorName="Lautaro Jiménez" />);
     expect(sidebar().queryByText('Lautaro Jiménez')).not.toBeNull();

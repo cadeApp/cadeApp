@@ -6,11 +6,11 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
   LogOut,
   Megaphone,
   Menu,
-  PanelLeftClose,
-  PanelLeftOpen,
   Route,
   ScrollText,
   SlidersHorizontal,
@@ -82,8 +82,12 @@ function useOpenIncidentsCount(initial: number | null): number | null {
   return useQuery(openIncidentsQueryOptions(initial), contextClient ?? fallbackClient).data ?? null;
 }
 
+/** T-427: preferencia de la barra contraída; la lee el layout (servidor) para que la recarga no parpadee. */
+export const ADMIN_SIDEBAR_COOKIE = 'admin_sidebar';
+
 export interface AdminNavProps {
   readonly operatorName: string;
+  readonly initialCollapsed?: boolean;
   /** T-406: incidentes abiertos al cargar el panel (`null` si no se pudo leer). */
   readonly initialOpenIncidents?: number | null;
 }
@@ -93,12 +97,18 @@ export interface AdminNavProps {
  * abre la misma navegación en un Sheet. Ninguna sección queda inaccesible en ningún ancho.
  * T-425: en escritorio la barra se contrae a solo íconos (nombre en tooltip) y el logo queda en la moto.
  */
-export function AdminNav({ operatorName, initialOpenIncidents = null }: AdminNavProps) {
+export function AdminNav({ operatorName, initialCollapsed = false, initialOpenIncidents = null }: AdminNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(initialCollapsed);
   const openIncidents = useOpenIncidentsCount(initialOpenIncidents);
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    document.cookie = `${ADMIN_SIDEBAR_COOKIE}=${next ? 'collapsed' : 'expanded'}; path=/admin; max-age=31536000; samesite=lax`;
+  }
 
   async function handleLogout() {
     await logoutAction();
@@ -113,7 +123,7 @@ export function AdminNav({ operatorName, initialOpenIncidents = null }: AdminNav
         aria-label={ADMIN_COPY.nav.brandLabel}
         className={cn('inline-flex items-center rounded-sm', FOCUS_ON_INK)}
       >
-        <BrandLogo size="md" variant="inverse" showWordmark={showWordmark} />
+        <BrandLogo size="md" variant="inverse" showWordmark={showWordmark} className={showWordmark ? undefined : 'h-auto w-10'} />
       </Link>
     );
   }
@@ -210,38 +220,40 @@ export function AdminNav({ operatorName, initialOpenIncidents = null }: AdminNav
   }
 
   const toggleLabel = collapsed ? ADMIN_COPY.nav.expandSidebar : ADMIN_COPY.nav.collapseSidebar;
-  const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
+  const ToggleIcon = collapsed ? ChevronRight : ChevronLeft;
 
   return (
     <>
       <TooltipProvider delayDuration={200}>
         <aside
           className={cn(
-            'hidden bg-secondary text-secondary-foreground lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0 lg:flex-col lg:gap-6 lg:overflow-y-auto lg:p-4',
+            'relative hidden bg-secondary text-secondary-foreground lg:sticky lg:top-0 lg:z-30 lg:flex lg:h-screen lg:shrink-0',
             collapsed ? 'lg:w-20' : 'lg:w-64'
           )}
         >
-          <div className={cn('flex items-center gap-2 pt-2', collapsed ? 'flex-col' : 'justify-between px-2')}>
-            {brand(!collapsed)}
-            {withTooltip(
-              toggleLabel,
-              <button
-                type="button"
-                onClick={() => setCollapsed((value) => !value)}
-                aria-expanded={!collapsed}
-                aria-label={toggleLabel}
-                className={cn(
-                  'inline-flex h-12 w-12 items-center justify-center rounded-lg text-secondary-foreground hover:bg-secondary-foreground/10',
-                  FOCUS_ON_INK
-                )}
-              >
-                <ToggleIcon className="h-5 w-5" aria-hidden="true" />
-              </button>,
-              collapsed
-            )}
+          {/* El scroll va adentro para que el botón redondo pueda asomar sobre el borde con el contenido. */}
+          <div className="flex h-full w-full flex-col gap-6 overflow-y-auto p-4">
+            <div className={cn('pt-2', collapsed ? 'flex justify-center' : 'px-2')}>{brand(!collapsed)}</div>
+            <div className="flex-1">{navList(undefined, collapsed)}</div>
+            {footer(collapsed)}
           </div>
-          <div className="flex-1">{navList(undefined, collapsed)}</div>
-          {footer(collapsed)}
+          {withTooltip(
+            toggleLabel,
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-expanded={!collapsed}
+              aria-label={toggleLabel}
+              className={cn(
+                // T-427: chico y redondo sobre el borde; el pseudo-elemento agranda el área para tocarlo.
+                'absolute -right-3 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md hover:bg-muted before:absolute before:-inset-3',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+              )}
+            >
+              <ToggleIcon className="h-4 w-4" aria-hidden="true" />
+            </button>,
+            true
+          )}
         </aside>
       </TooltipProvider>
 
