@@ -1,0 +1,225 @@
+# PR #624 R1 — evidencia, comandos y límites
+
+SHA revisado: 2c6ae940a0215886b8567e64609aad866570027c. Base develop: b5ceef11e4f227d87f438ff7d686e9355a6daac9.
+
+## Evidencia existente observada por el revisor
+
+- GitHub Actions https://github.com/cadeApp/cadeApp/actions/runs/42247329813: lint ✅, typecheck ✅, unit ✅ (195 files, 3665 tests), db-tests ✅ (43 files, 3545 tests; Result: PASS), build ✅, audit ✅, bundle-budget ✅. Logs: Job unit 127992869973, Job db-tests 127992869997. Al terminar db-tests aparece git diff --exit-code -- src/types/database.types.ts.
+- PR aisladas del autor #625 no-migration, #626 no-reflection, #627 no-switch-block, #628 no-frozen-columns, todas cerradas sin merge. **No fueron reejecutadas de forma independiente**.
+- La bitácora reporta U1–U8 RED unitarios. No se contó como reproducción independiente.
+- No se corrió ningún comando contra Supabase remoto, no se levantó Docker ni se dispararon workflows.
+- E2E no ejecutado: BLOCKED / REQUIRES DEVELOP MIGRATION. El E2E se hará contra develop tras migrate-develop, no se inventa un resultado.
+- Clon y herramientas Git no disponibles en la misma máquina de ejecución que el conector GitHub; no se corrieron localmente pnpm, merge-tree ni git diff. Comparación equivalente de ficha por parche API de GitHub y estado mergeable=true, no sustituyen un merge-tree real.
+
+## Comandos de CI a reproducir cuando se disponga de un worktree limpio
+
+~~~bash
+git fetch origin
+git diff origin/develop -- docs/tasks/T-419.md
+git diff --check origin/develop...origin/feat/T-419-vehiculos
+git merge-tree --write-tree origin/develop origin/feat/T-419-vehiculos
+pnpm typecheck
+pnpm lint
+pnpm test > /tmp/pr624-unit.log 2>&1
+grep -E 'Test Files|Tests |All files' /tmp/pr624-unit.log | tail -8
+node docs/revision-pr/analizar.mjs verificacion
+~~~
+
+No ejecutar pnpm test:db ni Docker/Supabase local por la regla de la revisión. La batería de pgTAP la ejecuta db-tests en CI. No disparar manualmente workflows.
+
+## Oráculos SQL nuevos (diseño, **NO ejecutados en esta revisión**)
+
+Los escenarios deben incorporarse al pgTAP de CC-042 y ser comprobados en RED con mutaciones locales temporales **en memoria** o en PR aislada REVIEW ONLY que no se mergea. No reescribir el test para obtener un RED.
+
+- H01: postulación no enviada con license e insurance actuales submitted; finalize → ambos estados submitted en courier_vehicles y couriers, doc_level según activo. Mutar el cálculo de estados y reemplazarlo por valores viejos de couriers => RED.
+- H02: legacy_bike con license_status en couriers verified, backfill → bici y reflejo none, doc_level 0, fila histórica aún presente. Mutar eliminación de la normalización de reflejo => RED.
+- H03: finalize moto, guardar submitted_at; add bike + set_active; repetir finalize moto/patente original => idempotent=true, submitted_at idéntico y activo continúa bike. Tipo, patente o DNI originales distintos → INVALID_STATE_TRANSITION. Editar la patente de moto después y verificar mismo resultado. Mutar comparación del snapshot por el reflejo => RED. Mutar trigger/guard del snapshot => RED ante UPDATE directo.
+- H04: para add_courier_optional_document y replace_courier_document: misma idempotencyKey+storagePath en moto y después en auto, mismo actor → VALIDATION_ERROR, sin tocar documento del auto ni de la moto. Mismos valores en misma moto → idempotent=true. Mutar comparación vehicle_id => RED.
+- H05: con bike activa, licencia histórica is_current=true y vehicle_id=null no debe salir en perfil ni status; con active_vehicle_id=null (onboarding inicial), conservar compatibilidad de documento sin asociar; DNI siempre visible. Mutar a !row.vehicle_id => RED.
+- H06: interrupción después de activar bici y antes de withdraw: la limpieza debe retirar oferta si existe, reactivar moto y borrar bici; el guard no debe impedir limpieza. Test aislado con el mismo error original preservado. No correr contra develop sin migración.
+- H07: mismo tipo y misma patente en vehículos con IDs distintos (uno archivado): no unir historiales en admin.
+
+## Sonda de mutaciones independiente de texto (harness completo, NO prueba semántica de PostgreSQL)
+
+El siguiente script es una comprobación **estructural** y no sustituye los RED pgTAP. Toma el SQL del repositorio y perturba dos guardas de propiedades que SÍ están presentes. El fixture no se modifica; las mutaciones quedan en memoria. Copiar el bloque completo como script a /tmp y ejecutarlo desde la raíz del repo con node. No atribuir a este instrumento la verificación de H01–H07.
+
+~~~bash
+cat > /tmp/pr624-structural-probe.mjs <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const file = process.argv[2];
+assert.ok(file, 'usage: node /tmp/pr624-structural-probe.mjs <migration.sql>');
+const source = fs.readFileSync(file, 'utf8');
+function scope(begin, end) {
+  const i = source.indexOf(begin);
+  const j = source.indexOf(end, i + begin.length);
+  assert.ok(i >= 0 && j > i, 'no se pudo aislar SQL: ' + begin);
+  return source.slice(i, j);
+}
+function mutateAndCatch(label, original, needle, replacement) {
+  assert.ok(original.includes(needle), label + ': guard baseline no encontrado');
+  console.log('GREEN estructural ' + label + ': guard presente');
+  const mutated = original.replace(needle, replacement);
+  assert.notEqual(mutated, original, label + ': la mutación no impactó');
+  assert.ok(!mutated.includes(needle), label + ': mutación no removió guarda');
+  console.log('RED estructural ' + label + ': mutación detectada (solo texto)');
+}
+const switching = scope('create or replace function public.set_active_courier_vehicle', '-- ============================================================================\n-- 7. Documentos');
+mutateAndCatch('M1 bloqueo del cambio activo', switching,
+  'if app_private.cc042_vehicle_switch_blocked(v_actor) then', 'if false then');
+const policy = scope('create policy couriers_update_self', '-- ============================================================================\n-- 4. Backfill');
+mutateAndCatch('M2 columna active_vehicle_id congelada', policy,
+  'and active_vehicle_id is not distinct from (select c.active_vehicle_id from public.couriers c where c.profile_id = auth.uid())',
+  '-- MUTACION: sin comparacion de active_vehicle_id');
+JS
+node /tmp/pr624-structural-probe.mjs supabase/migrations/20261106120000_cc042_courier_vehicles.sql
+~~~
+
+La sonda NO se ejecutó sobre el checkout del SHA en esta sesión. Antes de reportar que se ejecutó, el futuro revisor debe correrla y comprobar que también falla correctamente si la guarda se elimina. Los RED semánticos nuevos continúan pendientes de CI/db-tests o de ejecución que Lautaro073 autorice.
+
+## Validación documental
+
+El script docs/revision-pr/analizar.mjs verificacion se debe ejecutar en el worktree con la carpeta ya descargada. No marcar arreglado-verificado desde la bitácora del autor. En hallazgos.jsonl cada verificado_en_sha = null mientras el revisor no ejecute la comprobación independiente.
+
+
+## Ronda 2 — evidencia y sonda estática independiente
+
+SHA exacto: 67df8e87bb33296be402c4295451b594a0c3e7a8. CI run 42262625810 (success), db-tests job 128046220858: cc042_courier_vehicles.sql OK, Files=43 Tests=3577 Result: PASS y comparación de src/types/database.types.ts sin diff. Unit job 128046220924: Test Files 196 passed. Run 42260809564 del commit anterior, db-tests 3577 PASS, falló únicamente la comparación de tipos generados.
+
+PRs de mutación del autor, parches verificados contra 97eb3288 y logs examinados, todas cerradas sin merge:
+- #641, run 42260872255, job 128040140882: reemplaza estados desde documentos por reflejo viejo y quita sync; RED tests 161,162/179.
+- #642, run 42260885029, job 128040184597: quita normalización en bici; RED test 35/179.
+- #643, run 42260901356, job 128040239043: compara reintento contra reflejo; SQL ERROR INVALID_STATE_TRANSITION en línea 509; aborta con 164 tests corridos.
+- #644, run 42260914177, job 128040284954: elimina guarda del snapshot; RED tests 173–176/179.
+- #645, run 42260930442, job 128040340971: quita vehicle_id de dos idempotencias; RED tests 133,136/179.
+H05: RED local 3 fallidas/33 aprobadas declarado por el autor, no reproducido aquí. H06 y H07: RED pendiente.
+
+Sonda propia sobre textos exactos de GitHub, realizada en memoria (NO ejecuta SQL, E2E ni unitarias):
+1. Ambos specs contienen borrado con filtro por vehicle_type; confirmado.
+2. Segundo E2E de viaje llama add_courier_vehicle y verifica before.vehicle_type antes del try; confirmado.
+3. Test H07 en ApplicantDetailView cuenta tabs y no invoca getApplicantDetail ni usa vehicle_id; confirmado.
+4. Rama fallback snapshot NULL no condiciona submitted_at ni active_vehicle_id; confirmado.
+
+Script equivalente, reproducible desde la raíz del repo (guardar en /tmp; NO es prueba semántica):
+~~~bash
+cat > /tmp/pr624-r2-static.mjs <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const read = p => fs.readFileSync(p,'utf8');
+const ev = read('e2e/specs/courier-vehicles.spec.ts');
+const eo = read('e2e/specs/courier-onboarding.spec.ts');
+const q = read('src/features/admin/queries.ts');
+const t = read('src/features/admin/components/applicant-detail-view.test.tsx');
+const sql = read('supabase/migrations/20261106120000_cc042_courier_vehicles.sql');
+const probe=(label,condition)=>{assert.ok(condition,label);process.stdout.write('CONFIRMADO '+label+'\n')};
+probe('delete por tipo en dos specs',ev.includes(".eq('vehicle_type', addedType)")&&eo.includes(".eq('vehicle_type', addedType)"));
+const a=eo.indexOf("const { error: addError } = await courierClient.rpc('add_courier_vehicle'");
+const b=eo.indexOf("let primaryError: unknown = null;",a);
+probe('alta antes del try',a>=0&&b>a&&eo.slice(a,b).includes("expect(before?.vehicle_type).toBe('moto')"));
+const begin=t.indexOf("it('PR624-H07: dos vehículos"),end=t.indexOf("it('9. DoD T-354:",begin),h=t.slice(begin,end);
+probe('H07 test no atraviesa query',q.includes("const vehicleKey = (d: CourierDocDetailRow) => d.vehicle_id ?? ''")&&h.includes("getAllByRole('tab')")&&!h.includes("getApplicantDetail")&&!h.includes("vehicle_id"));
+const i=sql.indexOf('if v_courier.application_submitted then',sql.indexOf('create or replace function public.finalize_courier_application'));
+const j=sql.indexOf("raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';",i);
+const body=sql.slice(i,j);
+probe('fallback no exige fecha y activo NULL',body.includes('case when v_courier.application_vehicle_type is null then v_courier.vehicle_type')&&!body.includes('submitted_at is null')&&!body.includes('active_vehicle_id is null'));
+JS
+node /tmp/pr624-r2-static.mjs
+~~~
+
+Sonda estructural únicamente: no convertir su resultado en GREEN de producción. No se ejecutaron git merge-tree, suites de test en clon, Supabase/Docker ni E2E. develop avanzó un commit sin rutas superpuestas; GitHub mergeable=true, no equivalente a merge-tree.
+
+Comandos finales propuestos: pnpm typecheck; pnpm lint; pnpm exec vitest run src/features/admin/queries.test.ts; pnpm test (log en /tmp); pnpm exec playwright test --list; node docs/revision-pr/analizar.mjs verificacion; git diff --check origin/develop...HEAD. Para pruebas SQL, consultar db-tests CI por SHA, Files, Tests y Result. E2E solo después de migrate-develop.
+
+
+## Ronda 3 — SHA, CI, RED y comprobaciones independientes
+
+SHA código: 41b05270e8bb1dbaa1f263fa3cbffe3eb2faf7a9. HEAD con log solamente: f727d37fe448e9f838793861c31d2ec81fe68141.
+- https://github.com/cadeApp/cadeApp/actions/runs/42266983349 sobre SHA de código: siete jobs success. db-tests job 128061343091: cc042_courier_vehicles.sql ... ok, Files=43, Tests=3582, Result: PASS; comparador de src/types/database.types.ts sin diff. Unit job 128061342463: 196 Test Files PASS.
+- https://github.com/cadeApp/cadeApp/actions/runs/42268673348 en HEAD de bitácora f727d37f: CANCELLED. No hay cambio ejecutable entre ambos; NO se presenta como CI verde.
+- RED del autor #646 (cerrada sin merge): https://github.com/cadeApp/cadeApp/pull/646; https://github.com/cadeApp/cadeApp/actions/runs/42266988721, job 128061359021: mutación quita solo condiciones submitted_at y active_vehicle_id del fallback; cc042_courier_vehicles.sql tests 180 y 181 fallan (2/184). Green sin mutación: 3582 PASS.
+- RED local H07 declarado en bitácora, no reproducido aquí: con comparator antiguo queries.test.ts 1 failed/82 passed; restaurado 83/83.
+- R01/H06: ningún RED ni GREEN E2E: BLOCKED / REQUIRES DEVELOP MIGRATION. Mantener esta etiqueta hasta su ejecución efectiva.
+
+**Sondas estructurales propias** ejecutadas sobre contenido exacto del HEAD por el revisor (9 de 9 aserciones de inspección, no pruebas de producción): R01 borra solo IDs nuevos; main test llama restore en finally; R03 nuevo test llama restore solo antes de finally; el finally de ese test solo borra archivedId sin verificar respuesta; el spec de viaje crea el auto dentro de try; R02 exige submitted_at y active_vehicle_id nulos; pgTAP R02 añade los escenarios; H07 usa getApplicantDetail y verifica lista exacta de documentos; comparador por vehicle_id sigue presente.
+
+Script estructural reproducible sobre un worktree del SHA para detectar el defecto de R03 (se guarda en /tmp, NO modifica archivos ni ejecuta E2E):
+~~~bash
+cat > /tmp/pr624-r3-probe.mjs <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const read=p=>fs.readFileSync(p,'utf8');
+const e=read('e2e/specs/courier-vehicles.spec.ts');
+const o=read('e2e/specs/courier-onboarding.spec.ts');
+const m=read('supabase/migrations/20261106120000_cc042_courier_vehicles.sql');
+const q=read('src/features/admin/queries.ts');
+const t=read('src/features/admin/queries.test.ts');
+const test=e.slice(e.indexOf("test('PR624-R01:"));
+const finallyPart=test.slice(test.lastIndexOf('} finally {'));
+function confirmed(s,b){assert.ok(b,s);console.log('CONFIRMADO '+s);}
+confirmed('R01 borra por IDs',e.includes(".delete().in('id', created)"));
+confirmed('R03 cleanup fuera del finally',test.includes('expect(await restoreSeedVehicle(')&&!finallyPart.includes('restoreSeedVehicle('));
+confirmed('R03 DELETE histórico sin comprobar error',finallyPart.includes(".delete().eq('id', archivedId)")&&!finallyPart.includes('deleteError'));
+const b=m.slice(m.indexOf('if v_courier.application_submitted then',m.indexOf('create or replace function public.finalize_courier_application')));
+confirmed('R02 restringe fallback',b.includes('v_courier.submitted_at is null')&&b.includes('v_courier.active_vehicle_id is null'));
+const qtest=t.slice(t.indexOf("it('PR624-H07: agrupa licencia y seguro"));
+confirmed('H07 test query real',qtest.includes('await getApplicantDetail(')&&qtest.includes('expect(detail?.documents.map('));
+confirmed('H07 comparador por ID',q.includes("const vehicleKey = (d: CourierDocDetailRow) => d.vehicle_id ?? ''"));
+const onset=o.indexOf('let primaryError: unknown = null;',o.indexOf('const preexistingCars = await vehicleIdsOfType',o.indexOf('const preexistingCars = await vehicleIdsOfType')+1));
+confirmed('R01 onboarding auto dentro try',onset>=0&&o.indexOf("const { error: addError } = await courierClient.rpc('add_courier_vehicle'",onset)>onset);
+JS
+node /tmp/pr624-r3-probe.mjs
+~~~
+
+Esto detecta patrones, no simula una ejecución semántica de Playwright ni PostgreSQL. Una vez corregido R03, **es esperado que una aserción que detecta el defecto deje de cumplirse**; la evidencia GREEN definitiva requiere el test E2E ejecutado.
+
+Comandos de próxima sesión: git fetch origin; git diff --check origin/develop...origin/feat/T-419-vehiculos; git merge-tree --write-tree origin/develop origin/feat/T-419-vehiculos; pnpm typecheck; pnpm lint; pnpm test; pnpm exec playwright test --list e2e/specs/courier-vehicles.spec.ts e2e/specs/courier-onboarding.spec.ts; node docs/revision-pr/analizar.mjs verificacion. No levantar Supabase/Docker local, no disparar workflows manualmente, no declarar E2E verde antes de migrate-develop.
+
+
+## Ronda 4 — evidencia independiente, inspección y limitaciones
+
+- HEAD revisado: 6e4525b5805100c831e0201e7a6451ba399d5daf. Commit anterior de revisión: 1d834351da547b1eb97e9c149c1cc09ba6488e18. Diff: solo e2e/specs/courier-vehicles.spec.ts y docs/tasks/log/T-419.md.
+- CI run https://github.com/cadeApp/cadeApp/actions/runs/42269949572 de 6e4525b5: siete jobs success. db-tests job 128071753287, cc042_courier_vehicles.sql ... ok, Files=43, Tests=3582, Result: PASS, comparación de tipos sin diff. unit job 128071753185, Test Files 196 passed, Tests 3680 passed. Estos logs son de CI, no tests locales propios.
+- E2E y mutación funcional: BLOCKED / REQUIRES DEVELOP MIGRATION, no ejecutados. El autor declaró playwright test --list con 16 pruebas en docs/tasks/log/T-419.md, no reproducido aquí.
+- develop: 5a8f6dc5 frente a merge base b5ceef11 (un commit CC-046 y pr-631/sheet) sin superposición de rutas en el diff de R4. GitHub mergeable=true; no git merge-tree local.
+
+**Sondas independientes realmente ejecutadas por el revisor (sobre texto exacto del SHA, no sobre Playwright):** 13/13 TRUE. Cobertura: dos escenarios de corte; semilla en try; preexistentes leídos primero; bici archivada protegida; cleanup interno; cleanup externo; no borrar por vehicle_type; error de delete controlado; no borrar archivada con cleanup fallido; moto restaurada; nueva bici desaparecida; oferta retirada; corte esperado y errores reportados. Mutación en memoria: quitar el llamado a restoreSeedVehicle en finally interno hace fallar la aserción estática; restaurar deja la aserción en verde. **Esta mutación NO demuestra RED semántico E2E.**
+
+Script completo equivalente, reproducible sin mutar archivos (node, desde el repo; guardarlo en /tmp):
+~~~bash
+cat > /tmp/pr624-r4-structural.mjs <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const src=fs.readFileSync('e2e/specs/courier-vehicles.spec.ts','utf8');
+const start="for (const cutAfter of ['activar la bici', 'ofertar'] as const)";
+assert.ok(src.includes(start), 'se esperaban los dos casos R03');
+const code=src.slice(src.indexOf(start));
+const inner="cleanupErrors.push(...(await restoreSeedVehicle(courierClient, courier.id, motoId, 'bike', before, offerId)));";
+const predicates=[
+  ["dos escenarios de corte",code.includes("['activar la bici', 'ofertar'] as const") && code.includes("if (cutAfter === 'activar la bici') throw new Error('corte simulado')")],
+  ["semilla histórica bajo try",code.indexOf('try {')<code.indexOf(".insert({ courier_id: courier.id, vehicle_type: 'bike', archived_at:")],
+  ["set de IDs previo a escrituras",code.indexOf('preexistingBikes = await vehicleIdsOfType')<code.indexOf(".insert({ courier_id: courier.id, vehicle_type: 'bike'")],
+  ["histórico protegido en before",code.includes('const before = new Set([...preexistingBikes, archivedId]);')],
+  ["cleanup en finally interno",code.includes(inner)],
+  ["cleanup repetido en finally externo",code.includes('const finalErrors = await restoreSeedVehicle(')],
+  ["no borrar históricos por tipo",!code.includes(".delete().eq('vehicle_type'") && code.includes(".delete().eq('id', archivedId)")],
+  ["borrado histórico comprueba error",code.includes('if (deleteError) finalErrors.push(')],
+  ["histórico se borra solo si cleanup sin error",code.includes('if (archivedId && finalErrors.length === 0)')],
+  ["moto activa luego del corte",code.includes('expect(after?.active_vehicle_id).toBe(motoId)')],
+  ["bici creada ya no existe",code.includes('remaining.has(newBikeId)).toBe(false)')],
+  ["oferta withdrawn después del corte",code.includes("expect(offer?.status).toBe('withdrawn')")],
+  ["assert del corte esperado y reporte de error",code.includes("await expect(runUntilCut()).rejects.toThrow('corte simulado')") && code.includes('reportCleanup(finalErrors, primaryError)')],
+];
+for(const [name,yes] of predicates){assert.equal(yes,true,name);console.log('TRUE',name);}
+const mutation=code.replace(inner,'// MUTACIÓN: helper omitido en finally interno');
+assert.notEqual(mutation,code,'la mutación no encontró objetivo');
+assert.equal(code.includes(inner),true,'control con original GREEN');
+assert.equal(mutation.includes(inner),false,'control sobre mutación RED estructural');
+console.log('13/13 GREEN estructural + mutación estructural detectada (NO E2E).');
+JS
+node /tmp/pr624-r4-structural.mjs
+~~~
+
+El harness anterior evalúa patrones textuales e identidad de los finally; no llama a Supabase ni prueba el flujo en runtime. No elevar los diez registros a arreglado-verificado con esta única evidencia. No se ejecutó un worktree local, git merge-tree, Docker, Supabase ni pnpm/Playwright por el revisor.
+
+**Pendiente humano obligatorio antes del merge:** migrate-develop; ejecutar E2E funcional de los dos cortes, demás specs de T-419 y RED en branch REVIEW ONLY con restauración a GREEN. No ejecutar contra preview con migración anterior. Volver a confirmar CI/merge-tree y el SHA efectivo antes del merge. Esta ronda está aceptada para cierre de revisión estática y CI, no certifica el E2E.

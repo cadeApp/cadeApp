@@ -156,6 +156,7 @@ export const updatePlatformSettingSchema = adminUpdateSettingInputSchema;
 export const AUDIT_TARGET_TYPES = [
   'courier',
   'courier_document',
+  'courier_vehicle',
   'merchant',
   'platform_setting',
   'delivery_request',

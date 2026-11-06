@@ -691,6 +691,8 @@ export const replaceCourierDocumentInputSchema = z.object({
   kind: courierDocumentKindSchema,
   storagePath: z.string().trim().min(1).max(500),
   idempotencyKey: uuidSchema.optional(),
+  // CC-042: vehículo de la licencia o el seguro (si no viene, la RPC usa el activo).
+  vehicleId: uuidSchema.optional(),
 });
 export const replaceCourierDocumentOutputSchema = z.object({
   documentId: uuidSchema,
@@ -709,6 +711,8 @@ export const addCourierOptionalDocumentInputSchema = z.object({
     .string()
     .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
     .optional(),
+  // CC-042: vehículo de la licencia o el seguro (si no viene, la RPC usa el activo).
+  vehicleId: uuidSchema.optional(),
 });
 export const addCourierOptionalDocumentOutputSchema = z.object({
   documentId: uuidSchema,
@@ -717,6 +721,33 @@ export const addCourierOptionalDocumentOutputSchema = z.object({
   isCurrent: z.boolean(),
   idempotent: z.boolean(),
 });
+
+// CC-042: vehículos del repartidor.
+export const courierVehicleSchema = z.object({
+  id: uuidSchema,
+  vehicleType: vehicleTypeSchema,
+  plate: z.string().nullable(),
+  licenseStatus: documentReviewStatusSchema,
+  insuranceStatus: documentReviewStatusSchema,
+});
+export const getMyCourierVehiclesInputSchema = z.object({}).strict();
+export const getMyCourierVehiclesOutputSchema = z.object({
+  activeVehicleId: uuidSchema.nullable(),
+  vehicles: z.array(courierVehicleSchema).max(4),
+});
+export const addCourierVehicleInputSchema = z.object({
+  vehicleType: vehicleTypeSchema,
+  plate: z.string().trim().max(20).nullable(),
+  makeActive: z.boolean().default(false),
+});
+export const courierVehicleIdOutputSchema = z.object({ vehicleId: uuidSchema });
+export const updateCourierVehicleInputSchema = z.object({
+  vehicleId: uuidSchema,
+  plate: z.string().trim().max(20).nullable(),
+});
+export const removeCourierVehicleInputSchema = z.object({ vehicleId: uuidSchema });
+export const setActiveCourierVehicleInputSchema = z.object({ vehicleId: uuidSchema });
+export const setActiveCourierVehicleOutputSchema = z.object({ activeVehicleId: uuidSchema });
 
 // 17. admin_set_subscription
 export const adminSetSubscriptionInputSchema = z.object({
@@ -1779,6 +1810,56 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  get_my_courier_vehicles: {
+    inputSchema: getMyCourierVehiclesInputSchema,
+    outputSchema: getMyCourierVehiclesOutputSchema,
+    errorCodes: ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR'] as const satisfies readonly DomainErrorCode[],
+  },
+  add_courier_vehicle: {
+    inputSchema: addCourierVehicleInputSchema,
+    outputSchema: courierVehicleIdOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'DUPLICATE_VEHICLE',
+      'INVALID_STATE_TRANSITION',
+      'VEHICLE_SWITCH_BLOCKED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  update_courier_vehicle: {
+    inputSchema: updateCourierVehicleInputSchema,
+    outputSchema: courierVehicleIdOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'INVALID_STATE_TRANSITION',
+      'NOT_FOUND',
+      'VEHICLE_SWITCH_BLOCKED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  remove_courier_vehicle: {
+    inputSchema: removeCourierVehicleInputSchema,
+    outputSchema: courierVehicleIdOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INVALID_STATE_TRANSITION',
+      'NOT_FOUND',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  set_active_courier_vehicle: {
+    inputSchema: setActiveCourierVehicleInputSchema,
+    outputSchema: setActiveCourierVehicleOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INVALID_STATE_TRANSITION',
+      'NOT_FOUND',
+      'VEHICLE_SWITCH_BLOCKED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_set_subscription: {
     inputSchema: adminSetSubscriptionInputSchema,
     outputSchema: adminSetSubscriptionOutputSchema,
@@ -2059,6 +2140,11 @@ export const ALL_RPC_NAMES = [
   'admin_verify_document',
   'replace_courier_document',
   'add_courier_optional_document',
+  'get_my_courier_vehicles',
+  'add_courier_vehicle',
+  'update_courier_vehicle',
+  'remove_courier_vehicle',
+  'set_active_courier_vehicle',
   'admin_set_subscription',
   'admin_update_setting',
   'admin_resolve_incident',

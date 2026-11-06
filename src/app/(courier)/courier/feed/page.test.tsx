@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   AnnouncementBanner: vi.fn((_props: Record<string, unknown>) => null),
   getMyAnnouncement: vi.fn(),
+  getMyCourierVehicles: vi.fn(),
+  VehicleQuickSwitch: vi.fn((_props: Record<string, unknown>) => null),
 }));
 
 vi.mock('@/features/offers', () => ({ CourierFeed: mocks.CourierFeed }));
@@ -26,7 +28,9 @@ vi.mock('@/features/trips/server', () => ({
 }));
 vi.mock('@/features/courier-onboarding/server', () => ({
   getCourierDocumentsStatus: mocks.getCourierDocumentsStatus,
+  getMyCourierVehicles: mocks.getMyCourierVehicles,
 }));
+vi.mock('@/features/availability', () => ({ VehicleQuickSwitch: mocks.VehicleQuickSwitch }));
 vi.mock('@/features/announcements', () => ({ AnnouncementBanner: mocks.AnnouncementBanner }));
 vi.mock('@/features/announcements/server', () => ({ getMyAnnouncement: mocks.getMyAnnouncement }));
 vi.mock('@/server/supabase/server', () => ({
@@ -50,6 +54,7 @@ describe('Hotfix T-325 / PR242-H01: /courier/feed usa los documentos persistidos
     mocks.getActiveTripsForCourier.mockResolvedValue({ courierId: 'courier-123', trips: [] });
     mocks.getUser.mockResolvedValue({ data: { user: { id: 'courier-123' } }, error: null });
     mocks.getMyAnnouncement.mockResolvedValue(null);
+    mocks.getMyCourierVehicles.mockResolvedValue(null);
   });
   afterEach(cleanup);
 
@@ -190,3 +195,52 @@ describe('T-414: banner de novedades en /courier/feed', () => {
   });
 });
 
+describe('T-419 (CC-042): cambio rápido del vehículo en /courier/feed', () => {
+  const twoVehicles = {
+    activeVehicleId: 'vehicle-moto',
+    vehicles: [
+      { id: 'vehicle-moto', vehicleType: 'moto', plate: 'AB 123 CD', licenseStatus: 'verified', insuranceStatus: 'none' },
+      { id: 'vehicle-bike', vehicleType: 'bike', plate: null, licenseStatus: 'none', insuranceStatus: 'none' },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getPlatformMinOfferArs.mockResolvedValue(1000);
+    mocks.getAvailableRequests.mockResolvedValue({ requests: [], nextCursor: null });
+    mocks.getActiveTripsForCourier.mockResolvedValue({ courierId: 'courier-123', trips: [] });
+    mocks.getUser.mockResolvedValue({ data: { user: { id: 'courier-123' } }, error: null });
+    mocks.getMyAnnouncement.mockResolvedValue(null);
+  });
+  afterEach(cleanup);
+
+  it('aprobado con dos vehículos: muestra el cambio rápido con el activo', async () => {
+    mocks.getCourierStatusAndAvailability.mockResolvedValue({ status: 'approved', available: true });
+    mocks.getMyCourierVehicles.mockResolvedValue(twoVehicles);
+
+    await renderPage();
+
+    expect(mocks.VehicleQuickSwitch).toHaveBeenCalledTimes(1);
+    expect(mocks.VehicleQuickSwitch.mock.calls[0]?.[0]).toMatchObject({
+      activeVehicleId: 'vehicle-moto',
+      vehicles: twoVehicles.vehicles,
+    });
+  });
+
+  it('con un solo vehículo o pendiente no hay cambio rápido (y pendiente no consulta vehículos)', async () => {
+    mocks.getCourierStatusAndAvailability.mockResolvedValue({ status: 'approved', available: true });
+    mocks.getMyCourierVehicles.mockResolvedValue({ ...twoVehicles, vehicles: twoVehicles.vehicles.slice(0, 1) });
+    await renderPage();
+    expect(mocks.VehicleQuickSwitch).not.toHaveBeenCalled();
+
+    cleanup();
+    vi.clearAllMocks();
+    mocks.getCourierStatusAndAvailability.mockResolvedValue({ status: 'pending', available: false });
+    mocks.getCourierDocumentsStatus.mockResolvedValue([]);
+    mocks.getUser.mockResolvedValue({ data: { user: { id: 'courier-123' } }, error: null });
+    mocks.getMyAnnouncement.mockResolvedValue(null);
+    await renderPage();
+    expect(mocks.getMyCourierVehicles).not.toHaveBeenCalled();
+    expect(mocks.VehicleQuickSwitch).not.toHaveBeenCalled();
+  });
+});

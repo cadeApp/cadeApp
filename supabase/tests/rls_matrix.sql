@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(67);
+select plan(69);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -302,8 +302,22 @@ select throws_ok(
 -- 21. H05: couriers update legítimo permitido
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
 select lives_ok(
-  'update public.couriers set available = false, vehicle_plate = ''123XYZ'' where profile_id = pg_temp.courier_approved_1_id()',
-  'courier can update operational availability and plate'
+  'update public.couriers set available = false where profile_id = pg_temp.courier_approved_1_id()',
+  'courier can update operational availability'
+);
+
+-- 21b. CC-042: el vehículo se cambia solo por RPC; un update directo de la patente o del tipo se rechaza.
+select throws_ok(
+  'update public.couriers set vehicle_plate = ''123XYZ'' where profile_id = pg_temp.courier_approved_1_id()',
+  '42501'::char(5),
+  null::text,
+  'courier cannot write vehicle_plate directly (CC-042)'
+);
+select throws_ok(
+  'update public.couriers set vehicle_type = ''bike'' where profile_id = pg_temp.courier_approved_1_id()',
+  '42501'::char(5),
+  null::text,
+  'courier cannot write vehicle_type directly (CC-042)'
 );
 
 -- 22. H01: couriers update rechaza autoverificación de documentos

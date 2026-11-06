@@ -146,3 +146,32 @@ export function getSafeRejectionMessage(code: string | null | undefined): string
   return DEFAULT_REJECTION_MESSAGE;
 }
 
+
+/** CC-042 / T-419: vehículos del repartidor. */
+export const COURIER_VEHICLES_COPY = {
+  title: 'Mis vehículos',
+  subtitle: 'Cargá cada vehículo con su patente, su licencia y su seguro. Los comercios ven el que tengas activo.',
+  activeBadge: 'Activo',
+  useThis: 'Usar este',
+  editPlate: 'Editar patente',
+  savePlate: 'Guardar patente',
+  cancel: 'Cancelar',
+  remove: 'Quitar',
+  plateLabel: 'Patente',
+  noPlate: 'Sin patente',
+  plateInsuranceNotice: 'Si cambiás la patente, vas a tener que volver a cargar el seguro de ese vehículo.',
+  documentsTitle: 'Licencia y seguro',
+  addTitle: 'Agregar otro vehículo',
+  addButton: 'Agregar vehículo',
+  addActiveLabel: 'Usarlo como activo',
+  allTypesLoaded: 'Ya cargaste un vehículo de cada tipo.',
+  backToProfile: 'Volver al perfil',
+  loadError: 'No pudimos cargar tus vehículos. Recargá la página.',
+  quickSwitchLabel: 'Vehículo',
+  quickSwitchAria: 'Elegir el vehículo activo',
+  switched: 'Listo, cambiaste el vehículo activo.',
+  added: 'Vehículo agregado.',
+  removed: 'Vehículo quitado.',
+  plateSaved: 'Patente actualizada.',
+  types: { walk: 'A pie', bike: 'Bici', moto: 'Moto', car: 'Auto' },
+} as const;

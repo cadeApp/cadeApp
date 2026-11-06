@@ -367,6 +367,83 @@ describe('Admin Queries (T-122 DoD)', () => {
       expect(detail?.documents[1]?.rejectionCode).toBe('IMAGE_BLURRY');
     });
 
+    it('PR624-H07: agrupa licencia y seguro por vehicle_id aunque dos vehículos tengan el mismo tipo y patente', async () => {
+      const twin = { vehicle_type: 'moto', plate: 'AB 123 CD' };
+      const doc = (id: string, kind: string, vehicleId: string, uploadedAt: string, isCurrent = true) => ({
+        id,
+        kind,
+        storage_path: `courier-twins/${id}.webp`,
+        status: 'submitted',
+        uploaded_at: uploadedAt,
+        is_current: isCurrent,
+        rejection_code: null,
+        vehicle_id: vehicleId,
+        vehicle: twin,
+      });
+      const mockSupabase = {
+        from: vi.fn((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: {
+                      profile_id: 'courier-twins',
+                      status: 'pending',
+                      vehicle_type: 'moto',
+                      vehicle_plate: 'AB 123 CD',
+                      dni_hmac: null,
+                      doc_level: 0,
+                      license_status: 'submitted',
+                      insurance_status: 'submitted',
+                      decided_at: null,
+                      decided_by: null,
+                      deactivated_at: null,
+                      profiles: { display_name: 'Mellizos', phone: '3865000000', created_at: '2026-10-10T10:00:00Z' },
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  order: vi.fn().mockResolvedValue({
+                    // Fechas intercaladas entre los dos vehículos; el histórico de A va al final.
+                    data: [
+                      doc('b-insurance', 'insurance', 'veh-b', '2026-10-11T13:00:00Z'),
+                      doc('a-insurance', 'insurance', 'veh-a', '2026-10-11T12:00:00Z'),
+                      doc('b-license', 'license', 'veh-b', '2026-10-11T11:00:00Z'),
+                      doc('a-license-old', 'license', 'veh-a', '2026-10-11T10:30:00Z', false),
+                      doc('a-license', 'license', 'veh-a', '2026-10-11T10:00:00Z'),
+                    ],
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return emptyTable();
+        }),
+      };
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const detail = await getApplicantDetail('courier-twins');
+      expect(detail?.documents.map((document) => document.id)).toEqual([
+        'a-insurance',
+        'a-license',
+        'b-insurance',
+        'b-license',
+        'a-license-old',
+      ]);
+    });
+
     it('retorna null si el repartidor no existe', async () => {
       const mockSupabase = {
         from: vi.fn((table: string) => {

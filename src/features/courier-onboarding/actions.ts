@@ -12,19 +12,18 @@ import {
   addCourierOptionalDocumentInputSchema,
   replaceCourierDocumentInputSchema,
 } from '@/domain/rpc-contracts';
+import type { RpcOutput } from '@/domain/rpc-contracts';
 import {
   addCourierOptionalDocumentRpc,
+  courierVehicleRpc,
   replaceCourierDocumentRpc,
   type AddCourierOptionalDocumentResult,
+  type CourierVehicleRpcName,
   type ReplaceCourierDocumentResult,
 } from '@/server/rpc/courier';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import type { SupabaseRpcCaller } from '@/server/rpc/offers';
-import {
-  courierOnboardingSchema,
-  courierUpdateVehicleSchema,
-  courierUpdatePhoneSchema,
-} from './schemas';
+import { courierOnboardingSchema, courierUpdatePhoneSchema } from './schemas';
 import { logoutAction } from '@/features/auth/server';
 import { areCurrentLegalVersions } from '@/features/legal';
 
@@ -396,6 +395,7 @@ export async function replaceCourierDocumentAction(
     kind: parsed.data.kind,
     storagePath: parsed.data.storagePath,
     ...(parsed.data.idempotencyKey ? { idempotencyKey: parsed.data.idempotencyKey } : {}),
+    ...(parsed.data.vehicleId ? { vehicleId: parsed.data.vehicleId } : {}),
   });
 
   if (!rpcResult.ok) {
@@ -456,6 +456,7 @@ export async function addCourierOptionalDocumentAction(
     kind: parsed.data.kind,
     storagePath: parsed.data.storagePath,
     ...(parsed.data.idempotencyKey ? { idempotencyKey: parsed.data.idempotencyKey } : {}),
+    ...(parsed.data.vehicleId ? { vehicleId: parsed.data.vehicleId } : {}),
   });
 
   if (!rpcResult.ok) {
@@ -463,95 +464,59 @@ export async function addCourierOptionalDocumentAction(
   }
 
   revalidatePath('/courier/profile');
+  revalidatePath('/courier/onboarding/vehicle');
 
   return ok(rpcResult.data);
 }
 
-export interface CourierUpdateVehicleResult {
-  readonly redirectTo: string;
-}
-
-export async function updateCourierVehicleAction(
+/**
+ * CC-042 / T-419: vehículos del repartidor. Las RPC validan actor, postulación enviada, bloqueo por ofertas o viaje y
+ * patente; la acción exige la sesión y revalida las pantallas que muestran el vehículo activo.
+ */
+async function runCourierVehicleRpc<K extends CourierVehicleRpcName>(
+  rpcName: K,
   input: unknown
-): Promise<ActionResult<CourierUpdateVehicleResult, DomainErrorCode>> {
-  // 1. Cliente autenticado y verificación de sesión
+): Promise<ActionResult<RpcOutput<K>, DomainErrorCode>> {
   const supabase = await createClient();
-
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser();
-
   if (userError || !user) {
     return err('UNAUTHENTICATED');
   }
 
-  // 2. Verificación de rol del actor (debe ser courier)
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle<{ role: unknown }>();
-
-  if (profileError || !profile) {
-    return err('UNAUTHORIZED_ACTOR');
+  const result = await courierVehicleRpc(supabase, rpcName, input);
+  if (result.ok) {
+    revalidatePath('/courier/profile');
+    revalidatePath('/courier/feed');
+    revalidatePath('/courier/onboarding/vehicle');
   }
+  return result;
+}
 
-  const roleParsed = profileRoleSchema.safeParse(profile.role);
-  if (!roleParsed.success || roleParsed.data !== 'courier') {
-    return err('UNAUTHORIZED_ACTOR');
-  }
+export async function addCourierVehicleAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'add_courier_vehicle'>, DomainErrorCode>> {
+  return runCourierVehicleRpc('add_courier_vehicle', input);
+}
 
-  // 3. Validación de datos de entrada
-  const parsed = courierUpdateVehicleSchema.safeParse(input);
-  if (!parsed.success) {
-    return err('VALIDATION_ERROR');
-  }
+export async function updateCourierVehiclePlateAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'update_courier_vehicle'>, DomainErrorCode>> {
+  return runCourierVehicleRpc('update_courier_vehicle', input);
+}
 
-  // 4. Verificación de existencia del legajo courier
-  const { data: existingCourier, error: courierFetchError } = await supabase
-    .from('couriers')
-    .select('profile_id, status, application_submitted')
-    .eq('profile_id', user.id)
-    .maybeSingle<{ profile_id: string; status: string; application_submitted: boolean }>();
+export async function removeCourierVehicleAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'remove_courier_vehicle'>, DomainErrorCode>> {
+  return runCourierVehicleRpc('remove_courier_vehicle', input);
+}
 
-  if (courierFetchError) {
-    return err('INTERNAL_ERROR');
-  }
-  if (!existingCourier) {
-    return err('NOT_FOUND');
-  }
-  // CC-043: application_submitted is the completed-onboarding marker. Query-string edit mode
-  // does not grant the right to set a vehicle for a first-time applicant.
-  if (existingCourier.application_submitted !== true || !['pending', 'approved'].includes(existingCourier.status)) {
-    return err('INVALID_STATE_TRANSITION');
-  }
-
-  // 6. Actualización de vehículo en couriers
-  const courierUpdatePayload: TablesUpdate<'couriers'> = {
-    vehicle_type: parsed.data.vehicleType,
-    vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
-  };
-
-  const { data: updatedCourier, error: courierUpdateError } = await supabase
-    .from('couriers')
-    .update(courierUpdatePayload as never)
-    .eq('profile_id', user.id)
-    .eq('application_submitted', true)
-    .in('status', ['pending', 'approved'])
-    .select('profile_id')
-    .maybeSingle<{ profile_id: string }>();
-
-  if (courierUpdateError) {
-    return err('INTERNAL_ERROR');
-  }
-  if (!updatedCourier || updatedCourier.profile_id !== user.id) {
-    return err('NOT_FOUND');
-  }
-
-  return ok({
-    redirectTo: '/courier/profile',
-  });
+export async function setActiveCourierVehicleAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'set_active_courier_vehicle'>, DomainErrorCode>> {
+  return runCourierVehicleRpc('set_active_courier_vehicle', input);
 }
 
 export interface CourierUpdatePhoneResult {

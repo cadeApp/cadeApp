@@ -52,6 +52,12 @@ interface ApplicantDetailViewProps {
 type DecisionModal = 'approved' | 'suspended' | 'reactivate' | 'reconsider';
 
 /** El texto genérico de INVALID_STATE_TRANSITION habla de pedidos; acá el estado es el del repartidor. */
+/** CC-042: «Moto · AB 123 CD» para la licencia o el seguro de un vehículo. */
+function documentVehicleLabel(vehicle: NonNullable<ApplicantDocumentDetail['vehicle']>): string {
+  const type = ADMIN_COPY.vehicleType[vehicle.vehicleType];
+  return vehicle.plate ? `${type} ${vehicle.plate}` : type;
+}
+
 function courierDecisionErrorMessage(code: DomainErrorCode): string {
   return code === 'INVALID_STATE_TRANSITION'
     ? ADMIN_COPY.detail.errors.invalidCourierTransition
@@ -409,6 +415,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                   >
                     <span className="truncate">
                       {ADMIN_COPY.documentKind[doc.documentType]}
+                      {doc.vehicle && ` · ${documentVehicleLabel(doc.vehicle)}`}
                       {doc.isCurrent === false && ' (Histórico)'}
                     </span>
                     <span className="text-sm shrink-0 ml-2">
@@ -444,6 +451,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                         <div>
                           <CardTitle className="text-base font-semibold">
                             {ADMIN_COPY.documentKind[doc.documentType]}
+                            {doc.vehicle && ` · ${documentVehicleLabel(doc.vehicle)}`}
                           </CardTitle>
                           <CardDescription className="text-sm">
                             {ADMIN_COPY.detail.labels.state}:{' '}

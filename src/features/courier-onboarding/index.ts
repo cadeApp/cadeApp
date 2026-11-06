@@ -20,6 +20,12 @@ export {
   DocumentUploadCard,
   type DocumentUploadCardProps,
 } from './components/document-upload-card';
+// CC-042: cambio del vehículo activo (lo usa también el feed).
+export { setActiveCourierVehicleAction } from './actions';
+export {
+  CourierVehiclesManager,
+  type CourierVehiclesManagerProps,
+} from './components/courier-vehicles-manager';
 
 export const IdentityForm = dynamic<IdentityFormProps>(
   () => import('./components/identity-form').then((mod) => mod.IdentityForm)

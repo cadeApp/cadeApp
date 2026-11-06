@@ -45,6 +45,16 @@ function runSql(sql) {
   return res.stdout.trim();
 }
 
+// Migraciones posteriores (CC-042) redefinen lo que crea el archivo que se muta: tras restaurarlo se reaplica lo vigente.
+function snapshotCurrentDefinitions() {
+  return runSql(`select string_agg(def, E'\n') from (
+    select pg_get_functiondef(p.oid) || ';' as def from pg_proc p
+    where p.pronamespace = 'public'::regnamespace and p.proname = any(array['admin_verify_document', 'replace_courier_document'])
+    union all
+    select 'drop index if exists public.courier_documents_unique_current; ' || pg_get_indexdef('public.courier_documents_unique_current'::regclass) || ';'
+  ) s;`);
+}
+
 function claimsSql(actorId, role, aal = 'aal1') {
   return `jsonb_build_object('sub', '${actorId}', 'role', 'authenticated', 'aal', '${aal}')::text`;
 }
@@ -451,6 +461,7 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
   console.log('[CC-025][H02] Ejecutando control de mutación RED->GREEN sobre la función SQL real replace_courier_document...');
 
   const originalSql = fs.readFileSync(migrationPath, 'utf8');
+  const currentSql = snapshotCurrentDefinitions();
 
   // Mutar la función real replace_courier_document eliminando el lock inicial sobre public.couriers FOR UPDATE.
   // Sin ese lock inicial, replace_courier_document bloquea primero courier_documents FOR UPDATE y recién al final
@@ -588,6 +599,7 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
 
     // 2. Restaurar la migración original de producción y comprobar que el mismo escenario vuelve a GREEN (0 deadlocks)
     runSql(originalSql);
+    runSql(currentSql);
     runSql(`
       delete from public.courier_documents where courier_id = '${courierId}';
       insert into public.courier_documents (id, courier_id, kind, storage_path, status, is_current)
@@ -598,12 +610,14 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
     console.log('[CC-025][H02] Control de mutación GREEN confirmado: tras restaurar la migración original, las RPCs serializan sin deadlock 40P01.');
   } finally {
     runSql(originalSql);
+    runSql(currentSql);
   }
 }
 
 async function runR06MutationCheck(courierId, docId) {
   console.log('[CC-025][R06] --- Inicio de control de mutación RED->GREEN para R06 (prefijo Storage literal) ---');
   const originalSql = fs.readFileSync(migrationPath, 'utf8');
+  const currentSql = snapshotCurrentDefinitions();
 
   try {
     const badPath = `courier/${courierId}/licenseX1700000000000.png`;
@@ -653,6 +667,7 @@ async function runR06MutationCheck(courierId, docId) {
 
     // 2. Restaurar la migración original (GREEN)
     runSql(originalSql);
+    runSql(currentSql);
     console.log('[CC-025][R06] Migración original restaurada (GREEN).');
 
     // Revertir estado del documento para que vuelva a estar rejected
@@ -700,12 +715,14 @@ async function runR06MutationCheck(courierId, docId) {
     console.log('[CC-025][R06] Control de mutación GREEN confirmado: prefijo literal rechaza licenseX... y acepta license_... legítimo.');
   } finally {
     runSql(originalSql);
+    runSql(currentSql);
   }
 }
 
 async function runR07MutationCheck(courierId) {
   console.log('[CC-025][R07] --- Inicio de control de mutación RED->GREEN para R07 (revocación de INSERT directo) ---');
   const originalSql = fs.readFileSync(migrationPath, 'utf8');
+  const currentSql = snapshotCurrentDefinitions();
 
   try {
     const testDocId = crypto.randomUUID();
@@ -752,6 +769,7 @@ async function runR07MutationCheck(courierId) {
 
     // 2. Restaurar la migración original de producción (GREEN)
     runSql(originalSql);
+    runSql(currentSql);
     console.log('[CC-025][R07] Migración original restaurada (GREEN).');
 
     // Bajo la migración original, el INSERT directo debe fallar con SQLSTATE 42501
@@ -780,6 +798,7 @@ async function runR07MutationCheck(courierId) {
     console.log('[CC-025][R07] Control de mutación GREEN confirmado: REVOKE INSERT rechaza el bypass directo con 42501 y 0 filas.');
   } finally {
     runSql(originalSql);
+    runSql(currentSql);
   }
 }
 
