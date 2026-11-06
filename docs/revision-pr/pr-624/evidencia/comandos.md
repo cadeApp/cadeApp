@@ -173,3 +173,53 @@ node /tmp/pr624-r3-probe.mjs
 Esto detecta patrones, no simula una ejecución semántica de Playwright ni PostgreSQL. Una vez corregido R03, **es esperado que una aserción que detecta el defecto deje de cumplirse**; la evidencia GREEN definitiva requiere el test E2E ejecutado.
 
 Comandos de próxima sesión: git fetch origin; git diff --check origin/develop...origin/feat/T-419-vehiculos; git merge-tree --write-tree origin/develop origin/feat/T-419-vehiculos; pnpm typecheck; pnpm lint; pnpm test; pnpm exec playwright test --list e2e/specs/courier-vehicles.spec.ts e2e/specs/courier-onboarding.spec.ts; node docs/revision-pr/analizar.mjs verificacion. No levantar Supabase/Docker local, no disparar workflows manualmente, no declarar E2E verde antes de migrate-develop.
+
+
+## Ronda 4 — evidencia independiente, inspección y limitaciones
+
+- HEAD revisado: 6e4525b5805100c831e0201e7a6451ba399d5daf. Commit anterior de revisión: 1d834351da547b1eb97e9c149c1cc09ba6488e18. Diff: solo e2e/specs/courier-vehicles.spec.ts y docs/tasks/log/T-419.md.
+- CI run https://github.com/cadeApp/cadeApp/actions/runs/42269949572 de 6e4525b5: siete jobs success. db-tests job 128071753287, cc042_courier_vehicles.sql ... ok, Files=43, Tests=3582, Result: PASS, comparación de tipos sin diff. unit job 128071753185, Test Files 196 passed, Tests 3680 passed. Estos logs son de CI, no tests locales propios.
+- E2E y mutación funcional: BLOCKED / REQUIRES DEVELOP MIGRATION, no ejecutados. El autor declaró playwright test --list con 16 pruebas en docs/tasks/log/T-419.md, no reproducido aquí.
+- develop: 5a8f6dc5 frente a merge base b5ceef11 (un commit CC-046 y pr-631/sheet) sin superposición de rutas en el diff de R4. GitHub mergeable=true; no git merge-tree local.
+
+**Sondas independientes realmente ejecutadas por el revisor (sobre texto exacto del SHA, no sobre Playwright):** 13/13 TRUE. Cobertura: dos escenarios de corte; semilla en try; preexistentes leídos primero; bici archivada protegida; cleanup interno; cleanup externo; no borrar por vehicle_type; error de delete controlado; no borrar archivada con cleanup fallido; moto restaurada; nueva bici desaparecida; oferta retirada; corte esperado y errores reportados. Mutación en memoria: quitar el llamado a restoreSeedVehicle en finally interno hace fallar la aserción estática; restaurar deja la aserción en verde. **Esta mutación NO demuestra RED semántico E2E.**
+
+Script completo equivalente, reproducible sin mutar archivos (node, desde el repo; guardarlo en /tmp):
+~~~bash
+cat > /tmp/pr624-r4-structural.mjs <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const src=fs.readFileSync('e2e/specs/courier-vehicles.spec.ts','utf8');
+const start="for (const cutAfter of ['activar la bici', 'ofertar'] as const)";
+assert.ok(src.includes(start), 'se esperaban los dos casos R03');
+const code=src.slice(src.indexOf(start));
+const inner="cleanupErrors.push(...(await restoreSeedVehicle(courierClient, courier.id, motoId, 'bike', before, offerId)));";
+const predicates=[
+  ["dos escenarios de corte",code.includes("['activar la bici', 'ofertar'] as const") && code.includes("if (cutAfter === 'activar la bici') throw new Error('corte simulado')")],
+  ["semilla histórica bajo try",code.indexOf('try {')<code.indexOf(".insert({ courier_id: courier.id, vehicle_type: 'bike', archived_at:")],
+  ["set de IDs previo a escrituras",code.indexOf('preexistingBikes = await vehicleIdsOfType')<code.indexOf(".insert({ courier_id: courier.id, vehicle_type: 'bike'")],
+  ["histórico protegido en before",code.includes('const before = new Set([...preexistingBikes, archivedId]);')],
+  ["cleanup en finally interno",code.includes(inner)],
+  ["cleanup repetido en finally externo",code.includes('const finalErrors = await restoreSeedVehicle(')],
+  ["no borrar históricos por tipo",!code.includes(".delete().eq('vehicle_type'") && code.includes(".delete().eq('id', archivedId)")],
+  ["borrado histórico comprueba error",code.includes('if (deleteError) finalErrors.push(')],
+  ["histórico se borra solo si cleanup sin error",code.includes('if (archivedId && finalErrors.length === 0)')],
+  ["moto activa luego del corte",code.includes('expect(after?.active_vehicle_id).toBe(motoId)')],
+  ["bici creada ya no existe",code.includes('remaining.has(newBikeId)).toBe(false)')],
+  ["oferta withdrawn después del corte",code.includes("expect(offer?.status).toBe('withdrawn')")],
+  ["assert del corte esperado y reporte de error",code.includes("await expect(runUntilCut()).rejects.toThrow('corte simulado')") && code.includes('reportCleanup(finalErrors, primaryError)')],
+];
+for(const [name,yes] of predicates){assert.equal(yes,true,name);console.log('TRUE',name);}
+const mutation=code.replace(inner,'// MUTACIÓN: helper omitido en finally interno');
+assert.notEqual(mutation,code,'la mutación no encontró objetivo');
+assert.equal(code.includes(inner),true,'control con original GREEN');
+assert.equal(mutation.includes(inner),false,'control sobre mutación RED estructural');
+console.log('13/13 GREEN estructural + mutación estructural detectada (NO E2E).');
+JS
+node /tmp/pr624-r4-structural.mjs
+~~~
+
+El harness anterior evalúa patrones textuales e identidad de los finally; no llama a Supabase ni prueba el flujo en runtime. No elevar los diez registros a arreglado-verificado con esta única evidencia. No se ejecutó un worktree local, git merge-tree, Docker, Supabase ni pnpm/Playwright por el revisor.
+
+**Pendiente humano obligatorio antes del merge:** migrate-develop; ejecutar E2E funcional de los dos cortes, demás specs de T-419 y RED en branch REVIEW ONLY con restauración a GREEN. No ejecutar contra preview con migración anterior. Volver a confirmar CI/merge-tree y el SHA efectivo antes del merge. Esta ronda está aceptada para cierre de revisión estática y CI, no certifica el E2E.

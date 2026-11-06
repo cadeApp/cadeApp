@@ -27,3 +27,11 @@ Patrones P08/P05/P06, relacionados con las lecciones ya registradas en pr-63/AG-
 14. En test E2E con siembra histórica, el historical ID es dato de la fixture creada por la propia prueba: el teardown debe comprobar errores y nunca borrar datos preexistentes sin ID exacto.
 15. RED por mutación del autor en CI es evidencia comprobable (#646 falló tests 180 y 181) pero el campo verificado_en_sha se reserva para una comprobación independiente ejecutada. Un test E2E todavía no ejecutado no puede darse por cerrado por simple lectura.
 
+
+## Ronda 4 — cierre de ciclo y límites de evidencia
+
+16. Si un E2E se diseña para probar restauración tras errores, el propio test necesita un finally externo que garantice cleanup aunque fallen la preparación, el corte intencional, las aserciones o el cleanup interno. La solución de R4 usa dos capas de finally; el exterior conserva IDs preexistentes y solo elimina la bici archivada sembrada con la restauración sin errores.
+17. Separar control del flujo y prueba de detección: 13 sondas estructurales y una mutación de texto que cambia GREEN→RED aportan evidencia de estructura, pero no sustituyen RED/GREEN E2E real en staging. La ronda puede aceptarse sin bloqueantes de código y dejar un **gate operacional explícito** antes del merge; no presentar ese gate como cumplido.
+18. No pedir CI nuevo por un commit meramente documental si el commit anterior de código en el mismo head tiene los siete jobs verdes; sí registrar el SHA del último código verificado y asegurar que no cambió producción entre commits. En esta ronda el código mismo tiene CI completo en verde.
+19. Conservar historial: un hallazgo corregido pero sin reproducción independiente queda arreglado-sin-verificar, incluso en una ronda aceptada. No convertir todos los registros a aceptado ni inventar verificado_en_sha solo para cerrar el informe.
+
