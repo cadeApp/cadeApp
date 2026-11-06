@@ -293,6 +293,10 @@ export type Database = {
         Row: {
           active_vehicle_id: string | null
           application_submitted: boolean
+          application_vehicle_plate: string | null
+          application_vehicle_type:
+            | Database["public"]["Enums"]["vehicle_type"]
+            | null
           available: boolean
           deactivated_at: string | null
           decided_at: string | null
@@ -310,6 +314,10 @@ export type Database = {
         Insert: {
           active_vehicle_id?: string | null
           application_submitted?: boolean
+          application_vehicle_plate?: string | null
+          application_vehicle_type?:
+            | Database["public"]["Enums"]["vehicle_type"]
+            | null
           available?: boolean
           deactivated_at?: string | null
           decided_at?: string | null
@@ -327,6 +335,10 @@ export type Database = {
         Update: {
           active_vehicle_id?: string | null
           application_submitted?: boolean
+          application_vehicle_plate?: string | null
+          application_vehicle_type?:
+            | Database["public"]["Enums"]["vehicle_type"]
+            | null
           available?: boolean
           deactivated_at?: string | null
           decided_at?: string | null
