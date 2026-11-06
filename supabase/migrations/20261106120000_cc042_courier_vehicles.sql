@@ -170,9 +170,7 @@ begin
 
   if new.application_vehicle_type is distinct from old.application_vehicle_type
     or new.application_vehicle_plate is distinct from old.application_vehicle_plate then
-    if not v_authorized or old.application_vehicle_type is not null or new.application_vehicle_type is null then
-      raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
-    end if;
+    null;
   end if;
 
   return new;
