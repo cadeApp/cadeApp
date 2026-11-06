@@ -1664,10 +1664,8 @@ begin
     -- PR624-H03 (D01=A): contra el vehículo de la postulación, no contra el activo (cambia con CC-042). Sin snapshot
     -- solo queda una postulación marcada fuera de finalize y del backfill: ahí el reflejo es el único dato que hay.
     if v_courier.dni_hmac is not distinct from p_dni_hmac
-      and (case when v_courier.application_vehicle_type is null then v_courier.vehicle_type
-                else v_courier.application_vehicle_type end) is not distinct from p_vehicle_type
-      and (case when v_courier.application_vehicle_type is null then v_courier.vehicle_plate
-                else v_courier.application_vehicle_plate end) is not distinct from v_plate then
+      and v_courier.vehicle_type is not distinct from p_vehicle_type
+      and v_courier.vehicle_plate is not distinct from v_plate then
       return jsonb_build_object(
         'ok', true,
         'idempotent', true,
