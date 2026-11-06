@@ -32,3 +32,12 @@ No se asignan números AG nuevos: los patrones refuerzan reglas existentes y las
 - Ya no hay hallazgos abiertos de código en esta PR; no se confunda esto con el estado de CI/E2E, que requiere logs oficiales del SHA con cambios de aplicación.
 
 No se asigna un AG nuevo por el arreglo de una sola PR.
+
+## Ronda 4 — Selector heredado de T-380 en gate de T-407
+
+- La búsqueda global de un estado legible (`page.getByText('Aprobado')`) se volvió ambigua al existir un segundo texto fuera de `main`: patrón P07. La falla fue preexistente y no es regresión de A06.
+- D06 utilizó scoping semántico `getByRole('main')`, sin recurrir a índices `.first()`/`.nth()` ni eliminar las aserciones; el código del spec restante es idéntico.
+- RED E2E real de `e6894f16` confirmado en logs con 116 passed/1 failed y tres intentos. No marcar el nuevo selector como `verificado` hasta tener un E2E GREEN con checkout real del SHA nuevo.
+- El workflow E2E es `workflow_run` sobre `develop`: para atribuirlo a la PR hay que leer el SHA de `actions/checkout` en el job, no solo la cabecera del run.
+
+Sin AG nuevo: refuerza P07-coincidencia-demasiado-amplia.

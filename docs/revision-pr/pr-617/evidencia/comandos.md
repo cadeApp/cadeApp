@@ -209,3 +209,46 @@ console.log('H03: 4/4 casos GREEN, 4 etiquetas iguales a A05, 3 mutaciones detec
 - Al documentar se observó el workflow [CI #42116063239](https://github.com/cadeApp/cadeApp/actions/runs/42116063239) para `d0b408f03aa7ff3e88b82401be69d5b62834e77d` **en progreso**; no hay declaración de GREEN final.
 - `e2e-preview` del SHA todavía no confirmado. El estado verde de Vercel no reemplaza el gate E2E.
 - La primera corrida del spec en un SHA anterior tampoco valida automáticamente los cambios del SHA nuevo.
+
+---
+
+## Ronda 4 — D06 · SHA `7411c8656f1001738431ff9f4d7d8b66438a516a`
+
+**RED real anterior al fix:** E2E [42145295195 intento 3](https://github.com/cadeApp/cadeApp/actions/runs/42145295195), checkout `e6894f16` comprobado en log; test de T-407 verde, **116 passed / 1 failed**; test T-380 `admin-courier-reinstate.spec.ts:100` falla tres veces por dos `Aprobado`. Playwright identifica primera coincidencia en `main`.
+
+**Verificación independiente de la corrección (solo código fuente):** comparación de las dos versiones de spec en GitHub: 3/3 aserciones `toBeVisible` conservadas con `getByRole('main').getByText`; normalización de los tres scoping más comentario → archivo idéntico. Batería propia ejecutada en V8 con tres mutaciones negativas detectadas. **Sin Playwright GREEN nuevo**, H04 `arreglado-sin-verificar`.
+
+**Reproductor completo para el control estructural (no ejecutar sobre staging):**
+
+```js
+// Guardar en /tmp/pr617-d06.cjs; desde el repo ejecutar node /tmp/pr617-d06.cjs.
+// SOLO comprueba el texto fuente y mutaciones en memoria. No es Playwright.
+const fs=require('node:fs');
+const source=fs.readFileSync('e2e/specs/admin-courier-reinstate.spec.ts','utf8');
+const strict=/await expect\(page\.getByRole\('main'\)\.getByText\('(Aprobado|Suspendido)', \{ exact: true \}\)\)\.toBeVisible\(\);/g;
+function check(s) {
+  const names=[...s.matchAll(strict)].map(m=>m[1]);
+  return names.join('|')==='Aprobado|Suspendido|Aprobado' &&
+    !(s.match(/page\.getByText\('(Aprobado|Suspendido)', \{ exact: true \}\)/g)||[]).length &&
+    !/getByText\('(Aprobado|Suspendido)', \{ exact: true \}\)\.(first|nth|last)\(/.test(s);
+}
+if(!check(source)) throw Error('BASELINE RED');
+const one="page.getByRole('main').getByText('Aprobado', { exact: true })";
+const other="page.getByRole('main').getByText('Suspendido', { exact: true })";
+const statement="await expect("+one+").toBeVisible();";
+const last=source.lastIndexOf(statement);
+if(last<0)throw Error('M3 SIN OBJETIVO');
+const mutations=[
+  source.replace(one,"page.getByText('Aprobado', { exact: true })"),
+  source.replace(other,"page.getByRole('complementary').getByText('Suspendido', { exact: true })"),
+  source.slice(0,last)+source.slice(last+statement.length)
+];
+for(const [i,m] of mutations.entries()){
+  if(m===source)throw Error('MUTACIÓN SIN OBJETIVO '+i);
+  if(check(m))throw Error('MUTACIÓN SOBREVIVIÓ '+i);
+}
+console.log('BASELINE estructural GREEN: 3 aserciones; mutaciones 3/3 detectadas.');
+console.log('Runtime E2E aún requiere gate oficial.');
+```
+
+**Gates aún sin concluir:** CI run [42150888547](https://github.com/cadeApp/cadeApp/actions/runs/42150888547) en progreso para `7411c8656f1001738431ff9f4d7d8b66438a516a`. E2E Preview pendiente de comprobar; si el workflow aparece encabezado por `develop`, revisar SHA de checkout de su job para confirmar la PR.
