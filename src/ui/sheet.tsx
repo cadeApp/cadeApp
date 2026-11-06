@@ -122,7 +122,14 @@ export function SheetContent({
 
   return (
     <DialogPrimitive.Portal>
-      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+      {/* CC-046: el lateral derecho se apoya en el borde derecho; el inferior sigue centrado. */}
+      <div
+        data-sheet-wrapper=""
+        className={cn(
+          'fixed inset-0 z-50 flex items-end sm:items-center',
+          side === 'right' ? 'justify-end' : 'justify-center'
+        )}
+      >
         <DialogPrimitive.Overlay
           className="fixed inset-0 bg-foreground/50 backdrop-blur-sm"
           aria-hidden="true"
