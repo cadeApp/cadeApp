@@ -364,6 +364,21 @@ test.describe('T-369 — créditos de publicación y planes (CC-029)', () => {
         await expect(sheet).toBeVisible({ timeout: 1_000 });
       }).toPass();
       await expect(sheet.getByText('No se registran montos ni comprobantes de pago en cadeApp.')).toBeVisible();
+
+      // PR629-H01 (CC-046): el panel se apoya en el borde derecho; a 1280 px es más angosto que la pantalla y a 390 px
+      // ocupa todo el ancho.
+      for (const width of [1280, 390]) {
+        await adminPage.setViewportSize({ width, height: 800 });
+        await expect(async () => {
+          const box = await sheet.boundingBox();
+          const viewport = adminPage.viewportSize();
+          if (!box || !viewport) throw new Error('[E2E Error] Falta el panel o el viewport');
+          expect(Math.abs(box.x + box.width - viewport.width), `${width}px borde derecho`).toBeLessThanOrEqual(2);
+          if (width >= 640) expect(box.x, `${width}px no ocupa todo el ancho`).toBeGreaterThan(0);
+          else expect(Math.abs(box.x), `${width}px ocupa todo el ancho`).toBeLessThanOrEqual(2);
+        }).toPass();
+      }
+      await adminPage.setViewportSize({ width: 1280, height: 800 });
       await sheet.getByRole('radio', { name: 'Extender piloto' }).click();
       await sheet.getByLabel('Piloto hasta').fill(pilotUntil);
       await sheet.getByRole('button', { name: 'Guardar' }).click();
