@@ -613,7 +613,6 @@ begin
   end if;
 
   update public.couriers set active_vehicle_id = v_vehicle.id where profile_id = v_actor;
-  perform app_private.cc042_sync_courier_reflection(v_actor);
 
   insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
   values (
