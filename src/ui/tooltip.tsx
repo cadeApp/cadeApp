@@ -2,26 +2,36 @@
 
 import * as React from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+
 import { cn } from '@/ui/cn';
 
-export const TooltipProvider = TooltipPrimitive.Provider;
-export const Tooltip = TooltipPrimitive.Root;
-export const TooltipTrigger = TooltipPrimitive.Trigger;
+// Generado con `shadcn add tooltip` (T-427). Sin las clases de tailwindcss-animate (no está instalado y las animaciones
+// van con los presets de Motion); con Portal y flecha, en la tinta del panel.
+const TooltipProvider = TooltipPrimitive.Provider;
 
-export const TooltipContent = React.forwardRef<
+const Tooltip = TooltipPrimitive.Root;
+
+const TooltipTrigger = TooltipPrimitive.Trigger;
+
+const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 8, ...props }, ref) => (
+>(({ className, sideOffset = 6, children, ...props }, ref) => (
   <TooltipPrimitive.Portal>
     <TooltipPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'z-50 rounded-control border border-border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-modal',
+        'z-50 rounded-md bg-secondary px-2.5 py-1.5 text-xs font-medium text-secondary-foreground shadow-md',
         className
       )}
       {...props}
-    />
+    >
+      {children}
+      <TooltipPrimitive.Arrow className="fill-secondary" />
+    </TooltipPrimitive.Content>
   </TooltipPrimitive.Portal>
 ));
 TooltipContent.displayName = TooltipPrimitive.Content.displayName;
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };
