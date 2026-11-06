@@ -73,3 +73,83 @@ git status --short
 ```
 
 `pnpm test:db` solo si la implementación termina tocando `src/server/**` o `supabase/**`; no levantar Docker/Supabase local desde la revisión. `e2e-preview` se verifica por el gate trusted de GitHub, con SHA exacto. **No ejecutar mutaciones contra Supabase remoto ni disparar workflows manualmente.**
+
+---
+
+## Ronda 2 — fuente, SHA y controles independientes (2026-11-06)
+
+**SHA de aplicación:** `4fce771d774ccf5837992e228d46f6de4322f6f1` · base `4ae5404ee14651d00ad0c9286f250ba6c5441c49`.
+
+### Fuentes oficiales leídas por el revisor
+
+- CI general: https://github.com/cadeApp/cadeApp/actions/runs/42302308824 — 7 jobs success, unit `Test Files 198 passed (198)` y `Tests 3735 passed (3735)`.
+- Gate E2E: https://github.com/cadeApp/cadeApp/actions/runs/42303370007/job/128186588966 — `actions/checkout` ref exacto `4fce771d...`, `✓ incidents.spec.ts:372` T-406, los 4 tests anteriores T-308 ✓; `120 passed`, `1 flaky`, `2 failed`.
+- Reproducción audit: mismo blob GitHub develop/PR `98402507ea8a1c92d9559f562538d9003f25a77f`. `admin-audit-filters.spec.ts:108` obtiene dos elementos; 3/3 fallos. Reabierto #636.
+- Reproducción courier: mismo blob develop/PR `b5661e89b37db59ff7447fb7fd8c55dab27b53a1`; `courier-onboarding.spec.ts:1177` sin `Rechazado / requiere corrección`, 3/3. Issue #653. Relación con T-419 es hipótesis, verificar `vehicle_id`.
+- `approval-policy` rojo original https://github.com/cadeApp/cadeApp/actions/runs/42302305442 → informe añadido al body por el revisor, check verde https://github.com/cadeApp/cadeApp/actions/runs/42309455413.
+
+### Probes estructurales independientes realizados sobre contenido GitHub, NO runtime
+
+Se evaluaron en una ejecución separada del orquestador sobre el SHA exacto: `H01_factor_enrolled_once`, `H01_same_client_returned`, `H01_no_double_elevate`, `D01_auth_before_query`, `D01_status_head_count`, `D01_polling`, `D01_initial_data`, `D01_badge_sibling_link`: **8/8 análisis estáticos satisfactorios**. Cuatro mutaciones de cadena en memoria (reintroducir elevación, quitar AAL2, habilitar background, deshabilitar foco) se detectaron estructuralmente: **4/4**. Esto **NO** es evidencia RED de Vitest ni Playwright; no se cambió ningún archivo del repositorio.
+
+### Script reproducible en un checkout que contenga el commit de implementación
+
+El script lee el contenido **del SHA declarado** vía `git show`, no del head documental posterior. Se entrega el harness completo, pero **no se ejecutó desde un clon en esta sesión**; los 8 probes equivalentes sí se ejecutaron contra el contenido leído por GitHub.
+
+```bash
+cat > /tmp/pr647-round2-probes.mjs <<'NODE'
+import { execFileSync } from 'node:child_process';
+import assert from 'node:assert/strict';
+
+const sha = '4fce771d774ccf5837992e228d46f6de4322f6f1';
+const show = (p) => execFileSync('git', ['show', `${sha}:${p}`], { encoding: 'utf8' });
+const e = show('e2e/specs/incidents.spec.ts');
+const r = show('src/app/api/live/open-incidents/route.ts');
+const n = show('src/app/(admin)/admin-nav.tsx');
+const q = show('src/features/incidents/queries.ts');
+const s = show('src/features/incidents/schemas.ts');
+const helper = e.split('async function openAdminPageWithMfa(')[1].split('\n}\n')[0];
+const scenario = e.split("test('T-406:")[1];
+const count = (v, part) => v.split(part).length - 1;
+
+function verify(spec=e,route=r,nav=n,query=q,schema=s) {
+  const h = spec.split('async function openAdminPageWithMfa(')[1].split('\n}\n')[0];
+  const t = spec.split("test('T-406:")[1];
+  assert.equal(count(h, '.auth.mfa.enroll('), 1, 'H01: solo un enrolamiento');
+  assert(t.includes('adminApi.rpc('), 'H01: el RPC usa adminApi');
+  assert(!t.includes('elevateAdminToAal2('), 'H01: sin doble elevación');
+  assert(h.includes('adminApi: adminClient'), 'H01: se devuelve el cliente AAL2');
+  assert(route.includes("session.role !== 'admin' || session.aal !== 'aal2'"), 'D01: requiere admin+AAL2');
+  assert(route.indexOf('getServerSession()') < route.indexOf('await getOpenIncidentsCount()'), 'D01: auth antes de consulta');
+  assert(query.includes('head: true') && query.includes('INCIDENT_TAB_STATUSES[tab]'), 'D01: conteo canónico');
+  assert(schema.includes("'reviewing'"), 'D01: incluye reviewing');
+  assert(nav.includes('60_000') && nav.includes('refetchIntervalInBackground: false'), 'D01: polling visible');
+  assert(nav.includes("refetchOnWindowFocus: 'always'"), 'D01: refetch al foco');
+  assert(nav.includes('initial !== null ? { initialData: initial'), 'D01: cero es dato válido');
+  assert(nav.includes('aria-label={ADMIN_COPY.nav.openIncidents(badge)}'), 'D01: texto accesible');
+}
+verify();
+const badVersions = [
+  () => verify(e.replace('const { adminPage, adminApi } = await openAdminPageWithMfa(page, adminCredentials);', 'const { adminPage, adminApi } = await openAdminPageWithMfa(page, adminCredentials); await elevateAdminToAal2(adminApi, adminCredentials);')),
+  () => verify(e, r.replace("session.aal !== 'aal2'", 'false')),
+  () => verify(e, r, n.replace('refetchIntervalInBackground: false', 'refetchIntervalInBackground: true')),
+  () => verify(e, r, n.replace("refetchOnWindowFocus: 'always'", 'refetchOnWindowFocus: false')),
+];
+for (const bad of badVersions) assert.throws(bad, assert.AssertionError, 'mutación estructural debe detectarse');
+console.log('OK: H01 y D01, probes estáticos; mutaciones estructurales detectadas 4/4. NO es RED Vitest ni E2E.');
+NODE
+node /tmp/pr647-round2-probes.mjs
+```
+
+### Comandos que quedarán pendientes tras integrar correcciones externas
+
+```bash
+git fetch origin
+git status --short
+git merge-tree --write-tree origin/develop HEAD
+pnpm typecheck && pnpm lint && pnpm test
+node docs/revision-pr/analizar.mjs verificacion
+git status --short
+```
+
+**No ejecutado localmente en ronda 2** por ausencia de checkout/pnpm; tampoco se leyó `.env*` ni se corrieron servicios remotos. `e2e-preview` solo se considera completo GREEN cuando el gate trusted oficial de la integración corregida lo indique. No exigir un nuevo green por un commit que únicamente toque `docs/revision-pr/pr-647`.

@@ -1,38 +1,40 @@
-# PR #647 — T-406 · Incidentes y parámetros según A05/A04
+# PR #647 — T-406 · Incidentes y parámetros A05/A04
 
 | | |
 |---|---|
 | **PR** | https://github.com/cadeApp/cadeApp/pull/647 |
-| **Tarea** | T-406 (Fase 4) · issue #487 |
+| **Tarea** | T-406 · issue #487 |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-406-incidentes-pestanas` → `develop` |
-| **Base al revisar** | `1fc95aa57da2f8c68a1be68e3f0322a4acc0e948` |
-| **SHA revisado** | `abf3f63873f4c8a9a1288d604735c7689708b0de` |
-| **Tamaño del diff revisado** | 15 archivos, +523 / -79 líneas |
-| **Estado de la revisión** | CON BLOQUEANTES (1); D01=C acordada, implementación pendiente |
+| **SHA de implementación revisado R2** | `4fce771d774ccf5837992e228d46f6de4322f6f1` |
+| **Base develop exacta** | `4ae5404ee14651d00ad0c9286f250ba6c5441c49` |
+| **Resultado** | SIN BLOQUEANTES propios del diff T-406; **MERGE BLOQUEADO** por gate E2E completo rojo (externo) |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `abf3f63873f4c8a9a1288d604735c7689708b0de` | H01 (bloqueante) y D01 (decisión resuelta, pendiente implementar) | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `abf3f63873f4c8a9a1288d604735c7689708b0de` | H01 bloqueante; D01=C decidida | [ronda 1](revisiones/ronda-1.md) |
+| 2 | `4fce771d774ccf5837992e228d46f6de4322f6f1` | H01 verificado por gate trusted; D01 implementada; H02 body de PR corregido | [ronda 2](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
-| ID | Título | Severidad | Estado |
+| ID | Diagnóstico | Estado | Evidencia |
 |---|---|---|---|
-| PR647-H01 | Dos factores TOTP en el mismo E2E | alto | abierto / por inspección |
-| D01 | Contador de abiertos periódico cada 60 s y al recuperar foco | decisión de Lautaro073 | C aprobada, pendiente implementar y probar |
+| PR647-H01 | Dos TOTP en el mismo E2E de incidentes | **arreglado-verificado**, R2 | Trusted gate [42303370007](https://github.com/cadeApp/cadeApp/actions/runs/42303370007) ejecutó checkout del SHA y T-406 pasó |
+| PR647-H02 | Faltaba sección de informe en body; `approval-policy` rojo | **arreglado-verificado**, R2 | Informe agregado al body; [42309455413](https://github.com/cadeApp/cadeApp/actions/runs/42309455413) `success` |
+| D01=C | Contador inicial del layout + polling 60 s visible/foco, sin Realtime | **implementado; inspección de código y unit CI** | Endpoint admin+AAL2 y hook TanStack Query; no se reprodujeron localmente timers |
 
-La D01 está registrada como **decisión de alcance**, no como defecto reparado ni como verificación independiente. Por eso no se registra como H02 en `hallazgos.jsonl`. No hay hallazgos marcados `arreglado-verificado`.
+Datos: [hallazgos.jsonl](hallazgos.jsonl) · [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).
 
-[Datos estructurados](hallazgos.jsonl) · [Evidencia y comandos](evidencia/comandos.md) · [Lecciones](lecciones.md)
+## Bloqueos restantes para el MERGE (no imputados al diff de T-406)
 
-## Qué falta
+1. **T-407 Auditoría:** `admin-audit-filters.spec.ts:69` encuentra dos textos idénticos y falla 3/3 por strict mode. Issue [#636](https://github.com/cadeApp/cadeApp/issues/636), **reabierto** tras este gate.
+2. **T-419/T-356 licencia:** `courier-onboarding.spec.ts:1056` no ve `Rechazado / requiere corrección`, falla 3/3. Fixture inserta `license` sin `vehicle_id` tras CC-042; causa probable no confirmada. Issue [#653](https://github.com/cadeApp/cadeApp/issues/653), nuevo.
+3. **Flaky conocido** de `admin-trips.spec.ts:167`, 1 caso recuperado en retry; seguir [#585](https://github.com/cadeApp/cadeApp/issues/585). No confundirlo con los dos rojos persistentes.
 
-1. Corregir H01 con un único factor verificado reutilizado en el login de navegador.
-2. Implementar D01=C: mantener el conteo inicial del layout; después leer **solo el conteo de abiertos** en un endpoint `/api/live` protegido por rol admin+AAL2; usar TanStack Query con período de 60 s mientras el panel esté visible y refetch al recuperar foco, sin Realtime.
-3. Lautaro073 **autorizó** ampliar la ficha T-406 y su lista de archivos permitidos para esa solución dentro de la misma PR. Registrar la ampliación en ficha, bitácora y cuerpo de PR antes de dar por terminado el alcance. No modificar otros contratos sin CC.
-4. Correr pruebas RED→GREEN auténticas; guardar salidas y verificar el E2E oficial del nuevo SHA. Pedir ronda 2 al terminar. No mergear desde la revisión.
+**Decisión de revisión:** arreglar ambos E2E persistentes en PRs de QA independientes, mergearlos a `develop`, traer `develop` a #647 con merge normal (no rebase) y exigir un gate trusted **completo verde** sobre el nuevo código integrado. **No** suprimir tests, subir retries ni exceptuar el gate; la ficha T-406 mantiene el requisito E2E verde. No aprobar ni mergear desde la revisión.
 
-Este commit de revisión mueve el head de la PR y puede disparar nuevos checks: no confundirlos con evidencia del SHA de implementación ya revisado.
+CI general de `4fce771d` [42302308824](https://github.com/cadeApp/cadeApp/actions/runs/42302308824): 7 jobs `success`, unit 198 files / 3735 tests. Gate E2E [42303370007](https://github.com/cadeApp/cadeApp/actions/runs/42303370007): 120 passed, 1 flaky, 2 failed; escenario T-406 y T-308 pasan. PR en Draft al revisar.
+
+El commit documental de esta ronda **moverá el head** y podría activar checks nuevos; no exigir otro green por solo esta documentación. La verificación de H01 apunta al SHA original de código `4fce771d`, no al commit del informe.

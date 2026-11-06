@@ -24,3 +24,15 @@ D01=C: preferir un contador mínimo independiente de la vida del layout, con Tan
 - Los puntos anteriores aún no están probados en runtime por esta revisión.
 - No confundir aprobar el alcance D01 con verificar su implementación.
 - No se tocó AGENTS.md; cualquier regla futura debe justificarse por múltiples PR o severidad crítica.
+
+## Ronda 2 — verificación del arreglo y gate ajeno
+
+**H01 resuelto:** el flujo T-406 vuelve a un único factor TOTP; no hay segundo enrolamiento con sesiones cruzadas. El gate trusted del SHA exacto confirmó el flujo completo. Es más simple y menos frágil que la propuesta de ronda 1 de pasar `{factorId,totpSecret}` explícitamente: el helper concentra enrolamiento, verificación y devolución de la sesión AAL2.
+
+**D01=C resuelta:** `AdminNav` usa el mismo patrón `useQuery` que `use-online-couriers`, con valor de layout, polling 60 s en documento visible y refetch al foco; un nuevo endpoint protegido exige admin+AAL2. El dato escalar no requiere Realtime ni reload de layout. La separación del badge del link preserva la semántica accesible de navegación; un E2E anterior lo había detectado y quedó corregido.
+
+**H02 del proceso:** `approval-policy` no lee comentarios de PR: exige la sección del informe en el **body**. Un comentario correcto de revisión no basta. Se reparó el body sin tocar el código; check posterior verde. No introducir un bypass de política.
+
+**Lección del gate externo:** cuando un E2E falla sin archivos de la tarea modificados, probar atribución por blob del archivo y contexto de migraciones, pero no dar por probada la causa raíz de un fixture solo por inferencia. En PR #647 dos E2E ajenos siguen rojos; se rastrean por #636 (reabierto) y #653 (nuevo), y solo un gate completo verde reabre la posibilidad del merge.
+
+**No se reserva numeración AG nueva.** Son observaciones de la ronda, no modificación de `AGENTS.md`. Los probes estáticos propios son solo análisis; las mutaciones/runtime del autor no se contaron como ejecutadas por el revisor.
