@@ -437,7 +437,7 @@ select is((public.finalize_courier_application(pg_temp.not_sent(), repeat('a', 6
   'finalize envía la postulación');
 select pg_temp.as_postgres();
 select is((select count(*)::int from public.courier_vehicles where courier_id = pg_temp.not_sent()), 1, 'finalize crea el vehículo del alta');
-select is((select row(vehicle_type, plate)::text from public.courier_vehicles v join public.couriers c on c.active_vehicle_id = v.id where c.profile_id = pg_temp.not_sent()),
+select is((select row(v.vehicle_type, v.plate)::text from public.courier_vehicles v join public.couriers c on c.active_vehicle_id = v.id where c.profile_id = pg_temp.not_sent()),
   row('moto'::public.vehicle_type, 'AA 123 BB'::text)::text, 'el vehículo del alta queda activo');
 select is((select vehicle_id from public.courier_documents where courier_id = pg_temp.not_sent() and kind = 'license'),
   (pg_temp.courier(pg_temp.not_sent())).active_vehicle_id, 'la licencia del onboarding queda en ese vehículo');
