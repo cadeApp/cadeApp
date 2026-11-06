@@ -9,6 +9,8 @@ export const ADMIN_COPY = {
     ariaLabel: 'Navegación principal de administración',
     menuButton: 'Menú',
     menuTitle: 'Secciones del panel',
+    collapseSidebar: 'Contraer menú',
+    expandSidebar: 'Expandir menú',
     tabs: {
       applicants: 'Postulantes',
       merchants: 'Comercios',

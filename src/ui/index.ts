@@ -17,6 +17,7 @@ export * from './bottom-nav';
 export * from './dialog';
 export * from './alert-dialog';
 export * from './sheet';
+export * from './tooltip';
 export * from './form';
 export * from './toaster';
 export * from './notify';
