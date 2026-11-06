@@ -108,3 +108,99 @@ git ls-remote origin cc/CC-046-sheet-lado-derecho
 ~~~
 
 No ejecutar Supabase/Docker local ni leer .env/secretos. No declarar en verde un control que no se haya corrido.
+
+
+---
+
+## Ronda 2 — 2026-11-06 (f54dc934…)
+
+**R1 M2 estaba mal definida.** Quitar solo `toFocus.focus()` **no** rompe necesariamente el foco: Radix Dialog conserva el auto-focus al Trigger. El autor documentó GREEN de ambas mutaciones individuales y RED al anular las dos rutas; el reviewer no lo reprodujo por DNS del clon.
+
+### Evidencia leída directamente de GitHub (no confundible con ejecución del revisor)
+
+- [CI 42244785621](https://github.com/cadeApp/cadeApp/actions/runs/42244785621) job unit 127984516985. `HEAD is now at 4027075 Merge f54dc934... into 6e793e...` (merge virtual de PR).
+- `src/ui/sheet.test.tsx (4 tests)` GREEN.
+- `tools/verify-fichas.test.ts (7 tests | 2 failed)`: `docs/tasks/T-424.md` sin `docs/revision-pr/**` y sin primer DoD igual a fila plan. Resumen `1 failed | 193 passed` archivos y `2 failed | 3656 passed` tests.
+- `develop` propio: CI [42183449414](https://github.com/cadeApp/cadeApp/actions/runs/42183449414) failure de unit. No es falla propia del CC.
+- Issues de QA: T-424 [#637](https://github.com/cadeApp/cadeApp/issues/637); T-410 [#585](https://github.com/cadeApp/cadeApp/issues/585); T-407 [#636](https://github.com/cadeApp/cadeApp/issues/636).
+
+### Harness independiente CORREGIDO para R2 (propuesto, **NO ejecutado**)
+
+Este script sustituye **conceptualmente** la mutación de foco sola de la sección anterior; conserva bytes originales y requiere un worktree limpio sin `pnpm` en paralelo. Provoca mutación nueva en **bottom** y doble mutación en **foco**. Si un mutante queda GREEN, registrar supervivencia y no reportar éxito. No copiar salidas de otro run ni alterar el test:
+
+~~~bash
+cat > /tmp/cc046-r2-review.mjs <<'JS'
+import { readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { strict as assert } from 'node:assert';
+
+const file = 'src/ui/sheet.tsx';
+const test = 'src/ui/sheet.test.tsx';
+const original = readFileSync(file, 'utf8');
+const replacement = (source, from, to) => {
+  assert.equal(source.split(from).length, 2, 'Objetivo mutación no único: ' + from);
+  return source.replace(from, to);
+};
+const mutants = [
+  {
+    name: 'M-R2-01-bottom-no-centrado',
+    make: (s) => replacement(
+      s,
+      "side === 'right' ? 'justify-end' : 'justify-center'",
+      "side === 'right' ? 'justify-end' : 'justify-end'"
+    ),
+  },
+  {
+    name: 'M-R2-02-doble-foco',
+    make: (s) => {
+      s = replacement(s, 'toFocus.focus();', 'void toFocus;');
+      return replacement(
+        s,
+        '          data-sheet-side={side}',
+        '          onCloseAutoFocus={(event) => event.preventDefault()}\n          data-sheet-side={side}'
+      );
+    },
+  },
+];
+function run(tag) {
+  const p = spawnSync('pnpm', ['exec', 'vitest', 'run', test, '--reporter=verbose'], {
+    encoding:'utf-8',maxBuffer:8_000_000
+  });
+  if (p.error) throw p.error;
+  const out = (p.stdout ?? '') + '\n' + (p.stderr ?? '');
+  const summary = out.split('\n').filter(x =>
+    /Test Files|Tests  |FAIL |×|✗|passed|failed/.test(x)
+  );
+  console.log(tag, 'exit=' + p.status, summary.slice(-9).join('\n'));
+  return {code:p.status,output:out};
+}
+try {
+  assert.equal(run('BASELINE').code,0,'baseline rojo');
+  for (const mutant of mutants) {
+    try {
+      writeFileSync(file,mutant.make(original));
+      const red = run('RED ' + mutant.name);
+      assert.notEqual(red.code,0,'mutación sobrevivió: ' + mutant.name);
+      if(mutant.name.endsWith('bottom-no-centrado')) {
+        assert.match(red.output,/bottom|centrado horizontalmente/i);
+      } else {
+        assert.match(red.output,/PR631-H01|foco vuelve/i);
+      }
+    } finally {
+      writeFileSync(file,original);
+    }
+    assert.equal(run('GREEN ' + mutant.name).code,0,'restaurado rojo');
+  }
+} finally {
+  writeFileSync(file,original);
+}
+JS
+node /tmp/cc046-r2-review.mjs
+git status --short
+~~~
+
+**No ejecutado por el revisor:** `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` devolvió `Could not resolve host: github.com`. El script anterior se entrega íntegro pero no declara RED propio ni GREEN propio. Ejecutar tras corregir el bloqueo de CI y sobre el SHA funcional objetivo, no sobre el commit documental de revisión.
+
+### Estado de E2E
+
+El workflow `e2e-preview` (trusted) tiene condición CI success. En f54dc934, CI quedó rojo por T-424 heredado de develop, así que el E2E de ancho 390 y Escape del nuevo código **no está verificado** en este gate. No se inventan métricas de Playwright.

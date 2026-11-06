@@ -21,3 +21,14 @@ No se asigna un AG nuevo sin una demostración RED propia: el entorno de revisi�
 - No tocar SheetContent ni lógica de navegación si la cobertura adicional comprueba que ya están bien.
 - No asumir que un gate E2E global rojo es causado por este cambio: T-410/T-407 reportaron selectores estrictos duplicados en archivos no modificados por CC-046. Investigarlos por separado, sin declararlos resueltos.
 - No exigir CI nuevo exclusivamente por commits documentales de aprobación y de revisión.
+
+
+## Ronda 2 — corrección de nuestra regla de mutación
+
+**Nuestro error en R1:** pedimos un RED quitando una sola llamada `toFocus.focus()`. El contrato verificable no es «este método se invoca», sino **«al cerrar con Escape, el foco vuelve al Trigger»**. Radix Dialog y `Sheet.setOpen` son caminos redundantes que satisfacen la misma postcondición. Si se muta solo uno, el otro mantiene GREEN. El autor demostró esa redundancia con dos mutaciones individuales supervivientes y una doble roja declarada. Corresponde reconocer que **la mutación propuesta por el revisor fue incompleta**, no exigir alterar producción para que pase.
+
+El nuevo harness propio prueba (1) que side=bottom realmente conserva `justify-center`, atacando el caso opuesto al arreglo original, y (2) que el foco desaparece al quitar ambos mecanismos. No se ejecutó por falta de clon DNS: no asignamos verificación runtime al revisor. **Sin nuevo AG** hasta reproducir la batería.
+
+**Regresión externa a CC-046:** `develop` 6e793e introdujo `docs/tasks/T-424.md` incompatible con `tools/verify-fichas.test.ts`. Su CI ya estaba rojo y GitHub Actions prueba el merge virtual, por lo que bloquea otras PR que no lo tocaron. Issue #637 contiene corrección documental exacta. No adjudicar a los cambios del Sheet un fallo del plan común.
+
+La duplicación de texto en E2E T-410/T-407 se sigue por separado en #585/#636; no se corrige con `.first()` o retries para fabricar GREEN.

@@ -17,14 +17,15 @@
 | Ronda | SHA de código revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | 83deda5662462550816c579d49dfe9dfbccb9d7c | 3 bloqueantes | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 2 | f54dc9344c69769474b01d845747591b6e68b503 | H01–H03 corregidos por inspección; CI bloqueado por T-424 externo | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
 
 ## Hallazgos
 
 | ID | Prioridad | Estado | Síntesis |
 |---|---|---|---|
-| PR631-H01 | medio, bloqueante | abierto | Falta demostrar el foco recuperado después de Escape |
-| PR631-H02 | medio, bloqueante | abierto | Falta comprobación geométrica a 390 px |
-| PR631-H03 | medio, bloqueante | abierto | Falta bitácora de CC-046 exigida por #630 |
+| PR631-H01 | medio, bloqueante | arreglado-sin-verificar | Falta demostrar el foco recuperado después de Escape |
+| PR631-H02 | medio, bloqueante | arreglado-sin-verificar | Falta comprobación geométrica a 390 px |
+| PR631-H03 | medio, bloqueante | arreglado-verificado (API) | Falta bitácora de CC-046 exigida por #630 |
 
 Detalle: [hallazgos.jsonl](hallazgos.jsonl) · evidencia y harness: [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).
 
@@ -46,3 +47,11 @@ Detalle: [hallazgos.jsonl](hallazgos.jsonl) · evidencia y harness: [evidencia/c
 1. Autor hace git pull de esta revisión antes de trabajar; sin rebase/force/amend.
 2. Corrige PR631-H01/H02, escribe la bitácora real PR631-H03 y reproduce RED→GREEN; no toca docs/revision-pr/**.
 3. Nueva ronda independiente sobre nuevo SHA funcional; comprobar E2E y causa del gate rojo. Sin aprobación ni merge hasta entonces.
+
+## Ronda 2 (2026-11-06)
+
+- HEAD funcional: `f54dc9344c69769474b01d845747591b6e68b503`. R1 → R2: solo `src/ui/sheet.test.tsx`, `e2e/specs/admin-nav-mobile.spec.ts` y `docs/tasks/log/CC-046.md`; la carpeta de revisión no fue modificada por el autor.
+- **0 bloqueantes nuevos propios de CC-046 por inspección.** H01/H02 implementados, con `src/ui/sheet.test.tsx` **4/4 GREEN en CI**; E2E 390 y foco todavía no verificado en Playwright trusted, pues el CI no llegó al gate.
+- **Bloqueo externo de CI:** `unit` rojo en el merge virtual `40270757786435c6261b1db9f3e74ebe8be761e7`: `tools/verify-fichas.test.ts` falla dos casos de T-424 heredado de develop; el CI de develop también estaba rojo. Seguimiento #637. El resultado del gate nuevo sigue **sin ejecutarse** por CI rojo: no es un resultado verde.
+- QA externo: T-410 se sigue en #585 (actualizado), T-407 en #636 (creado). No modificar esas suites dentro de CC-046.
+- **No mergear ni aprobar** hasta corregir T-424 en un PR separado, integrar develop en CC-046 y obtener CI y E2E reales satisfactorios o una decisión explícita sobre el fallo externo.
