@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { getAdminOperatorName } from '@/features/admin/server';
+import { INCIDENTS_COPY } from '@/features/incidents';
+import { getOpenIncidentsCount } from '@/features/incidents/server';
 import { AdminNav } from './admin-nav';
 
 export const metadata = {
@@ -12,11 +14,15 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const operatorName = await getAdminOperatorName();
+  // T-406: el contador de abiertos se calcula acá, una sola vez por navegación; si falla, la barra sigue sin él.
+  const [operatorName, openIncidents] = await Promise.all([getAdminOperatorName(), getOpenIncidentsCount()]);
+  const incidentsBadge = openIncidents
+    ? { count: openIncidents, label: INCIDENTS_COPY.nav.openCount(openIncidents) }
+    : null;
 
   return (
     <div className="min-h-screen bg-background text-foreground lg:flex">
-      <AdminNav operatorName={operatorName} />
+      <AdminNav operatorName={operatorName} incidentsBadge={incidentsBadge} />
       {/* T-402: el contenido ocupa todo el ancho que deja la barra lateral, sin tope. */}
       <main className="w-full min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
     </div>

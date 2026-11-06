@@ -15,6 +15,49 @@ import { LoginPage } from '../pages';
 import { createAdminClient } from '@/server/supabase/admin';
 import { evaluateRouteGuard } from '@/features/auth/guards';
 import { canReportIncident } from '@/features/incidents/report-window';
+import type { Page } from '@playwright/test';
+
+type AdminCredentials = Awaited<ReturnType<typeof seedAdminUser>>;
+
+/**
+ * Administrador E2E con TOTP enrolado por API y login real en el navegador (PR224-H01/H03). Devuelve una pestaña nueva
+ * del mismo contexto ya en `/admin`, con la sesión aal2.
+ */
+async function openAdminPageWithMfa(page: Page, adminCredentials: AdminCredentials): Promise<Page> {
+  const adminClient = await createAuthenticatedClient(adminCredentials);
+  const { data: enrollData, error: enrollErr } = await adminClient.auth.mfa.enroll({
+    factorType: 'totp',
+  });
+  if (enrollErr || !enrollData?.totp?.secret) {
+    throw new Error(`[E2E MFA Error] Error al enrolar TOTP: ${enrollErr?.message}`);
+  }
+  const totpSecret = enrollData.totp.secret;
+  const verifyCode = generateTotp(totpSecret);
+  const { error: verifyErr } = await adminClient.auth.mfa.challengeAndVerify({
+    factorId: enrollData.id,
+    code: verifyCode,
+  });
+  if (verifyErr) {
+    throw new Error(`[E2E MFA Error] Error al verificar TOTP inicial: ${verifyErr.message}`);
+  }
+
+  await page.context().clearCookies();
+  await page.evaluate(() => localStorage.clear()).catch(() => undefined);
+  const adminPage = await page.context().newPage();
+  const loginPage = new LoginPage(adminPage);
+  await loginPage.navigate();
+  await waitForFormHydration(loginPage.submitButton);
+  await loginPage.emailInput.fill(adminCredentials.email);
+  await loginPage.passwordInput.fill(adminCredentials.password);
+  await loginPage.submitButton.click();
+  await adminPage.waitForURL(/\/login\/mfa/);
+
+  const currentTotp = generateTotp(totpSecret);
+  await adminPage.getByLabel(/código de seguridad/i).fill(currentTotp);
+  await adminPage.getByRole('button', { name: /verificar/i }).click();
+  await adminPage.waitForURL(/\/admin/);
+  return adminPage;
+}
 
 /**
  * T-308: Suite E2E de Incidentes y Suspensión Cautelar
@@ -79,41 +122,9 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await expect(page.getByRole('status')).toBeVisible();
     await expect(page.getByRole('status')).toContainText(/recibimos tu reporte/i);
 
-    // 6. Administrador E2E con AAL2 verificado vía helper canónico (PR224-H01)
+    // 6. Administrador E2E con AAL2 y login real en el navegador (PR224-H01/H03)
     const adminCredentials = await seedAdminUser(stagingContext);
-    const adminClient = await createAuthenticatedClient(adminCredentials);
-    const { data: enrollData, error: enrollErr } = await adminClient.auth.mfa.enroll({
-      factorType: 'totp',
-    });
-    if (enrollErr || !enrollData?.totp?.secret) {
-      throw new Error(`[E2E MFA Error] Error al enrolar TOTP: ${enrollErr?.message}`);
-    }
-    const totpSecret = enrollData.totp.secret;
-    const verifyCode = generateTotp(totpSecret);
-    const { error: verifyErr } = await adminClient.auth.mfa.challengeAndVerify({
-      factorId: enrollData.id,
-      code: verifyCode,
-    });
-    if (verifyErr) {
-      throw new Error(`[E2E MFA Error] Error al verificar TOTP inicial: ${verifyErr.message}`);
-    }
-
-    // 7. Navegación manual en browser sin LoginPage.login (PR224-H03)
-    await page.context().clearCookies();
-    await page.evaluate(() => localStorage.clear()).catch(() => undefined);
-    const adminPage = await page.context().newPage();
-    const loginPage = new LoginPage(adminPage);
-    await loginPage.navigate();
-    await waitForFormHydration(loginPage.submitButton);
-    await loginPage.emailInput.fill(adminCredentials.email);
-    await loginPage.passwordInput.fill(adminCredentials.password);
-    await loginPage.submitButton.click();
-    await adminPage.waitForURL(/\/login\/mfa/);
-
-    const currentTotp = generateTotp(totpSecret);
-    await adminPage.getByLabel(/código de seguridad/i).fill(currentTotp);
-    await adminPage.getByRole('button', { name: /verificar/i }).click();
-    await adminPage.waitForURL(/\/admin/);
+    const adminPage = await openAdminPageWithMfa(page, adminCredentials);
 
     // Navegar a la bandeja de incidentes
     await adminPage.goto('/admin/incidents');
@@ -350,5 +361,101 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     expect(inspection.requestStatus).toBe('published');
     const checkedOffer = inspection.offers.find((o) => o.id === offerData.id);
     expect(checkedOffer?.status).toBe('pending');
+  });
+  // ---------------------------------------------------------------------------
+  // T-406: tres pestañas con contador y contador de abiertos en la navegación
+  // ---------------------------------------------------------------------------
+  test('T-406: un abierto suma al contador, al resolverlo pasa a «Resueltos» y el desestimado queda solo en «Desestimados»', async ({
+    page,
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    if (!merchant) throw new Error('[E2E Error] No merchant user in stagingContext');
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) throw new Error('[E2E Error] No courier user in stagingContext');
+
+    const matched = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+
+    // Dos reportes del mismo viaje, uno por cada parte (el límite por minuto es por persona).
+    const marker = stagingContext.testRunId.replace(/[^a-z]/gi, '');
+    const toResolve = `T-406 resolver ${marker}: el repartidor llegó tarde al retiro.`;
+    const toDismiss = `T-406 desestimar ${marker}: el comercio no tenía el pedido listo.`;
+    const report = async (credentials: typeof merchant, description: string): Promise<string> => {
+      const client = await createAuthenticatedClient(credentials);
+      const { data, error } = await client.rpc('report_incident', {
+        p_request_id: matched.requestId,
+        p_kind: 'other',
+        p_description: description,
+      });
+      const incidentId = (data as { incidentId?: string } | null)?.incidentId;
+      if (error || !incidentId) throw new Error(`[E2E Error] report_incident falló: ${error?.message}`);
+      return incidentId;
+    };
+    await report(merchant, toResolve);
+    const dismissId = await report(courier, toDismiss);
+
+    // El desestimado se cierra por la RPC auditada con sesión aal2.
+    const adminCredentials = await seedAdminUser(stagingContext);
+    const adminApi = await createAuthenticatedClient(adminCredentials);
+    await elevateAdminToAal2(adminApi, adminCredentials);
+    const { error: dismissErr } = await adminApi.rpc('admin_resolve_incident', {
+      p_incident_id: dismissId,
+      p_decision: 'no_action',
+      p_reason: `Desestimado E2E ${stagingContext.testRunId}`,
+    });
+    if (dismissErr) throw new Error(`[E2E Error] admin_resolve_incident falló: ${dismissErr.message}`);
+
+    const adminPage = await openAdminPageWithMfa(page, adminCredentials);
+    const card = (description: string) => adminPage.getByRole('listitem').filter({ hasText: description });
+    const tabs = adminPage.getByRole('navigation', { name: /estado de los incidentes/i });
+
+    // «Abiertos»: el reportado aparece, el desestimado no, y la navegación muestra el contador.
+    await adminPage.goto('/admin/incidents');
+    await waitForNoSkeletons(adminPage);
+    await expect(card(toResolve)).toBeVisible();
+    await expect(card(toDismiss)).toHaveCount(0);
+    await expect(tabs.getByRole('link', { name: /^Abiertos \(\d+\)$/ })).toHaveAttribute('aria-current', 'page');
+    await expect(tabs.getByRole('link', { name: /^Resueltos \(\d+\)$/ })).toBeVisible();
+    await expect(tabs.getByRole('link', { name: /^Desestimados \(\d+\)$/ })).toBeVisible();
+    const navIncidents = adminPage
+      .getByRole('complementary')
+      .getByRole('link', { name: /^Incidentes\s*, \d+ incidentes? abiertos?$/ });
+    await expect(navIncidents).toBeVisible();
+    const badgeCount = Number(await navIncidents.getByTestId('admin-nav-incidents-count').textContent());
+    expect(badgeCount).toBeGreaterThanOrEqual(1);
+
+    // Resolver con advertencia desde el detalle: pasa a «Resueltos» y sale de «Abiertos».
+    await card(toResolve).getByRole('link', { name: /ver detalle/i }).click();
+    await adminPage.waitForURL(/\/admin\/incidents\/[0-9a-f-]{36}$/);
+    await waitForNoSkeletons(adminPage);
+    await adminPage.getByRole('button', { name: /^advertencia$/i }).click();
+    const dialog = adminPage.getByRole('dialog');
+    await dialog.getByLabel(/motivo/i).fill(`Advertencia E2E ${stagingContext.testRunId}`);
+    await dialog.getByRole('button', { name: /confirmar advertencia/i }).click();
+    await expect(adminPage.getByText(/advertencia registrada/i).first()).toBeVisible();
+
+    await adminPage.goto('/admin/incidents?tab=resolved');
+    await waitForNoSkeletons(adminPage);
+    await expect(card(toResolve)).toBeVisible();
+    await expect(card(toDismiss)).toHaveCount(0);
+
+    await adminPage.goto('/admin/incidents');
+    await waitForNoSkeletons(adminPage);
+    await expect(card(toResolve)).toHaveCount(0);
+
+    // «Desestimados»: solo ahí aparece el cerrado sin sanción.
+    await adminPage.goto('/admin/incidents?tab=dismissed');
+    await waitForNoSkeletons(adminPage);
+    await expect(card(toDismiss)).toBeVisible();
+    await expect(card(toResolve)).toHaveCount(0);
+
+    // El link viejo de «Cerrados» lleva a «Resueltos».
+    await adminPage.goto('/admin/incidents?tab=closed');
+    await adminPage.waitForURL(/\/admin\/incidents\?tab=resolved$/);
   });
 });

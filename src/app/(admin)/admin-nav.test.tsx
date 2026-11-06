@@ -152,3 +152,45 @@ describe('T-402: shell del admin (barra lateral y menú angosto)', () => {
     expect(sections.filter((name) => !hrefs.includes(`/admin/${name}` as (typeof hrefs)[number]))).toEqual([]);
   });
 });
+
+describe('T-406: contador de incidentes abiertos en la navegación', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    pathname = '/admin/merchants';
+  });
+
+  function sidebarIncidents() {
+    const nav = within(screen.getByRole('complementary')).getByRole('navigation', {
+      name: /navegación principal de administración/i,
+    });
+    return within(nav).getByRole('link', { name: /^incidentes/i });
+  }
+
+  it('con abiertos muestra el número junto a «Incidentes» y un texto accesible', () => {
+    render(<AdminNav operatorName="Lautaro" incidentsBadge={{ count: 3, label: '3 incidentes abiertos' }} />);
+    const link = sidebarIncidents();
+    expect(link.getAttribute('href')).toBe('/admin/incidents');
+    expect(within(link).getByTestId('admin-nav-incidents-count').textContent).toBe('3');
+    expect(within(link).getByTestId('admin-nav-incidents-count').getAttribute('aria-hidden')).toBe('true');
+    expect(link.textContent).toBe('Incidentes3, 3 incidentes abiertos');
+    // El número solo aparece en «Incidentes».
+    expect(screen.getAllByTestId('admin-nav-incidents-count')).toHaveLength(1);
+  });
+
+  it('contraída, el número queda sobre el ícono y el texto accesible se conserva', () => {
+    render(<AdminNav operatorName="Lautaro" incidentsBadge={{ count: 1, label: '1 incidente abierto' }} />);
+    fireEvent.click(within(screen.getByRole('complementary')).getByRole('button', { name: 'Contraer menú' }));
+    const link = sidebarIncidents();
+    expect(within(link).getByTestId('admin-nav-incidents-count').className).toContain('absolute');
+    expect(link.textContent).toContain('1 incidente abierto');
+  });
+
+  it.each([
+    ['sin dato (la lectura falló)', null],
+    ['con cero abiertos', { count: 0, label: '0 incidentes abiertos' }],
+  ])('%s no muestra contador', (_name, incidentsBadge) => {
+    render(<AdminNav operatorName="Lautaro" incidentsBadge={incidentsBadge} />);
+    expect(screen.queryByTestId('admin-nav-incidents-count')).toBeNull();
+    expect(sidebarIncidents().textContent).toBe('Incidentes');
+  });
+});

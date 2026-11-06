@@ -40,6 +40,45 @@ export async function getIncidentsQueue(
   return { items: result.data.items, pageSize: limit, nextCursor: result.data.nextCursor };
 }
 
+export type IncidentTabCounts = Readonly<Record<IncidentInboxTab, number>>;
+
+type SessionClient = Awaited<ReturnType<typeof createClient>>;
+
+/** Conteo exacto sin traer filas, con la misma condición de estados que el filtro de la pestaña. */
+async function countIncidentsInTab(client: SessionClient, tab: IncidentInboxTab): Promise<number> {
+  const { count, error } = await client
+    .from('incidents')
+    .select('id', { count: 'exact', head: true })
+    .in('status', [...INCIDENT_TAB_STATUSES[tab]]);
+  if (error || count === null) {
+    throw new Error('INCIDENTS_COUNT_READ_FAILED');
+  }
+  return count;
+}
+
+/** T-406: cantidad de cada pestaña de la bandeja A05, en paralelo. */
+export async function getIncidentTabCounts(): Promise<IncidentTabCounts> {
+  const client = await createClient();
+  const [open, resolved, dismissed] = await Promise.all([
+    countIncidentsInTab(client, 'open'),
+    countIncidentsInTab(client, 'resolved'),
+    countIncidentsInTab(client, 'dismissed'),
+  ]);
+  return { open, resolved, dismissed };
+}
+
+/**
+ * T-406: abiertos para el contador de la navegación. Nunca lanza: si la lectura falla (o la sesión todavía no es
+ * aal2) devuelve `null` y el resto del panel se muestra igual, sin contador.
+ */
+export async function getOpenIncidentsCount(): Promise<number | null> {
+  try {
+    return await countIncidentsInTab(await createClient(), 'open');
+  } catch {
+    return null;
+  }
+}
+
 interface ProfileRef {
   readonly display_name: string | null;
   readonly phone?: string | null;

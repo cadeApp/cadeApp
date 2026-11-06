@@ -43,8 +43,15 @@ const FOCUS_ON_INK =
 
 const ITEM_CLASS = 'flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium';
 
+/** T-406: contador de incidentes abiertos; el texto accesible lo arma el layout con el copy de incidentes. */
+export interface AdminNavIncidentsBadge {
+  readonly count: number;
+  readonly label: string;
+}
+
 export interface AdminNavProps {
   readonly operatorName: string;
+  readonly incidentsBadge?: AdminNavIncidentsBadge | null;
 }
 
 /**
@@ -52,7 +59,7 @@ export interface AdminNavProps {
  * abre la misma navegación en un Sheet. Ninguna sección queda inaccesible en ningún ancho.
  * T-425: en escritorio la barra se contrae a solo íconos (nombre en tooltip) y el logo queda en la moto.
  */
-export function AdminNav({ operatorName }: AdminNavProps) {
+export function AdminNav({ operatorName, incidentsBadge }: AdminNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -94,6 +101,7 @@ export function AdminNav({ operatorName }: AdminNavProps) {
           {ADMIN_NAV_TABS.map((tab) => {
             const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
             const Icon = NAV_ICONS[tab.href];
+            const badge = tab.href === '/admin/incidents' && incidentsBadge && incidentsBadge.count > 0 ? incidentsBadge : null;
             return (
               <li key={tab.href}>
                 {withTooltip(
@@ -105,6 +113,7 @@ export function AdminNav({ operatorName }: AdminNavProps) {
                     className={cn(
                       ITEM_CLASS,
                       FOCUS_ON_INK,
+                      'relative',
                       iconOnly && 'justify-center',
                       isActive
                         ? 'bg-primary font-semibold text-primary-foreground'
@@ -113,6 +122,21 @@ export function AdminNav({ operatorName }: AdminNavProps) {
                   >
                     <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
                     <span className={cn(iconOnly && 'sr-only')}>{tab.label}</span>
+                    {badge ? (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          data-testid="admin-nav-incidents-count"
+                          className={cn(
+                            'inline-flex min-w-6 items-center justify-center rounded-full bg-destructive px-1.5 text-sm font-semibold leading-6 text-destructive-foreground',
+                            iconOnly ? 'absolute right-1 top-1' : 'ml-auto'
+                          )}
+                        >
+                          {badge.count}
+                        </span>
+                        <span className="sr-only">{`, ${badge.label}`}</span>
+                      </>
+                    ) : null}
                   </Link>,
                   iconOnly
                 )}
