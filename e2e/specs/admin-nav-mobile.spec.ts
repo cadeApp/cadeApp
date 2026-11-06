@@ -118,7 +118,7 @@ test.describe('T-402 — corte en lg y escritorio', () => {
     const operatorName = credentials.displayName?.trim();
     if (!operatorName) throw new Error('[E2E Error] El admin sembrado no tiene displayName');
 
-    for (const width of [1023, 1024, 1280]) {
+    for (const width of [390, 1023, 1024, 1280]) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto('/admin/merchants');
       await waitForNoSkeletons(page);
@@ -131,14 +131,21 @@ test.describe('T-402 — corte en lg y escritorio', () => {
         expectNear(main.x, 0, `${width}px main.x`);
         expectNear(main.width, width, `${width}px main.width`);
 
-        // CC-046: el menú lateral se apoya en el borde derecho (más angosto que la pantalla, no centrado).
+        // CC-046: el menú lateral se apoya en el borde derecho. A 1023 px es más angosto que la pantalla (no
+        // centrado); a 390 px ocupa todo el ancho.
         await admin.openMenu();
         const panel = await page.getByRole('dialog').boundingBox();
         if (!panel) throw new Error('[E2E Error] Falta el panel del menú');
         expectNear(panel.x + panel.width, width, `${width}px borde derecho del menú`);
-        expect(panel.x, `${width}px el menú no ocupa todo el ancho`).toBeGreaterThan(0);
+        if (width >= 640) {
+          expect(panel.x, `${width}px el menú no ocupa todo el ancho`).toBeGreaterThan(0);
+        } else {
+          expectNear(panel.x, 0, `${width}px el menú ocupa todo el ancho`);
+        }
+        // PR631-H01: Escape lo cierra y el foco vuelve a «Menú».
         await page.keyboard.press('Escape');
         await expect(page.getByRole('dialog')).toBeHidden();
+        await expect(admin.menuButton).toBeFocused();
       } else {
         await expect(admin.sidebarNav, `${width}px`).toBeVisible();
         await expect(admin.menuButton, `${width}px`).toBeHidden();

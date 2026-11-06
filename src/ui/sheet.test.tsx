@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import { Sheet, SheetContent, SheetTitle } from './sheet';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './sheet';
 
 function renderSheet(side?: 'bottom' | 'right') {
   render(
@@ -41,5 +41,24 @@ describe('CC-046: posición del Sheet según side', () => {
       }
       cleanup();
     }
+  });
+
+  it('PR631-H01: al cerrar con Escape el foco vuelve al disparador (side="right")', async () => {
+    render(
+      <Sheet>
+        <SheetTrigger>Menú</SheetTrigger>
+        <SheetContent side="right">
+          <SheetTitle>Panel</SheetTitle>
+        </SheetContent>
+      </Sheet>
+    );
+    const trigger = screen.getByRole('button', { name: 'Menú' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 });
