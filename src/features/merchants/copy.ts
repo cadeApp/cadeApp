@@ -17,6 +17,14 @@ export const merchantCopy = {
     mapCardHelper:
       'Mové el mapa para marcar la puerta de tu negocio. Muy útil si tu calle no tiene número.',
     useMyLocation: 'Usar mi ubicación actual',
+    locateAddressButton: 'Ubicar en el mapa',
+    locatingAddress: 'Buscando la dirección...',
+    geocodeFound: 'Revisá que el pin esté en la puerta de tu negocio.',
+    geocodeApproximate: 'Ubicación aproximada: mové el pin a la puerta de tu negocio.',
+    geocodeOutside: 'Esa dirección quedó fuera de Aguilares. Marcá el local en el mapa.',
+    geocodeNotFound: 'No encontramos esa dirección. Marcá el local en el mapa.',
+    geocodeUnavailable:
+      'No pudimos ubicar la dirección. Podés marcar el local en el mapa o seguir con la dirección escrita.',
     locating: 'Obteniendo ubicación...',
     geoNotSupported: 'Tu navegador no soporta geolocalización.',
     geoErrorFallback:

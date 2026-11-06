@@ -6,6 +6,7 @@ import { getDomainErrorMessage } from '@/lib/error-messages';
 import { notify } from '@/ui/notify';
 import { CreateRequestForm } from './create-request-form';
 import * as actions from '../actions';
+import type { MapGeocodeOutcome, MapGeocodeRequest } from '@/ui/map-geocode';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -29,13 +30,29 @@ interface MockMapPickerProps {
   readonly value?: { lat: number; lng: number } | null;
   readonly onChange?: (coords: { lat: number; lng: number }) => void;
   readonly defaultZoneCenter?: { lat: number; lng: number } | null;
+  readonly geocodeRequest?: MapGeocodeRequest | null;
+  readonly onGeocodeResult?: (outcome: MapGeocodeOutcome, request: MapGeocodeRequest) => void;
 }
 
 let mockDropoffOnChange: ((coords: { lat: number; lng: number }) => void) | undefined;
+// T-423: último pedido de búsqueda que recibió el mapa y cómo responderlo como lo hace MapPicker (CC-045).
+let mockGeocodeRequest: MapGeocodeRequest | null | undefined;
+// Todos los pedidos distintos que recibió el mapa, en orden.
+let mockGeocodeRequests: MapGeocodeRequest[] = [];
+let mockAnswerGeocode: ((outcome: MapGeocodeOutcome) => void) | undefined;
 
 vi.mock('@/ui/map', () => ({
-  MapPicker: ({ value, onChange, defaultZoneCenter }: MockMapPickerProps) => {
+  MapPicker: ({ value, onChange, defaultZoneCenter, geocodeRequest, onGeocodeResult }: MockMapPickerProps) => {
     mockDropoffOnChange = onChange;
+    mockGeocodeRequest = geocodeRequest;
+    if (geocodeRequest && mockGeocodeRequests.at(-1)?.id !== geocodeRequest.id) {
+      mockGeocodeRequests.push(geocodeRequest);
+    }
+    mockAnswerGeocode = (outcome) => {
+      if (!geocodeRequest) throw new Error('No hay búsqueda pendiente');
+      if (outcome.status === 'found') onChange?.(outcome.coords);
+      onGeocodeResult?.(outcome, geocodeRequest);
+    };
     return (
       <div data-testid="dropoff-map-picker">
         <span data-testid="dropoff-map-value">{JSON.stringify(value)}</span>
@@ -960,5 +977,289 @@ describe('T-340: CreateRequestForm multi-drop', () => {
     // Debe usar un UUID DIFERENTE y la dirección EDITADA
     expect(secondCallArgs.requestId).not.toBe(oldUuid);
     expect(secondCallArgs.drops[0]?.dropoffAddress).toBe('Av. Belgrano 500');
+  });
+});
+
+describe('T-423: la dirección de entrega se ubica en el mapa (CC-045)', () => {
+  const zoneCentro = {
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Barrio Centro',
+    centroidLat: -27.43,
+    centroidLng: -65.61,
+  };
+  const zoneSur = {
+    id: '33333333-3333-4333-8333-333333333333',
+    name: 'Barrio Sur',
+    centroidLat: -27.445,
+    centroidLng: -65.625,
+  };
+  const FOUND = { lat: -27.4321, lng: -65.6161 };
+
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDropoffOnChange = undefined;
+    mockGeocodeRequest = undefined;
+    mockGeocodeRequests = [];
+    mockAnswerGeocode = undefined;
+  });
+
+  function renderWithAddress(address: string) {
+    render(<CreateRequestForm zones={[zoneCentro]} />);
+    const input = screen.getByLabelText(/dirección de entrega/i);
+    fireEvent.change(input, { target: { value: address } });
+    return input;
+  }
+
+  function answer(outcome: MapGeocodeOutcome) {
+    act(() => {
+      mockAnswerGeocode?.(outcome);
+    });
+  }
+
+  it('al salir del campo abre el mapa y busca «dirección, barrio, Aguilares…»', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.change(screen.getByLabelText(/barrio de entrega/i), { target: { value: zoneCentro.id } });
+    fireEvent.blur(input);
+
+    await screen.findByTestId('dropoff-map-picker');
+    expect(mockGeocodeRequest).toEqual({
+      id: 1,
+      query: 'Av. Sarmiento 1200, Barrio Centro, Aguilares, Tucumán, Argentina',
+    });
+  });
+
+  it('found pone el pin, lo marca como fijado y pide revisar la puerta; aproximado lo avisa', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify(FOUND));
+    expect(screen.getByText('Pin fijado')).toBeDefined();
+    expect(screen.getByRole('status').textContent).toBe('Revisá que el pin esté en la puerta.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ubicar en el mapa' }));
+    answer({ status: 'found', coords: FOUND, approximate: true });
+    expect(screen.getByRole('status').textContent).toBe('Ubicación aproximada: mové el pin a la puerta.');
+  });
+
+  it.each([
+    ['outside', 'Esa dirección quedó fuera de Aguilares. Marcá el punto en el mapa.'],
+    ['not_found', 'No encontramos esa dirección. Marcá el punto en el mapa.'],
+    [
+      'unavailable',
+      'No pudimos ubicar la dirección. Podés marcar el punto en el mapa o seguir con la dirección escrita.',
+    ],
+  ] as const)('%s: aviso en línea y el pin no cambia', async (status, message) => {
+    const input = renderWithAddress('Calle sin número');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+
+    answer({ status });
+    expect(screen.getByRole('alert').textContent).toBe(message);
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe('null');
+    expect(screen.queryByText('Pin fijado')).toBeNull();
+  });
+
+  it('salir del campo sin cambiar la dirección no repite la búsqueda', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    answer({ status: 'found', coords: FOUND, approximate: false });
+
+    fireEvent.blur(input);
+    expect(mockGeocodeRequests).toHaveLength(1);
+  });
+
+  it('un pin movido a mano no se pisa al salir del campo, pero el botón sí busca', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    answer({ status: 'found', coords: FOUND, approximate: false });
+
+    fireEvent.click(screen.getByTestId('simulate-dropoff-pin'));
+    fireEvent.change(input, { target: { value: 'Av. Sarmiento 1300' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequests).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ubicar en el mapa' }));
+    expect(mockGeocodeRequests).toHaveLength(2);
+    expect(mockGeocodeRequest).toEqual({
+      id: 2,
+      query: 'Av. Sarmiento 1300, Barrio Centro, Aguilares, Tucumán, Argentina',
+    });
+  });
+
+  it('mover el pin a mano mientras busca saca el estado «Buscando la dirección...»', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    expect(screen.getByRole('button', { name: 'Buscando la dirección...' })).toBeDefined();
+
+    fireEvent.click(screen.getByTestId('simulate-dropoff-pin'));
+    expect(screen.getByRole('button', { name: 'Ubicar en el mapa' })).toBeDefined();
+  });
+
+  it('ocultar el mapa cancela la búsqueda y reabrirlo no la repite (PR620-H02)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    expect(mockGeocodeRequest?.query).toContain('Av. Sarmiento 1200');
+
+    fireEvent.click(screen.getByRole('button', { name: /ocultar mapa/i }));
+    expect(screen.getByRole('button', { name: 'Ubicar en el mapa' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /fijar en mapa interactivo/i }));
+    await screen.findByTestId('dropoff-map-picker');
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(mockGeocodeRequests).toHaveLength(1);
+  });
+
+  it('un pin manual mientras busca cancela el pedido: el mapa ya no tiene búsqueda pendiente (PR620-H02)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+
+    fireEvent.click(screen.getByTestId('simulate-dropoff-pin'));
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify({ lat: -27.4385, lng: -65.6185 }));
+  });
+
+  it('editar la dirección mientras busca cancela ese pedido y el siguiente blur busca la nueva (PR620-H03)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+
+    fireEvent.change(input, { target: { value: 'Mitre 450' } });
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ubicar en el mapa' })).toBeDefined();
+
+    fireEvent.blur(input);
+    expect(mockGeocodeRequests).toHaveLength(2);
+    expect(mockGeocodeRequest?.query).toBe('Mitre 450, Barrio Centro, Aguilares, Tucumán, Argentina');
+  });
+
+  it('cambiar el barrio mientras busca cancela ese pedido (PR620-H03)', async () => {
+    render(<CreateRequestForm zones={[zoneCentro, zoneSur]} />);
+    const input = screen.getByLabelText(/dirección de entrega/i);
+    fireEvent.change(input, { target: { value: 'Av. Sarmiento 1200' } });
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    const pending = mockGeocodeRequest;
+    expect(pending).not.toBeNull();
+    const zoneSelect = screen.getByLabelText(/barrio de entrega/i) as HTMLSelectElement;
+    const otherZone = zoneSelect.value === zoneSur.id ? zoneCentro : zoneSur;
+
+    fireEvent.change(zoneSelect, { target: { value: otherZone.id } });
+    expect(mockGeocodeRequest ?? null).toBeNull();
+  });
+
+  it('un pin que vino de la búsqueda se borra si la dirección cambia, y no se publica con la dirección nueva (PR620-H03)', async () => {
+    vi.mocked(actions.createDeliveryRequestAction).mockResolvedValueOnce({
+      ok: true,
+      data: { requestId: 'req-423', redirectTo: '/merchant/dashboard' },
+    });
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByText('Pin fijado')).toBeDefined();
+
+    fireEvent.change(input, { target: { value: 'Mitre 450' } });
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe('null');
+    expect(screen.queryByText('Pin fijado')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/dirección del comercio/i), { target: { value: 'San Martín 350' } });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), { target: { value: 'Lucía Gómez' } });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), { target: { value: '3815551234' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /publicar solicitud/i }));
+    await waitFor(() => {
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+    });
+    const drop = (vi.mocked(actions.createDeliveryRequestAction).mock.calls[0]?.[0] as {
+      drops: Array<Record<string, unknown>>;
+    }).drops[0];
+    expect(drop?.['dropoffAddress']).toBe('Mitre 450');
+    expect(drop?.['dropoffLat'] ?? null).toBeNull();
+    expect(drop?.['dropoffLng'] ?? null).toBeNull();
+  });
+
+  it('un pin buscado y después corregido a mano se conserva aunque la dirección cambie (PR620-H03)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    answer({ status: 'found', coords: FOUND, approximate: false });
+
+    fireEvent.click(screen.getByTestId('simulate-dropoff-pin'));
+    fireEvent.change(input, { target: { value: 'Mitre 450' } });
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify({ lat: -27.4385, lng: -65.6185 }));
+  });
+
+  it('A → B → A: volver a la dirección buscada antes de salir del campo la busca de nuevo (PR620-H07)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    answer({ status: 'found', coords: FOUND, approximate: false });
+
+    fireEvent.change(input, { target: { value: 'Mitre 450' } });
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe('null');
+    fireEvent.change(input, { target: { value: 'Av. Sarmiento 1200' } });
+    fireEvent.blur(input);
+
+    expect(mockGeocodeRequests).toHaveLength(2);
+    expect(mockGeocodeRequests[1]?.id).toBeGreaterThan(mockGeocodeRequests[0]?.id ?? 0);
+    expect(mockGeocodeRequests[1]?.query).toBe(mockGeocodeRequests[0]?.query);
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify(FOUND));
+  });
+
+  it('A → B → A con pin manual: no se borra ni dispara una búsqueda al salir del campo (PR620-H07)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.click(screen.getByRole('button', { name: /fijar en mapa interactivo/i }));
+    fireEvent.click(await screen.findByTestId('simulate-dropoff-pin'));
+    fireEvent.change(input, { target: { value: 'Mitre 450' } });
+    fireEvent.change(input, { target: { value: 'Av. Sarmiento 1200' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequests).toHaveLength(0);
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify({ lat: -27.4385, lng: -65.6185 }));
+  });
+
+  it('un pin manual se conserva aunque la dirección cambie (PR620-H03)', async () => {
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.click(screen.getByRole('button', { name: /fijar en mapa interactivo/i }));
+    fireEvent.click(await screen.findByTestId('simulate-dropoff-pin'));
+    fireEvent.change(input, { target: { value: 'Mitre 450' } });
+    expect(screen.getByTestId('dropoff-map-value').textContent).toBe(JSON.stringify({ lat: -27.4385, lng: -65.6185 }));
+  });
+
+  it('el botón está deshabilitado sin dirección y una dirección vacía no busca', () => {
+    const input = renderWithAddress('   ');
+    expect((screen.getByRole('button', { name: 'Ubicar en el mapa' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.blur(input);
+    expect(screen.queryByTestId('dropoff-map-picker')).toBeNull();
+  });
+
+  it('la dirección no llega a notify ni a console', async () => {
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation(() => {})
+    );
+    const input = renderWithAddress('Av. Sarmiento 1200');
+    fireEvent.blur(input);
+    await screen.findByTestId('dropoff-map-picker');
+    answer({ status: 'unavailable' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ubicar en el mapa' }));
+    answer({ status: 'found', coords: FOUND, approximate: false });
+
+    const calls = [
+      ...vi.mocked(notify.success).mock.calls,
+      ...vi.mocked(notify.error).mock.calls,
+      ...vi.mocked(notify.info).mock.calls,
+      ...spies.flatMap((spy) => spy.mock.calls),
+    ];
+    for (const call of calls) {
+      expect(JSON.stringify(call)).not.toContain('Sarmiento');
+    }
+    for (const spy of spies) spy.mockRestore();
   });
 });

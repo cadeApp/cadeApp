@@ -9,6 +9,7 @@ import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { Input } from '@/ui/input';
 import { MapSkeleton } from '@/ui/map-skeleton';
+import { buildGeocodeQuery, type MapGeocodeOutcome, type MapGeocodeRequest } from '@/ui/map-geocode';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
 import { Textarea } from '@/ui/textarea';
 import { merchantOnboardingAction, updateMerchantProfileAction } from '../actions';
@@ -116,6 +117,72 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
     effectiveLng != null &&
     !isWithinAguilaresBounds(effectiveLat, effectiveLng);
 
+  // T-423: búsqueda de la dirección escrita (CC-045). Un pin guardado, movido a mano o por GPS no se pisa al salir
+  // del campo; el botón siempre busca.
+  const defaultPickupAddress = watch('defaultPickupAddress');
+  const [geocodeRequest, setGeocodeRequest] = React.useState<MapGeocodeRequest | null>(null);
+  const [geocoding, setGeocoding] = React.useState(false);
+  const [geocodeNotice, setGeocodeNotice] = React.useState<{ tone: 'info' | 'error'; text: string } | null>(null);
+  const pinIsManualRef = React.useRef(initialData?.defaultPickupLat != null);
+  // El pin vino de una búsqueda: si la dirección o el barrio cambian, deja de corresponder y se borra (PR620-H03).
+  const pinFromGeocodeRef = React.useRef(false);
+  const lastGeocodeQueryRef = React.useRef('');
+  const nextGeocodeIdRef = React.useRef(0);
+  const addressField = register('defaultPickupAddress');
+
+  const requestGeocode = (explicit: boolean) => {
+    const query = buildGeocodeQuery(defaultPickupAddress ?? '', selectedZone?.name);
+    if (!query) return;
+    if (!explicit && (pinIsManualRef.current || query === lastGeocodeQueryRef.current)) return;
+    lastGeocodeQueryRef.current = query;
+    nextGeocodeIdRef.current += 1;
+    setGeocodeNotice(null);
+    setGeocoding(true);
+    setGeocodeRequest({ id: nextGeocodeIdRef.current, query });
+  };
+
+  // PR620-H02: un pedido cancelado no pisa una selección posterior.
+  const cancelGeocode = () => {
+    setGeocodeRequest(null);
+    setGeocoding(false);
+  };
+
+  // PR620-H03: si la consulta cambia mientras busca, ese resultado ya no es de esta dirección.
+  const handleGeocodeQueryInput = (nextQuery: string) => {
+    if (geocodeRequest && nextQuery !== geocodeRequest.query) {
+      cancelGeocode();
+      setGeocodeNotice(null);
+      lastGeocodeQueryRef.current = '';
+    }
+    if (pinFromGeocodeRef.current && nextQuery !== lastGeocodeQueryRef.current) {
+      pinFromGeocodeRef.current = false;
+      // Sin pin, volver a escribir la misma dirección tiene que poder buscarla de nuevo (PR620-H07).
+      lastGeocodeQueryRef.current = '';
+      setGeocodeNotice(null);
+      setFields({ defaultPickupLat: null, defaultPickupLng: null }, { shouldValidate: true });
+    }
+  };
+
+  const handleGeocodeResult = React.useCallback((outcome: MapGeocodeOutcome) => {
+    const copy = merchantCopy.onboarding;
+    setGeocodeRequest(null);
+    setGeocoding(false);
+    if (outcome.status === 'found') {
+      // El onChange del mapa que trae el resultado no es un pin manual.
+      pinIsManualRef.current = false;
+      pinFromGeocodeRef.current = true;
+      setCoordsError(null);
+      setGeocodeNotice({ tone: 'info', text: outcome.approximate ? copy.geocodeApproximate : copy.geocodeFound });
+      return;
+    }
+    const text = {
+      outside: copy.geocodeOutside,
+      not_found: copy.geocodeNotFound,
+      unavailable: copy.geocodeUnavailable,
+    }[outcome.status];
+    setGeocodeNotice({ tone: 'error', text });
+  }, []);
+
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
       setCoordsError(merchantCopy.onboarding.geoNotSupported);
@@ -131,6 +198,9 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
           setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);
           return;
         }
+        pinIsManualRef.current = true;
+        pinFromGeocodeRef.current = false;
+        cancelGeocode();
         setFields(
           { defaultPickupLat: latitude, defaultPickupLng: longitude },
           { shouldValidate: true }
@@ -335,6 +405,9 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
                 return;
               }
               setValue('defaultPickupZoneId', zoneId, { shouldValidate: true });
+              handleGeocodeQueryInput(
+                buildGeocodeQuery(defaultPickupAddress ?? '', zones.find((z) => z.id === zoneId)?.name)
+              );
             }}
           >
             <SelectTrigger
@@ -378,7 +451,12 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
             <Input
               id="address"
               type="text"
-              {...register('defaultPickupAddress')}
+              {...addressField}
+              onChange={(event) => {
+                addressField.onChange(event);
+                handleGeocodeQueryInput(buildGeocodeQuery(event.target.value, selectedZone?.name));
+              }}
+              onBlur={() => requestGeocode(false)}
               placeholder={merchantCopy.onboarding.addressPlaceholder}
               aria-invalid={Boolean(errors.defaultPickupAddress)}
               className="pl-10"
@@ -411,6 +489,19 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
               type="button"
               variant="outline"
               size="lg"
+              onClick={() => requestGeocode(true)}
+              disabled={geocoding || !buildGeocodeQuery(defaultPickupAddress ?? '')}
+              className="w-full"
+            >
+              <MapPin className="h-5 w-5 text-primary-dark" />
+              <span>
+                {geocoding ? merchantCopy.onboarding.locatingAddress : merchantCopy.onboarding.locateAddressButton}
+              </span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
               onClick={handleUseMyLocation}
               disabled={locating}
               className="w-full"
@@ -427,6 +518,9 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
                 variant="outline"
                 size="lg"
                 onClick={() => {
+                  pinIsManualRef.current = false;
+                  pinFromGeocodeRef.current = false;
+                  cancelGeocode();
                   setFields(
                     { defaultPickupLat: null, defaultPickupLng: null },
                     { shouldValidate: true }
@@ -449,6 +543,10 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
             }
             showMarkerWhenEmpty={!isEdit}
             onChange={(coords) => {
+              // Una selección manual mientras busca invalida esa búsqueda (CC-045): no queda pendiente.
+              pinIsManualRef.current = true;
+              pinFromGeocodeRef.current = false;
+              cancelGeocode();
               setFields(
                 { defaultPickupLat: coords.lat, defaultPickupLng: coords.lng },
                 { shouldValidate: true }
@@ -456,7 +554,20 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
               setCoordsError(null);
             }}
             defaultZoneCenter={selectedZoneCenter}
+            geocodeRequest={geocodeRequest}
+            onGeocodeResult={handleGeocodeResult}
           />
+
+          {geocodeNotice && (
+            <p
+              role={geocodeNotice.tone === 'error' ? 'alert' : 'status'}
+              className={
+                geocodeNotice.tone === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'
+              }
+            >
+              {geocodeNotice.text}
+            </p>
+          )}
 
           {coordsError && (
             <div
