@@ -17,6 +17,8 @@ import { createAdminClient } from '@/server/supabase/admin';
  *   1. Sin créditos se bloquea; el admin AAL2 acredita por la UI; publicar reserva y aceptar una oferta consume.
  *   2. Una solicitud que vence devuelve el crédito reservado (reconciliación real de la base al leer el saldo).
  *   3. Plan ilimitado: el admin lo crea y registra por la UI y el comercio publica sin créditos.
+ *   4. T-405 (A03): el admin extiende el piloto desde el panel lateral, ve el cambio en «Últimos movimientos» y sigue
+ *      «Ver todo en Auditoría» hasta la fila filtrada por ese comercio.
  * Los saldos se leen en la UI y se confirman en la base (service role solo para verificar y preparar precondiciones).
  */
 
@@ -336,5 +338,63 @@ test.describe('T-369 — créditos de publicación y planes (CC-029)', () => {
       const { data: row } = await createAdminClient().from('delivery_requests').select('status').eq('id', requestId).single();
       expect(row?.status).toBe('published');
     });
+  });
+
+  test('T-405: extender el piloto desde el panel lateral y seguir el movimiento hasta la auditoría', async ({
+    browser,
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    if (!merchant) throw new Error('[E2E Error] No merchant user in stagingContext');
+    const businessName = await getBusinessName(merchant.id);
+    const pilotUntil = '2027-01-31';
+
+    const { adminPage } = await openAdminSession(browser, stagingContext);
+    try {
+      await adminPage.goto('/admin/merchants?status=pilot');
+      await waitForNoSkeletons(adminPage);
+      const editButton = adminPage.getByRole('button', { name: `Abono y piloto de ${businessName}` });
+      const sheet = adminPage.getByRole('dialog', { name: `Abono y piloto de ${businessName}` });
+
+      // El botón no está en un formulario: se reintenta el clic hasta que React hidrata y el panel se abre.
+      await expect(async () => {
+        await editButton.click();
+        await expect(sheet).toBeVisible({ timeout: 1_000 });
+      }).toPass();
+      await expect(sheet.getByText('No se registran montos ni comprobantes de pago en cadeApp.')).toBeVisible();
+      await sheet.getByRole('radio', { name: 'Extender piloto' }).click();
+      await sheet.getByLabel('Piloto hasta').fill(pilotUntil);
+      await sheet.getByRole('button', { name: 'Guardar' }).click();
+      await expect(sheet).toBeHidden();
+
+      const { data: row, error } = await createAdminClient()
+        .from('merchants')
+        .select('subscription_status, paid_until')
+        .eq('profile_id', merchant.id)
+        .single();
+      expect(error).toBeNull();
+      expect(row).toEqual({ subscription_status: 'pilot', paid_until: pilotUntil });
+
+      // El movimiento aparece en el panel, leído de la auditoría.
+      await expect(async () => {
+        await editButton.click();
+        await expect(sheet).toBeVisible({ timeout: 1_000 });
+      }).toPass();
+      const movements = sheet.getByRole('list', { name: 'Últimos movimientos' });
+      await expect(movements.getByRole('listitem').first()).toContainText('Cambió el plan');
+      await expect(movements.getByRole('listitem').first()).toContainText('31/01/2027');
+
+      await sheet.getByRole('link', { name: 'Ver todo en Auditoría' }).click();
+      await adminPage.waitForURL(
+        (url) => url.pathname === '/admin/audit' && url.searchParams.get('target') === merchant.id
+      );
+      await waitForNoSkeletons(adminPage);
+      await expect(adminPage.getByText('Mostrando los eventos de una sola entidad.')).toBeVisible();
+      const auditRows = adminPage.getByRole('table', { name: 'Registro de auditoría' }).locator('tbody tr');
+      await expect(auditRows.filter({ hasText: 'Cambió el plan' })).toHaveCount(1);
+      await expect(auditRows.filter({ hasText: '31/01/2027' })).toHaveCount(1);
+    } finally {
+      await adminPage.context().close();
+    }
   });
 });

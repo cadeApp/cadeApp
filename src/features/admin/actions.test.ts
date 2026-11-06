@@ -16,7 +16,9 @@ import {
   grantPublicationCreditsAction,
   registerPlanPeriodAction,
   upsertPublicationPlanAction,
+  getMerchantPlanMovementsAction,
 } from './actions';
+import * as adminQueries from './queries';
 import { sanitizeAdminRedirect } from './redirect';
 
 vi.mock('@/server/supabase/server', () => ({
@@ -37,6 +39,10 @@ vi.mock('@/server/rpc/admin', () => ({
   adminGrantPublicationCreditsRpc: vi.fn(),
   adminRegisterPlanPeriodRpc: vi.fn(),
   adminUpsertPublicationPlanRpc: vi.fn(),
+}));
+
+vi.mock('./queries', () => ({
+  getMerchantPlanMovements: vi.fn(),
 }));
 
 vi.mock('next/cache', () => ({
@@ -1214,5 +1220,86 @@ describe('T-380: reinstateCourierAction y mapeo de INVALID_STATE_TRANSITION (CC-
 
     expect(result).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe('T-405: getMerchantPlanMovementsAction (últimos movimientos del panel)', () => {
+  const MERCHANT = 'f0000000-0000-4000-8000-000000000405';
+
+  function mockSession(role: string | null, level: 'aal1' | 'aal2') {
+    const mockSupabase = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: role ? { id: 'admin-123' } : null }, error: null }),
+        mfa: {
+          getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({ data: { currentLevel: level }, error: null }),
+        },
+      },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({ data: role ? { role } : null, error: null }),
+          }),
+        }),
+      }),
+    };
+    vi.mocked(serverSupabase.createClient).mockResolvedValue(
+      mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('valida el id del comercio antes de autenticar o consultar', async () => {
+    const result = await getMerchantPlanMovementsAction({ merchantId: 'x),or(id.gt.0' });
+    expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(serverSupabase.createClient).not.toHaveBeenCalled();
+    expect(adminQueries.getMerchantPlanMovements).not.toHaveBeenCalled();
+  });
+
+  it('exige admin con AAL2: sin rol o sin MFA no consulta', async () => {
+    mockSession('merchant', 'aal2');
+    expect(await getMerchantPlanMovementsAction({ merchantId: MERCHANT })).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED_ACTOR',
+    });
+    mockSession('admin', 'aal1');
+    expect(await getMerchantPlanMovementsAction({ merchantId: MERCHANT })).toEqual({
+      ok: false,
+      code: 'AAL2_REQUIRED',
+    });
+    expect(adminQueries.getMerchantPlanMovements).not.toHaveBeenCalled();
+  });
+
+  it('devuelve los movimientos del comercio pedido y nunca usa service role', async () => {
+    mockSession('admin', 'aal2');
+    const items = [
+      {
+        id: 17,
+        createdAt: '2026-11-05T12:00:00.000Z',
+        actorName: 'Lautaro',
+        action: 'admin_set_subscription',
+        targetType: 'merchant',
+        targetRef: 'f0000000',
+        targetName: null,
+        changes: [],
+        reason: null,
+      },
+    ];
+    vi.mocked(adminQueries.getMerchantPlanMovements).mockResolvedValue(items);
+
+    expect(await getMerchantPlanMovementsAction({ merchantId: MERCHANT })).toEqual({ ok: true, data: items });
+    expect(adminQueries.getMerchantPlanMovements).toHaveBeenCalledWith(MERCHANT);
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('un error de la consulta vuelve como INTERNAL_ERROR, sin detalles', async () => {
+    mockSession('admin', 'aal2');
+    vi.mocked(adminQueries.getMerchantPlanMovements).mockRejectedValue(new Error('boom'));
+    expect(await getMerchantPlanMovementsAction({ merchantId: MERCHANT })).toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
   });
 });

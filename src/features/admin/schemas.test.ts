@@ -5,6 +5,7 @@ import {
   auditDateRangeBounds,
   parseAdminApplicantsSearchParams,
   parseAdminAuditSearchParams,
+  parseAdminMerchantsSearchParams,
 } from './schemas';
 
 describe('parseAdminApplicantsSearchParams (PR106-H07)', () => {
@@ -172,5 +173,20 @@ describe('T-407: rango de fechas, targetId y dirección de A06', () => {
     expect(parseAdminAuditSearchParams({ cursor: '90', dir: 'prev' })).toEqual({ cursor: 90, direction: 'prev' });
     expect(parseAdminAuditSearchParams({ dir: 'prev' })).toEqual({});
     expect(parseAdminAuditSearchParams({ cursor: '90', dir: 'atras' })).toEqual({ cursor: 90 });
+  });
+});
+
+describe('T-405: chip de estado de A03 (?status=)', () => {
+  it('acepta los cuatro estados del plan', () => {
+    for (const status of ['pilot', 'active', 'expired', 'cancelled'] as const) {
+      expect(parseAdminMerchantsSearchParams({ status })).toEqual({ status });
+    }
+  });
+
+  it('un estado desconocido o vacío es «Todos» y no toca el cursor', () => {
+    const cursor = '2026-11-03T16:22:06.662075+00:00~a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+    expect(parseAdminMerchantsSearchParams({ status: 'all' })).toEqual({});
+    expect(parseAdminMerchantsSearchParams({ status: '' })).toEqual({});
+    expect(parseAdminMerchantsSearchParams({ status: 'expired', cursor })).toEqual({ status: 'expired', cursor });
   });
 });

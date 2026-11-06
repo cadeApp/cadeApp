@@ -136,6 +136,15 @@ export interface AdminMerchantsResult {
   readonly hasNextPage: boolean;
 }
 
+/** T-405 (A03): cantidad exacta de comercios por estado del plan; `all` es el total sin filtro. */
+export interface MerchantStatusCounts {
+  readonly all: number;
+  readonly pilot: number;
+  readonly active: number;
+  readonly expired: number;
+  readonly cancelled: number;
+}
+
 export interface PlatformSettingsSnapshot {
   readonly minOfferArs: number;
   readonly requestTtlMinutes: number;
