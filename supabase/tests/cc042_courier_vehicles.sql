@@ -87,7 +87,8 @@ insert into storage.objects (id, bucket_id, name, owner) values
   (gen_random_uuid(), 'courier-docs', 'courier/00000000-0000-4000-8000-0000000042c1/license_1740000000002.jpg', pg_temp.courier_a()),
   (gen_random_uuid(), 'courier-docs', 'courier/00000000-0000-4000-8000-0000000042c1/insurance_1740000000003.jpg', pg_temp.courier_a()),
   (gen_random_uuid(), 'courier-docs', 'courier/00000000-0000-4000-8000-0000000042c1/insurance_1740000000004.jpg', pg_temp.courier_a()),
-  (gen_random_uuid(), 'courier-docs', 'courier/00000000-0000-4000-8000-0000000042c2/license_1740000000005.jpg', pg_temp.courier_b())
+  (gen_random_uuid(), 'courier-docs', 'courier/00000000-0000-4000-8000-0000000042c2/license_1740000000005.jpg', pg_temp.courier_b()),
+  (gen_random_uuid(), 'courier-docs', 'courier/00000000-0000-4000-8000-0000000042c2/license_1740000000006.jpg', pg_temp.courier_b())
 on conflict do nothing;
 
 -- ============================================================================
@@ -97,6 +98,8 @@ on conflict do nothing;
 select has_table('public', 'courier_vehicles', 'existe courier_vehicles');
 select has_column('public', 'couriers', 'active_vehicle_id', 'couriers.active_vehicle_id existe');
 select has_column('public', 'courier_documents', 'vehicle_id', 'courier_documents.vehicle_id existe');
+select has_column('public', 'couriers', 'application_vehicle_type', 'couriers.application_vehicle_type existe (D01=A)');
+select has_column('public', 'couriers', 'application_vehicle_plate', 'couriers.application_vehicle_plate existe (D01=A)');
 select ok((select relrowsecurity from pg_class where oid = 'public.courier_vehicles'::regclass), 'courier_vehicles tiene RLS');
 select ok(not has_table_privilege('authenticated', 'public.courier_vehicles', 'insert'), 'sin INSERT directo en courier_vehicles');
 select ok(not has_table_privilege('authenticated', 'public.courier_vehicles', 'update'), 'sin UPDATE directo en courier_vehicles');
@@ -151,9 +154,19 @@ select is((select count(*)::int from public.courier_documents where courier_id =
 select is((select vehicle_id from public.courier_documents where courier_id = pg_temp.courier_a() and kind = 'dni_front'), null, 'el DNI no tiene vehículo');
 select is((select row(license_status, insurance_status)::text from public.courier_vehicles where id = pg_temp.id('legacy_bike')),
   row('none'::public.document_review_status, 'none'::public.document_review_status)::text, 'la bici no tiene licencia ni seguro');
-select is((pg_temp.courier(pg_temp.legacy())).license_status::text, 'verified', 'el backfill no toca el reflejo de un repartidor en bici');
+select is((select row(license_status, insurance_status, doc_level)::text from public.couriers where profile_id = pg_temp.legacy()),
+  row('none'::public.document_review_status, 'none'::public.document_review_status, 0)::text,
+  'PR624-H02: en bici el reflejo no conserva la licencia vieja y doc_level es 0');
 select is((select vehicle_id from public.courier_documents where courier_id = pg_temp.legacy() and kind = 'license'), null,
   'la licencia vieja de una bici queda sin vehículo');
+select is((select status::text from public.courier_documents where courier_id = pg_temp.legacy() and kind = 'license'), 'verified',
+  'PR624-H02: el documento viejo se conserva para la auditoría');
+select is((select row(application_vehicle_type, application_vehicle_plate)::text from public.couriers where profile_id = pg_temp.courier_a()),
+  row('moto'::public.vehicle_type, 'ABC 123'::text)::text, 'PR624-H03: el backfill guarda el vehículo de la postulación enviada');
+select is((select row(application_vehicle_type, application_vehicle_plate)::text from public.couriers where profile_id = pg_temp.legacy()),
+  row('bike'::public.vehicle_type, null::text)::text, 'PR624-H03: bici sin patente en el snapshot');
+select is((select application_vehicle_type from public.couriers where profile_id = pg_temp.not_sent()), null,
+  'PR624-H03: sin postulación enviada no hay snapshot');
 select is((select count(*)::int from public.courier_vehicles where courier_id = pg_temp.not_sent()), 0, 'sin vehículo no hay filas');
 
 -- ============================================================================
@@ -360,6 +373,35 @@ select is((pg_temp.courier(pg_temp.courier_a())).license_status::text, 'submitte
 select pg_temp.as_postgres();
 select is((select license_status::text from public.courier_vehicles where id = pg_temp.id('a_car')), 'verified', 'el reemplazo de la moto no toca el auto');
 
+-- PR624-H04: la clave idempotente es de un vehículo; la misma clave y ruta para otro vehículo no es un reintento.
+select pg_temp.act_as(pg_temp.courier_b());
+insert into cc042_ids select 'b_moto', (public.add_courier_vehicle('moto', 'AAA 333', false)->>'vehicleId')::uuid;
+select is(public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c2/license_1740000000005.jpg',
+  'idempotencyKey','4c1d0a42-0000-4000-8000-000000000001','vehicleId',pg_temp.id('b_car')))->>'idempotent', 'false', 'alta con clave para el auto');
+select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c2/license_1740000000005.jpg',
+  'idempotencyKey','4c1d0a42-0000-4000-8000-000000000001','vehicleId',pg_temp.id('b_moto'))) $$,
+  'P0001', 'VALIDATION_ERROR', 'add: misma clave y ruta para la moto es inválida');
+select is(public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c2/license_1740000000005.jpg',
+  'idempotencyKey','4c1d0a42-0000-4000-8000-000000000001','vehicleId',pg_temp.id('b_car')))->>'idempotent', 'true', 'add: misma clave, ruta y vehículo es reintento');
+-- El reemplazo solo procede sobre una licencia rechazada.
+select pg_temp.as_postgres();
+update public.courier_documents set status = 'rejected', rejection_code = 'expired'
+where vehicle_id = pg_temp.id('b_car') and kind = 'license' and is_current;
+select pg_temp.act_as(pg_temp.courier_b());
+select is(public.replace_courier_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c2/license_1740000000006.jpg',
+  'idempotencyKey','4c1d0a42-0000-4000-8000-000000000002','vehicleId',pg_temp.id('b_car')))->>'idempotent', 'false', 'reemplazo con clave para el auto');
+select throws_ok($$ select public.replace_courier_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c2/license_1740000000006.jpg',
+  'idempotencyKey','4c1d0a42-0000-4000-8000-000000000002','vehicleId',pg_temp.id('b_moto'))) $$,
+  'P0001', 'VALIDATION_ERROR', 'replace: misma clave y ruta para la moto es inválida');
+select is(public.replace_courier_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c2/license_1740000000006.jpg',
+  'idempotencyKey','4c1d0a42-0000-4000-8000-000000000002','vehicleId',pg_temp.id('b_car')))->>'idempotent', 'true', 'replace: misma clave, ruta y vehículo es reintento');
+select pg_temp.as_postgres();
+select is((select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_b() and vehicle_id = pg_temp.id('b_moto')), 0,
+  'PR624-H04: la moto no recibe documentos por la clave del auto');
+select is((select license_status::text from public.courier_vehicles where id = pg_temp.id('b_moto')), 'none', 'PR624-H04: la moto sigue sin licencia');
+select is((select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_b() and kind = 'license'), 2,
+  'PR624-H04: el auto tiene la licencia original y su reemplazo');
+
 -- ============================================================================
 -- Archivar
 -- ============================================================================
@@ -433,7 +475,10 @@ values
   (pg_temp.not_sent(), 'dni_back', 'courier/00000000-0000-4000-8000-0000000042c4/dni_back_1.jpg', 'submitted', true),
   (pg_temp.not_sent(), 'selfie', 'courier/00000000-0000-4000-8000-0000000042c4/selfie_1.jpg', 'submitted', true),
   (pg_temp.not_sent(), 'avatar', 'courier/00000000-0000-4000-8000-0000000042c4/avatar_1.jpg', 'submitted', true),
-  (pg_temp.not_sent(), 'license', 'courier/00000000-0000-4000-8000-0000000042c4/license_1.jpg', 'submitted', true);
+  (pg_temp.not_sent(), 'license', 'courier/00000000-0000-4000-8000-0000000042c4/license_1.jpg', 'submitted', true),
+  (pg_temp.not_sent(), 'insurance', 'courier/00000000-0000-4000-8000-0000000042c4/insurance_1.jpg', 'submitted', true);
+-- Reflejo previo distinto de los documentos recién cargados: el vehículo del alta no lo tiene que copiar (PR624-H01).
+update public.couriers set license_status = 'verified', insurance_status = 'verified' where profile_id = pg_temp.not_sent();
 set local role service_role;
 select is((public.finalize_courier_application(pg_temp.not_sent(), repeat('a', 64), 'moto', 'aa 123 bb')->>'idempotent'), 'false',
   'finalize envía la postulación');
@@ -443,6 +488,57 @@ select is((select row(v.vehicle_type, v.plate)::text from public.courier_vehicle
   row('moto'::public.vehicle_type, 'AA 123 BB'::text)::text, 'el vehículo del alta queda activo');
 select is((select vehicle_id from public.courier_documents where courier_id = pg_temp.not_sent() and kind = 'license'),
   (pg_temp.courier(pg_temp.not_sent())).active_vehicle_id, 'la licencia del onboarding queda en ese vehículo');
+insert into cc042_ids select 'n_moto', active_vehicle_id from public.couriers where profile_id = pg_temp.not_sent();
+select is((select row(license_status, insurance_status)::text from public.courier_vehicles where id = pg_temp.id('n_moto')),
+  row('submitted'::public.document_review_status, 'submitted'::public.document_review_status)::text,
+  'PR624-H01: el vehículo del alta toma el estado de la licencia y el seguro cargados');
+select is((select row(license_status, insurance_status, doc_level)::text from public.couriers where profile_id = pg_temp.not_sent()),
+  row('submitted'::public.document_review_status, 'submitted'::public.document_review_status, 0)::text,
+  'PR624-H01: el reflejo y doc_level siguen al vehículo del alta');
+
+-- PR624-H03 (D01=A): los reintentos se comparan contra el vehículo de la postulación, no contra el activo.
+select is((select row(application_vehicle_type, application_vehicle_plate)::text from public.couriers where profile_id = pg_temp.not_sent()),
+  row('moto'::public.vehicle_type, 'AA 123 BB'::text)::text, '(a) finalize guarda el snapshot de la postulación');
+create temp table cc042_sent as select submitted_at from public.couriers where profile_id = pg_temp.not_sent();
+grant select on cc042_sent to service_role, authenticated;
+select pg_temp.act_as(pg_temp.not_sent());
+insert into cc042_ids select 'n_bike', (public.add_courier_vehicle('bike', null, true)->>'vehicleId')::uuid;
+select is((pg_temp.courier(pg_temp.not_sent())).active_vehicle_id, pg_temp.id('n_bike'), '(b) la bici queda activa');
+set local role service_role;
+select is((public.finalize_courier_application(pg_temp.not_sent(), repeat('a', 64), 'moto', 'AA 123 BB')->>'idempotent'), 'true',
+  '(c) reintento con la moto original es idempotente aunque la bici esté activa');
+select pg_temp.as_postgres();
+select is((select row(c.submitted_at = s.submitted_at, c.application_vehicle_type, c.application_vehicle_plate, c.active_vehicle_id = pg_temp.id('n_bike'))::text
+  from public.couriers c, cc042_sent s where c.profile_id = pg_temp.not_sent()),
+  row(true, 'moto'::public.vehicle_type, 'AA 123 BB'::text, true)::text, '(c) submitted_at, snapshot y activo sin cambios');
+set local role service_role;
+select throws_ok($$ select public.finalize_courier_application(pg_temp.not_sent(), repeat('a', 64), 'moto', 'AA 124 BB') $$,
+  'P0001', 'INVALID_STATE_TRANSITION', '(d) otra patente no es un reintento');
+select throws_ok($$ select public.finalize_courier_application(pg_temp.not_sent(), repeat('a', 64), 'bike', null) $$,
+  'P0001', 'INVALID_STATE_TRANSITION', '(d) el vehículo activo (bici) no es el de la postulación');
+select throws_ok($$ select public.finalize_courier_application(pg_temp.not_sent(), repeat('b', 64), 'moto', 'AA 123 BB') $$,
+  'P0001', 'INVALID_STATE_TRANSITION', '(d) otro DNI no es un reintento');
+select pg_temp.act_as(pg_temp.not_sent());
+select lives_ok($$ select public.update_courier_vehicle(pg_temp.id('n_moto'), 'AC 456 DE') $$, '(e) se edita la patente de la moto');
+set local role service_role;
+select is((public.finalize_courier_application(pg_temp.not_sent(), repeat('a', 64), 'moto', 'AA 123 BB')->>'idempotent'), 'true',
+  '(e) después de editar la patente el reintento original sigue siendo idempotente');
+select throws_ok($$ select public.finalize_courier_application(pg_temp.not_sent(), repeat('a', 64), 'moto', 'AC 456 DE') $$,
+  'P0001', 'INVALID_STATE_TRANSITION', '(e) la patente nueva no es la de la postulación');
+select throws_ok($$ update public.couriers set application_vehicle_plate = 'ZZ 999 ZZ' where profile_id = pg_temp.not_sent() $$,
+  'P0001', 'VALIDATION_ERROR', '(f) service_role no cambia el snapshot');
+select pg_temp.as_postgres();
+select throws_ok($$ update public.couriers set application_vehicle_type = 'car' where profile_id = pg_temp.not_sent() $$,
+  'P0001', 'VALIDATION_ERROR', '(f) ni siquiera postgres cambia el snapshot sin finalize');
+select set_config('app.courier_application_snapshot', 'on', true);
+select throws_ok($$ update public.couriers set application_vehicle_plate = 'ZZ 999 ZZ' where profile_id = pg_temp.not_sent() $$,
+  'P0001', 'VALIDATION_ERROR', '(f) con la bandera tampoco: el snapshot escrito no cambia');
+select set_config('app.courier_application_snapshot', 'off', true);
+select is((select row(application_vehicle_type, application_vehicle_plate)::text from public.couriers where profile_id = pg_temp.not_sent()),
+  row('moto'::public.vehicle_type, 'AA 123 BB'::text)::text, '(f) el snapshot queda intacto');
+select is((select row(application_vehicle_type, application_vehicle_plate, vehicle_type)::text from public.couriers where profile_id = pg_temp.courier_a()),
+  row('moto'::public.vehicle_type, 'ABC 123'::text, 'car'::public.vehicle_type)::text,
+  '(g) el snapshot del backfill se conserva aunque el activo ahora sea el auto');
 
 -- ============================================================================
 -- Privacidad: el comercio no ve la lista de vehículos

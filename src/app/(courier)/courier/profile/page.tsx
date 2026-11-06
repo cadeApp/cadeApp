@@ -78,10 +78,13 @@ export default async function CourierProfilePage() {
     is_current?: boolean;
     vehicle_id?: string | null;
   }>;
-  // Solo consideramos vigentes (is_current !== false); CC-042: licencia y seguro del vehículo activo.
-  const currentDocs = rawDocs.filter(
-    (d) => d.is_current !== false && (!d.vehicle_id || d.vehicle_id === courier.active_vehicle_id)
-  );
+  // Solo consideramos vigentes (is_current !== false); CC-042: licencia y seguro del vehículo activo, o los que todavía
+  // no tienen vehículo si no hay activo (misma regla que isActiveVehicleDocument, PR624-H05).
+  const currentDocs = rawDocs.filter((d) => {
+    if (d.is_current === false) return false;
+    if (d.kind !== 'license' && d.kind !== 'insurance') return true;
+    return courier.active_vehicle_id === null ? !d.vehicle_id : d.vehicle_id === courier.active_vehicle_id;
+  });
 
   const docsMap = new Map<string, (typeof rawDocs)[number]>();
   for (const doc of currentDocs) {

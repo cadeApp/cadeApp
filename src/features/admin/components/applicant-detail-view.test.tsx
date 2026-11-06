@@ -360,6 +360,35 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
     expect(tabNames.some((name) => name.includes('Automóvil ELA 666'))).toBe(true);
   });
 
+  it('PR624-H07: dos vehículos con el mismo tipo y patente (uno archivado) no se fusionan', () => {
+    const applicantWithTwins: ApplicantDetail = {
+      ...mockApplicant,
+      documents: [
+        {
+          id: 'd0000000-0000-0000-0000-000000000043',
+          documentType: 'license',
+          storagePath: 'courier/x/license_3.jpg',
+          status: 'submitted',
+          uploadedAt: '2026-09-21T10:00:00.000Z',
+          vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
+        },
+        {
+          id: 'd0000000-0000-0000-0000-000000000044',
+          documentType: 'license',
+          storagePath: 'courier/x/license_4.jpg',
+          status: 'verified',
+          uploadedAt: '2026-09-01T10:00:00.000Z',
+          isCurrent: true,
+          vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
+        },
+      ],
+    };
+
+    render(<ApplicantDetailView applicant={applicantWithTwins} />);
+    const twinTabs = screen.getAllByRole('tab').filter((tab) => (tab.textContent ?? '').includes('Moto AB 123 CD'));
+    expect(twinTabs).toHaveLength(2);
+  });
+
   it('9. DoD T-354: muestra el tab con el nombre completo «Selfie con el DNI» cuando hay documento selfie', () => {
     const applicantWithSelfie: ApplicantDetail = {
       ...mockApplicant,

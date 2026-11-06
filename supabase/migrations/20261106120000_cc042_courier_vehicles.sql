@@ -138,6 +138,49 @@ create trigger courier_vehicles_cc042_archive
   before update of archived_at on public.courier_vehicles
   for each row execute function app_private.cc042_guard_vehicle_archive();
 
+-- PR624-H03 (D01=A): vehículo y patente con que se envió la postulación. Es un hecho histórico, separado del reflejo
+-- mutable (vehicle_type/vehicle_plate): los reintentos de finalize_courier_application se comparan contra esto.
+alter table public.couriers
+  add column application_vehicle_type public.vehicle_type,
+  add column application_vehicle_plate text;
+
+-- Solo finalize (primer envío) y el backfill de esta migración lo escriben, con su bandera y siendo el dueño de la
+-- función (mismo criterio que couriers_guard_application de CC-043); una vez escrito no cambia más.
+create or replace function app_private.cc042_guard_application_snapshot()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_authorized boolean :=
+    coalesce(current_setting('app.courier_application_snapshot', true), '') = 'on'
+    and current_user = (
+      select pg_get_userbyid(p.proowner)
+      from pg_proc p
+      where p.oid = 'public.finalize_courier_application(uuid, text, public.vehicle_type, text)'::regprocedure
+    );
+begin
+  if tg_op = 'INSERT' then
+    if new.application_vehicle_type is not null or new.application_vehicle_plate is not null then
+      raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+    end if;
+    return new;
+  end if;
+
+  if new.application_vehicle_type is distinct from old.application_vehicle_type
+    or new.application_vehicle_plate is distinct from old.application_vehicle_plate then
+    if not v_authorized or old.application_vehicle_type is not null or new.application_vehicle_type is null then
+      raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function app_private.cc042_guard_application_snapshot() from public, anon, authenticated;
+
 -- ============================================================================
 -- 3. RLS y permisos
 -- ============================================================================
@@ -173,6 +216,8 @@ create policy couriers_update_self on public.couriers
     and vehicle_type is not distinct from (select c.vehicle_type from public.couriers c where c.profile_id = auth.uid())
     and vehicle_plate is not distinct from (select c.vehicle_plate from public.couriers c where c.profile_id = auth.uid())
     and active_vehicle_id is not distinct from (select c.active_vehicle_id from public.couriers c where c.profile_id = auth.uid())
+    and application_vehicle_type is not distinct from (select c.application_vehicle_type from public.couriers c where c.profile_id = auth.uid())
+    and application_vehicle_plate is not distinct from (select c.application_vehicle_plate from public.couriers c where c.profile_id = auth.uid())
   );
 
 -- ============================================================================
@@ -190,6 +235,16 @@ as $$
 declare
   v_created integer;
 begin
+  -- PR624-H03: el vehículo de la postulación ya enviada, antes de que cambie el activo.
+  perform set_config('app.courier_application_snapshot', 'on', true);
+  update public.couriers
+  set application_vehicle_type = vehicle_type,
+      application_vehicle_plate = nullif(upper(btrim(vehicle_plate)), '')
+  where application_submitted
+    and application_vehicle_type is null
+    and vehicle_type is not null;
+  perform set_config('app.courier_application_snapshot', 'off', true);
+
   insert into public.courier_vehicles (courier_id, vehicle_type, plate, license_status, insurance_status)
   select
     c.profile_id,
@@ -217,7 +272,7 @@ begin
     and d.kind in ('license', 'insurance')
     and d.vehicle_id is null;
 
-  -- Solo se marca el activo: el reflejo ya tiene esos valores (no se toca un repartidor en bici con licencia vieja).
+  -- Se marca el activo: en moto o auto el reflejo ya tiene esos valores.
   update public.couriers c
   set active_vehicle_id = v.id
   from public.courier_vehicles v
@@ -227,6 +282,16 @@ begin
     and c.active_vehicle_id is null;
 
   get diagnostics v_created = row_count;
+
+  -- PR624-H02: en bici o a pie el reflejo no conserva una licencia o un seguro viejos (doc_level sigue al activo). Los
+  -- documentos quedan para la auditoría, sin vehículo.
+  update public.couriers c
+  set license_status = 'none', insurance_status = 'none'
+  from public.courier_vehicles v
+  where v.id = c.active_vehicle_id
+    and v.vehicle_type in ('bike', 'walk')
+    and (c.license_status <> 'none' or c.insurance_status <> 'none');
+
   return v_created;
 end;
 $$;
@@ -234,6 +299,11 @@ $$;
 revoke all on function app_private.cc042_backfill_courier_vehicles() from public, anon, authenticated;
 
 select app_private.cc042_backfill_courier_vehicles();
+
+-- El guard va después del backfill de la migración (que corre con la bandera, pero así no depende del orden).
+create trigger couriers_guard_application_snapshot
+  before insert or update on public.couriers
+  for each row execute function app_private.cc042_guard_application_snapshot();
 
 -- ============================================================================
 -- 5. Ayudantes internos (sin execute para clientes)
@@ -763,6 +833,7 @@ declare
   v_existing_status public.document_review_status;
   v_existing_path text;
   v_existing_current boolean;
+  v_existing_vehicle uuid;
   v_current_id uuid;
   v_current_status public.document_review_status;
   v_current_path text;
@@ -852,15 +923,16 @@ begin
   v_vehicle_id := app_private.cc042_document_vehicle(v_actor_id, v_requested_vehicle, v_courier_rec.active_vehicle_id);
 
   if v_idempotency_key_text is not null then
-    select id, status, storage_path, is_current
-    into v_existing_id, v_existing_status, v_existing_path, v_existing_current
+    select id, status, storage_path, is_current, vehicle_id
+    into v_existing_id, v_existing_status, v_existing_path, v_existing_current, v_existing_vehicle
     from public.courier_documents
     where courier_id = v_actor_id
       and kind = v_kind
       and idempotency_key = v_idempotency_key_text;
 
     if found then
-      if v_existing_path <> v_storage_path then
+      -- PR624-H04: la misma clave para otro vehículo no es un reintento.
+      if v_existing_path <> v_storage_path or v_existing_vehicle is distinct from v_vehicle_id then
         raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
       end if;
 
@@ -991,6 +1063,7 @@ declare
   v_existing_idem_status public.document_review_status;
   v_existing_idem_path text;
   v_existing_idem_current boolean;
+  v_existing_idem_vehicle uuid;
 begin
   if v_actor_id is null then
     raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
@@ -1071,15 +1144,16 @@ begin
   end if;
 
   if v_idempotency_key is not null then
-    select id, status, storage_path, is_current
-    into v_existing_idem_id, v_existing_idem_status, v_existing_idem_path, v_existing_idem_current
+    select id, status, storage_path, is_current, vehicle_id
+    into v_existing_idem_id, v_existing_idem_status, v_existing_idem_path, v_existing_idem_current, v_existing_idem_vehicle
     from public.courier_documents
     where courier_id = v_actor_id
       and kind = v_kind
       and idempotency_key = v_idempotency_key;
 
     if found then
-      if v_existing_idem_path <> v_storage_path then
+      -- PR624-H04: la misma clave para otro vehículo no es un reintento.
+      if v_existing_idem_path <> v_storage_path or v_existing_idem_vehicle is distinct from v_vehicle_id then
         raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
       end if;
 
@@ -1546,7 +1620,7 @@ declare
   v_vehicle_id uuid;
 begin
   select profile_id, status, application_submitted, submitted_at, dni_hmac, vehicle_type, vehicle_plate,
-         license_status, insurance_status
+         application_vehicle_type, application_vehicle_plate
   into v_courier
   from public.couriers
   where profile_id = p_courier_id
@@ -1587,9 +1661,13 @@ begin
   end if;
 
   if v_courier.application_submitted then
+    -- PR624-H03 (D01=A): contra el vehículo de la postulación, no contra el activo (cambia con CC-042). Sin snapshot
+    -- solo queda una postulación marcada fuera de finalize y del backfill: ahí el reflejo es el único dato que hay.
     if v_courier.dni_hmac is not distinct from p_dni_hmac
-      and v_courier.vehicle_type is not distinct from p_vehicle_type
-      and v_courier.vehicle_plate is not distinct from v_plate then
+      and (case when v_courier.application_vehicle_type is null then v_courier.vehicle_type
+                else v_courier.application_vehicle_type end) is not distinct from p_vehicle_type
+      and (case when v_courier.application_vehicle_type is null then v_courier.vehicle_plate
+                else v_courier.application_vehicle_plate end) is not distinct from v_plate then
       return jsonb_build_object(
         'ok', true,
         'idempotent', true,
@@ -1618,22 +1696,27 @@ begin
 
   v_submitted_at := now();
   perform set_config('app.courier_application_finalize', 'on', true);
+  perform set_config('app.courier_application_snapshot', 'on', true);
 
   begin
     update public.couriers
     set dni_hmac = p_dni_hmac,
         vehicle_type = p_vehicle_type,
         vehicle_plate = v_plate,
+        application_vehicle_type = p_vehicle_type,
+        application_vehicle_plate = v_plate,
         application_submitted = true,
         submitted_at = v_submitted_at
     where profile_id = p_courier_id;
   exception
     when unique_violation then
       perform set_config('app.courier_application_finalize', 'off', true);
+      perform set_config('app.courier_application_snapshot', 'off', true);
       raise exception using errcode = 'P0001', message = 'DNI_ALREADY_REGISTERED';
   end;
 
   perform set_config('app.courier_application_finalize', 'off', true);
+  perform set_config('app.courier_application_snapshot', 'off', true);
 
   -- CC-042: el vehículo del alta queda activo, con la licencia y el seguro del onboarding asociados.
   select id into v_vehicle_id
@@ -1643,14 +1726,8 @@ begin
   if found then
     update public.courier_vehicles set plate = v_plate where id = v_vehicle_id;
   else
-    insert into public.courier_vehicles (courier_id, vehicle_type, plate, license_status, insurance_status)
-    values (
-      p_courier_id,
-      p_vehicle_type,
-      v_plate,
-      case when p_vehicle_type in ('moto', 'car') then v_courier.license_status else 'none' end,
-      case when p_vehicle_type in ('moto', 'car') then v_courier.insurance_status else 'none' end
-    )
+    insert into public.courier_vehicles (courier_id, vehicle_type, plate)
+    values (p_courier_id, p_vehicle_type, v_plate)
     returning id into v_vehicle_id;
   end if;
 
@@ -1660,9 +1737,23 @@ begin
     where courier_id = p_courier_id
       and kind in ('license', 'insurance')
       and vehicle_id is null;
+
+    -- PR624-H01: los estados salen de la licencia y el seguro vigentes del vehículo (los que acaba de cargar
+    -- submit_courier_onboarding_documents), no del reflejo anterior.
+    update public.courier_vehicles v
+    set license_status = coalesce((
+          select d.status from public.courier_documents d
+          where d.vehicle_id = v.id and d.kind = 'license' and coalesce(d.is_current, true)
+          order by d.uploaded_at desc limit 1), 'none'),
+        insurance_status = coalesce((
+          select d.status from public.courier_documents d
+          where d.vehicle_id = v.id and d.kind = 'insurance' and coalesce(d.is_current, true)
+          order by d.uploaded_at desc limit 1), 'none')
+    where v.id = v_vehicle_id;
   end if;
 
   update public.couriers set active_vehicle_id = v_vehicle_id where profile_id = p_courier_id;
+  perform app_private.cc042_sync_courier_reflection(p_courier_id);
 
   return jsonb_build_object(
     'ok', true,

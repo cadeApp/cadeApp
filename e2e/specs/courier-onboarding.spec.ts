@@ -197,6 +197,56 @@ async function pickAvailableDni(
   throw new Error('[E2E Seed Error] No se encontró un DNI libre en 10 intentos');
 }
 
+type CourierClient = Awaited<ReturnType<typeof createAuthenticatedClient>>;
+
+/**
+ * PR624-H06: deja al repartidor como lo dejó el seed aunque la prueba falle a mitad de camino. Retira la oferta que
+ * siga pendiente, vuelve a activar la moto por la RPC (no se borra un vehículo activo) y recién después borra el
+ * vehículo agregado. Devuelve los errores de limpieza; si la moto no se puede reactivar (viaje activo), no borra nada.
+ */
+async function restoreSeedVehicle(
+  courierClient: CourierClient,
+  courierId: string,
+  motoId: string,
+  addedType: 'bike' | 'car',
+  offerId: string | null = null
+): Promise<string[]> {
+  const dbAdmin = createAdminClient();
+  const errors: string[] = [];
+  if (offerId) {
+    const { data: offer } = await dbAdmin.from('offers').select('status').eq('id', offerId).maybeSingle();
+    if (offer?.status === 'pending') {
+      const { error } = await courierClient.rpc('withdraw_offer', { p_offer_id: offerId });
+      if (error) errors.push(`withdraw_offer: ${error.message}`);
+    }
+  }
+  const { data: current, error: currentError } = await dbAdmin
+    .from('couriers')
+    .select('active_vehicle_id')
+    .eq('profile_id', courierId)
+    .single();
+  if (currentError) return [...errors, `couriers: ${currentError.message}`];
+  if (current.active_vehicle_id !== motoId) {
+    const { error } = await courierClient.rpc('set_active_courier_vehicle', { p_vehicle_id: motoId });
+    if (error) return [...errors, `set_active_courier_vehicle: ${error.message}`];
+  }
+  const { error: deleteError } = await dbAdmin
+    .from('courier_vehicles')
+    .delete()
+    .eq('courier_id', courierId)
+    .eq('vehicle_type', addedType);
+  if (deleteError) errors.push(`courier_vehicles ${addedType}: ${deleteError.message}`);
+  return errors;
+}
+
+/** Un error de limpieza no tapa el de la prueba: si la prueba ya falló, solo se reporta. */
+function reportCleanup(errors: string[], primaryError: unknown): void {
+  if (errors.length === 0) return;
+  const message = `[E2E cleanup] ${errors.join('; ')}`;
+  if (primaryError) console.warn(message);
+  else throw new Error(message);
+}
+
 test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado', () => {
   // ---------------------------------------------------------------------------
   // DoD Invariante 1: Falla si se quita el chequeo de MFA en aprobación
@@ -1292,10 +1342,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       .single();
     expect(seedError).toBeNull();
     expect(seeded?.vehicle_type).toBe('moto');
-    expect(seeded?.active_vehicle_id).not.toBeNull();
+    const motoId = seeded?.active_vehicle_id;
+    if (!motoId) throw new Error('[E2E Error] El seed tiene que dejar la moto como vehículo activo');
     const motoPlate = seeded?.vehicle_plate ?? '';
     expect(motoPlate).not.toBe('');
 
+    const courierClient = await createAuthenticatedClient(courier);
+    let primaryError: unknown = null;
     try {
       // 1. Desde el perfil, «Actualizar» lleva a «Mis vehículos» (sin stepper, consentimientos ni alta documental).
       await loginAsCourier(0, page);
@@ -1354,9 +1407,11 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         .eq('courier_id', courier.id);
       expect(finalDocsError).toBeNull();
       expect(finalDocs).toEqual(initialDocs);
+    } catch (error) {
+      primaryError = error;
+      throw error;
     } finally {
-      // Cleanup: la moto queda activa (paso 4) y el auto de esta prueba se borra.
-      await dbAdmin.from('courier_vehicles').delete().eq('courier_id', courier.id).eq('vehicle_type', 'car');
+      reportCleanup(await restoreSeedVehicle(courierClient, courier.id, motoId, 'car'), primaryError);
     }
   });
 
@@ -1448,6 +1503,14 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const dbAdmin = createAdminClient();
     const courierClient = await createAuthenticatedClient(courier);
 
+    const { data: seeded } = await dbAdmin
+      .from('couriers')
+      .select('active_vehicle_id')
+      .eq('profile_id', courier.id)
+      .single();
+    const motoId = seeded?.active_vehicle_id;
+    if (!motoId) throw new Error('[E2E Error] El seed tiene que dejar la moto como vehículo activo');
+
     // Precondición: además de la moto activa del seed, el repartidor tiene un auto cargado (inactivo).
     const { error: addError } = await courierClient.rpc('add_courier_vehicle', {
       p_vehicle_type: 'car',
@@ -1462,6 +1525,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       .single();
     expect(before?.vehicle_type).toBe('moto');
 
+    let primaryError: unknown = null;
     try {
       const seedResult = await seedDeliveryRequestInState(stagingContext, {
         status: 'matched',
@@ -1494,8 +1558,12 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       const trip = tripRpc as { vehicleType: string; vehiclePlate: string | null };
       expect(trip.vehicleType).toBe('moto');
       expect(trip.vehiclePlate).toBe(before?.vehicle_plate);
+    } catch (error) {
+      primaryError = error;
+      throw error;
     } finally {
-      await dbAdmin.from('courier_vehicles').delete().eq('courier_id', courier.id).eq('vehicle_type', 'car');
+      // El auto nunca quedó activo (el viaje bloquea el cambio): restoreSeedVehicle lo comprueba antes de borrarlo.
+      reportCleanup(await restoreSeedVehicle(courierClient, courier.id, motoId, 'car'), primaryError);
     }
   });
 

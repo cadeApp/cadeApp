@@ -187,7 +187,7 @@ export async function getApplicantDetail(
     supabase
       .from('courier_documents')
       .select(
-        'id, kind, storage_path, status, uploaded_at, is_current, rejection_code, vehicle:courier_vehicles!courier_documents_vehicle_id_fkey(vehicle_type, plate)'
+        'id, kind, storage_path, status, uploaded_at, is_current, rejection_code, vehicle_id, vehicle:courier_vehicles!courier_documents_vehicle_id_fkey(vehicle_type, plate)'
       )
       .eq('courier_id', courierId)
       .order('uploaded_at', { ascending: true }),
@@ -225,12 +225,14 @@ export async function getApplicantDetail(
     uploaded_at: string;
     is_current?: boolean | null;
     rejection_code?: string | null;
+    vehicle_id?: string | null;
     vehicle?: { vehicle_type: 'walk' | 'bike' | 'moto' | 'car'; plate: string | null } | null;
   }
 
   const rawDocs = (docsResult.data ?? []) as unknown as CourierDocDetailRow[];
-  // CC-042: clave para agrupar licencia y seguro por vehículo (los documentos sin vehículo conservan su orden).
-  const vehicleKey = (d: CourierDocDetailRow) => (d.vehicle ? `${d.vehicle.vehicle_type}:${d.vehicle.plate ?? ''}` : '');
+  // CC-042: licencia y seguro se agrupan por vehículo (PR624-H07: por su id, así dos vehículos con el mismo tipo y
+  // patente no se mezclan); los documentos sin vehículo conservan su orden.
+  const vehicleKey = (d: CourierDocDetailRow) => d.vehicle_id ?? '';
   // Los documentos vigentes (is_current !== false) van primero; los históricos van al final
   const sortedDocs = [...rawDocs].sort((a, b) => {
     const aCurrent = a.is_current !== false ? 1 : 0;

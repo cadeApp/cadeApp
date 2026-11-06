@@ -4,6 +4,7 @@ import * as adminSupabase from '@/server/supabase/admin';
 import {
   getCourierDocumentsStatus,
   getCourierApprovedAvatarUrl,
+  isActiveVehicleDocument,
   COURIER_AVATAR_SIGNED_URL_TTL_SECONDS,
   type CourierDocumentMetadata,
 } from './queries';
@@ -200,6 +201,34 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
         ['license', 'rejected'],
         ['dni_front', 'verified'],
       ]);
+    });
+
+    it.each([
+      ['moto activa, licencia de la moto', { kind: 'license', vehicle_id: 'moto' }, 'moto', true],
+      ['auto activo, licencia de la moto', { kind: 'license', vehicle_id: 'moto' }, 'car', false],
+      ['bici activa, licencia vieja sin vehículo', { kind: 'license', vehicle_id: null }, 'bike', false],
+      ['bici activa, seguro viejo sin vehículo', { kind: 'insurance', vehicle_id: null }, 'bike', false],
+      ['sin activo (onboarding), licencia sin vehículo', { kind: 'license', vehicle_id: null }, null, true],
+      ['sin activo, licencia de un vehículo', { kind: 'license', vehicle_id: 'moto' }, null, false],
+      ['DNI con cualquier activo', { kind: 'dni_front', vehicle_id: null }, 'bike', true],
+      ['DNI sin activo', { kind: 'dni_front', vehicle_id: null }, null, true],
+    ] as const)('PR624-H05: %s', (_case, row, activeVehicleId, expected) => {
+      expect(isActiveVehicleDocument(row, activeVehicleId)).toBe(expected);
+    });
+
+    it('PR624-H05: con la bici activa no se muestra la licencia vieja sin vehículo', async () => {
+      setupSupabaseMock(
+        [
+          { kind: 'license', status: 'verified', rejection_code: null, uploaded_at: '2026-10-03T10:00:00Z', is_current: true, vehicle_id: null },
+          { kind: 'dni_front', status: 'verified', rejection_code: null, uploaded_at: '2026-10-01T10:00:00Z', is_current: true, vehicle_id: null },
+        ],
+        null,
+        'vehicle-bike'
+      );
+
+      const result = await getCourierDocumentsStatus('user-1');
+
+      expect(result.map((document) => document.kind)).toEqual(['dni_front']);
     });
 
     it('devuelve array vacío si no hay filas persistidas', async () => {

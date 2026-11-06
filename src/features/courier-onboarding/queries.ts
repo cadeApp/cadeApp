@@ -26,12 +26,17 @@ export interface CourierDocumentRow {
   readonly vehicle_id?: string | null;
 }
 
-/** CC-042: un documento sin vehículo (DNI, selfie, avatar o datos anteriores) o del vehículo activo. */
+/**
+ * CC-042: DNI, selfie y avatar se muestran siempre; la licencia y el seguro, solo los del vehículo activo. Antes de
+ * que exista un activo (onboarding) se muestran los que todavía no tienen vehículo (PR624-H05).
+ */
 export function isActiveVehicleDocument(
-  row: { readonly vehicle_id?: string | null },
+  row: { readonly kind: string; readonly vehicle_id?: string | null },
   activeVehicleId: string | null
 ): boolean {
-  return !row.vehicle_id || row.vehicle_id === activeVehicleId;
+  if (row.kind !== 'license' && row.kind !== 'insurance') return true;
+  if (activeVehicleId === null) return !row.vehicle_id;
+  return row.vehicle_id === activeVehicleId;
 }
 
 export type CourierVehicles = RpcOutput<'get_my_courier_vehicles'>;
