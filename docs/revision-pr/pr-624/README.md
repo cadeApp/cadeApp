@@ -1,19 +1,15 @@
 # PR #624 · T-419 / CC-042 — revisión independiente
 
-- **Rama:** feat/T-419-vehiculos.
-- **SHA inspeccionado:** 2c6ae940a0215886b8567e64609aad866570027c.
-- **Base:** b5ceef11e4f227d87f438ff7d686e9355a6daac9 (develop en la ronda).
-- **Fecha:** 2026-11-06 · **Ronda:** 1.
-- **Resultado:** CON BLOQUEANTES (**6**) y una mejora (**1**). No aprobado, no mergeado.
-- **Decisión de Lautaro073:** D01=A, snapshot inmutable del vehículo y la patente del primer envío; con backfill y columnas protegidas. No queda decisión 🔵 pendiente.
-- **Estado del E2E:** BLOCKED / REQUIRES DEVELOP MIGRATION. Se ejecuta en develop tras migrate-develop.
-- **CI del SHA revisado:** run 42247329813; siete jobs exitosos (lint, unit, typecheck, db-tests, build, audit, bundle-budget). Esto **no** demuestra corregidos los hallazgos.
+- Rama: feat/T-419-vehiculos.
+- Último SHA inspeccionado: 67df8e87bb33296be402c4295451b594a0c3e7a8.
+- Ronda: 2, fecha 2026-11-06. Resultado: **CON BLOQUEANTES (2)**. No aprobada ni mergeada.
+- [Ronda 1](revisiones/ronda-1.md): SHA 2c6ae940, 6 bloqueantes y una mejora; D01=A confirmada por Lautaro073.
+- [Ronda 2](revisiones/ronda-2.md): H01–H05 corregidos por inspección + RED del autor, sin verificación runtime independiente. H06 parcial y regresión R01; H07 mejora parcial; R02 acota fallback para snapshot NULL.
+- CI del SHA R2: run 42262625810, 7 jobs success, db-tests Files=43 Tests=3577 PASS, tipos generados al día.
+- E2E: BLOCKED / REQUIRES DEVELOP MIGRATION; ejecutar contra develop después de migrate-develop.
+- develop avanzado un commit (CC-046, sheet, pr-631), sin rutas solapadas; GitHub mergeable=true, no merge-tree local.
+- No hay decisiones 🔵 nuevas, D01=A sigue firme.
 
-## Archivos de esta ronda
+Archivos: [ronda 1](revisiones/ronda-1.md), [ronda 2](revisiones/ronda-2.md), [hallazgos](hallazgos.jsonl), [evidencia/comandos](evidencia/comandos.md), [lecciones](lecciones.md).
 
-- [Informe, hallazgos y prompt de corrección](revisiones/ronda-1.md)
-- [Hallazgos estructurados](hallazgos.jsonl)
-- [Evidencia reproducible y límites](evidencia/comandos.md)
-- [Lecciones para revisión](lecciones.md)
-
-El resultado es principalmente **por inspección + CI verde**, sin test de base local ni ejecución independiente de las mutaciones que el autor documentó. Ningún hallazgo abierto está marcado arreglado/verificado.
+No se modifica ronda-1.md. H01–H05 permanecen arreglado-sin-verificar porque las mutaciones ejecutadas fueron del autor, no reproducidas en una verificación independiente.

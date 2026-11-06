@@ -80,3 +80,53 @@ La sonda NO se ejecutó sobre el checkout del SHA en esta sesión. Antes de repo
 ## Validación documental
 
 El script docs/revision-pr/analizar.mjs verificacion se debe ejecutar en el worktree con la carpeta ya descargada. No marcar arreglado-verificado desde la bitácora del autor. En hallazgos.jsonl cada verificado_en_sha = null mientras el revisor no ejecute la comprobación independiente.
+
+
+## Ronda 2 — evidencia y sonda estática independiente
+
+SHA exacto: 67df8e87bb33296be402c4295451b594a0c3e7a8. CI run 42262625810 (success), db-tests job 128046220858: cc042_courier_vehicles.sql OK, Files=43 Tests=3577 Result: PASS y comparación de src/types/database.types.ts sin diff. Unit job 128046220924: Test Files 196 passed. Run 42260809564 del commit anterior, db-tests 3577 PASS, falló únicamente la comparación de tipos generados.
+
+PRs de mutación del autor, parches verificados contra 97eb3288 y logs examinados, todas cerradas sin merge:
+- #641, run 42260872255, job 128040140882: reemplaza estados desde documentos por reflejo viejo y quita sync; RED tests 161,162/179.
+- #642, run 42260885029, job 128040184597: quita normalización en bici; RED test 35/179.
+- #643, run 42260901356, job 128040239043: compara reintento contra reflejo; SQL ERROR INVALID_STATE_TRANSITION en línea 509; aborta con 164 tests corridos.
+- #644, run 42260914177, job 128040284954: elimina guarda del snapshot; RED tests 173–176/179.
+- #645, run 42260930442, job 128040340971: quita vehicle_id de dos idempotencias; RED tests 133,136/179.
+H05: RED local 3 fallidas/33 aprobadas declarado por el autor, no reproducido aquí. H06 y H07: RED pendiente.
+
+Sonda propia sobre textos exactos de GitHub, realizada en memoria (NO ejecuta SQL, E2E ni unitarias):
+1. Ambos specs contienen borrado con filtro por vehicle_type; confirmado.
+2. Segundo E2E de viaje llama add_courier_vehicle y verifica before.vehicle_type antes del try; confirmado.
+3. Test H07 en ApplicantDetailView cuenta tabs y no invoca getApplicantDetail ni usa vehicle_id; confirmado.
+4. Rama fallback snapshot NULL no condiciona submitted_at ni active_vehicle_id; confirmado.
+
+Script equivalente, reproducible desde la raíz del repo (guardar en /tmp; NO es prueba semántica):
+~~~bash
+cat > /tmp/pr624-r2-static.mjs <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const read = p => fs.readFileSync(p,'utf8');
+const ev = read('e2e/specs/courier-vehicles.spec.ts');
+const eo = read('e2e/specs/courier-onboarding.spec.ts');
+const q = read('src/features/admin/queries.ts');
+const t = read('src/features/admin/components/applicant-detail-view.test.tsx');
+const sql = read('supabase/migrations/20261106120000_cc042_courier_vehicles.sql');
+const probe=(label,condition)=>{assert.ok(condition,label);process.stdout.write('CONFIRMADO '+label+'\n')};
+probe('delete por tipo en dos specs',ev.includes(".eq('vehicle_type', addedType)")&&eo.includes(".eq('vehicle_type', addedType)"));
+const a=eo.indexOf("const { error: addError } = await courierClient.rpc('add_courier_vehicle'");
+const b=eo.indexOf("let primaryError: unknown = null;",a);
+probe('alta antes del try',a>=0&&b>a&&eo.slice(a,b).includes("expect(before?.vehicle_type).toBe('moto')"));
+const begin=t.indexOf("it('PR624-H07: dos vehículos"),end=t.indexOf("it('9. DoD T-354:",begin),h=t.slice(begin,end);
+probe('H07 test no atraviesa query',q.includes("const vehicleKey = (d: CourierDocDetailRow) => d.vehicle_id ?? ''")&&h.includes("getAllByRole('tab')")&&!h.includes("getApplicantDetail")&&!h.includes("vehicle_id"));
+const i=sql.indexOf('if v_courier.application_submitted then',sql.indexOf('create or replace function public.finalize_courier_application'));
+const j=sql.indexOf("raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';",i);
+const body=sql.slice(i,j);
+probe('fallback no exige fecha y activo NULL',body.includes('case when v_courier.application_vehicle_type is null then v_courier.vehicle_type')&&!body.includes('submitted_at is null')&&!body.includes('active_vehicle_id is null'));
+JS
+node /tmp/pr624-r2-static.mjs
+~~~
+
+Sonda estructural únicamente: no convertir su resultado en GREEN de producción. No se ejecutaron git merge-tree, suites de test en clon, Supabase/Docker ni E2E. develop avanzó un commit sin rutas superpuestas; GitHub mergeable=true, no equivalente a merge-tree.
+
+Comandos finales propuestos: pnpm typecheck; pnpm lint; pnpm exec vitest run src/features/admin/queries.test.ts; pnpm test (log en /tmp); pnpm exec playwright test --list; node docs/revision-pr/analizar.mjs verificacion; git diff --check origin/develop...HEAD. Para pruebas SQL, consultar db-tests CI por SHA, Files, Tests y Result. E2E solo después de migrate-develop.
+
