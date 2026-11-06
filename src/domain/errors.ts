@@ -29,6 +29,10 @@ export const DOMAIN_ERROR_CODES = [
   'MISSING_REQUIRED_FIELDS',
   'DROP_LIMIT_EXCEEDED',
 
+  // Vehículos del repartidor (CC-042)
+  'VEHICLE_SWITCH_BLOCKED',
+  'DUPLICATE_VEHICLE',
+
   // Administración y plataforma (T-105)
   'INVALID_SETTING_KEY',
   'INVALID_SETTING_VALUE',

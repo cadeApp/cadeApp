@@ -6,6 +6,7 @@ import {
   ok,
   type ActionResult,
   type RpcErrorCode,
+  type RpcInput,
   type RpcOutput,
 } from '@/domain';
 import type { SupabaseRpcCaller, SupabaseRpcErrorLike } from './admin';
@@ -51,7 +52,7 @@ export function mapReplaceCourierDocumentRpcError(
 }
 
 /**
- * Typed server wrapper for `public.replace_courier_document(p_payload jsonb)`.
+ * Typed server wrapper for `public.replace_courier_document(p_payload jsonb, p_vehicle_id uuid)`.
  * CC-025: Reemplazo transaccional de un documento rechazado del repartidor.
  */
 export async function replaceCourierDocumentRpc(
@@ -78,6 +79,8 @@ export async function replaceCourierDocumentRpc(
           ? { idempotencyKey: parsedInput.data.idempotencyKey }
           : {}),
       },
+      // CC-042: vehículo de la licencia o el seguro; sin él, la RPC usa el activo.
+      ...(parsedInput.data.vehicleId ? { p_vehicle_id: parsedInput.data.vehicleId } : {}),
     });
 
     if (error) {
@@ -132,7 +135,7 @@ export function mapAddCourierOptionalDocumentRpcError(
   return 'INTERNAL_ERROR';
 }
 
-/** Typed server wrapper for `public.add_courier_optional_document(p_payload jsonb)`. */
+/** Typed server wrapper for `public.add_courier_optional_document(p_payload jsonb, p_vehicle_id uuid)`. */
 export async function addCourierOptionalDocumentRpc(
   client: SupabaseRpcCaller,
   rawInput: unknown,
@@ -154,6 +157,8 @@ export async function addCourierOptionalDocumentRpc(
           ? { idempotencyKey: parsedInput.data.idempotencyKey }
           : {}),
       },
+      // CC-042: vehículo de la licencia o el seguro; sin él, la RPC usa el activo.
+      ...(parsedInput.data.vehicleId ? { p_vehicle_id: parsedInput.data.vehicleId } : {}),
     });
 
     if (error) return err(mapAddCourierOptionalDocumentRpcError(error));
@@ -162,6 +167,75 @@ export async function addCourierOptionalDocumentRpc(
     if (!parsedOutput.success) return err('INTERNAL_ERROR');
 
     return ok(parsedOutput.data);
+  } catch {
+    return err('INTERNAL_ERROR');
+  }
+}
+
+// CC-042: vehículos del repartidor.
+export type CourierVehicleRpcName =
+  | 'get_my_courier_vehicles'
+  | 'add_courier_vehicle'
+  | 'update_courier_vehicle'
+  | 'remove_courier_vehicle'
+  | 'set_active_courier_vehicle';
+
+/** Maps PostgREST / Postgres errors of a CC-042 vehicle RPC into its contract codes. */
+export function mapCourierVehicleRpcError<K extends CourierVehicleRpcName>(
+  rpcName: K,
+  error: SupabaseRpcErrorLike,
+): RpcErrorCode<K> | 'INTERNAL_ERROR' {
+  const allowedCodes: readonly string[] = RPC_CONTRACTS[rpcName].errorCodes;
+  const trimmedMessage = error.message.trim();
+  const matched = allowedCodes.find((code) => trimmedMessage === code || trimmedMessage.includes(code));
+  if (matched) return matched as RpcErrorCode<K>;
+  if ((error.code === '42501' || error.code === '28000') && allowedCodes.includes('UNAUTHORIZED_ACTOR')) {
+    return 'UNAUTHORIZED_ACTOR' as RpcErrorCode<K>;
+  }
+  return 'INTERNAL_ERROR';
+}
+
+function toCourierVehicleArgs<K extends CourierVehicleRpcName>(
+  rpcName: K,
+  input: RpcInput<K>,
+): Record<string, unknown> {
+  switch (rpcName) {
+    case 'add_courier_vehicle': {
+      const add = input as RpcInput<'add_courier_vehicle'>;
+      return { p_vehicle_type: add.vehicleType, p_plate: add.plate, p_make_active: add.makeActive };
+    }
+    case 'update_courier_vehicle': {
+      const update = input as RpcInput<'update_courier_vehicle'>;
+      return { p_vehicle_id: update.vehicleId, p_plate: update.plate };
+    }
+    case 'remove_courier_vehicle':
+    case 'set_active_courier_vehicle':
+      return { p_vehicle_id: (input as RpcInput<'remove_courier_vehicle'>).vehicleId };
+    default:
+      return {};
+  }
+}
+
+/** Typed server wrapper for the CC-042 vehicle RPCs (session client: the RPC checks the actor). */
+export async function courierVehicleRpc<K extends CourierVehicleRpcName>(
+  client: SupabaseRpcCaller,
+  rpcName: K,
+  rawInput: unknown,
+): Promise<ActionResult<RpcOutput<K>, RpcErrorCode<K> | 'INTERNAL_ERROR'>> {
+  const parsedInput = RPC_CONTRACTS[rpcName].inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) return err('VALIDATION_ERROR' as RpcErrorCode<K>);
+
+  try {
+    const { data, error } = await client.rpc(
+      rpcName,
+      toCourierVehicleArgs(rpcName, parsedInput.data as RpcInput<K>),
+    );
+    if (error) return err(mapCourierVehicleRpcError(rpcName, error));
+
+    const parsedOutput = RPC_CONTRACTS[rpcName].outputSchema.safeParse(data);
+    if (!parsedOutput.success) return err('INTERNAL_ERROR');
+
+    return ok(parsedOutput.data as RpcOutput<K>);
   } catch {
     return err('INTERNAL_ERROR');
   }

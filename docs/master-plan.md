@@ -140,6 +140,8 @@ Si la misma oferta ya estaba aceptada, devuelve éxito (idempotente). Cualquier 
 - Las insignias ("Licencia verificada", "Seguro verificado") aparecen **solo** cuando el admin revisó el comprobante. Nunca se muestra "verificado" por una declaración.
 - En la vista de ofertas del comercio, el orden por defecto es `doc_level` descendente y después la hora de la oferta. El comercio puede ordenar por precio y elige libremente.
 - Lo que declara el repartidor sin comprobante (vehículo, tenencia de licencia) se muestra como "declarado".
+- El repartidor puede cargar varios vehículos (uno por tipo), cada uno con su patente, su licencia y su seguro, y elige
+  el activo; el comercio ve solo el activo con su insignia (CC-042, T-419).
 
 ### 6.5 Revelación progresiva (D3 y D15)
 - Los datos sensibles están en tablas aparte con RLS estricta: `delivery_request_contacts` (dirección exacta de entrega, nombre y teléfono del destinatario, y coordenadas exactas de retiro `pickup_lat`/`pickup_lng` y entrega `dropoff_lat`/`dropoff_lng`) y, con varias entregas (CC-022), `delivery_request_drop_contacts` por entrega (dirección, coordenadas, nombre, teléfono, indicaciones y monto exacto de cambio). Su RLS solo deja leer al comercio dueño, al repartidor de la oferta `accepted` y al admin.

@@ -4,7 +4,10 @@ import {
   courierOnboardingAction,
   replaceCourierDocumentAction,
   addCourierOptionalDocumentAction,
-  updateCourierVehicleAction,
+  addCourierVehicleAction,
+  updateCourierVehiclePlateAction,
+  removeCourierVehicleAction,
+  setActiveCourierVehicleAction,
   validateCurrentDocumentSet,
   updateCourierPhoneAction,
 } from './actions';
@@ -1547,262 +1550,6 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
     });
   });
 
-  describe('T-357: Actualización de vehículo del repartidor desde perfil (updateCourierVehicleAction)', () => {
-    const courierId = 'courier-test-uuid-357';
-
-    function setupCourierMock({
-      user = { id: courierId, email: 'courier@cadeapp.test' } as { id: string; email: string } | null,
-      role = 'courier',
-      courierRecord = { profile_id: courierId, status: 'approved', application_submitted: true } as
-        { profile_id: string; status: string; application_submitted: boolean } | null,
-      updateFails = false,
-      updateMissing = false,
-      readFails = false,
-    } = {}) {
-      const mockUpdateResult = vi.fn().mockResolvedValue({
-        data: updateMissing ? null : { profile_id: user?.id ?? courierId },
-        error: updateFails ? { message: 'update failed' } : null,
-      });
-      const mockIn = vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({ maybeSingle: mockUpdateResult }),
-      });
-      const mockEqSubmitted = vi.fn().mockReturnValue({ in: mockIn });
-      const mockEqUpdate = vi.fn().mockReturnValue({ eq: mockEqSubmitted });
-      const mockUpdate = vi.fn().mockReturnValue({ eq: mockEqUpdate });
-      const mockUpsertDocuments = vi.fn().mockResolvedValue({ error: null });
-      vi.mocked(serverAuth.createClient).mockResolvedValue({
-        auth: {
-          getUser: vi.fn().mockResolvedValue({
-            data: { user },
-            error: user ? null : new Error('No auth'),
-          }),
-        },
-        from: vi.fn().mockImplementation((table: string) => {
-          if (table === 'profiles') {
-            return {
-              select: vi.fn().mockReturnThis(),
-              eq: vi.fn().mockReturnThis(),
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: user && role ? { role } : null,
-                error: null,
-              }),
-            };
-          }
-          if (table === 'couriers') {
-            return {
-              select: vi.fn().mockReturnThis(),
-              eq: vi.fn().mockReturnThis(),
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: courierRecord,
-                error: readFails ? { message: 'read failed' } : null,
-              }),
-              update: mockUpdate,
-            };
-          }
-          if (table === 'courier_documents') {
-            return { upsert: mockUpsertDocuments };
-          }
-          return { select: vi.fn().mockReturnThis() };
-        }),
-      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
-      return { mockUpdate, mockEqUpdate, mockEqSubmitted, mockIn, mockUpsertDocuments };
-    }
-
-    it('rechaza la acción si el usuario no está autenticado', async () => {
-      setupCourierMock({ user: null });
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-      });
-      expect(result).toEqual({ ok: false, code: 'UNAUTHENTICATED' });
-    });
-
-    it('rechaza la acción si el usuario autenticado no tiene rol courier', async () => {
-      setupCourierMock({ role: 'merchant' });
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-      });
-      expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
-    });
-
-    it('rechaza la acción si el legajo courier no existe (NOT_FOUND)', async () => {
-      setupCourierMock({ courierRecord: null });
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-      });
-      expect(result).toEqual({ ok: false, code: 'NOT_FOUND' });
-    });
-
-    it('rechaza la acción si el tipo de transporte no es válido (VALIDATION_ERROR)', async () => {
-      setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'helicoptero',
-        vehiclePlate: 'AB 123 CD',
-      });
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-    });
-
-    it('rechaza la acción si el vehículo es moto y no tiene patente', async () => {
-      setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: '',
-      });
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-    });
-
-    it('rechaza la acción si la patente tiene formato inválido para moto o auto', async () => {
-      setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'car',
-        vehiclePlate: 'PATENTE_INVALIDA_123',
-      });
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-    });
-
-    it('actualiza exitosamente moto con patente argentina formateada a mayúsculas', async () => {
-      const { mockUpdate } = setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'ab 123 cd',
-      });
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data.redirectTo).toBe('/courier/profile');
-      }
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate.mock.calls[0]?.[0]).toEqual({
-        vehicle_type: 'moto',
-        vehicle_plate: 'AB 123 CD',
-      });
-    });
-
-    it('actualiza exitosamente auto con patente tradicional argentina (ela 666) a mayúsculas', async () => {
-      const { mockUpdate } = setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'car',
-        vehiclePlate: 'ela 666',
-      });
-
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate.mock.calls[0]?.[0]).toEqual({
-        vehicle_type: 'car',
-        vehicle_plate: 'ELA 666',
-      });
-    });
-
-    it('actualiza exitosamente a pie o bici normalizando vehicle_plate a null', async () => {
-      const { mockUpdate } = setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'bike',
-        vehiclePlate: 'AB 123 CD', // si viniera residuo de patente, debe normalizarse a null
-      });
-
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate.mock.calls[0]?.[0]).toEqual({
-        vehicle_type: 'bike',
-        vehicle_plate: null,
-      });
-    });
-
-    it('rechaza campos documentales de edición antes de cualquier mutación', async () => {
-      const { mockUpdate, mockUpsertDocuments } = setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-        documents: { license: 'courier/otro/archivo.jpg' },
-      });
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-      expect(mockUpsertDocuments).not.toHaveBeenCalled();
-    });
-
-    it('no exige reconsentimientos legales ni DNI/selfie en la edición', async () => {
-      const { mockUpdate } = setupCourierMock();
-      // Payload sin consents ni DNI
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'car',
-        vehiclePlate: 'AA 000 BB',
-      });
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-    });
-
-    it('asegura que la actualización está estrictamente restringida a auth.user.id (actor A no puede afectar a B)', async () => {
-      const courierAId = 'courier-a-uuid-1111';
-      const courierBId = 'courier-b-uuid-2222';
-      const { mockUpdate, mockEqUpdate } = setupCourierMock({
-        user: { id: courierAId, email: 'courier-a@cadeapp.test' },
-        courierRecord: { profile_id: courierAId, status: 'approved', application_submitted: true },
-      });
-
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'car',
-        vehiclePlate: 'ELA 666',
-      });
-
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockEqUpdate).toHaveBeenCalledWith('profile_id', courierAId);
-      expect(mockEqUpdate).not.toHaveBeenCalledWith('profile_id', courierBId);
-    });
-
-    it('bloquea la edición si no se completó el onboarding', async () => {
-      const { mockUpdate } = setupCourierMock({
-        courierRecord: { profile_id: courierId, status: 'pending', application_submitted: false },
-      });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-    });
-
-    it('CC-043: el vehículo cargado sin envío de la postulación no habilita la edición', async () => {
-      const { mockUpdate } = setupCourierMock({
-        courierRecord: { profile_id: courierId, status: 'pending', application_submitted: false },
-      });
-      expect(await updateCourierVehicleAction({ vehicleType: 'moto', vehiclePlate: 'AB 123 CD' }))
-        .toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-    });
-
-    it.each(['rejected', 'suspended'])('bloquea legajo %s en edición', async (status) => {
-      const { mockUpdate } = setupCourierMock({
-        courierRecord: { profile_id: courierId, status, application_submitted: true },
-      });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-    });
-
-    it('distingue fallo de lectura de legajo inexistente', async () => {
-      const { mockUpdate } = setupCourierMock({ readFails: true });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'INTERNAL_ERROR' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-    });
-
-    it('no informa éxito cuando update devuelve cero filas; la guarda se repite en UPDATE', async () => {
-      const { mockUpdate, mockEqUpdate, mockEqSubmitted, mockIn } = setupCourierMock({ updateMissing: true });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'NOT_FOUND' });
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockEqUpdate).toHaveBeenCalledWith('profile_id', courierId);
-      expect(mockEqSubmitted).toHaveBeenCalledWith('application_submitted', true);
-      expect(mockIn).toHaveBeenCalledWith('status', ['pending', 'approved']);
-    });
-
-    it('reporta error de update en vez de OK', async () => {
-      const { mockUpdate } = setupCourierMock({ updateFails: true });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'INTERNAL_ERROR' });
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-    });
-  });
 });
 
 describe('CC-025 / T-356: replaceCourierDocumentAction', () => {
@@ -2422,4 +2169,118 @@ describe('T-376 / CC-033: addCourierOptionalDocumentAction', () => {
       expect(revalidatePath).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('T-419 / CC-042: acciones de vehículos del repartidor (RPC, sin update directo)', () => {
+  const VEHICLE = 'c0000000-0000-4000-8000-000000000419';
+
+  function setup({
+    user = { id: 'courier-419' } as { id: string } | null,
+    rpcResult = { data: { vehicleId: VEHICLE }, error: null } as { data: unknown; error: unknown },
+  } = {}) {
+    const rpc = vi.fn().mockResolvedValue(rpcResult);
+    const from = vi.fn();
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user }, error: user ? null : new Error('No auth') }),
+      },
+      from,
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+    return { rpc, from };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sin sesión devuelve UNAUTHENTICATED y no llama a la RPC', async () => {
+    const { rpc } = setup({ user: null });
+    expect(await addCourierVehicleAction({ vehicleType: 'bike', plate: null })).toEqual({
+      ok: false,
+      code: 'UNAUTHENTICATED',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('agrega un vehículo con add_courier_vehicle (sin tocar couriers) y revalida perfil, feed y vehículos', async () => {
+    const { rpc, from } = setup();
+    expect(await addCourierVehicleAction({ vehicleType: 'car', plate: 'ELA 666', makeActive: true })).toEqual({
+      ok: true,
+      data: { vehicleId: VEHICLE },
+    });
+    expect(rpc).toHaveBeenCalledWith('add_courier_vehicle', {
+      p_vehicle_type: 'car',
+      p_plate: 'ELA 666',
+      p_make_active: true,
+    });
+    expect(from).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith('/courier/profile');
+    expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+  });
+
+  it('edita la patente, quita y activa con sus RPC', async () => {
+    const { rpc } = setup();
+    await updateCourierVehiclePlateAction({ vehicleId: VEHICLE, plate: 'AB 123 CD' });
+    expect(rpc).toHaveBeenLastCalledWith('update_courier_vehicle', { p_vehicle_id: VEHICLE, p_plate: 'AB 123 CD' });
+    await removeCourierVehicleAction({ vehicleId: VEHICLE });
+    expect(rpc).toHaveBeenLastCalledWith('remove_courier_vehicle', { p_vehicle_id: VEHICLE });
+
+    rpc.mockResolvedValueOnce({ data: { activeVehicleId: VEHICLE }, error: null });
+    expect(await setActiveCourierVehicleAction({ vehicleId: VEHICLE })).toEqual({
+      ok: true,
+      data: { activeVehicleId: VEHICLE },
+    });
+    expect(rpc).toHaveBeenLastCalledWith('set_active_courier_vehicle', { p_vehicle_id: VEHICLE });
+  });
+
+  it('propaga VEHICLE_SWITCH_BLOCKED y DUPLICATE_VEHICLE de la RPC sin revalidar', async () => {
+    setup({ rpcResult: { data: null, error: { code: 'P0001', message: 'VEHICLE_SWITCH_BLOCKED' } } });
+    expect(await setActiveCourierVehicleAction({ vehicleId: VEHICLE })).toEqual({
+      ok: false,
+      code: 'VEHICLE_SWITCH_BLOCKED',
+    });
+    setup({ rpcResult: { data: null, error: { code: 'P0001', message: 'DUPLICATE_VEHICLE' } } });
+    expect(await addCourierVehicleAction({ vehicleType: 'moto', plate: 'AB 123 CD' })).toEqual({
+      ok: false,
+      code: 'DUPLICATE_VEHICLE',
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('una entrada inválida devuelve VALIDATION_ERROR sin llamar a la RPC', async () => {
+    const { rpc } = setup();
+    expect(await setActiveCourierVehicleAction({ vehicleId: 'no-es-uuid' })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('CC-042: la licencia o el seguro de un vehículo viajan con p_vehicle_id', async () => {
+    const { rpc } = setup({
+      rpcResult: {
+        data: { documentId: 'a0000000-0000-4000-8000-000000000419', kind: 'license', status: 'submitted', isCurrent: true, idempotent: false },
+        error: null,
+      },
+    });
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }) })) })),
+    }));
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'courier-419' } }, error: null }) },
+      from,
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    await addCourierOptionalDocumentAction({
+      kind: 'license',
+      storagePath: 'courier/courier-419/license_1730000000000.jpg',
+      vehicleId: VEHICLE,
+    });
+    expect(rpc).toHaveBeenCalledWith('add_courier_optional_document', {
+      p_payload: { kind: 'license', storagePath: 'courier/courier-419/license_1730000000000.jpg' },
+      p_vehicle_id: VEHICLE,
+    });
+  });
 });

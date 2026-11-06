@@ -45,11 +45,11 @@ insert into storage.objects (id,bucket_id,name,owner) values
   (gen_random_uuid(),'courier-docs','courier/00000000-0000-4000-8000-0000000033c1/insurance_1730000000008.jpg',pg_temp.approved()),
   (gen_random_uuid(),'courier-docs','courier/00000000-0000-4000-8000-0000000033c1/insurance_1730000000009.jpg',pg_temp.approved()) on conflict do nothing;
 
-select has_function('public','add_courier_optional_document',array['jsonb'],'CC-033 expone la RPC jsonb');
-select ok((select prosecdef from pg_proc where oid='public.add_courier_optional_document(jsonb)'::regprocedure),'RPC usa security definer');
-select ok(coalesce((select array_to_string(proconfig,',') from pg_proc where oid='public.add_courier_optional_document(jsonb)'::regprocedure),'') like '%search_path=public, pg_temp%','RPC fija search_path seguro');
-select ok(has_function_privilege('authenticated','public.add_courier_optional_document(jsonb)','execute'),'authenticated tiene execute');
-select ok(not has_function_privilege('anon','public.add_courier_optional_document(jsonb)','execute'),'anon no tiene execute');
+select has_function('public','add_courier_optional_document',array['jsonb','uuid'],'CC-033 expone la RPC jsonb (CC-042 suma p_vehicle_id)');
+select ok((select prosecdef from pg_proc where oid='public.add_courier_optional_document(jsonb, uuid)'::regprocedure),'RPC usa security definer');
+select ok(coalesce((select array_to_string(proconfig,',') from pg_proc where oid='public.add_courier_optional_document(jsonb, uuid)'::regprocedure),'') like '%search_path=public, pg_temp%','RPC fija search_path seguro');
+select ok(has_function_privilege('authenticated','public.add_courier_optional_document(jsonb, uuid)','execute'),'authenticated tiene execute');
+select ok(not has_function_privilege('anon','public.add_courier_optional_document(jsonb, uuid)','execute'),'anon no tiene execute');
 select ok(not has_table_privilege('authenticated','public.courier_documents','insert'),'INSERT directo permanece revocado');
 
 select pg_temp.as_postgres();

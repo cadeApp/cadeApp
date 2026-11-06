@@ -331,6 +331,35 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
     expect(image.className).toContain('rotate-0');
   });
 
+  it('T-419 (CC-042): la licencia y el seguro muestran su vehículo, para verificarlos por vehículo', () => {
+    const applicantWithVehicles: ApplicantDetail = {
+      ...mockApplicant,
+      documents: [
+        {
+          id: 'd0000000-0000-0000-0000-000000000041',
+          documentType: 'license',
+          storagePath: 'courier/x/license_1.jpg',
+          status: 'submitted',
+          uploadedAt: '2026-09-20T10:08:00.000Z',
+          vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
+        },
+        {
+          id: 'd0000000-0000-0000-0000-000000000042',
+          documentType: 'license',
+          storagePath: 'courier/x/license_2.jpg',
+          status: 'verified',
+          uploadedAt: '2026-09-20T10:09:00.000Z',
+          vehicle: { vehicleType: 'car', plate: 'ELA 666' },
+        },
+      ],
+    };
+
+    render(<ApplicantDetailView applicant={applicantWithVehicles} />);
+    const tabNames = screen.getAllByRole('tab').map((tab) => tab.textContent ?? '');
+    expect(tabNames.some((name) => name.includes('Moto AB 123 CD'))).toBe(true);
+    expect(tabNames.some((name) => name.includes('Automóvil ELA 666'))).toBe(true);
+  });
+
   it('9. DoD T-354: muestra el tab con el nombre completo «Selfie con el DNI» cuando hay documento selfie', () => {
     const applicantWithSelfie: ApplicantDetail = {
       ...mockApplicant,

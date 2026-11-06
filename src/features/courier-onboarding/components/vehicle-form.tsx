@@ -28,7 +28,7 @@ import {
   validateDocumentFile,
   type CourierDocumentKind,
 } from '../upload-manager';
-import { courierOnboardingAction, updateCourierVehicleAction } from '../actions';
+import { courierOnboardingAction } from '../actions';
 import { ARGENTINA_PLATE_REGEX } from '../schemas';
 import type { VehicleType } from '@/domain/schemas';
 import Link from 'next/link';
@@ -40,7 +40,6 @@ export interface VehicleFormProps {
   initialDocs?: Record<string, string>;
   initialVehicleType?: VehicleType;
   initialVehiclePlate?: string | null;
-  isEditing?: boolean;
   courierStatus?: string;
   onSuccess?: () => void;
 }
@@ -75,7 +74,6 @@ export function VehicleForm({
   initialDocs = EMPTY_INITIAL_DOCS,
   initialVehicleType,
   initialVehiclePlate = '',
-  isEditing = false,
   courierStatus: _courierStatus,
   onSuccess,
 }: VehicleFormProps) {
@@ -86,14 +84,13 @@ export function VehicleForm({
   const [docs, setDocs] = React.useState<Record<string, string>>(initialDocs);
 
   React.useEffect(() => {
-    if (isEditing) return;
     try {
       const savedDni = sessionStorage.getItem('cadeapp_onboarding_dni');
       const savedDocs = sessionStorage.getItem('cadeapp_onboarding_docs');
       if (savedDni && !initialDni) setDni(savedDni);
       if (savedDocs && Object.keys(initialDocs).length === 0) setDocs(JSON.parse(savedDocs));
     } catch {}
-  }, [initialDni, initialDocs, isEditing]);
+  }, [initialDni, initialDocs]);
 
   const [vehicleType, setVehicleType] = React.useState<VehicleType>(initialVehicleType ?? 'moto');
   const [vehiclePlate, setVehiclePlate] = React.useState(initialVehiclePlate ?? '');
@@ -131,13 +128,13 @@ export function VehicleForm({
       ? 'Formato de patente inválido (ej: AB 123 CD)'
       : null;
 
-  const areConsentsValid = isEditing || (tosAccepted && privacyAccepted && contractAccepted);
+  const areConsentsValid = tosAccepted && privacyAccepted && contractAccepted;
   const isFormValid =
     (!requiresPlate || (vehiclePlate.trim().length > 0 && isPlateValid)) && areConsentsValid;
   // Consejo (Frontend/Persona): mientras un opcional sube no se envía, para no mandar el payload sin ese
   // archivo y dejar la subida huérfana. No los vuelve obligatorios: sin subida en curso se envía igual.
   const isOptionalUploading =
-    !isEditing && requiresPlate && OPTIONAL_DOCS.some((doc) => optionalStatuses[doc.kind] === 'uploading');
+    requiresPlate && OPTIONAL_DOCS.some((doc) => optionalStatuses[doc.kind] === 'uploading');
 
   const handleOptionalUpload = async (kind: OptionalDocumentKind, file: File) => {
     // PR471-H02: «subiendo» se marca antes del primer await (la lectura de la firma del PDF), para que el formulario
@@ -186,48 +183,6 @@ export function VehicleForm({
 
     setIsSubmitting(true);
     setServerError(null);
-
-    if (isEditing) {
-      const payload = {
-        vehicleType,
-        vehiclePlate: requiresPlate ? vehiclePlate.trim().toUpperCase() : null,
-      };
-
-      try {
-        const result = await updateCourierVehicleAction(payload);
-        if (!result.ok) {
-          if (result.code === 'VALIDATION_ERROR') {
-            setServerError(
-              'Por favor verificá los datos. La patente es obligatoria para motos o autos y debe ser válida.'
-            );
-          } else if (result.code === 'UNAUTHORIZED_ACTOR') {
-            setServerError('Tu cuenta no tiene rol de repartidor habilitado.');
-          } else if (result.code === 'UNAUTHENTICATED') {
-            setServerError('Tu sesión ha expirado. Por favor iniciá sesión nuevamente.');
-          } else if (result.code === 'NOT_FOUND') {
-            setServerError('No encontramos tu legajo para actualizar. Recargá el perfil e intentá nuevamente.');
-          } else if (result.code === 'INVALID_STATE_TRANSITION') {
-            setServerError('Tu legajo no está habilitado para editar el vehículo. Completá el alta o consultá con soporte.');
-          } else {
-            setServerError(
-              'Ocurrió un error al procesar tu solicitud. Por favor verificá los datos.'
-            );
-          }
-          setIsSubmitting(false);
-          return;
-        }
-
-        if (onSuccess) {
-          onSuccess();
-        } else {
-          router.push(result.data.redirectTo || '/courier/profile');
-        }
-      } catch {
-        setServerError('Error de conexión al enviar el formulario. Intentá nuevamente.');
-        setIsSubmitting(false);
-      }
-      return;
-    }
 
     const payload = {
       dni,
@@ -286,21 +241,19 @@ export function VehicleForm({
 
   return (
     <Card className="mx-auto w-full max-w-lg overflow-hidden">
-      {!isEditing && <StepIndicator currentStep={3} />}
+      <StepIndicator currentStep={3} />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 p-6 sm:p-8">
         {/* Encabezado */}
         <section className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold uppercase tracking-wide text-primary-dark">
-            {isEditing ? 'Mi vehículo' : COURIER_ONBOARDING_COPY.vehicleTitle}
+            {COURIER_ONBOARDING_COPY.vehicleTitle}
           </span>
           <h1 className="font-display text-xl font-bold text-foreground">
-            {isEditing ? 'Actualizar vehículo' : COURIER_ONBOARDING_COPY.vehicleHeadline}
+            {COURIER_ONBOARDING_COPY.vehicleHeadline}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {isEditing
-              ? 'Modificá tu medio de transporte y patente cuando lo necesites.'
-              : COURIER_ONBOARDING_COPY.vehicleSubtitle}
+            {COURIER_ONBOARDING_COPY.vehicleSubtitle}
           </p>
         </section>
 
@@ -432,8 +385,8 @@ export function VehicleForm({
               </p>
             </section>
 
-            {/* Documentación opcional solo durante alta; edición documental ocurre en T-356/CC-025. */}
-            {!isEditing && <section className="flex flex-col gap-3">
+            {/* Documentación opcional del alta; después se carga por vehículo (CC-042). */}
+            <section className="flex flex-col gap-3">
               <h3 className="text-sm font-bold text-foreground">
                 {COURIER_ONBOARDING_COPY.optionalDocsTitle}
               </h3>
@@ -453,77 +406,75 @@ export function VehicleForm({
                   onFileSelected={(file) => void handleOptionalUpload(doc.kind, file)}
                 />
               ))}
-            </section>}
+            </section>
           </>
         )}
 
-        {/* Consentimientos obligatorios (solo en alta inicial de onboarding) */}
-        {!isEditing && (
-          <section className="flex flex-col gap-3.5 pt-2">
-            <h3 className="text-sm font-bold text-foreground">
-              {COURIER_ONBOARDING_COPY.consentsTitle}
-            </h3>
+        {/* Consentimientos obligatorios del alta */}
+        <section className="flex flex-col gap-3.5 pt-2">
+          <h3 className="text-sm font-bold text-foreground">
+            {COURIER_ONBOARDING_COPY.consentsTitle}
+          </h3>
 
-            <label className="flex min-h-[48px] cursor-pointer items-start gap-3 py-1">
-              <input
-                type="checkbox"
-                checked={tosAccepted}
-                onChange={(e) => setTosAccepted(e.target.checked)}
-                className="mt-0.5 h-5 w-5 rounded border-border text-primary focus:ring-primary"
-              />
-              <span className="text-sm leading-snug text-foreground">
-                {COURIER_ONBOARDING_COPY.consentTosPrefix}{' '}
-                <Link
-                  href="/legal/terms"
-                  onClick={(event) => event.stopPropagation()}
-                  className="rounded-sm font-medium text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {COURIER_ONBOARDING_COPY.consentTosLink}
-                </Link>
-              </span>
-            </label>
+          <label className="flex min-h-[48px] cursor-pointer items-start gap-3 py-1">
+            <input
+              type="checkbox"
+              checked={tosAccepted}
+              onChange={(e) => setTosAccepted(e.target.checked)}
+              className="mt-0.5 h-5 w-5 rounded border-border text-primary focus:ring-primary"
+            />
+            <span className="text-sm leading-snug text-foreground">
+              {COURIER_ONBOARDING_COPY.consentTosPrefix}{' '}
+              <Link
+                href="/legal/terms"
+                onClick={(event) => event.stopPropagation()}
+                className="rounded-sm font-medium text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {COURIER_ONBOARDING_COPY.consentTosLink}
+              </Link>
+            </span>
+          </label>
 
-            <label className="flex min-h-[48px] cursor-pointer items-start gap-3 py-1">
-              <input
-                type="checkbox"
-                checked={privacyAccepted}
-                onChange={(e) => setPrivacyAccepted(e.target.checked)}
-                className="mt-0.5 h-5 w-5 rounded border-border text-primary focus:ring-primary"
-              />
-              <span className="text-sm leading-snug text-foreground">
-                {COURIER_ONBOARDING_COPY.consentPrivacyPrefix}{' '}
-                <Link
-                  href="/legal/privacy"
-                  onClick={(event) => event.stopPropagation()}
-                  className="rounded-sm font-medium text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {COURIER_ONBOARDING_COPY.consentPrivacyLink}
-                </Link>{' '}
-                {COURIER_ONBOARDING_COPY.consentPrivacySuffix}
-              </span>
-            </label>
+          <label className="flex min-h-[48px] cursor-pointer items-start gap-3 py-1">
+            <input
+              type="checkbox"
+              checked={privacyAccepted}
+              onChange={(e) => setPrivacyAccepted(e.target.checked)}
+              className="mt-0.5 h-5 w-5 rounded border-border text-primary focus:ring-primary"
+            />
+            <span className="text-sm leading-snug text-foreground">
+              {COURIER_ONBOARDING_COPY.consentPrivacyPrefix}{' '}
+              <Link
+                href="/legal/privacy"
+                onClick={(event) => event.stopPropagation()}
+                className="rounded-sm font-medium text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {COURIER_ONBOARDING_COPY.consentPrivacyLink}
+              </Link>{' '}
+              {COURIER_ONBOARDING_COPY.consentPrivacySuffix}
+            </span>
+          </label>
 
-            <label className="flex min-h-[48px] cursor-pointer items-start gap-3 py-1">
-              <input
-                type="checkbox"
-                checked={contractAccepted}
-                onChange={(e) => setContractAccepted(e.target.checked)}
-                className="mt-0.5 h-5 w-5 rounded border-border text-primary focus:ring-primary"
-              />
-              <span className="text-sm font-medium leading-snug text-foreground">
-                Acepto las{' '}
-                <Link
-                  href="/legal/courier"
-                  onClick={(event) => event.stopPropagation()}
-                  className="rounded-sm text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  Condiciones para repartidores
-                </Link>
-                . {COURIER_ONBOARDING_COPY.consentContractText}
-              </span>
-            </label>
-          </section>
-        )}
+          <label className="flex min-h-[48px] cursor-pointer items-start gap-3 py-1">
+            <input
+              type="checkbox"
+              checked={contractAccepted}
+              onChange={(e) => setContractAccepted(e.target.checked)}
+              className="mt-0.5 h-5 w-5 rounded border-border text-primary focus:ring-primary"
+            />
+            <span className="text-sm font-medium leading-snug text-foreground">
+              Acepto las{' '}
+              <Link
+                href="/legal/courier"
+                onClick={(event) => event.stopPropagation()}
+                className="rounded-sm text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Condiciones para repartidores
+              </Link>
+              . {COURIER_ONBOARDING_COPY.consentContractText}
+            </span>
+          </label>
+        </section>
 
         {/* Botón de envío */}
         <div className="flex flex-col items-center gap-2 pt-2">
@@ -536,27 +487,18 @@ export function VehicleForm({
             {isSubmitting ? (
               <>
                 <RotateCw className="h-4 w-4" />
-                <span>{isEditing ? 'Guardando...' : COURIER_ONBOARDING_COPY.btnSubmitting}</span>
+                <span>{COURIER_ONBOARDING_COPY.btnSubmitting}</span>
               </>
             ) : (
               <>
-                <span>{isEditing ? 'Guardar vehículo' : COURIER_ONBOARDING_COPY.btnSubmitForReview}</span>
+                <span>{COURIER_ONBOARDING_COPY.btnSubmitForReview}</span>
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </>
             )}
           </Button>
-          {!isEditing ? (
-            <span className="text-sm text-muted-foreground">
-              {COURIER_ONBOARDING_COPY.stepCounter2}
-            </span>
-          ) : (
-            <Link
-              href="/courier/profile"
-              className="text-sm font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground"
-            >
-              Cancelar y volver al perfil
-            </Link>
-          )}
+          <span className="text-sm text-muted-foreground">
+            {COURIER_ONBOARDING_COPY.stepCounter2}
+          </span>
         </div>
       </form>
     </Card>

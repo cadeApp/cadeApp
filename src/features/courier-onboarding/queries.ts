@@ -1,4 +1,5 @@
 import 'server-only';
+import { RPC_CONTRACTS, type RpcOutput } from '@/domain/rpc-contracts';
 import { createClient } from '@/server/supabase/server';
 import { createAdminClient } from '@/server/supabase/admin';
 import type { Database } from '@/types/database.types';
@@ -22,6 +23,26 @@ export interface CourierDocumentRow {
   readonly rejection_code?: string | null;
   readonly is_current?: boolean;
   readonly uploaded_at: string;
+  readonly vehicle_id?: string | null;
+}
+
+/** CC-042: un documento sin vehículo (DNI, selfie, avatar o datos anteriores) o del vehículo activo. */
+export function isActiveVehicleDocument(
+  row: { readonly vehicle_id?: string | null },
+  activeVehicleId: string | null
+): boolean {
+  return !row.vehicle_id || row.vehicle_id === activeVehicleId;
+}
+
+export type CourierVehicles = RpcOutput<'get_my_courier_vehicles'>;
+
+/** CC-042: vehículos del repartidor de la sesión (la RPC valida el actor). `null` si no se pudo leer. */
+export async function getMyCourierVehicles(): Promise<CourierVehicles | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('get_my_courier_vehicles');
+  if (error) return null;
+  const parsed = RPC_CONTRACTS.get_my_courier_vehicles.outputSchema.safeParse(data);
+  return parsed.success ? parsed.data : null;
 }
 
 export async function getCourierDocumentsStatus(
@@ -29,18 +50,31 @@ export async function getCourierDocumentsStatus(
 ): Promise<CourierDocumentMetadata[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('courier_documents')
-    .select('kind, status, rejection_code, uploaded_at, is_current')
-    .eq('courier_id', courierId)
-    .eq('is_current', true)
-    .order('uploaded_at', { ascending: false });
+  const [{ data, error }, { data: courier, error: courierError }] = await Promise.all([
+    supabase
+      .from('courier_documents')
+      .select('kind, status, rejection_code, uploaded_at, is_current, vehicle_id')
+      .eq('courier_id', courierId)
+      .eq('is_current', true)
+      .order('uploaded_at', { ascending: false }),
+    supabase
+      .from('couriers')
+      .select('active_vehicle_id')
+      .eq('profile_id', courierId)
+      .maybeSingle<{ active_vehicle_id: string | null }>(),
+  ]);
 
   if (error) {
     throw new Error(`Error al consultar documentos del repartidor: ${error.message}`);
   }
+  if (courierError) {
+    throw new Error(`Error al consultar el vehículo activo del repartidor: ${courierError.message}`);
+  }
 
-  const rows = (data ?? []) as unknown as readonly CourierDocumentRow[];
+  // CC-042: la licencia y el seguro que se muestran son los del vehículo activo.
+  const rows = ((data ?? []) as unknown as readonly CourierDocumentRow[]).filter(
+    (row) => isActiveVehicleDocument(row, courier?.active_vehicle_id ?? null)
+  );
   const seenKinds = new Set<CourierDocumentKind>();
   const documents: CourierDocumentMetadata[] = [];
 

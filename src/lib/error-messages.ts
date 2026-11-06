@@ -11,6 +11,8 @@ export const DOMAIN_ERROR_MESSAGES = {
   AAL2_REQUIRED: 'Ingresá tu código de verificación en dos pasos para continuar.',
   INVALID_SIGNUP_ROLE: 'Seleccioná si entrás como comercio o como repartidor.',
   DNI_ALREADY_REGISTERED: 'Ese DNI ya está registrado en cadeApp.',
+  VEHICLE_SWITCH_BLOCKED: 'Retirá tus ofertas pendientes o terminá el viaje para cambiar de vehículo.',
+  DUPLICATE_VEHICLE: 'Ya tenés un vehículo de ese tipo cargado.',
 
   // Ofertas y elegibilidad de repartidor (T-101, T-102)
   OFFER_BELOW_MINIMUM: 'La oferta es menor al monto mínimo permitido.',

@@ -232,6 +232,18 @@ export interface FakeCourierRecord {
   hasDni: boolean;
 }
 
+// CC-042: vehículo del repartidor (archivedAt = borrado lógico).
+export interface FakeVehicleRecord {
+  readonly id: string;
+  readonly courierId: string;
+  readonly vehicleType: VehicleType;
+  plate: string | null;
+  licenseStatus: DocumentReviewStatus;
+  insuranceStatus: DocumentReviewStatus;
+  readonly createdAt: string;
+  archivedAt: string | null;
+}
+
 export interface FakeSeedMerchant {
   readonly merchantId: string;
   readonly subscriptionStatus: MerchantSubscriptionStatus;
@@ -475,6 +487,17 @@ const DEFAULT_ACTOR: FakeActorContext = {
   merchantPaidUntil: null,
 };
 
+// CC-042: patente normalizada por tipo (mismo formato que la RPC); false si es inválida.
+const ARGENTINA_PLATE_PATTERN =
+  /^([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2}|[A-Z]\s?[0-9]{3}\s?[A-Z]{3}|[A-Z]{3}\s?[0-9]{3}|[0-9]{3}\s?[A-Z]{3})$/;
+function normalizeVehiclePlate(vehicleType: VehicleType, plate: string | null): string | null | false {
+  const normalized = plate?.trim().toUpperCase() || null;
+  if (vehicleType === 'moto' || vehicleType === 'car') {
+    return normalized !== null && ARGENTINA_PLATE_PATTERN.test(normalized) ? normalized : false;
+  }
+  return normalized === null ? null : false;
+}
+
 const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } = {
   update_my_merchant_profile: ['merchant'],
   reconcile_expired_requests: ['merchant'],
@@ -528,6 +551,11 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   set_promotions_opt_in: ['merchant', 'courier'],
   courier_heartbeat: ['courier'],
   get_online_couriers_count: ['merchant'],
+  get_my_courier_vehicles: ['courier'],
+  add_courier_vehicle: ['courier'],
+  update_courier_vehicle: ['courier'],
+  remove_courier_vehicle: ['courier'],
+  set_active_courier_vehicle: ['courier'],
   get_request_cancellation_history: ['merchant', 'courier', 'admin'],
 };
 
@@ -721,6 +749,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const couriers = new Map<string, FakeCourierRecord>();
   const merchants = new Map<string, FakeMerchantRecord>();
   const documents = new Map<string, FakeDocumentRecord>();
+  // CC-042: vehículos del repartidor y su activo (el reflejo vive en FakeCourierRecord).
+  const vehicles = new Map<string, FakeVehicleRecord>();
+  const activeVehicleByCourier = new Map<string, string>();
   const storedCourierDocumentPaths = new Set<string>();
   const incidents = new Map<string, FakeIncidentRecord>();
   const pushSubscriptions = new Map<string, FakePushSubscriptionRecord>();
@@ -1427,6 +1458,85 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
     if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
     return ok(courier);
+  }
+
+  // CC-042: el vehículo actual de un repartidor anterior pasa a ser su vehículo activo (como el backfill).
+  function ensureCourierVehicles(courier: FakeCourierRecord) {
+    if (activeVehicleByCourier.has(courier.courierId) || courier.vehicleType === null) return;
+    const id = crypto.randomUUID();
+    const withDocuments = courier.vehicleType === 'moto' || courier.vehicleType === 'car';
+    vehicles.set(id, {
+      id,
+      courierId: courier.courierId,
+      vehicleType: courier.vehicleType,
+      plate: withDocuments ? courier.vehiclePlate : null,
+      licenseStatus: withDocuments ? courier.licenseStatus : 'none',
+      insuranceStatus: withDocuments ? courier.insuranceStatus : 'none',
+      createdAt: courier.createdAt,
+      archivedAt: null,
+    });
+    activeVehicleByCourier.set(courier.courierId, id);
+  }
+
+  function listCourierVehicles(courierId: string): FakeVehicleRecord[] {
+    return [...vehicles.values()]
+      .filter((vehicle) => vehicle.courierId === courierId && vehicle.archivedAt === null)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+
+  function toVehicleOutput(vehicle: FakeVehicleRecord) {
+    return {
+      id: vehicle.id,
+      vehicleType: vehicle.vehicleType,
+      plate: vehicle.plate,
+      licenseStatus: vehicle.licenseStatus,
+      insuranceStatus: vehicle.insuranceStatus,
+    };
+  }
+
+  function ownVehicle(vehicleId: string): FakeVehicleRecord | undefined {
+    const vehicle = vehicles.get(vehicleId);
+    return vehicle && vehicle.courierId === actor.userId && vehicle.archivedAt === null ? vehicle : undefined;
+  }
+
+  // Misma precedencia que app_private.cc042_lock_vehicle_owner.
+  function lockVehicleOwner(): ActionResult<FakeCourierRecord, 'UNAUTHORIZED_ACTOR' | 'INVALID_STATE_TRANSITION'> {
+    if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+    const courier = couriers.get(actor.userId);
+    if (!courier || courier.status === 'rejected' || courier.status === 'suspended') {
+      return err('UNAUTHORIZED_ACTOR');
+    }
+    if (!courier.applicationSubmitted) return err('INVALID_STATE_TRANSITION');
+    ensureCourierVehicles(courier);
+    return ok(courier);
+  }
+
+  // Ofertas pendientes vigentes o un viaje activo: el comercio eligió viendo un vehículo y una patente.
+  function isVehicleSwitchBlocked(courierId: string): boolean {
+    const nowMs = nowFn().getTime();
+    for (const offer of offers.values()) {
+      if (offer.courierId !== courierId) continue;
+      const request = requests.get(offer.requestId);
+      if (!request) continue;
+      const pendingLive =
+        offer.status === 'pending' &&
+        request.status === 'published' &&
+        (request.expiresAt === null || new Date(request.expiresAt).getTime() > nowMs);
+      const activeTrip =
+        request.acceptedOfferId === offer.offerId &&
+        (request.status === 'matched' || request.status === 'in_transit');
+      if (pendingLive || activeTrip) return true;
+    }
+    return false;
+  }
+
+  function syncCourierReflection(courier: FakeCourierRecord) {
+    const active = vehicles.get(activeVehicleByCourier.get(courier.courierId) ?? '');
+    if (!active) return;
+    courier.vehicleType = active.vehicleType;
+    courier.vehiclePlate = active.plate;
+    courier.licenseStatus = active.licenseStatus;
+    courier.insuranceStatus = active.insuranceStatus;
   }
 
   async function executeRpc<K extends RpcName>(
@@ -3771,6 +3881,95 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     // CC-039: planes activos (sort, id; hasta 50) sin código, precio del crédito suelto y descuento si corresponde.
     // CC-041: presencia del repartidor aprobado y conteo de conectados para el comercio. El consentimiento de cada
     // repartidor es el último que tuvo como actor (sin dato, activo), igual que el join con profiles en la base.
+    // CC-042: vehículos del repartidor.
+    get_my_courier_vehicles: (rawInput) =>
+      executeRpc('get_my_courier_vehicles', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        const courier = couriers.get(actor.userId);
+        if (!courier || courier.status === 'rejected' || courier.status === 'suspended') {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+        ensureCourierVehicles(courier);
+        return ok({
+          activeVehicleId: activeVehicleByCourier.get(actor.userId) ?? null,
+          vehicles: listCourierVehicles(actor.userId).map(toVehicleOutput),
+        });
+      }),
+
+    add_courier_vehicle: (rawInput) =>
+      executeRpc('add_courier_vehicle', rawInput, false, (input) => {
+        const owner = lockVehicleOwner();
+        if (!owner.ok) return owner;
+        const plate = normalizeVehiclePlate(input.vehicleType, input.plate);
+        if (plate === false) return err('VALIDATION_ERROR');
+        if (listCourierVehicles(actor.userId).some((vehicle) => vehicle.vehicleType === input.vehicleType)) {
+          return err('DUPLICATE_VEHICLE');
+        }
+        const currentActive = activeVehicleByCourier.get(actor.userId) ?? null;
+        const activate = input.makeActive || currentActive === null;
+        if (activate && currentActive !== null && isVehicleSwitchBlocked(actor.userId)) {
+          return err('VEHICLE_SWITCH_BLOCKED');
+        }
+        const id = crypto.randomUUID();
+        vehicles.set(id, {
+          id,
+          courierId: actor.userId,
+          vehicleType: input.vehicleType,
+          plate,
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          createdAt: nowFn().toISOString(),
+          archivedAt: null,
+        });
+        if (activate) {
+          activeVehicleByCourier.set(actor.userId, id);
+          syncCourierReflection(owner.data);
+        }
+        return ok({ vehicleId: id });
+      }),
+
+    update_courier_vehicle: (rawInput) =>
+      executeRpc('update_courier_vehicle', rawInput, false, (input) => {
+        const owner = lockVehicleOwner();
+        if (!owner.ok) return owner;
+        const vehicle = ownVehicle(input.vehicleId);
+        if (!vehicle) return err('NOT_FOUND');
+        const plate = normalizeVehiclePlate(vehicle.vehicleType, input.plate);
+        if (plate === false) return err('VALIDATION_ERROR');
+        if (plate === vehicle.plate) return ok({ vehicleId: vehicle.id });
+        const isActive = activeVehicleByCourier.get(actor.userId) === vehicle.id;
+        if (isActive && isVehicleSwitchBlocked(actor.userId)) return err('VEHICLE_SWITCH_BLOCKED');
+        // El seguro es de esa patente: vuelve a cargarse; la licencia se conserva.
+        vehicle.plate = plate;
+        vehicle.insuranceStatus = 'none';
+        if (isActive) syncCourierReflection(owner.data);
+        return ok({ vehicleId: vehicle.id });
+      }),
+
+    remove_courier_vehicle: (rawInput) =>
+      executeRpc('remove_courier_vehicle', rawInput, false, (input) => {
+        const owner = lockVehicleOwner();
+        if (!owner.ok) return owner;
+        const vehicle = ownVehicle(input.vehicleId);
+        if (!vehicle) return err('NOT_FOUND');
+        if (activeVehicleByCourier.get(actor.userId) === vehicle.id) return err('INVALID_STATE_TRANSITION');
+        vehicle.archivedAt = nowFn().toISOString();
+        return ok({ vehicleId: vehicle.id });
+      }),
+
+    set_active_courier_vehicle: (rawInput) =>
+      executeRpc('set_active_courier_vehicle', rawInput, false, (input) => {
+        const owner = lockVehicleOwner();
+        if (!owner.ok) return owner;
+        const vehicle = ownVehicle(input.vehicleId);
+        if (!vehicle) return err('NOT_FOUND');
+        if (activeVehicleByCourier.get(actor.userId) === vehicle.id) return ok({ activeVehicleId: vehicle.id });
+        if (isVehicleSwitchBlocked(actor.userId)) return err('VEHICLE_SWITCH_BLOCKED');
+        activeVehicleByCourier.set(actor.userId, vehicle.id);
+        syncCourierReflection(owner.data);
+        return ok({ activeVehicleId: vehicle.id });
+      }),
+
     courier_heartbeat: (rawInput) =>
       executeRpc('courier_heartbeat', rawInput, false, () => {
         if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');

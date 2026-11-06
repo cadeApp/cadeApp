@@ -25,18 +25,30 @@ vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
+/** CC-042: `couriers` responde el vehículo activo del repartidor. */
+function couriersTable(activeVehicleId: string | null) {
+  const maybeSingle = vi.fn().mockResolvedValue({ data: { active_vehicle_id: activeVehicleId }, error: null });
+  return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle }) }) };
+}
+
 describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnboardingStatusPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   describe('getCourierDocumentsStatus', () => {
-    function setupSupabaseMock(rows: unknown[] | null, error: { message: string } | null = null) {
+    function setupSupabaseMock(
+      rows: unknown[] | null,
+      error: { message: string } | null = null,
+      activeVehicleId: string | null = null
+    ) {
       const orderMock = vi.fn().mockResolvedValue({ data: rows, error });
       const eqIsCurrentMock = vi.fn().mockReturnValue({ order: orderMock });
       const eqCourierMock = vi.fn().mockReturnValue({ eq: eqIsCurrentMock });
       const selectMock = vi.fn().mockReturnValue({ eq: eqCourierMock });
-      const fromMock = vi.fn().mockReturnValue({ select: selectMock });
+      const fromMock = vi.fn((table: string) =>
+        table === 'couriers' ? couriersTable(activeVehicleId) : { select: selectMock }
+      );
 
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: fromMock,
@@ -70,7 +82,7 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
       const result = await getCourierDocumentsStatus('user-1');
 
       expect(fromMock).toHaveBeenCalledWith('courier_documents');
-      expect(selectMock).toHaveBeenCalledWith('kind, status, rejection_code, uploaded_at, is_current');
+      expect(selectMock).toHaveBeenCalledWith('kind, status, rejection_code, uploaded_at, is_current, vehicle_id');
       expect(eqCourierMock).toHaveBeenCalledWith('courier_id', 'user-1');
       expect(eqIsCurrentMock).toHaveBeenCalledWith('is_current', true);
       expect(orderMock).toHaveBeenCalledWith('uploaded_at', { ascending: false });
@@ -171,6 +183,25 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
       });
     });
 
+    it('CC-042: con varios vehículos muestra la licencia y el seguro del activo, no los de otro', async () => {
+      setupSupabaseMock(
+        [
+          { kind: 'license', status: 'verified', rejection_code: null, uploaded_at: '2026-10-03T10:00:00Z', is_current: true, vehicle_id: 'vehicle-car' },
+          { kind: 'license', status: 'rejected', rejection_code: 'expired', uploaded_at: '2026-10-02T10:00:00Z', is_current: true, vehicle_id: 'vehicle-moto' },
+          { kind: 'dni_front', status: 'verified', rejection_code: null, uploaded_at: '2026-10-01T10:00:00Z', is_current: true, vehicle_id: null },
+        ],
+        null,
+        'vehicle-moto'
+      );
+
+      const result = await getCourierDocumentsStatus('user-1');
+
+      expect(result.map((document) => [document.kind, document.status])).toEqual([
+        ['license', 'rejected'],
+        ['dni_front', 'verified'],
+      ]);
+    });
+
     it('devuelve array vacío si no hay filas persistidas', async () => {
       setupSupabaseMock([]);
 
@@ -231,9 +262,7 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
             error: null,
           }),
         },
-        from: vi.fn().mockReturnValue({
-          select: selectMock,
-        }),
+        from: vi.fn((table: string) => (table === 'couriers' ? couriersTable(null) : { select: selectMock })),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const { default: CanonicalCourierOnboardingStatusPage } = await import(
@@ -241,7 +270,7 @@ describe('T-356 / CC-025: getCourierDocumentsStatus query y CanonicalCourierOnbo
       );
       const element = await CanonicalCourierOnboardingStatusPage();
 
-      expect(selectMock).toHaveBeenCalledWith('kind, status, rejection_code, uploaded_at, is_current');
+      expect(selectMock).toHaveBeenCalledWith('kind, status, rejection_code, uploaded_at, is_current, vehicle_id');
       expect(eqCourierMock).toHaveBeenCalledWith('courier_id', 'courier-42');
       expect(eqIsCurrentMock).toHaveBeenCalledWith('is_current', true);
 

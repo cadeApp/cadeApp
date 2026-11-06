@@ -178,6 +178,7 @@ export type Database = {
           status: Database["public"]["Enums"]["document_review_status"]
           storage_path: string
           uploaded_at: string
+          vehicle_id: string | null
         }
         Insert: {
           courier_id: string
@@ -191,6 +192,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["document_review_status"]
           storage_path: string
           uploaded_at?: string
+          vehicle_id?: string | null
         }
         Update: {
           courier_id?: string
@@ -204,6 +206,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["document_review_status"]
           storage_path?: string
           uploaded_at?: string
+          vehicle_id?: string | null
         }
         Relationships: [
           {
@@ -212,6 +215,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "couriers"
             referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "courier_documents_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "courier_vehicles"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -238,8 +248,50 @@ export type Database = {
           },
         ]
       }
+      courier_vehicles: {
+        Row: {
+          archived_at: string | null
+          courier_id: string
+          created_at: string
+          id: string
+          insurance_status: Database["public"]["Enums"]["document_review_status"]
+          license_status: Database["public"]["Enums"]["document_review_status"]
+          plate: string | null
+          vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+        }
+        Insert: {
+          archived_at?: string | null
+          courier_id: string
+          created_at?: string
+          id?: string
+          insurance_status?: Database["public"]["Enums"]["document_review_status"]
+          license_status?: Database["public"]["Enums"]["document_review_status"]
+          plate?: string | null
+          vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+        }
+        Update: {
+          archived_at?: string | null
+          courier_id?: string
+          created_at?: string
+          id?: string
+          insurance_status?: Database["public"]["Enums"]["document_review_status"]
+          license_status?: Database["public"]["Enums"]["document_review_status"]
+          plate?: string | null
+          vehicle_type?: Database["public"]["Enums"]["vehicle_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_vehicles_courier_id_fkey"
+            columns: ["courier_id"]
+            isOneToOne: false
+            referencedRelation: "couriers"
+            referencedColumns: ["profile_id"]
+          },
+        ]
+      }
       couriers: {
         Row: {
+          active_vehicle_id: string | null
           application_submitted: boolean
           available: boolean
           deactivated_at: string | null
@@ -256,6 +308,7 @@ export type Database = {
           vehicle_type: Database["public"]["Enums"]["vehicle_type"] | null
         }
         Insert: {
+          active_vehicle_id?: string | null
           application_submitted?: boolean
           available?: boolean
           deactivated_at?: string | null
@@ -272,6 +325,7 @@ export type Database = {
           vehicle_type?: Database["public"]["Enums"]["vehicle_type"] | null
         }
         Update: {
+          active_vehicle_id?: string | null
           application_submitted?: boolean
           available?: boolean
           deactivated_at?: string | null
@@ -288,6 +342,13 @@ export type Database = {
           vehicle_type?: Database["public"]["Enums"]["vehicle_type"] | null
         }
         Relationships: [
+          {
+            foreignKeyName: "couriers_active_vehicle_id_fkey"
+            columns: ["active_vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "courier_vehicles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "couriers_decided_by_fkey"
             columns: ["decided_by"]
@@ -1434,7 +1495,15 @@ export type Database = {
         Returns: Json
       }
       add_courier_optional_document: {
-        Args: { p_payload: Json }
+        Args: { p_payload: Json; p_vehicle_id?: string }
+        Returns: Json
+      }
+      add_courier_vehicle: {
+        Args: {
+          p_make_active?: boolean
+          p_plate: string
+          p_vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+        }
         Returns: Json
       }
       admin_count_announcement_audience: {
@@ -1638,6 +1707,7 @@ export type Database = {
         Returns: Json
       }
       get_my_announcement: { Args: never; Returns: Json }
+      get_my_courier_vehicles: { Args: never; Returns: Json }
       get_my_publication_balance: { Args: never; Returns: Json }
       get_online_couriers_count: { Args: never; Returns: Json }
       get_publication_offer: { Args: never; Returns: Json }
@@ -1669,7 +1739,11 @@ export type Database = {
         Returns: Json
       }
       register_push_subscription: { Args: { p_payload: Json }; Returns: Json }
-      replace_courier_document: { Args: { p_payload: Json }; Returns: Json }
+      remove_courier_vehicle: { Args: { p_vehicle_id: string }; Returns: Json }
+      replace_courier_document: {
+        Args: { p_payload: Json; p_vehicle_id?: string }
+        Returns: Json
+      }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }
         Returns: Json
@@ -1680,6 +1754,10 @@ export type Database = {
       }
       republish_request: {
         Args: { p_reason?: string; p_request_id: string }
+        Returns: Json
+      }
+      set_active_courier_vehicle: {
+        Args: { p_vehicle_id: string }
         Returns: Json
       }
       set_availability: { Args: { p_available: boolean }; Returns: Json }
@@ -1703,6 +1781,10 @@ export type Database = {
           p_message?: string
           p_request_id: string
         }
+        Returns: Json
+      }
+      update_courier_vehicle: {
+        Args: { p_plate: string; p_vehicle_id: string }
         Returns: Json
       }
       update_my_merchant_profile: { Args: { p_patch: Json }; Returns: Json }

@@ -455,6 +455,10 @@ export const ADMIN_COPY = {
       admin_reinstate_courier: 'Reactivó un repartidor',
       add_courier_optional_document: 'Cargó un documento opcional',
       replace_courier_document: 'Reemplazó un documento',
+      add_courier_vehicle: 'Agregó un vehículo',
+      update_courier_vehicle: 'Cambió la patente de un vehículo',
+      remove_courier_vehicle: 'Quitó un vehículo',
+      set_active_courier_vehicle: 'Cambió el vehículo activo',
       admin_resolve_incident: 'Resolvió un incidente',
       admin_upsert_publication_plan: 'Guardó un plan de publicación',
       admin_register_plan_period: 'Registró un período de plan',
@@ -469,6 +473,7 @@ export const ADMIN_COPY = {
     entities: {
       courier: 'Repartidor',
       courier_document: 'Documento',
+      courier_vehicle: 'Vehículo',
       merchant: 'Comercio',
       platform_setting: 'Parámetro',
       delivery_request: 'Solicitud',
