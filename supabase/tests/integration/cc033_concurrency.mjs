@@ -15,6 +15,16 @@ function runSql(sql) {
   return result.stdout.trim();
 }
 
+// Migraciones posteriores (CC-042) redefinen lo que crea el archivo que se muta: tras restaurarlo se reaplica lo vigente.
+function snapshotCurrentDefinitions() {
+  return runSql(`select string_agg(def, E'\n') from (
+    select pg_get_functiondef(p.oid) || ';' as def from pg_proc p
+    where p.pronamespace = 'public'::regnamespace and p.proname = any(array['add_courier_optional_document'])
+    union all
+    select 'drop index if exists public.courier_documents_unique_current; ' || pg_get_indexdef('public.courier_documents_unique_current'::regclass) || ';'
+  ) s;`);
+}
+
 function claims(id, role, aal = 'aal1') {
   return `jsonb_build_object('sub','${id}','role','authenticated','aal','${aal}')::text`;
 }
@@ -164,6 +174,7 @@ async function addAgainstSuspend(suspensionFirst) {
 
 async function mutationCheck() {
   const original = fs.readFileSync(migrationPath, 'utf8');
+  const currentSql = snapshotCurrentDefinitions();
   const needle = '  -- Orden de locks de CC-025/CC-033: couriers, profiles, courier_documents.\n';
   const mutated = original.replace(needle, `${needle}  -- MUTACIÓN RED: documento antes de courier rompe el orden global.\n  perform 1 from public.courier_documents where courier_id = v_actor_id and kind = v_kind for update;\n`);
   assert.notEqual(mutated, original, 'la mutación debe invertir el primer lock efectivo');
@@ -187,6 +198,7 @@ async function mutationCheck() {
     } finally { await courierLock.close(); await rpc.close(); }
   } finally {
     runSql(original);
+    runSql(currentSql);
   }
   await addAgainstAdd(true);
   console.log('[CC-033] mutación RED detectada y migración original GREEN restaurada.');
