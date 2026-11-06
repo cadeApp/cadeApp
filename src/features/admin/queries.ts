@@ -20,7 +20,7 @@ import { adminListApplicantsRpc } from '@/server/rpc/admin-applicants';
 import { createClient } from '@/server/supabase/server';
 import { ADMIN_COPY } from './copy';
 import { auditActionLabel } from './audit-format';
-import { updatePlatformSettingSchema, type AdminAuditFilters } from './schemas';
+import { auditDateRangeBounds, updatePlatformSettingSchema, type AdminAuditFilters } from './schemas';
 import type {
   AdminApplicantTab,
   AdminMerchantListItem,
@@ -762,21 +762,10 @@ function toAuditLogItem(row: AuditRow, names: AuditTargetNames): AuditLogItem {
 export async function getAuditLog(options?: GetAuditLogOptions): Promise<AuditLogResult> {
   const pageSize = clampPageSize(options?.pageSize);
   const supabase = await createClient();
+  const cursor = options?.cursor;
+  const prev = cursor !== undefined && options?.direction === 'prev';
 
-  let query = supabase.from('audit_log').select(AUDIT_SELECT).order('id', { ascending: false });
-
-  if (options?.cursor !== undefined) {
-    query = query.lt('id', options.cursor);
-  }
-  if (options?.actorId) {
-    query = query.eq('actor_id', options.actorId);
-  }
-  if (options?.action) {
-    query = query.eq('action', options.action);
-  }
-  if (options?.targetType) {
-    query = query.eq('target_type', options.targetType);
-  }
+  let courierFilter: string | undefined;
   if (options?.courierId) {
     const { data: docs, error: docsError } = await supabase
       .from('courier_documents')
@@ -785,23 +774,50 @@ export async function getAuditLog(options?: GetAuditLogOptions): Promise<AuditLo
     if (docsError) {
       throw new Error(`Error al consultar los documentos del repartidor: ${docsError.message}`);
     }
-    query = query.or(
-      applicantAuditFilter(
-        options.courierId,
-        ((docs ?? []) as unknown as { id: string }[]).map((doc) => doc.id)
-      )
+    courierFilter = applicantAuditFilter(
+      options.courierId,
+      ((docs ?? []) as unknown as { id: string }[]).map((doc) => doc.id)
     );
   }
 
-  const { data, error } = await query.limit(pageSize + 1);
+  // T-407: la página y el sondeo del otro sentido comparten exactamente los mismos filtros.
+  const filtered = (columns: string) => {
+    let query = supabase.from('audit_log').select(columns);
+    if (options?.actorId) query = query.eq('actor_id', options.actorId);
+    if (options?.action) query = query.eq('action', options.action);
+    if (options?.targetType) query = query.eq('target_type', options.targetType);
+    if (options?.targetId) query = query.eq('target_id', options.targetId);
+    const { gte, lt } = auditDateRangeBounds(options ?? {});
+    if (gte) query = query.gte('created_at', gte);
+    if (lt) query = query.lt('created_at', lt);
+    if (courierFilter) query = query.or(courierFilter);
+    return query;
+  };
+
+  let pageQuery = filtered(AUDIT_SELECT).order('id', { ascending: prev });
+  if (cursor !== undefined) pageQuery = prev ? pageQuery.gt('id', cursor) : pageQuery.lt('id', cursor);
+  // ¿Hay filas del lado del que se vino? `cursor` es la fila límite de la página anterior, así que se incluye.
+  const probe =
+    cursor === undefined
+      ? null
+      : (prev ? filtered('id').lte('id', cursor) : filtered('id').gte('id', cursor)).limit(1);
+
+  const [{ data, error }, probeResult] = await Promise.all([pageQuery.limit(pageSize + 1), probe]);
 
   if (error) {
     throw new Error(`Error al consultar la auditoría: ${error.message}`);
   }
+  if (probeResult?.error) {
+    throw new Error(`Error al consultar la auditoría: ${probeResult.error.message}`);
+  }
 
   const rows = (data ?? []) as unknown as AuditRow[];
-  const hasNextPage = rows.length > pageSize;
-  const visibleRows = rows.slice(0, pageSize);
+  const hasMore = rows.length > pageSize;
+  const pageRows = rows.slice(0, pageSize);
+  const visibleRows = prev ? pageRows.reverse() : pageRows;
+  const hasOtherSide = (probeResult?.data ?? []).length > 0;
+  const hasNextPage = visibleRows.length > 0 && (prev ? hasOtherSide : hasMore);
+  const hasPrevPage = visibleRows.length > 0 && (prev ? hasMore : hasOtherSide);
   const names = await resolveAuditTargetNames(supabase, visibleRows);
 
   return {
@@ -809,6 +825,8 @@ export async function getAuditLog(options?: GetAuditLogOptions): Promise<AuditLo
     pageSize,
     nextCursor: hasNextPage ? visibleRows[visibleRows.length - 1]?.id ?? null : null,
     hasNextPage,
+    prevCursor: hasPrevPage ? visibleRows[0]?.id ?? null : null,
+    hasPrevPage,
   };
 }
 

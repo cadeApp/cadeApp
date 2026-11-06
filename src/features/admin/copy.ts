@@ -9,6 +9,8 @@ export const ADMIN_COPY = {
     ariaLabel: 'Navegación principal de administración',
     menuButton: 'Menú',
     menuTitle: 'Secciones del panel',
+    collapseSidebar: 'Contraer menú',
+    expandSidebar: 'Expandir menú',
     tabs: {
       applicants: 'Postulantes',
       merchants: 'Comercios',
@@ -429,7 +431,17 @@ export const ADMIN_COPY = {
       apply: 'Filtrar',
       clear: 'Limpiar filtros',
       courierActive: 'Mostrando los eventos de un repartidor y de sus documentos.',
+      /** T-407 */
+      from: 'Desde',
+      to: 'Hasta',
+      targetActive: 'Mostrando los eventos de una sola entidad.',
+      invalidRange:
+        'No pudimos usar ese rango de fechas: «Hasta» tiene que ser igual o posterior a «Desde» y abarcar como máximo 366 días. Se muestran todas las fechas.',
     },
+    /** T-407 (A06) */
+    prevButton: 'Anterior',
+    /** PR617-H02: página vacía tras un cursor (p. ej. un enlace viejo). */
+    firstPage: 'Volver al inicio',
     columns: {
       date: 'Fecha y hora',
       operator: 'Operador',
@@ -515,12 +527,16 @@ export const ADMIN_COPY = {
       matched: 'Asignada',
       in_transit: 'En viaje',
       delivered: 'Entregada',
+      /** PR617-H03: estados de incidentes, como en A05 (`INCIDENTS_COPY.statuses`). */
+      open: 'Abierto',
+      reviewing: 'En revisión',
+      resolved: 'Resuelto',
+      dismissed: 'Cerrado sin sanción',
     },
     noValue: '—',
     reason: 'Motivo',
     noChanges: 'Sin cambios de estado',
     nextButton: 'Siguiente',
-    firstPage: 'Volver al inicio',
     paginationLabel: 'Paginación de la auditoría',
     emptyTitle: 'No hay registros para mostrar',
     emptyDescription: 'Probá con otros filtros o volvé más tarde.',

@@ -23,6 +23,7 @@ const APPROVED_RUNTIME_PACKAGES = new Set([
   '@radix-ui/react-alert-dialog',
   '@radix-ui/react-dialog',
   '@radix-ui/react-select',
+  '@radix-ui/react-tooltip',
   '@radix-ui/react-label',
   '@radix-ui/react-slot',
   '@radix-ui/react-tabs',

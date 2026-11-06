@@ -1007,6 +1007,92 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
     expect(eqArgs).toContainEqual(['target_type', 'platform_setting']);
   });
 
+  it('T-407: el rango de fechas llega a la base como [gte, lt) con los bordes del día de Argentina en UTC', async () => {
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getAuditLog({ from: '2026-10-21', to: '2026-10-21' });
+
+    expect(callsOf(calls, 'audit_log', 'gte').map((call) => call.args)).toEqual([
+      ['created_at', '2026-10-21T03:00:00.000Z'],
+    ]);
+    expect(callsOf(calls, 'audit_log', 'lt').map((call) => call.args)).toEqual([
+      ['created_at', '2026-10-22T03:00:00.000Z'],
+    ]);
+    expect(callsOf(calls, 'audit_log', 'lte')).toHaveLength(0);
+  });
+
+  it('T-407: filtra por targetId (y targetType) en la base', async () => {
+    const target = 'c0000000-0000-4000-8000-000000000407';
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getAuditLog({ targetId: target, targetType: 'courier' });
+
+    const eqArgs = callsOf(calls, 'audit_log', 'eq').map((call) => call.args);
+    expect(eqArgs).toContainEqual(['target_id', target]);
+    expect(eqArgs).toContainEqual(['target_type', 'courier']);
+  });
+
+  it('T-407: la primera página no ofrece «Anterior» ni consulta filas más nuevas', async () => {
+    const { calls } = mockClient({ audit_log: { data: AUDIT_ROWS, error: null } });
+    const page = await getAuditLog({ pageSize: 2 });
+
+    expect(page.items.map((item) => item.id)).toEqual([90, 89]);
+    expect(page).toMatchObject({ hasNextPage: true, nextCursor: 89, hasPrevPage: false, prevCursor: null });
+    expect(callsOf(calls, 'audit_log', 'gte')).toHaveLength(0);
+  });
+
+  it('T-407: «Siguiente» con cursor busca filas más nuevas con los mismos filtros para ofrecer «Anterior»', async () => {
+    const { calls } = mockClient({ audit_log: { data: AUDIT_ROWS, error: null } });
+    const page = await getAuditLog({ pageSize: 2, cursor: 91, action: 'admin_update_setting' });
+
+    expect(callsOf(calls, 'audit_log', 'lt')[0]?.args).toEqual(['id', 91]);
+    expect(callsOf(calls, 'audit_log', 'gte').map((call) => call.args)).toEqual([['id', 91]]);
+    // El sondeo repite el filtro de evento: si no, ofrecería «Anterior» hacia filas que el filtro excluye.
+    expect(callsOf(calls, 'audit_log', 'eq').filter((call) => call.args[0] === 'action')).toHaveLength(2);
+    expect(page).toMatchObject({ prevCursor: 90, hasPrevPage: true, nextCursor: 89, hasNextPage: true });
+  });
+
+  it('T-407: «Anterior» (dir=prev) lee las más viejas por encima del cursor en orden ascendente y las devuelve de nueva a vieja', async () => {
+    const ascending = [...AUDIT_ROWS].reverse();
+    const { calls } = mockClient({ audit_log: { data: ascending, error: null } });
+    const page = await getAuditLog({ pageSize: 2, cursor: 87, direction: 'prev' });
+
+    expect(callsOf(calls, 'audit_log', 'gt')[0]?.args).toEqual(['id', 87]);
+    expect(callsOf(calls, 'audit_log', 'order')[0]?.args).toEqual(['id', { ascending: true }]);
+    expect(callsOf(calls, 'audit_log', 'lte').map((call) => call.args)).toEqual([['id', 87]]);
+    expect(page.items.map((item) => item.id)).toEqual([89, 88]);
+    expect(page).toMatchObject({ hasPrevPage: true, prevCursor: 89, hasNextPage: true, nextCursor: 88 });
+  });
+
+  it('T-407: ida y vuelta: «Anterior» desde la página 2 vuelve a las mismas filas de la página 1', async () => {
+    mockClient({ audit_log: { data: AUDIT_ROWS, error: null } });
+    const first = await getAuditLog({ pageSize: 1 });
+    expect(first.items.map((item) => item.id)).toEqual([90]);
+
+    mockClient({ audit_log: { data: AUDIT_ROWS.slice(1), error: null } });
+    const second = await getAuditLog({ pageSize: 1, cursor: first.nextCursor ?? undefined });
+    expect(second.items.map((item) => item.id)).toEqual([89]);
+
+    // Lo que devuelve la base para id > 89 ascendente: solo la 90; no hay más nuevas.
+    mockClient({ audit_log: { data: [AUDIT_ROWS[0]], error: null } });
+    const back = await getAuditLog({ pageSize: 1, cursor: second.prevCursor ?? undefined, direction: 'prev' });
+    expect(back.items.map((item) => item.id)).toEqual(first.items.map((item) => item.id));
+    expect(back).toMatchObject({ hasPrevPage: false, prevCursor: null, hasNextPage: true, nextCursor: 90 });
+  });
+
+  it('T-407: «Anterior» sin filas más viejas detrás del cursor no ofrece «Siguiente»', async () => {
+    const { client } = mockClient({ audit_log: { data: [AUDIT_ROWS[0]], error: null } });
+    const empty = { data: [], error: null };
+    const builder = (result: unknown) => {
+      const b: Record<string, unknown> = { then: (r: (v: unknown) => unknown) => Promise.resolve(result).then(r) };
+      for (const method of ['select', 'eq', 'gt', 'lte', 'order', 'limit']) b[method] = () => b;
+      return b;
+    };
+    client.from
+      .mockImplementationOnce(() => builder({ data: [AUDIT_ROWS[0]], error: null }))
+      .mockImplementationOnce(() => builder(empty));
+    const page = await getAuditLog({ pageSize: 1, cursor: 89, direction: 'prev' });
+    expect(page).toMatchObject({ hasNextPage: false, nextCursor: null });
+  });
+
   it('no selecciona columnas de contacto ni PII del operador', async () => {
     const { calls } = mockClient({ audit_log: { data: [], error: null } });
     await getAuditLog();
