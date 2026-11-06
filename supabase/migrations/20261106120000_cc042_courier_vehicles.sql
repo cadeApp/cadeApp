@@ -6,8 +6,9 @@
 --
 -- Reconciliación con CC-043 (posterior a CC-042): el vehículo del alta lo crea finalize_courier_application, que es
 -- la que guarda el vehículo de la postulación; las RPC de vehículos son para después del envío. Si una RPC de
--- documentos no recibe p_vehicle_id para licencia o seguro, usa el vehículo activo (la app anterior sigue andando
--- entre la migración y el deploy).
+-- documentos no recibe vehicleId para licencia o seguro, usa el vehículo activo (la app anterior sigue andando
+-- entre la migración y el deploy). El vehículo viaja en `p_payload.vehicleId`: las firmas de las RPC de documentos no
+-- cambian (sin sobrecargas ni grants nuevos).
 
 -- ============================================================================
 -- 1. Modelo
@@ -676,6 +677,27 @@ $$;
 
 revoke all on function app_private.cc042_document_vehicle(uuid, uuid, uuid) from public, anon, authenticated;
 
+-- `vehicleId` opcional del payload de las RPC de documentos: ausente o null = el activo; si viene, un uuid en texto.
+create or replace function app_private.cc042_payload_vehicle_id(p_payload jsonb)
+returns uuid
+language plpgsql
+immutable
+set search_path = public, pg_temp
+as $$
+begin
+  if p_payload is null or not (p_payload ? 'vehicleId') or jsonb_typeof(p_payload->'vehicleId') = 'null' then
+    return null;
+  end if;
+  if jsonb_typeof(p_payload->'vehicleId') <> 'string'
+     or (p_payload->>'vehicleId') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+  return (p_payload->>'vehicleId')::uuid;
+end;
+$$;
+
+revoke all on function app_private.cc042_payload_vehicle_id(jsonb) from public, anon, authenticated;
+
 -- Marca el estado de licencia o seguro en el vehículo (o en couriers si el documento no tiene vehículo) y actualiza el
 -- reflejo si es el activo.
 create or replace function app_private.cc042_set_vehicle_document_status(
@@ -718,9 +740,7 @@ $$;
 revoke all on function app_private.cc042_set_vehicle_document_status(uuid, uuid, public.courier_document_kind, public.document_review_status)
   from public, anon, authenticated;
 
-drop function if exists public.add_courier_optional_document(jsonb);
-
-create function public.add_courier_optional_document(p_payload jsonb, p_vehicle_id uuid default null)
+create or replace function public.add_courier_optional_document(p_payload jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -737,6 +757,7 @@ declare
   v_storage_suffix text;
   v_idempotency_key_text text;
   v_courier_rec record;
+  v_requested_vehicle uuid;
   v_vehicle_id uuid;
   v_existing_id uuid;
   v_existing_status public.document_review_status;
@@ -762,6 +783,8 @@ begin
   if v_profile_role is distinct from 'courier' or v_consent_status is distinct from 'active' then
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
   end if;
+
+  v_requested_vehicle := app_private.cc042_payload_vehicle_id(p_payload);
 
   if not (p_payload ? 'kind') or jsonb_typeof(p_payload->'kind') <> 'string'
      or not (p_payload ? 'storagePath') or jsonb_typeof(p_payload->'storagePath') <> 'string'
@@ -826,7 +849,7 @@ begin
   end if;
 
   -- CC-042: el documento es de un vehículo propio, vigente, moto o auto (el pedido o el activo).
-  v_vehicle_id := app_private.cc042_document_vehicle(v_actor_id, p_vehicle_id, v_courier_rec.active_vehicle_id);
+  v_vehicle_id := app_private.cc042_document_vehicle(v_actor_id, v_requested_vehicle, v_courier_rec.active_vehicle_id);
 
   if v_idempotency_key_text is not null then
     select id, status, storage_path, is_current
@@ -937,12 +960,10 @@ begin
 end;
 $$;
 
-revoke all on function public.add_courier_optional_document(jsonb, uuid) from public, anon, authenticated;
-grant execute on function public.add_courier_optional_document(jsonb, uuid) to authenticated;
+revoke all on function public.add_courier_optional_document(jsonb) from public, anon, authenticated;
+grant execute on function public.add_courier_optional_document(jsonb) to authenticated;
 
-drop function if exists public.replace_courier_document(jsonb);
-
-create function public.replace_courier_document(p_payload jsonb, p_vehicle_id uuid default null)
+create or replace function public.replace_courier_document(p_payload jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -964,6 +985,7 @@ declare
   v_profile_role text;
   v_consent_status text;
   v_courier_rec record;
+  v_requested_vehicle uuid;
   v_vehicle_id uuid;
   v_existing_idem_id uuid;
   v_existing_idem_status public.document_review_status;
@@ -995,7 +1017,8 @@ begin
   end if;
 
   -- CC-042: solo licencia y seguro son de un vehículo.
-  if p_vehicle_id is not null and v_kind_text not in ('license', 'insurance') then
+  v_requested_vehicle := app_private.cc042_payload_vehicle_id(p_payload);
+  if v_requested_vehicle is not null and v_kind_text not in ('license', 'insurance') then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
@@ -1044,7 +1067,7 @@ begin
   end if;
 
   if v_kind in ('license', 'insurance') then
-    v_vehicle_id := app_private.cc042_document_vehicle(v_actor_id, p_vehicle_id, v_courier_rec.active_vehicle_id);
+    v_vehicle_id := app_private.cc042_document_vehicle(v_actor_id, v_requested_vehicle, v_courier_rec.active_vehicle_id);
   end if;
 
   if v_idempotency_key is not null then
@@ -1177,8 +1200,8 @@ begin
 end;
 $$;
 
-revoke all on function public.replace_courier_document(jsonb, uuid) from public, anon, authenticated;
-grant execute on function public.replace_courier_document(jsonb, uuid) to authenticated;
+revoke all on function public.replace_courier_document(jsonb) from public, anon;
+grant execute on function public.replace_courier_document(jsonb) to authenticated;
 
 -- El onboarding asocia la licencia y el seguro al vehículo activo si ya existe (reintento después del envío). En el
 -- primer envío todavía no hay vehículo: finalize_courier_application los asocia al crearlo.

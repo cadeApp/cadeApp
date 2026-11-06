@@ -125,10 +125,10 @@ select ok((select bool_and(array_to_string(proconfig, ',') like '%search_path=pu
   'public.update_courier_vehicle(uuid, text)'::regprocedure,
   'public.remove_courier_vehicle(uuid)'::regprocedure,
   'public.set_active_courier_vehicle(uuid)'::regprocedure)), 'las RPC de vehículos fijan search_path');
-select has_function('public', 'add_courier_optional_document', array['jsonb', 'uuid'], 'add_courier_optional_document suma p_vehicle_id');
-select has_function('public', 'replace_courier_document', array['jsonb', 'uuid'], 'replace_courier_document suma p_vehicle_id');
-select hasnt_function('public', 'add_courier_optional_document', array['jsonb'], 'la firma vieja de add_courier_optional_document no existe');
-select hasnt_function('public', 'replace_courier_document', array['jsonb'], 'la firma vieja de replace_courier_document no existe');
+select has_function('public', 'add_courier_optional_document', array['jsonb'], 'add_courier_optional_document conserva su firma (vehicleId va en el payload)');
+select has_function('public', 'replace_courier_document', array['jsonb'], 'replace_courier_document conserva su firma (vehicleId va en el payload)');
+select hasnt_function('public', 'add_courier_optional_document', array['jsonb', 'uuid'], 'sin sobrecarga de add_courier_optional_document');
+select hasnt_function('public', 'replace_courier_document', array['jsonb', 'uuid'], 'sin sobrecarga de replace_courier_document');
 
 -- ============================================================================
 -- Backfill
@@ -303,12 +303,12 @@ select is((pg_temp.courier(pg_temp.courier_a())).vehicle_plate, 'ABC 999', 'el r
 -- Documentos por vehículo
 -- ============================================================================
 
-select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000001.jpg'), pg_temp.id('a_bike')) $$,
+select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000001.jpg','vehicleId',pg_temp.id('a_bike'))) $$,
   'P0001', 'VALIDATION_ERROR', 'la bici no lleva licencia');
-select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000001.jpg'), pg_temp.id('b_car')) $$,
+select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000001.jpg','vehicleId',pg_temp.id('b_car'))) $$,
   'P0001', 'NOT_FOUND', 'no carga licencia en el vehículo de otro');
 -- Licencia del auto (inactivo): el reflejo no cambia.
-select is(public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000001.jpg'), pg_temp.id('a_car'))->>'status',
+select is(public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000001.jpg','vehicleId',pg_temp.id('a_car')))->>'status',
   'submitted', 'licencia del auto queda submitted');
 select is((select license_status::text from public.courier_vehicles where id = pg_temp.id('a_car')), 'submitted', 'el auto marca la licencia');
 select is((pg_temp.courier(pg_temp.courier_a())).license_status::text, 'verified', 'el reflejo (moto) no cambia por el auto');
@@ -317,10 +317,10 @@ select is((select vehicle_id from public.courier_documents where courier_id = pg
   pg_temp.id('a_car'), 'el documento queda en el auto');
 select is((select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a() and kind = 'license' and is_current), 2,
   'una licencia vigente por vehículo');
--- Seguro de la moto activa: sin p_vehicle_id usa el activo y actualiza el reflejo.
+-- Seguro de la moto activa: sin vehicleId usa el activo y actualiza el reflejo.
 select pg_temp.act_as(pg_temp.courier_a());
 select is(public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','courier/00000000-0000-4000-8000-0000000042c1/insurance_1740000000003.jpg'))->>'status',
-  'submitted', 'seguro sin p_vehicle_id va al vehículo activo');
+  'submitted', 'seguro sin vehicleId va al vehículo activo');
 select is((pg_temp.courier(pg_temp.courier_a())).insurance_status::text, 'submitted', 'el reflejo toma el seguro del activo');
 
 -- Verificación del admin: inactivo no toca el reflejo; activo sí, con doc_level.
@@ -350,9 +350,11 @@ select lives_ok($$ select public.admin_verify_document(
 select pg_temp.as_postgres();
 select is((pg_temp.courier(pg_temp.courier_a())).license_status::text, 'rejected', 'el reflejo toma el rechazo');
 select pg_temp.act_as(pg_temp.courier_a());
-select throws_ok($$ select public.replace_courier_document(jsonb_build_object('kind','dni_front','storagePath','courier/00000000-0000-4000-8000-0000000042c1/dni_front_1740000000009.jpg'), pg_temp.id('a_moto')) $$,
+select throws_ok($$ select public.replace_courier_document(jsonb_build_object('kind','dni_front','storagePath','courier/00000000-0000-4000-8000-0000000042c1/dni_front_1740000000009.jpg','vehicleId',pg_temp.id('a_moto'))) $$,
   'P0001', 'VALIDATION_ERROR', 'el DNI no admite vehículo');
-select is(public.replace_courier_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000002.jpg'), pg_temp.id('a_moto'))->>'status',
+select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000002.jpg','vehicleId','no-es-uuid')) $$,
+  'P0001', 'VALIDATION_ERROR', 'vehicleId que no es uuid es inválido');
+select is(public.replace_courier_document(jsonb_build_object('kind','license','storagePath','courier/00000000-0000-4000-8000-0000000042c1/license_1740000000002.jpg','vehicleId',pg_temp.id('a_moto')))->>'status',
   'submitted', 'reemplaza la licencia de la moto');
 select is((pg_temp.courier(pg_temp.courier_a())).license_status::text, 'submitted', 'el reflejo toma el reemplazo');
 select pg_temp.as_postgres();
@@ -367,7 +369,7 @@ select throws_ok($$ select public.remove_courier_vehicle(pg_temp.id('a_moto')) $
 select is(public.remove_courier_vehicle(pg_temp.id('a_walk'))->>'vehicleId', pg_temp.id('a_walk')::text, 'quita un inactivo');
 select is(jsonb_array_length(public.get_my_courier_vehicles()->'vehicles'), 3, 'el archivado no se lista');
 select throws_ok($$ select public.set_active_courier_vehicle(pg_temp.id('a_walk')) $$, 'P0001', 'NOT_FOUND', 'no se activa un archivado');
-select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','courier/00000000-0000-4000-8000-0000000042c1/insurance_1740000000004.jpg'), pg_temp.id('a_walk')) $$,
+select throws_ok($$ select public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','courier/00000000-0000-4000-8000-0000000042c1/insurance_1740000000004.jpg','vehicleId',pg_temp.id('a_walk'))) $$,
   'P0001', 'NOT_FOUND', 'no se cargan documentos en un archivado');
 insert into cc042_ids select 'a_walk2', (public.add_courier_vehicle('walk', null, false)->>'vehicleId')::uuid;
 select ok(pg_temp.id('a_walk2') is distinct from pg_temp.id('a_walk'), 'después de archivar se puede volver a agregar ese tipo');

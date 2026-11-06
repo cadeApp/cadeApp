@@ -52,7 +52,7 @@ export function mapReplaceCourierDocumentRpcError(
 }
 
 /**
- * Typed server wrapper for `public.replace_courier_document(p_payload jsonb, p_vehicle_id uuid)`.
+ * Typed server wrapper for `public.replace_courier_document(p_payload jsonb)`.
  * CC-025: Reemplazo transaccional de un documento rechazado del repartidor.
  */
 export async function replaceCourierDocumentRpc(
@@ -78,9 +78,9 @@ export async function replaceCourierDocumentRpc(
         ...(parsedInput.data.idempotencyKey
           ? { idempotencyKey: parsedInput.data.idempotencyKey }
           : {}),
+        // CC-042: vehículo de la licencia o el seguro; sin él, la RPC usa el activo.
+        ...(parsedInput.data.vehicleId ? { vehicleId: parsedInput.data.vehicleId } : {}),
       },
-      // CC-042: vehículo de la licencia o el seguro; sin él, la RPC usa el activo.
-      ...(parsedInput.data.vehicleId ? { p_vehicle_id: parsedInput.data.vehicleId } : {}),
     });
 
     if (error) {
@@ -135,7 +135,7 @@ export function mapAddCourierOptionalDocumentRpcError(
   return 'INTERNAL_ERROR';
 }
 
-/** Typed server wrapper for `public.add_courier_optional_document(p_payload jsonb, p_vehicle_id uuid)`. */
+/** Typed server wrapper for `public.add_courier_optional_document(p_payload jsonb)`. */
 export async function addCourierOptionalDocumentRpc(
   client: SupabaseRpcCaller,
   rawInput: unknown,
@@ -156,9 +156,9 @@ export async function addCourierOptionalDocumentRpc(
         ...(parsedInput.data.idempotencyKey
           ? { idempotencyKey: parsedInput.data.idempotencyKey }
           : {}),
+        // CC-042: vehículo de la licencia o el seguro; sin él, la RPC usa el activo.
+        ...(parsedInput.data.vehicleId ? { vehicleId: parsedInput.data.vehicleId } : {}),
       },
-      // CC-042: vehículo de la licencia o el seguro; sin él, la RPC usa el activo.
-      ...(parsedInput.data.vehicleId ? { p_vehicle_id: parsedInput.data.vehicleId } : {}),
     });
 
     if (error) return err(mapAddCourierOptionalDocumentRpcError(error));

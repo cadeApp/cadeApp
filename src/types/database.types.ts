@@ -1495,7 +1495,7 @@ export type Database = {
         Returns: Json
       }
       add_courier_optional_document: {
-        Args: { p_payload: Json; p_vehicle_id?: string }
+        Args: { p_payload: Json }
         Returns: Json
       }
       add_courier_vehicle: {
@@ -1740,10 +1740,7 @@ export type Database = {
       }
       register_push_subscription: { Args: { p_payload: Json }; Returns: Json }
       remove_courier_vehicle: { Args: { p_vehicle_id: string }; Returns: Json }
-      replace_courier_document: {
-        Args: { p_payload: Json; p_vehicle_id?: string }
-        Returns: Json
-      }
+      replace_courier_document: { Args: { p_payload: Json }; Returns: Json }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }
         Returns: Json

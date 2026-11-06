@@ -2257,7 +2257,7 @@ describe('T-419 / CC-042: acciones de vehículos del repartidor (RPC, sin update
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('CC-042: la licencia o el seguro de un vehículo viajan con p_vehicle_id', async () => {
+  it('CC-042: la licencia o el seguro de un vehículo viajan con vehicleId en el payload', async () => {
     const { rpc } = setup({
       rpcResult: {
         data: { documentId: 'a0000000-0000-4000-8000-000000000419', kind: 'license', status: 'submitted', isCurrent: true, idempotent: false },
@@ -2279,8 +2279,7 @@ describe('T-419 / CC-042: acciones de vehículos del repartidor (RPC, sin update
       vehicleId: VEHICLE,
     });
     expect(rpc).toHaveBeenCalledWith('add_courier_optional_document', {
-      p_payload: { kind: 'license', storagePath: 'courier/courier-419/license_1730000000000.jpg' },
-      p_vehicle_id: VEHICLE,
+      p_payload: { kind: 'license', storagePath: 'courier/courier-419/license_1730000000000.jpg', vehicleId: VEHICLE },
     });
   });
 });
