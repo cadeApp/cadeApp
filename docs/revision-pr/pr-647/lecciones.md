@@ -1,0 +1,26 @@
+# Lecciones de la PR #647 — T-406
+
+**Fuente:** un hallazgo bloqueante H01 por inspección y una decisión de alcance D01=C tomada por Lautaro073. Datos en [hallazgos.jsonl](hallazgos.jsonl).
+
+## Patrón observado
+
+Un helper E2E que parece reusable oculta un efecto lateral relevante: enrola otro TOTP. Cuando el flujo lo llama después de `elevateAdminToAal2`, la pantalla valida un factor distinto del secreto generado, o la plataforma rechaza el segundo enrolamiento. El check general de TypeScript/unit no ejercita ese flujo de autenticación.
+
+**Lección de proceso (sin AG nuevo esta ronda):** los helpers de autenticación E2E deben distinguir «enrolar» de «usar un factor existente» y demostrar explícitamente la identidad del factor. No numerar una nueva lección AG sin consultar el máximo de todas las ramas remotas, que no se pudo enumerar desde este entorno.
+
+## Decisión de arquitectura incorporada al alcance
+
+D01=C: preferir un contador mínimo independiente de la vida del layout, con TanStack Query y polling de 60 s visible/foco, sobre refrescar todo el layout o introducir Realtime para un escalar. La decisión autoriza únicamente los nuevos archivos imprescindibles, no la modificación incidental de contratos `src/ui/**` o SQL.
+
+## Qué cambiar y verificar
+
+1. Un factor TOTP verificado por escenario, reusado por el navegador.
+2. Endpoint del contador solo para admin AAL2 (el middleware excluye `/api`: la autorización debe ser explícita dentro de la ruta).
+3. Pausa de polling al ocultar, refetch al foco y pruebas de mutación que fallen si esas propiedades se desactivan.
+4. Actualizar ficha y bitácora en el commit de **implementación** del autor; la carpeta de revisión solo la toca el revisor.
+
+## Advertencias
+
+- Los puntos anteriores aún no están probados en runtime por esta revisión.
+- No confundir aprobar el alcance D01 con verificar su implementación.
+- No se tocó AGENTS.md; cualquier regla futura debe justificarse por múltiples PR o severidad crítica.
