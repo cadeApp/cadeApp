@@ -1741,19 +1741,12 @@ begin
     -- PR624-H01: los estados salen de la licencia y el seguro vigentes del vehículo (los que acaba de cargar
     -- submit_courier_onboarding_documents), no del reflejo anterior.
     update public.courier_vehicles v
-    set license_status = coalesce((
-          select d.status from public.courier_documents d
-          where d.vehicle_id = v.id and d.kind = 'license' and coalesce(d.is_current, true)
-          order by d.uploaded_at desc limit 1), 'none'),
-        insurance_status = coalesce((
-          select d.status from public.courier_documents d
-          where d.vehicle_id = v.id and d.kind = 'insurance' and coalesce(d.is_current, true)
-          order by d.uploaded_at desc limit 1), 'none')
-    where v.id = v_vehicle_id;
+    set license_status = c.license_status, insurance_status = c.insurance_status
+    from public.couriers c
+    where v.id = v_vehicle_id and c.profile_id = p_courier_id;
   end if;
 
   update public.couriers set active_vehicle_id = v_vehicle_id where profile_id = p_courier_id;
-  perform app_private.cc042_sync_courier_reflection(p_courier_id);
 
   return jsonb_build_object(
     'ok', true,
