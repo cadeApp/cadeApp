@@ -19,3 +19,11 @@ Patrones P08/P05/P06, relacionados con las lecciones ya registradas en pr-63/AG-
 10. Un test de vista que cuenta pestañas no puede validar la ordenación en la query que construyó los datos. Debe atravesar getApplicantDetail y fallar con el comparador anterior.
 11. Las PR #641–#645 muestran RED del autor en CI, pero la verificación independiente conserva su propio umbral para llenar verificado_en_sha.
 
+
+## Ronda 3 — lecciones adicionales (candidatas sin ID AG)
+
+12. El test de limpieza también necesita teardown propio: una prueba que llama manualmente al helper solo al final del bloque try **no** verifica qué pasa si falla a mitad del setup; sin cleanup en finally crea una nueva fuente de contaminación. Testear el test desde cada prefijo transaccional.
+13. Distinguir commit con código verde y commit solo de bitácora cancelado. La cancelación del segundo run no invalida los checks del SHA previo cuando el diff confirma que no hay código modificado, pero tampoco es legítimo decir que el run cancelado pasó.
+14. En test E2E con siembra histórica, el historical ID es dato de la fixture creada por la propia prueba: el teardown debe comprobar errores y nunca borrar datos preexistentes sin ID exacto.
+15. RED por mutación del autor en CI es evidencia comprobable (#646 falló tests 180 y 181) pero el campo verificado_en_sha se reserva para una comprobación independiente ejecutada. Un test E2E todavía no ejecutado no puede darse por cerrado por simple lectura.
+
