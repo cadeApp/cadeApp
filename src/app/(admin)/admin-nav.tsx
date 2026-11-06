@@ -189,7 +189,7 @@ export function AdminNav({ operatorName, initialCollapsed = false }: AdminNavPro
               aria-label={toggleLabel}
               className={cn(
                 // T-427: chico y redondo sobre el borde; el pseudo-elemento agranda el área para tocarlo.
-                'absolute -right-3 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md transition-colors hover:bg-muted before:absolute before:-inset-3',
+                'absolute -right-3 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md hover:bg-muted before:absolute before:-inset-3',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
               )}
             >
