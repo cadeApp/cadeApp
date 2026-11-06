@@ -185,71 +185,105 @@ test.describe('T-419 — vehículos del repartidor', () => {
     }
   });
 
-  test('PR624-R01: la limpieza, cortada con la bici activa y una oferta pendiente, restaura la moto y no toca la bici archivada', async ({
-    stagingContext,
-  }) => {
-    assertAllowedE2EEnvironment();
-    const courier = stagingContext.courierUsers?.[0];
-    const requestId = stagingContext.createdRequestIds[0];
-    if (!courier || !requestId) {
-      throw new Error('[E2E Error] Se requieren courier y una solicitud en stagingContext');
-    }
-
-    const dbAdmin = createAdminClient();
-    const { data: initial } = await dbAdmin
-      .from('couriers')
-      .select('active_vehicle_id')
-      .eq('profile_id', courier.id)
-      .single();
-    const motoId = initial?.active_vehicle_id;
-    if (!motoId) throw new Error('[E2E Error] El seed tiene que dejar la moto como vehículo activo');
-
-    // Histórico del mismo tipo que la prueba no creó: tiene que sobrevivir a la limpieza.
-    const { data: archived, error: archivedError } = await dbAdmin
-      .from('courier_vehicles')
-      .insert({ courier_id: courier.id, vehicle_type: 'bike', archived_at: new Date().toISOString() })
-      .select('id')
-      .single();
-    expect(archivedError).toBeNull();
-    const archivedId = archived?.id;
-    if (!archivedId) throw new Error('[E2E Error] No se pudo sembrar la bici archivada');
-
-    const courierClient = await createAuthenticatedClient(courier);
-    try {
-      const preexistingBikes = await vehicleIdsOfType(courier.id, 'bike');
-      expect(preexistingBikes.has(archivedId)).toBe(true);
-
-      // Estado de una prueba cortada a mitad de camino: bici nueva activa y oferta pendiente sin retirar.
-      const { data: added, error: addError } = await courierClient.rpc('add_courier_vehicle', {
-        p_vehicle_type: 'bike',
-        p_plate: '',
-        p_make_active: true,
-      });
-      expect(addError).toBeNull();
-      const newBikeId = (added as { vehicleId: string } | null)?.vehicleId;
-      const { data: offerData, error: offerError } = await courierClient.rpc('submit_offer', {
-        p_request_id: requestId,
-        p_amount_ars: 1500,
-        p_eta_minutes: 15,
-        p_message: 'Oferta PR624-R01',
-      });
-      expect(offerError).toBeNull();
-      const offerId = (offerData as { offerId: string } | null)?.offerId ?? null;
-      if (offerId) trackEntityForCleanup(stagingContext, 'offer', offerId);
-
-      expect(await restoreSeedVehicle(courierClient, courier.id, motoId, 'bike', preexistingBikes, offerId)).toEqual([]);
-
-      const { data: after } = await dbAdmin.from('couriers').select('active_vehicle_id').eq('profile_id', courier.id).single();
-      expect(after?.active_vehicle_id).toBe(motoId);
-      const remaining = await vehicleIdsOfType(courier.id, 'bike');
-      expect(remaining.has(archivedId)).toBe(true);
-      expect(newBikeId ? remaining.has(newBikeId) : false).toBe(false);
-      if (offerId) {
-        const { data: offer } = await dbAdmin.from('offers').select('status').eq('id', offerId).single();
-        expect(offer?.status).toBe('withdrawn');
+  // PR624-R01 / PR624-R03: la prueba corta el flujo a propósito (solo dentro de este escenario) después de activar la
+  // bici o de ofertar, y comprueba que la limpieza deja la moto activa, retira la oferta y no toca una bici archivada.
+  for (const cutAfter of ['activar la bici', 'ofertar'] as const) {
+    test(`PR624-R03: un corte después de ${cutAfter} se limpia sin tocar la bici archivada`, async ({ stagingContext }) => {
+      assertAllowedE2EEnvironment();
+      const courier = stagingContext.courierUsers?.[0];
+      const requestId = stagingContext.createdRequestIds[0];
+      if (!courier || !requestId) {
+        throw new Error('[E2E Error] Se requieren courier y una solicitud en stagingContext');
       }
-    } finally {
-      await dbAdmin.from('courier_vehicles').delete().eq('id', archivedId);
-    }
-  });
+
+      const dbAdmin = createAdminClient();
+      const { data: initial, error: initialError } = await dbAdmin
+        .from('couriers')
+        .select('active_vehicle_id')
+        .eq('profile_id', courier.id)
+        .single();
+      expect(initialError).toBeNull();
+      const motoId = initial?.active_vehicle_id;
+      if (!motoId) throw new Error('[E2E Error] El seed tiene que dejar la moto como vehículo activo');
+      const courierClient = await createAuthenticatedClient(courier);
+
+      // Lo que existía antes de la prueba (archivados incluidos): la limpieza no lo puede borrar.
+      const preexistingBikes = await vehicleIdsOfType(courier.id, 'bike');
+      let archivedId: string | null = null;
+      let offerId: string | null = null;
+      let newBikeId: string | null = null;
+      let primaryError: unknown = null;
+      const cleanupErrors: string[] = [];
+      try {
+        // Bici archivada sembrada por la prueba: entra en los IDs previos antes de crear la bici nueva.
+        const { data: archived, error: archivedError } = await dbAdmin
+          .from('courier_vehicles')
+          .insert({ courier_id: courier.id, vehicle_type: 'bike', archived_at: new Date().toISOString() })
+          .select('id')
+          .single();
+        expect(archivedError).toBeNull();
+        archivedId = archived?.id ?? null;
+        if (!archivedId) throw new Error('[E2E Error] No se pudo sembrar la bici archivada');
+        const before = new Set([...preexistingBikes, archivedId]);
+
+        const runUntilCut = async () => {
+          try {
+            const { data: added, error: addError } = await courierClient.rpc('add_courier_vehicle', {
+              p_vehicle_type: 'bike',
+              p_plate: '',
+              p_make_active: true,
+            });
+            expect(addError).toBeNull();
+            newBikeId = (added as { vehicleId: string } | null)?.vehicleId ?? null;
+            if (cutAfter === 'activar la bici') throw new Error('corte simulado');
+            const { data: offerData, error: offerError } = await courierClient.rpc('submit_offer', {
+              p_request_id: requestId,
+              p_amount_ars: 1500,
+              p_eta_minutes: 15,
+              p_message: 'Oferta PR624-R03',
+            });
+            expect(offerError).toBeNull();
+            offerId = (offerData as { offerId: string } | null)?.offerId ?? null;
+            if (offerId) trackEntityForCleanup(stagingContext, 'offer', offerId);
+            throw new Error('corte simulado');
+          } finally {
+            cleanupErrors.push(...(await restoreSeedVehicle(courierClient, courier.id, motoId, 'bike', before, offerId)));
+          }
+        };
+        await expect(runUntilCut()).rejects.toThrow('corte simulado');
+
+        expect(cleanupErrors).toEqual([]);
+        expect(newBikeId).not.toBeNull();
+        const { data: after } = await dbAdmin.from('couriers').select('active_vehicle_id').eq('profile_id', courier.id).single();
+        expect(after?.active_vehicle_id).toBe(motoId);
+        const remaining = await vehicleIdsOfType(courier.id, 'bike');
+        expect(remaining.has(archivedId)).toBe(true);
+        expect(newBikeId !== null && remaining.has(newBikeId)).toBe(false);
+        if (cutAfter === 'ofertar') {
+          expect(offerId).not.toBeNull();
+          const { data: offer } = await dbAdmin.from('offers').select('status').eq('id', offerId ?? '').single();
+          expect(offer?.status).toBe('withdrawn');
+        }
+      } catch (error) {
+        primaryError = error;
+        throw error;
+      } finally {
+        // Otra vuelta de la limpieza (idempotente) por si la prueba se cortó antes; recién con la moto restaurada se
+        // borra la bici archivada que sembró esta prueba, por id.
+        const finalErrors = await restoreSeedVehicle(
+          courierClient,
+          courier.id,
+          motoId,
+          'bike',
+          new Set([...preexistingBikes, ...(archivedId ? [archivedId] : [])]),
+          offerId
+        );
+        if (archivedId && finalErrors.length === 0) {
+          const { error: deleteError } = await dbAdmin.from('courier_vehicles').delete().eq('id', archivedId);
+          if (deleteError) finalErrors.push(`bici archivada ${archivedId}: ${deleteError.message}`);
+        }
+        reportCleanup(finalErrors, primaryError);
+      }
+    });
+  }
 });
