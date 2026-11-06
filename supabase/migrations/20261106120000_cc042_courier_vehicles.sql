@@ -169,9 +169,6 @@ create policy couriers_update_self on public.couriers
     and decided_by is not distinct from (select c.decided_by from public.couriers c where c.profile_id = auth.uid())
     and decided_at is not distinct from (select c.decided_at from public.couriers c where c.profile_id = auth.uid())
     and deactivated_at is not distinct from (select c.deactivated_at from public.couriers c where c.profile_id = auth.uid())
-    and vehicle_type is not distinct from (select c.vehicle_type from public.couriers c where c.profile_id = auth.uid())
-    and vehicle_plate is not distinct from (select c.vehicle_plate from public.couriers c where c.profile_id = auth.uid())
-    and active_vehicle_id is not distinct from (select c.active_vehicle_id from public.couriers c where c.profile_id = auth.uid())
   );
 
 -- ============================================================================
