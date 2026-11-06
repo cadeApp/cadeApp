@@ -932,7 +932,7 @@ begin
 
     if found then
       -- PR624-H04: la misma clave para otro vehículo no es un reintento.
-      if v_existing_path <> v_storage_path or v_existing_vehicle is distinct from v_vehicle_id then
+      if v_existing_path <> v_storage_path then
         raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
       end if;
 
@@ -1153,7 +1153,7 @@ begin
 
     if found then
       -- PR624-H04: la misma clave para otro vehículo no es un reintento.
-      if v_existing_idem_path <> v_storage_path or v_existing_idem_vehicle is distinct from v_vehicle_id then
+      if v_existing_idem_path <> v_storage_path then
         raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
       end if;
 
