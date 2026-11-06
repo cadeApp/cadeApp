@@ -81,6 +81,27 @@ describe('T-402: shell del admin (barra lateral y menú angosto)', () => {
     expect(sidebar().getByRole('link', { name: /panel de administración cadeapp/i })).not.toBeNull();
   });
 
+  it('T-425: «Contraer menú» deja solo íconos con nombre accesible y el logo sin texto; «Expandir menú» lo revierte', () => {
+    render(<AdminNav operatorName="Lautaro" />);
+    const toggle = sidebar().getByRole('button', { name: 'Contraer menú' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(toggle);
+
+    const expand = sidebar().getByRole('button', { name: 'Expandir menú' });
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
+    const nav = sidebar().getByRole('navigation', { name: /navegación principal de administración/i });
+    for (const link of within(nav).getAllByRole('link')) {
+      expect(link.querySelector('span')?.className).toContain('sr-only');
+    }
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(labels);
+    expect(sidebar().getByRole('button', { name: /salir/i })).not.toBeNull();
+    expect(sidebar().getByText('Lautaro').parentElement?.className).toContain('sr-only');
+
+    fireEvent.click(expand);
+    expect(sidebar().getByRole('button', { name: 'Contraer menú' })).not.toBeNull();
+    expect(within(nav).getByRole('link', { name: 'Comercios' }).querySelector('span')?.className).not.toContain('sr-only');
+  });
+
   it('abajo de la barra lateral están el nombre del operador y «Salir»', () => {
     render(<AdminNav operatorName="Lautaro Jiménez" />);
     expect(sidebar().queryByText('Lautaro Jiménez')).not.toBeNull();

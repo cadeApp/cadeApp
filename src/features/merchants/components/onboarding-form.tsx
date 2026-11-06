@@ -484,14 +484,15 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2">
+          {/* Los botones bajan de línea cuando no entran en el ancho de la tarjeta. */}
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               variant="outline"
               size="lg"
               onClick={() => requestGeocode(true)}
               disabled={geocoding || !buildGeocodeQuery(defaultPickupAddress ?? '')}
-              className="w-full"
+              className="flex-1"
             >
               <MapPin className="h-5 w-5 text-primary-dark" />
               <span>
@@ -504,7 +505,7 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
               size="lg"
               onClick={handleUseMyLocation}
               disabled={locating}
-              className="w-full"
+              className="flex-1"
             >
               <Crosshair className="h-5 w-5 text-primary-dark" />
               <span>
@@ -527,7 +528,7 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
                   );
                   setCoordsError(null);
                 }}
-                className="w-full sm:w-auto text-muted-foreground hover:text-destructive shrink-0"
+                className="flex-1 text-muted-foreground hover:text-destructive"
                 aria-label="Quitar ubicación"
               >
                 Quitar ubicación
