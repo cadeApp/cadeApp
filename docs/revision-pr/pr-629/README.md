@@ -6,42 +6,40 @@
 | **Tarea** | T-405 · Fase 4 (#486) |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-405-comercios-a03` → `develop` |
-| **Base observada** | `fbd751aace5bcd476400ddad6ec40b29864c610f` |
-| **Head revisado** | `ae38d57d34320a840b51db619ec6860af9cc8ed6` |
-| **Tamaño** | 18 archivos, +1158 / -221 líneas (antes del commit de revisión) |
-| **Estado** | CON BLOQUEANTES (1), PR abierta, sin aprobación ni merge |
+| **Base revisada en R2** | `5a8f6dc504a320e13579921024ddfe7711d54479` (incluye CC-046) |
+| **SHA funcional revisado en R2** | `af61096fdad07593686f7c6870dc8a204323f695` |
+| **Diff PR vs develop en R2** | 23 archivos (incluye la documentación de R1) |
+| **Resultado R2** | **SIN NUEVOS BLOQUEANTES DE CÓDIGO**, pero **CI parcial y e2e-preview T-405 pendiente**. No lista para merge. |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA funcional revisado | Hallazgos | Informe |
 |---|---|---|---|
-| 1 | `ae38d57d34320a840b51db619ec6860af9cc8ed6` | H01 (bloqueante), M01 (mejora) | [ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `ae38d57d34320a840b51db619ec6860af9cc8ed6` | H01 bloqueante, M01 mejora | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `af61096fdad07593686f7c6870dc8a204323f695` | H01 reparado y verificado en componente compartido; M01 reparada, E2E pendiente; 0 nuevos | [ronda-2.md](revisiones/ronda-2.md) |
 
-## Estado por hallazgo
+## Estado actualizado por hallazgo
 
-| ID | Título | Severidad | Estado |
-|---|---|---|---|
-| PR629-H01 | `Sheet side="right"` queda centrado | alto / bloqueante | abierto; corregir mediante CC separado [#630](https://github.com/cadeApp/cadeApp/issues/630) |
-| PR629-H02 (M01) | Fecha fija del E2E caduca | bajo / mejora | abierto; autor de T-405 aplicará fecha dinámica |
+| ID | Resumen | Estado y fundamento |
+|---|---|---|
+| **PR629-H01** | `Sheet side="right"` quedaba centrado | **arreglado-verificado** para la corrección compartida: CC-046 (#631) mergeado; mismos blobs en T-405; E2E del menú 390/1023 del CC pasó en Actions. **E2E geométrico de T-405 todavía pendiente**. |
+| **PR629-H02 (M01)** | Fecha fija caducaba | **arreglado-sin-verificar**: fecha dinámica UTC +60 días comprobada en fuente; el E2E nuevo no terminó. |
 
-> ID estructurado M01 = `PR629-H02`; la designación visible **M01** distingue la mejora de H01.
+`hallazgos.jsonl` conserva dos registros, sin inventar hallazgos ni falsificar ejecución. [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
-Datos: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia: [comandos.md](evidencia/comandos.md) · Lecciones: [lecciones.md](lecciones.md).
+## Decisiones de Lautaro073 — sin novedades
 
-## Decisiones de Lautaro073 (2026-11-06)
+- **D01=A:** action de lectura bajo demanda con Zod + AAL2.
+- **D02=A:** conservar «Abono y piloto».
+- **D03=A:** piloto `default`, activo `verified`.
+- **D04=B:** CC compartido. [CC-046 / PR #631](https://github.com/cadeApp/cadeApp/pull/631) se mergeó en `develop` (`5a8f6dc5`); T-405 hizo merge sin conflictos (`8b4151e9`).
 
-- D01=A: action de lectura bajo demanda, con validación Zod y admin AAL2; ampliación acotada de ficha aceptada.
-- D02=A: conservar «Abono y piloto».
-- D03=A: colores `default` para piloto y `verified` para activo.
-- D04=B: resolver H01 en el componente compartido `src/ui/sheet.tsx` mediante un **CC liviano independiente**. Propuesta registrada en [issue #630](https://github.com/cadeApp/cadeApp/issues/630); asignar número CC únicamente tras reconciliar referencias remotas. Esta PR no cambia `src/ui/**`.
+## Qué falta antes de mergear
 
-## Qué queda por hacer
+1. **Gate oficial `e2e-preview` del SHA funcional `af61096f`**: comprobar que corrió el test de T-405 con posiciones 1280/390, mutación del plan, lectura de movimientos y navegación a Auditoría. Registrar run/job, líneas del resultado y `TARGET_SHA`. Si falla por los duplicados de streaming ya aislados en T-426 (#639/#640), registrarlo sin atribuir causalidad automática ni declararlo verde.
+2. **CI oficial `db-tests`**: seguía en progreso cuando se redactó R2. Resto: lint, typecheck, unit, audit, build y bundle-budget completados en success; Vitest **195 archivos / 3686 tests**.
+3. **Nueva verificación independiente** si el gate falla, aparecen cambios funcionales o surge otro hallazgo. No exigir otra CI GREEN exclusivamente por este commit documental.
 
-1. Implementar, revisar y mergear a `develop` el CC de [#630](https://github.com/cadeApp/cadeApp/issues/630), con tests propios y regresión del menú admin.
-2. Autor de T-405: aplicar M01 en `e2e/specs/publication-credits.global-settings.spec.ts` y registrar RED→GREEN real en bitácora.
-3. Luego del merge del CC: actualizar la rama T-405 por **merge** de `origin/develop`, sin rebase, e incorporar al E2E de T-405 comprobación geométrica con Playwright.
-4. Nueva ronda independiente: ejecutar pruebas y mutaciones, verificar SHA actualizado, revisar CI oficial/E2E y confirmar que ya no hay bloqueantes.
+## Límite de ejecución
 
-## Límite de evidencia
-
-Ronda realizada con diff y archivos del SHA mediante GitHub conectado. Sin clon utilizable: DNS de `github.com` no disponible en el contenedor. No se ejecutaron Vitest, Playwright, `git merge-tree` ni una batería RED→GREEN independiente. Por eso toda constatación técnica está clasificada como **análisis por inspección**, y no hay `verificado_en_sha`. El estado de GitHub `mergeable=true` no reemplaza `git merge-tree`.
+En R2 el contenedor no resuelve `github.com` para `git ls-remote` ni clonar; no se ejecutaron Vitest, Playwright, mutaciones ni `git merge-tree` localmente. La revisión sí verificó directamente blobs/commits, diffs y logs oficiales del CI mediante el conector GitHub. El reporte diferencia **CI ejecutado por Actions**, **evidencia histórica del CC** y **E2E T-405 pendiente**.
