@@ -347,7 +347,9 @@ test.describe('T-369 — créditos de publicación y planes (CC-029)', () => {
     const merchant = stagingContext.merchantUser;
     if (!merchant) throw new Error('[E2E Error] No merchant user in stagingContext');
     const businessName = await getBusinessName(merchant.id);
-    const pilotUntil = '2027-01-31';
+    // PR629-M01: siempre una fecha futura (60 días desde hoy), para que siga siendo una extensión válida.
+    const pilotUntil = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+    const pilotUntilLabel = pilotUntil.split('-').reverse().join('/');
 
     const { adminPage } = await openAdminSession(browser, stagingContext);
     try {
@@ -382,7 +384,7 @@ test.describe('T-369 — créditos de publicación y planes (CC-029)', () => {
       }).toPass();
       const movements = sheet.getByRole('list', { name: 'Últimos movimientos' });
       await expect(movements.getByRole('listitem').first()).toContainText('Cambió el plan');
-      await expect(movements.getByRole('listitem').first()).toContainText('31/01/2027');
+      await expect(movements.getByRole('listitem').first()).toContainText(pilotUntilLabel);
 
       await sheet.getByRole('link', { name: 'Ver todo en Auditoría' }).click();
       await adminPage.waitForURL(
@@ -392,7 +394,7 @@ test.describe('T-369 — créditos de publicación y planes (CC-029)', () => {
       await expect(adminPage.getByText('Mostrando los eventos de una sola entidad.')).toBeVisible();
       const auditRows = adminPage.getByRole('table', { name: 'Registro de auditoría' }).locator('tbody tr');
       await expect(auditRows.filter({ hasText: 'Cambió el plan' })).toHaveCount(1);
-      await expect(auditRows.filter({ hasText: '31/01/2027' })).toHaveCount(1);
+      await expect(auditRows.filter({ hasText: pilotUntilLabel })).toHaveCount(1);
     } finally {
       await adminPage.context().close();
     }
