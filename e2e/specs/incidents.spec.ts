@@ -20,10 +20,14 @@ import type { Page } from '@playwright/test';
 type AdminCredentials = Awaited<ReturnType<typeof seedAdminUser>>;
 
 /**
- * Administrador E2E con TOTP enrolado por API y login real en el navegador (PR224-H01/H03). Devuelve una pestaña nueva
- * del mismo contexto ya en `/admin`, con la sesión aal2.
+ * Administrador E2E con un único factor TOTP enrolado por API y login real en el navegador (PR224-H01/H03).
+ * Devuelve una pestaña nueva del mismo contexto ya en `/admin` y el cliente de API, que queda en aal2 tras
+ * `challengeAndVerify`. PR647-H01: nunca se enrola un segundo factor, porque el login usa el primero de la lista.
  */
-async function openAdminPageWithMfa(page: Page, adminCredentials: AdminCredentials): Promise<Page> {
+async function openAdminPageWithMfa(
+  page: Page,
+  adminCredentials: AdminCredentials
+): Promise<{ adminPage: Page; adminApi: Awaited<ReturnType<typeof createAuthenticatedClient>> }> {
   const adminClient = await createAuthenticatedClient(adminCredentials);
   const { data: enrollData, error: enrollErr } = await adminClient.auth.mfa.enroll({
     factorType: 'totp',
@@ -56,7 +60,7 @@ async function openAdminPageWithMfa(page: Page, adminCredentials: AdminCredentia
   await adminPage.getByLabel(/código de seguridad/i).fill(currentTotp);
   await adminPage.getByRole('button', { name: /verificar/i }).click();
   await adminPage.waitForURL(/\/admin/);
-  return adminPage;
+  return { adminPage, adminApi: adminClient };
 }
 
 /**
@@ -124,7 +128,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
 
     // 6. Administrador E2E con AAL2 y login real en el navegador (PR224-H01/H03)
     const adminCredentials = await seedAdminUser(stagingContext);
-    const adminPage = await openAdminPageWithMfa(page, adminCredentials);
+    const { adminPage } = await openAdminPageWithMfa(page, adminCredentials);
 
     // Navegar a la bandeja de incidentes
     await adminPage.goto('/admin/incidents');
@@ -399,10 +403,9 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await report(merchant, toResolve);
     const dismissId = await report(courier, toDismiss);
 
-    // El desestimado se cierra por la RPC auditada con sesión aal2.
+    // El desestimado se cierra por la RPC auditada con la sesión aal2 del mismo factor del login.
     const adminCredentials = await seedAdminUser(stagingContext);
-    const adminApi = await createAuthenticatedClient(adminCredentials);
-    await elevateAdminToAal2(adminApi, adminCredentials);
+    const { adminPage, adminApi } = await openAdminPageWithMfa(page, adminCredentials);
     const { error: dismissErr } = await adminApi.rpc('admin_resolve_incident', {
       p_incident_id: dismissId,
       p_decision: 'no_action',
@@ -410,7 +413,6 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     });
     if (dismissErr) throw new Error(`[E2E Error] admin_resolve_incident falló: ${dismissErr.message}`);
 
-    const adminPage = await openAdminPageWithMfa(page, adminCredentials);
     const card = (description: string) => adminPage.getByRole('listitem').filter({ hasText: description });
     const tabs = adminPage.getByRole('navigation', { name: /estado de los incidentes/i });
 
@@ -422,12 +424,12 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await expect(tabs.getByRole('link', { name: /^Abiertos \(\d+\)$/ })).toHaveAttribute('aria-current', 'page');
     await expect(tabs.getByRole('link', { name: /^Resueltos \(\d+\)$/ })).toBeVisible();
     await expect(tabs.getByRole('link', { name: /^Desestimados \(\d+\)$/ })).toBeVisible();
-    const navIncidents = adminPage
-      .getByRole('complementary')
-      .getByRole('link', { name: /^Incidentes\s*, \d+ incidentes? abiertos?$/ });
-    await expect(navIncidents).toBeVisible();
-    const badgeCount = Number(await navIncidents.getByTestId('admin-nav-incidents-count').textContent());
-    expect(badgeCount).toBeGreaterThanOrEqual(1);
+    const sidebar = adminPage.getByRole('complementary');
+    await expect(sidebar.getByRole('link', { name: 'Incidentes', exact: true })).toBeVisible();
+    const badge = sidebar.getByTestId('admin-nav-incidents-count');
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveAccessibleName(/^\d+ incidentes? abiertos?$/);
+    expect(Number(await badge.textContent())).toBeGreaterThanOrEqual(1);
 
     // Resolver con advertencia desde el detalle: pasa a «Resueltos» y sale de «Abiertos».
     await card(toResolve).getByRole('link', { name: /ver detalle/i }).click();

@@ -11,6 +11,8 @@ export const ADMIN_COPY = {
     menuTitle: 'Secciones del panel',
     collapseSidebar: 'Contraer menú',
     expandSidebar: 'Expandir menú',
+    /** T-406: contador de incidentes abiertos junto a «Incidentes». */
+    openIncidents: (count: number) => (count === 1 ? '1 incidente abierto' : `${count} incidentes abiertos`),
     tabs: {
       applicants: 'Postulantes',
       merchants: 'Comercios',

@@ -71,10 +71,6 @@ export const INCIDENTS_COPY = {
     firstPage: 'Volver al inicio',
     loading: 'Cargando incidentes',
   },
-  /** T-406: contador de abiertos en el ítem «Incidentes» de la navegación admin. */
-  nav: {
-    openCount: (count: number) => (count === 1 ? '1 incidente abierto' : `${count} incidentes abiertos`),
-  },
   detail: {
     back: '← Volver a incidentes',
     title: (kind: string) => `Incidente: ${kind}`,
