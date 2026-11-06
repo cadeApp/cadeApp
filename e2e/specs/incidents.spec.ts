@@ -439,7 +439,9 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     const dialog = adminPage.getByRole('dialog');
     await dialog.getByLabel(/motivo/i).fill(`Advertencia E2E ${stagingContext.testRunId}`);
     await dialog.getByRole('button', { name: /confirmar advertencia/i }).click();
-    await expect(adminPage.getByText(/advertencia registrada/i).first()).toBeVisible();
+    // La descripción del diálogo también dice «advertencia registrada»: se espera el cierre y el aviso exacto.
+    await expect(dialog).toBeHidden();
+    await expect(adminPage.getByText('Advertencia registrada.', { exact: true })).toBeVisible();
 
     await adminPage.goto('/admin/incidents?tab=resolved');
     await waitForNoSkeletons(adminPage);
