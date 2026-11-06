@@ -41,3 +41,13 @@ No se asigna un AG nuevo por el arreglo de una sola PR.
 - El workflow E2E es `workflow_run` sobre `develop`: para atribuirlo a la PR hay que leer el SHA de `actions/checkout` en el job, no solo la cabecera del run.
 
 Sin AG nuevo: refuerza P07-coincidencia-demasiado-amplia.
+
+## Ronda 5 — aceptación tras CI/E2E oficial GREEN
+
+- H04 pasó de `arreglado-sin-verificar` a `arreglado-verificado` únicamente tras inspeccionar Playwright real sobre el SHA de checkout: `admin-courier-reinstate.spec.ts` verde al primer intento.
+- En `workflow_run` el SHA exterior de `develop` no prueba qué código corrió; se comprobó `actions/checkout` dentro del job E2E.
+- Un CI GREEN es el **intento 2** completo del mismo head, no los intentos anteriores cancelados; se inspeccionaron las cantidades reales de unit y db-tests.
+- El formato global y el presupuesto del bundle son warnings no bloqueantes. Sin comparación de base no se atribuyen como regresiones de T-407.
+- H01/H02/H03 conservan el SHA de su verificación original. El commit final de revisión solo actualiza documentación y no exige nuevo gate.
+
+No se crea AG nuevo. La PR queda aceptada para decisión de merge humana, sin acción Github Approve/Merge del revisor.
