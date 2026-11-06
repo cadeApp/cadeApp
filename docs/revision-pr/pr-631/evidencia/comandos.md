@@ -204,3 +204,24 @@ git status --short
 ### Estado de E2E
 
 El workflow `e2e-preview` (trusted) tiene condición CI success. En f54dc934, CI quedó rojo por T-424 heredado de develop, así que el E2E de ancho 390 y Escape del nuevo código **no está verificado** en este gate. No se inventan métricas de Playwright.
+
+
+---
+
+## Ronda 3 — cierre sobre 89c9ed13615d02980f7ff28d3599fecb89b52852 (2026-11-06)
+
+**Verificado leyendo logs oficiales, no ejecutado en el contenedor del revisor:**
+
+- CI: [42248108325](https://github.com/cadeApp/cadeApp/actions/runs/42248108325), intento **2**, head_sha `89c9ed13615d02980f7ff28d3599fecb89b52852`, success. `build/lint/typecheck/audit/unit/db-tests/bundle-budget` conclusiones success. 
+- Unit job 128000638534: `src/ui/sheet.test.tsx (4 tests)` ✓; `tools/verify-fichas.test.ts (7 tests)` ✓; `Test Files 194 passed (194)`; `Tests 3659 passed (3659)`.
+- db-tests job 128000580686: `Files=42, Tests=3396, Result: PASS`; `git diff --exit-code -- src/types/database.types.ts` sin output de diferencias y job success. Ojo: el log contiene líneas deliberadamente rojas de tests de mutación, pero el resultado de la suite normal es PASS.
+- trusted E2E [42249814951](https://github.com/cadeApp/cadeApp/actions/runs/42249814951), job 128001704352 y report job 128023046785: `TARGET_SHA=89c9ed13615d02980f7ff28d3599fecb89b52852`, `RESULT=success`, status `e2e-preview=success` publicado a ese SHA.
+- Chromium: `admin-nav-mobile.spec.ts:72` ✓ (23.1s), `:109` ✓ (18.6s), **117 passed** y **2 flaky** tras retry #2 (admin-audit-filters :69; admin-trips :167). Global-settings: **6 passed**. El gate es GREEN por su conclusión, no sin flakiness.
+- El commit `89c9ed13615d02980f7ff28d3599fecb89b52852` tiene como padres `5acb8a1...` y `b5ceef1...`; `develop...` está ahead 6, behind 0 y `mergeable=true` según GitHub.
+- El blob de `src/ui/sheet.tsx`, test unitario, E2E y log CC-046 es idéntico a f54dc934. Se verificó que el merge de develop no cambió la corrección central. 
+- `docs/tasks/T-424.md` en develop tiene `## DoD` y el permiso `docs/revision-pr/**`; la corrección entró por T-425/#635 y `tools/verify-fichas.test.ts` quedó verde. PR #638 cerrada sin merge.
+- La causa React streaming `div[hidden]#S:1` y la razón del rerun `next/font/google` son **diagnósticos comunicados por Lautaro073**, no resultados de un análisis independiente de traces en esta ronda.
+
+**No ejecutado localmente:** `pnpm`, `git merge-tree`, `node docs/revision-pr/analizar.mjs verificacion`, scripts de mutación de R1/R2 ni Playwright. DNS `github.com` sigue sin resolverse. El revisor sí comprobó resultados de ejecución remota directamente en logs con el SHA objetivo. No hay hallazgos nuevos de CC-046.
+
+**Ancla de verificación:** `89c9ed13615d02980f7ff28d3599fecb89b52852`, no el commit posterior que contiene sólo estos documentos.

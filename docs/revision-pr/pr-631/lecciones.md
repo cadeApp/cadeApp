@@ -32,3 +32,10 @@ El nuevo harness propio prueba (1) que side=bottom realmente conserva `justify-c
 **Regresión externa a CC-046:** `develop` 6e793e introdujo `docs/tasks/T-424.md` incompatible con `tools/verify-fichas.test.ts`. Su CI ya estaba rojo y GitHub Actions prueba el merge virtual, por lo que bloquea otras PR que no lo tocaron. Issue #637 contiene corrección documental exacta. No adjudicar a los cambios del Sheet un fallo del plan común.
 
 La duplicación de texto en E2E T-410/T-407 se sigue por separado en #585/#636; no se corrige con `.first()` o retries para fabricar GREEN.
+
+
+## Ronda 3 — cierre y evidencia de comportamiento
+
+El CI sobre el SHA final es el oráculo del comportamiento observable corregido: `sheet.test.tsx` 4/4 y el E2E de navegación `admin-nav-mobile.spec.ts:109` realmente recorrió los cuatro cortes, Escape y el foco; pasó sin retries. El defectuoso script de mutación individual propuesto por el revisor en R1 no justifica rechazar un control de comportamiento con dos implementaciones redundantes. Sigue pendiente sólo la reproducción local de la batería de mutaciones, documentada con transparencia; no se reabre H01 por eso.
+
+Otro aprendizaje de proceso: el CI de un PR evalúa un merge virtual con develop. En R2 una ficha ajena T-424 quebraba `verify-fichas` y detenía trusted E2E. Se reparó en develop por T-425/#635; el mismo CI en el SHA `89c9ed13615d02980f7ff28d3599fecb89b52852` corrió 3659/3659 tests, incluidos los 7 de `verify-fichas`. La PR #638 creada en R2 fue cerrada sin merge como redundante. Los test flakies T-407/T-410 tienen seguimiento externo por #636/#585 y no se silencian. No proponer un AG nuevo por una sola PR ni ocultar los retries en un gate exitoso.
