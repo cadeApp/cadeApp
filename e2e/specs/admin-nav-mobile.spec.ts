@@ -130,6 +130,15 @@ test.describe('T-402 — corte en lg y escritorio', () => {
         await expect(admin.menuButton, `${width}px`).toBeVisible();
         expectNear(main.x, 0, `${width}px main.x`);
         expectNear(main.width, width, `${width}px main.width`);
+
+        // CC-046: el menú lateral se apoya en el borde derecho (más angosto que la pantalla, no centrado).
+        await admin.openMenu();
+        const panel = await page.getByRole('dialog').boundingBox();
+        if (!panel) throw new Error('[E2E Error] Falta el panel del menú');
+        expectNear(panel.x + panel.width, width, `${width}px borde derecho del menú`);
+        expect(panel.x, `${width}px el menú no ocupa todo el ancho`).toBeGreaterThan(0);
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog')).toBeHidden();
       } else {
         await expect(admin.sidebarNav, `${width}px`).toBeVisible();
         await expect(admin.menuButton, `${width}px`).toBeHidden();
