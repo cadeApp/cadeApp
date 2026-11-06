@@ -218,6 +218,9 @@ export interface AuditLogResult {
   readonly pageSize: number;
   readonly nextCursor: number | null;
   readonly hasNextPage: boolean;
+  /** T-407: id de la primera fila visible, para «Anterior» (`?cursor=<id>&dir=prev`). */
+  readonly prevCursor: number | null;
+  readonly hasPrevPage: boolean;
 }
 
 export interface AuditActorOption {

@@ -97,11 +97,12 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
     await loginAdminWithMfa(page, credentials, totpSecret);
     await page.goto(`/admin/applicants/${courier.id}`);
     await waitForNoSkeletons(page);
-    await expect(page.getByText('Aprobado', { exact: true })).toBeVisible();
+    // PR617 (T-407-D06): el estado del detalle vive en <main>; fuera aparecía un segundo «Aprobado» (strict mode).
+    await expect(page.getByRole('main').getByText('Aprobado', { exact: true })).toBeVisible();
 
     // 2. Suspende con motivo.
     await decideWithReason(page, 'Suspender repartidor', `Suspensión E2E ${stagingContext.testRunId}`);
-    await expect(page.getByText('Suspendido', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Suspendido', { exact: true })).toBeVisible();
 
     // 3. El repartidor suspendido ve el aviso y no el feed.
     const courierContext = await browser.newContext({ baseURL });
@@ -117,7 +118,7 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
       // 4. El admin lo reactiva con motivo y ve «Aprobado» (no «Ocurrió un inconveniente inesperado»).
       const reason = `Reactivación E2E ${stagingContext.testRunId}: el reclamo no se confirmó.`;
       await decideWithReason(page, 'Reactivar repartidor', reason);
-      await expect(page.getByText('Aprobado', { exact: true })).toBeVisible();
+      await expect(page.getByRole('main').getByText('Aprobado', { exact: true })).toBeVisible();
       await expect(page.getByText(/inconveniente inesperado/i)).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Suspender repartidor' })).toBeVisible();
 

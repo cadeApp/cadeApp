@@ -26,6 +26,18 @@ export class AdminPage extends BasePage {
     return this.page.getByRole('table', { name: /registro de auditoría|audit log/i });
   }
 
+  /** T-407: formulario de filtros de A06 (GET). */
+  get auditFilters(): Locator {
+    return this.page.getByRole('search', { name: 'Filtros de auditoría' });
+  }
+
+  /** T-407: completa «Desde» y «Hasta» (fechas civiles `YYYY-MM-DD`) y envía los filtros. */
+  async filterAuditByDates(from: string, to: string): Promise<void> {
+    await this.auditFilters.getByLabel('Desde').fill(from);
+    await this.auditFilters.getByLabel('Hasta').fill(to);
+    await this.auditFilters.getByRole('button', { name: 'Filtrar' }).click();
+  }
+
   /** T-402: botón «Menú» de la barra superior (solo debajo de `lg`). */
   get menuButton(): Locator {
     return this.page.getByRole('banner').getByRole('button', { name: 'Menú' });
