@@ -1,5 +1,12 @@
 import * as React from 'react';
-import { getIncidentsQueue, IncidentsInbox, parseIncidentsSearchParams } from '@/features/incidents/server';
+import { redirect } from 'next/navigation';
+import { legacyIncidentsTabRedirect } from '@/features/incidents';
+import {
+  getIncidentsQueue,
+  getIncidentTabCounts,
+  IncidentsInbox,
+  parseIncidentsSearchParams,
+} from '@/features/incidents/server';
 
 export const metadata = {
   title: 'Incidentes | cadeApp Admin',
@@ -11,8 +18,17 @@ interface IncidentsPageProps {
 }
 
 export default async function IncidentsPage({ searchParams }: IncidentsPageProps) {
-  const { tab, cursor } = parseIncidentsSearchParams(await searchParams);
-  const result = await getIncidentsQueue({ tab, pageSize: 20, ...(cursor ? { cursor } : {}) });
+  const raw = await searchParams;
+  const legacyHref = legacyIncidentsTabRedirect(raw);
+  if (legacyHref) redirect(legacyHref);
 
-  return <IncidentsInbox result={result} tab={tab} {...(cursor ? { currentCursor: cursor } : {})} />;
+  const { tab, cursor } = parseIncidentsSearchParams(raw);
+  const [result, counts] = await Promise.all([
+    getIncidentsQueue({ tab, pageSize: 20, ...(cursor ? { cursor } : {}) }),
+    getIncidentTabCounts(),
+  ]);
+
+  return (
+    <IncidentsInbox result={result} tab={tab} counts={counts} {...(cursor ? { currentCursor: cursor } : {})} />
+  );
 }

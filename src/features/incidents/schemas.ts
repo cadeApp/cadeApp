@@ -30,14 +30,15 @@ export type ResolveIncidentInput = z.infer<typeof resolveIncidentSchema>;
 export const resolveIncidentFormSchema = resolveIncidentSchema.pick({ reason: true });
 export type ResolveIncidentFormInput = z.infer<typeof resolveIncidentFormSchema>;
 
-/** Pestañas de la bandeja A05: abiertos (`open`, `reviewing`) y cerrados (`resolved`, `dismissed`). */
-export const INCIDENT_INBOX_TABS = ['open', 'closed'] as const;
+/** Pestañas de la bandeja A05 (T-406): abiertos (`open`, `reviewing`), resueltos y desestimados, sin mezclar. */
+export const INCIDENT_INBOX_TABS = ['open', 'resolved', 'dismissed'] as const;
 export const incidentInboxTabSchema = z.enum(INCIDENT_INBOX_TABS);
 export type IncidentInboxTab = z.infer<typeof incidentInboxTabSchema>;
 
 export const INCIDENT_TAB_STATUSES = {
   open: ['open', 'reviewing'],
-  closed: ['resolved', 'dismissed'],
+  resolved: ['resolved'],
+  dismissed: ['dismissed'],
 } as const satisfies Record<IncidentInboxTab, readonly IncidentStatus[]>;
 
 const CURSOR_SEPARATOR = '_';
@@ -87,4 +88,12 @@ export function incidentsInboxHref(tab: IncidentInboxTab, cursor?: IncidentsCurs
   if (cursor) params.set('cursor', serializeIncidentsCursor(cursor));
   const query = params.toString();
   return query ? `/admin/incidents?${query}` : '/admin/incidents';
+}
+
+/**
+ * T-406: la pestaña vieja `closed` (resueltos y desestimados juntos) ya no existe; sus links guardados van a
+ * «Resueltos». El cursor se descarta porque pertenecía a otro filtro.
+ */
+export function legacyIncidentsTabRedirect(raw: { tab?: unknown; cursor?: unknown }): string | null {
+  return raw.tab === 'closed' ? incidentsInboxHref('resolved') : null;
 }

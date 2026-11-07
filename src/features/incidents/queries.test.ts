@@ -7,7 +7,7 @@ import {
   type FakePlatformSettings,
   type FakeSeedIncident,
 } from '@/domain/testing/rpc-fake';
-import { getIncidentDetail, getIncidentsQueue } from './queries';
+import { getIncidentDetail, getIncidentsQueue, getIncidentTabCounts, getOpenIncidentsCount } from './queries';
 import { incidentsInboxHref, parseIncidentsSearchParams } from './schemas';
 
 vi.mock('@/server/supabase/server', () => ({
@@ -112,11 +112,11 @@ describe('PR113-H06: getIncidentsQueue consume admin_list_incidents (CC-012)', (
     });
   });
 
-  it('la pestaña cerrados pide resolved y dismissed; el tamaño se acota a 50', async () => {
+  it('T-406: la pestaña resueltos pide solo resolved; el tamaño se acota a 50', async () => {
     const { rpc } = mockClient({});
-    await getIncidentsQueue({ tab: 'closed', pageSize: 500 });
+    await getIncidentsQueue({ tab: 'resolved', pageSize: 500 });
     expect(rpc).toHaveBeenCalledWith('admin_list_incidents', {
-      p_statuses: ['resolved', 'dismissed'],
+      p_statuses: ['resolved'],
       p_cursor_created_at: null,
       p_cursor_id: null,
       p_limit: 50,
@@ -407,5 +407,72 @@ describe('T-124 DoD: getIncidentDetail — mediación sin datos del destinatario
   it('propaga el error de base', async () => {
     mockClient({ incidents: { data: null, error: { message: 'boom' } } });
     await expect(getIncidentDetail(DETAIL_ROW.id)).rejects.toThrow();
+  });
+});
+
+describe('T-406: contadores de las pestañas y de la navegación', () => {
+  /** Cliente de conteo: cada `.in('status', …)` registra sus estados y responde el conteo de esos estados. */
+  function mockCountClient(byStatus: Record<string, number>, error: unknown = null) {
+    const selects: unknown[][] = [];
+    const statusFilters: unknown[] = [];
+    const from = vi.fn((table: string) => {
+      let statuses: readonly string[] = [];
+      const builder = {
+        select: (...args: unknown[]) => {
+          selects.push([table, ...args]);
+          return builder;
+        },
+        in: (column: string, values: readonly string[]) => {
+          statusFilters.push([column, values]);
+          statuses = values;
+          return builder;
+        },
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({
+            data: null,
+            error,
+            count: error ? null : statuses.reduce((sum, status) => sum + (byStatus[status] ?? 0), 0),
+          }).then(resolve),
+      };
+      return builder;
+    });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ from } as unknown as ServerClient);
+    return { from, selects, statusFilters };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('cuenta cada pestaña con la misma condición que su filtro, sin traer filas', async () => {
+    const { selects, statusFilters } = mockCountClient({ open: 2, reviewing: 1, resolved: 4, dismissed: 5 });
+
+    await expect(getIncidentTabCounts()).resolves.toEqual({ open: 3, resolved: 4, dismissed: 5 });
+    expect(selects).toEqual([
+      ['incidents', 'id', { count: 'exact', head: true }],
+      ['incidents', 'id', { count: 'exact', head: true }],
+      ['incidents', 'id', { count: 'exact', head: true }],
+    ]);
+    expect(statusFilters).toEqual([
+      ['status', ['open', 'reviewing']],
+      ['status', ['resolved']],
+      ['status', ['dismissed']],
+    ]);
+  });
+
+  it('un error de lectura de las pestañas no se disfraza de cero', async () => {
+    mockCountClient({}, { message: 'boom' });
+    await expect(getIncidentTabCounts()).rejects.toThrow('INCIDENTS_COUNT_READ_FAILED');
+  });
+
+  it('la navegación cuenta solo los abiertos (open y reviewing)', async () => {
+    const { statusFilters } = mockCountClient({ open: 2, reviewing: 1, resolved: 9, dismissed: 9 });
+    await expect(getOpenIncidentsCount()).resolves.toBe(3);
+    expect(statusFilters).toEqual([['status', ['open', 'reviewing']]]);
+  });
+
+  it('si la lectura de la navegación falla devuelve null y no lanza', async () => {
+    mockCountClient({}, { message: 'aal2 required' });
+    await expect(getOpenIncidentsCount()).resolves.toBeNull();
   });
 });
