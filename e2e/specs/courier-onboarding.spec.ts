@@ -1084,6 +1084,17 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         })
         .eq('profile_id', courier.id);
 
+      // T-428 (CC-042): la licencia es del vehículo; el perfil solo muestra la del vehículo activo del seed (la moto).
+      const { data: seededVehicle, error: seededVehicleError } = await dbAdmin
+        .from('couriers')
+        .select('active_vehicle_id')
+        .eq('profile_id', courier.id)
+        .single();
+      const activeVehicleId = seededVehicle?.active_vehicle_id;
+      if (seededVehicleError || !activeVehicleId) {
+        throw new Error('[E2E Error] El seed tiene que dejar un vehículo activo para asociarle la licencia (CC-042)');
+      }
+
       // Subir documentos base con license en 'submitted' (PR358-R03: rechazo real mediante admin_verify_document)
       const dummyPng = Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -1129,6 +1140,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
             status: 'submitted',
             is_current: true,
             rejection_code: null,
+            vehicle_id: activeVehicleId,
           },
         ])
         .select('id, kind');
