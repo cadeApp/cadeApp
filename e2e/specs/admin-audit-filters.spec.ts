@@ -105,7 +105,8 @@ test.describe('T-407 — Auditoría A06: rango de fechas y entidad', () => {
     // 2. Por targetId: solo las dos filas del primer repartidor, no la del segundo.
     await page.goto(`/admin/audit?target=${courier.id}`);
     await waitForNoSkeletons(page);
-    await expect(page.getByText('Mostrando los eventos de una sola entidad.')).toBeVisible();
+    // T-429 (D01 = B): solo lo visible; React puede dejar un segmento de streaming oculto con el mismo texto.
+    await expect(page.getByText('Mostrando los eventos de una sola entidad.').filter({ visible: true })).toBeVisible();
     const bodyRows = admin.auditLogTable.locator('tbody tr');
     await expect(bodyRows).toHaveCount(2);
     await expect(ownRows.filter({ hasText: 'Suspendió un repartidor' })).toHaveCount(1);
@@ -130,7 +131,8 @@ test.describe('T-407 — Auditoría A06: rango de fechas y entidad', () => {
     await admin.filterAuditByDates(yesterday, yesterday);
     await page.waitForURL((url) => url.searchParams.get('to') === yesterday);
     await waitForNoSkeletons(page);
-    await expect(page.getByText('No hay registros para mostrar')).toBeVisible();
+    // T-429 (D01 = B): solo lo visible; React puede dejar un segmento de streaming oculto con el mismo texto.
+    await expect(page.getByText('No hay registros para mostrar').filter({ visible: true })).toBeVisible();
     await expect(ownRows).toHaveCount(0);
   });
 });
