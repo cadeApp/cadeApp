@@ -16,3 +16,11 @@ No corresponde exigir cambios de React/Next, mover aserciones negativas de priva
 
 ## Acción propuesta al agente
 Agregar pruebas de B-only, presupuesto total y llamada efectiva a `waitForFunction`; asegurar mutaciones independientes RED→GREEN. Ningún cambio a `AGENTS.md` en esta ronda.
+
+## Ronda 2 — comprobación de arreglos
+
+- H01 se cerró con un predicado autocontenido que verifica `B:` aislado y combinaciones. Mutaciones M01 (aceptar B) y M02 (bloquear huérfanos) dan RED en el control independiente. Refuerza AG-37.
+- H02 se cerró al repartir el timeout acumulado por deadline. Mutación M03 (restaurar timeout completo) y M06 (filtrar skeletons ocultos) producen defecto detectado. Refuerza P05.
+- H03 ganó tests de integración sobre la condición serializada. Mutaciones independientes M04 (quitar espera) y M05 (quitar diagnóstico) son detectadas. Refuerza P08/AG-68.
+- El primer `pnpm test` del autor tuvo dos fallos no identificados; el segundo y el CI oficial de `00279772` terminaron 3755/3755. No se atribuye causa sin nombres ni reproducciones; mejorar captura de nombres al siguiente fallo, fuera del alcance de este PR.
+- **Sin lecciones AG nuevas ni decisiones nuevas.** No modificar `AGENTS.md`.

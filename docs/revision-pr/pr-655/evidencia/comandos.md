@@ -92,3 +92,115 @@ El harness ejecuta invariantes con stubs: no atribuirle resultados E2E de Chromi
 
 ## Tras arreglar (otro SHA)
 Verificar RED→GREEN de cada control sin cambiar expectativas ni falsificar mocks: `pnpm exec vitest run tools/e2e-streaming.test.ts`; `pnpm typecheck && pnpm lint && pnpm test`; push a la rama y revisar CI + E2E del nuevo código. Mantener un test que falle si se borra `waitForFunction`, y un test con `B:1` sin `S:1`.
+
+## Ronda 2 — 2026-11-07 — SHA 002797727bbb564b9c99f35050dfbfecab4fb108
+
+**Resultado: SIN BLOQUEANTES NUEVOS. H01–H03 cerrados/verificados en el SHA revisado.** Esta sección añade evidencia; no reemplaza la ronda 1.
+
+### Script independiente completo
+El siguiente script exacto lee las dos funciones de los archivos del checkout y las evalúa en Node con `Document`/`Page` controlados. Las mutaciones se aplican exclusivamente a cadenas en memoria; no modifica el checkout. Si cambia un patrón, `assert.notEqual` frena con `SIN OBJETIVO`. Se copió a `/tmp/pr655-r2-check-copy.cjs` y se ejecutó en Node 22 contra un árbol temporal con **extractos idénticos** de esas dos funciones leídos del SHA. Las mismas funciones completas también se evaluaron directamente desde GitHub en V8. No equivale a Playwright ni a ejecutar la suite del autor.
+
+Para ejecutarlo en checkout limpio de 002797727bbb564b9c99f35050dfbfecab4fb108:
+```bash
+cat > /tmp/pr655-r2-check.cjs <<'NODE'
+const fs=require('node:fs');
+const path=require('node:path');
+const assert=require('node:assert/strict');
+const root=process.argv[2] || process.cwd();
+const S=fs.readFileSync(path.join(root,'e2e/helpers/streaming.ts'),'utf8');
+const H=fs.readFileSync(path.join(root,'e2e/helpers/skeletons.ts'),'utf8');
+const rawSet=S.match(/export function isStreamingSettled\(doc: Document\): boolean \{[\s\S]*?\n\}/)?.[0];
+const rawWait=H.match(/export async function waitForNoSkeletons\([\s\S]*?\n\}\n/)?.[0];
+assert(rawSet && rawWait,'SIN OBJETIVO: no se encontraron las funciones del SHA revisado');
+function setFn(raw){return new Function(raw.replace('export function isStreamingSettled(doc: Document): boolean','function isStreamingSettled(doc)')+';return isStreamingSettled;')()}
+let clock=0;
+function waitFn(raw,settled,report){
+ const body=raw.replace(/export async function waitForNoSkeletons\([\s\S]*?\): Promise<void> \{\n/,'async function waitForNoSkeletons(page, options={}) {\n');
+ return new Function('performance','STREAMING_SETTLED','reportOrphanedSegments',body+';return waitForNoSkeletons')({now:()=>clock},`(${settled.toString()})(document)`,report);
+}
+function doc(boundaries=[],segments=[]){
+ let b=new Set(boundaries),s=[...segments];return {
+  querySelector(selector){assert.equal(selector,'template[id^="B:"]');return b.size?{id:[...b][0]}:null},
+  querySelectorAll(selector){assert.equal(selector,'div[hidden][id^="S:"]');return s.map(id=>({id}))},
+  getElementById(id){return b.has(id)?{id}:null},
+  clear(){b.clear();s=[]}
+ }
+}
+const cases=[['vacío',[],[],true],['B aislado',['B:1'],[],false],['B+S',['B:1'],['S:1'],false],['S huérfano',[],['S:1'],true],['mixto',['B:2'],['S:1','S:2'],false]];
+const settled=setFn(rawSet);
+for(const [name,bs,ss,expect] of cases)assert.equal(settled(doc(bs,ss)),expect,'control '+name);
+console.log('GREEN control isStreamingSettled 5/5');
+for(const [label,mut] of [
+ ['M01 B ignorado',rawSet.replace('if (doc.querySelector(\'template[id^="B:"]\')) return false;','if (doc.querySelector(\'template[id^="B:"]\')) return true;')],
+ ['M02 huérfano bloqueado',rawSet.replace('return pending === 0;','return pending === 0 && doc.querySelectorAll(\'div[hidden][id^="S:"]\').length === 0;')]
+]){
+ assert.notEqual(mut,rawSet,'SIN OBJETIVO '+label);
+ const f=setFn(mut);const broken=cases.filter(([_name,bs,ss,expected])=>f(doc(bs,ss))!==expected).map(x=>x[0]);
+ assert(broken.length>0,'MUTANTE SOBREVIVIÓ '+label);console.log('RED',label,broken.join(', '));
+}
+function mkPage(streamDoc,{skeletonMs=0,streamMs=0}={}){
+ const calls={filtered:null,remaining:null,called:false,report:0};
+ const page={
+  locator(){return {filter({visible}){calls.filtered=visible;return this},first(){return this},async waitFor({timeout,state}){assert.equal(state,'detached');assert.equal(timeout,15000);clock+=skeletonMs}}},
+  async waitForFunction(expression,_arg,{timeout}){
+   calls.called=true;calls.remaining=timeout;
+   const predicate=new Function('document',`return (${expression});`);
+   if(predicate(streamDoc))return;
+   clock+=streamMs;
+   if(streamMs>timeout)throw new Error('timeout '+timeout+'ms');
+   streamDoc.clear();assert(predicate(streamDoc),'condición falsa con DOM terminado');
+  }
+ };return {page,calls};
+}
+(async()=>{
+ clock=0;let doc1=doc(['B:1'],['S:1']);const c=mkPage(doc1,{skeletonMs:14000,streamMs:2000});
+ await assert.rejects(waitFn(rawWait,settled,async()=>{})(c.page,{timeout:15000}),/timeout 1000ms/);
+ assert.equal(c.calls.filtered,true);assert.equal(c.calls.remaining,1000);assert.equal(c.calls.called,true);
+ console.log('GREEN deadline compartido: 14000 + 2000 > 15000, restante 1000');
+ const mutations=[
+  ['M03 reiniciar timeout',rawWait.replace('Math.floor(deadline - performance.now())','timeout'),'remaining',15000],
+  ['M04 omitir waitForFunction',rawWait.replace('await page.waitForFunction(STREAMING_SETTLED, undefined, { timeout: remaining });','void STREAMING_SETTLED;'),'called',false],
+  ['M05 omitir diagnóstico',rawWait.replace('await reportOrphanedSegments(page);','void page;'),'report',0],
+  ['M06 filtrar ocultos',rawWait.replace('.filter({ visible: true })','.filter({ visible: false })'),'filtered',false],
+ ];
+ for(const [label,mut,key,expected] of mutations){
+  assert.notEqual(mut,rawWait,'SIN OBJETIVO '+label);
+  clock=0;let reports=0;const z=mkPage(doc(['B:1'],['S:1']),{skeletonMs:14000,streamMs:2000});
+  try{await waitFn(mut,settled,async()=>{reports++})(z.page,{timeout:15000})}catch(_){}
+  z.calls.report=reports;
+  assert.equal(z.calls[key],expected,'MUTANTE NO REPRODUJO DEFECTO '+label);
+  console.log('RED',label,key,'=',JSON.stringify(expected));
+ }
+ console.log('MUTACIONES 6/6 detectadas (2 de estado y 4 del helper)');
+})().catch(e=>{console.error(e);process.exitCode=1});
+NODE
+node /tmp/pr655-r2-check.cjs "$PWD"
+```
+
+Salida de la ejecución independiente:
+```text
+GREEN control isStreamingSettled 5/5
+RED M01 B ignorado B aislado, B+S, mixto
+RED M02 huérfano bloqueado S huérfano
+GREEN deadline compartido: 14000 + 2000 > 15000, restante 1000
+RED M03 reiniciar timeout remaining = 15000
+RED M04 omitir waitForFunction called = false
+RED M05 omitir diagnóstico report = 0
+RED M06 filtrar ocultos filtered = false
+MUTACIONES 6/6 detectadas (2 de estado y 4 del helper)
+```
+
+Nota de validez: las líneas RED M01–M06 indican que el **control independiente** descubre el comportamiento roto por la mutación. No son líneas del runner de Vitest ni se atribuyen al autor.
+
+### Evidencia del autor no reproducida exactamente
+La bitácora del autor informa `5 failed | 15 passed (20)` sobre el helper anterior y `3 failed | 17 passed (20)` al quitar `waitForFunction`, con `20 passed` restaurado. No se pudo volver a ejecutar ese mismo RED de Vitest por no disponer de clon ni dependencias; **no se marca como evidencia propia**. En CI del SHA final sí se observaron los 20 unitarios verdes. Independientemente se ejecutaron los mutantes M01–M06 anteriores.
+
+### CI/E2E del SHA exacto
+- [CI run 42414714756](https://github.com/cadeApp/cadeApp/actions/runs/42414714756): head_sha `002797727bbb564b9c99f35050dfbfecab4fb108`, status success; unit 199 archivos, 3755 tests, incluido `tools/e2e-streaming.test.ts` con 20 tests. Typecheck y lint exitosos.
+- En db-tests: línea final `Files=43, Tests=3582`, `Result: PASS`; los `Result: FAIL` intermedios son tests de mutación del arnés, no el resultado final. `git diff --exit-code -- src/types/database.types.ts` se ejecutó y el job terminó success.
+- [Gate 42415349609](https://github.com/cadeApp/cadeApp/actions/runs/42415349609): checkout explícito `002797727bbb564b9c99f35050dfbfecab4fb108`, 123 passed Chromium, 7 passed global-settings, 0 flaky/failed, 9 advertencias `[T-429 streaming]`. Los datos del usuario coinciden con el log oficial.
+- Bundle-budget CI se muestra verde pero revela presupuestos preexistentes excedidos en rutas admin/courier; esta PR no modifica bundles de UI y no se crea nuevo hallazgo de T-429.
+- GitHub indica `mergeable=true`; develop sigue en `15dbf93f21662082bd45ca299d271e855049482a`. Sin `git merge-tree` local por DNS.
+
+### Script analizar.mjs
+Se copió el contenido leído de `docs/revision-pr/analizar.mjs` a un entorno temporal mínimo y se ejecutó **en alcance `pr-655` únicamente** con una proyección fiel de sus tres estados de cierre: `3 hallazgos en 1 PR(s)`, `corregidos y VERIFICADOS: 3`, `SIN verificar: 0`, `decisiones PENDIENTES: 0`. La ejecución global con todas las demás carpetas del repo no se pudo realizar sin el clon: **no se presenta como una verificación global**.
