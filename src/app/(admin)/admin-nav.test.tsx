@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { AdminNav, ADMIN_NAV_TABS } from './admin-nav';
+import { AdminNav, ADMIN_NAV_TABS, fetchOpenIncidentsCount, openIncidentsQueryOptions } from './admin-nav';
 import { logoutAction } from '@/features/auth';
 
 const push = vi.fn();
@@ -163,5 +163,88 @@ describe('T-402: shell del admin (barra lateral y menú angosto)', () => {
     const hrefs = ADMIN_NAV_TABS.map((tab) => tab.href);
     expect(sections.length).toBeGreaterThan(5);
     expect(sections.filter((name) => !hrefs.includes(`/admin/${name}` as (typeof hrefs)[number]))).toEqual([]);
+  });
+});
+
+describe('T-406: contador de incidentes abiertos en la navegación', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    pathname = '/admin/merchants';
+    // Sin dato inicial, la navegación lee la ruta en vivo al montar; con dato, espera un minuto.
+    fetchMock.mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('D01 = C: sin dato inicial lee /api/live/open-incidents y muestra el número', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ count: 2 }), { status: 200 }));
+    render(<AdminNav operatorName="Lautaro" initialOpenIncidents={null} />);
+    const badge = await within(screen.getByRole('complementary')).findByRole('img', { name: '2 incidentes abiertos' });
+    expect(badge.textContent).toBe('2');
+    expect(fetchMock).toHaveBeenCalledWith('/api/live/open-incidents', { cache: 'no-store' });
+  });
+
+  it('D01 = C: con dato inicial no vuelve a leer al montar y se relee cada minuto solo con la pestaña visible', () => {
+    render(<AdminNav operatorName="Lautaro" initialOpenIncidents={3} />);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(openIncidentsQueryOptions(3)).toMatchObject({
+      refetchInterval: 60_000,
+      staleTime: 60_000,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: 'always',
+      initialData: 3,
+    });
+    expect(openIncidentsQueryOptions(null)).not.toHaveProperty('initialData');
+  });
+
+  it('una respuesta fuera de contrato no se muestra', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ count: -1 }), { status: 200 }));
+    await expect(fetchOpenIncidentsCount()).rejects.toThrow();
+    fetchMock.mockResolvedValue(new Response('{}', { status: 403 }));
+    await expect(fetchOpenIncidentsCount()).rejects.toThrow('HTTP 403');
+  });
+
+  function sidebarNav() {
+    return within(
+      within(screen.getByRole('complementary')).getByRole('navigation', {
+        name: /navegación principal de administración/i,
+      })
+    );
+  }
+
+  it('con abiertos muestra el número junto a «Incidentes», sin cambiar el nombre del link', () => {
+    render(<AdminNav operatorName="Lautaro" initialOpenIncidents={3} />);
+    const link = sidebarNav().getByRole('link', { name: 'Incidentes' });
+    expect(link.getAttribute('href')).toBe('/admin/incidents');
+    expect(link.textContent).toBe('Incidentes');
+    const badge = sidebarNav().getByRole('img', { name: '3 incidentes abiertos' });
+    expect(badge.textContent).toBe('3');
+    expect(link.closest('li')?.contains(badge)).toBe(true);
+    expect(sidebarNav().getAllByRole('link').map((item) => item.textContent)).toEqual(
+      ADMIN_NAV_TABS.map((tab) => tab.label)
+    );
+    // El número solo aparece una vez por navegación y solo en «Incidentes».
+    expect(sidebarNav().getAllByTestId('admin-nav-incidents-count')).toHaveLength(1);
+  });
+
+  it('contraída, el número queda sobre el ícono y el texto accesible se conserva', () => {
+    render(<AdminNav operatorName="Lautaro" initialOpenIncidents={1} />);
+    fireEvent.click(within(screen.getByRole('complementary')).getByRole('button', { name: 'Contraer menú' }));
+    const badge = sidebarNav().getByRole('img', { name: '1 incidente abierto' });
+    expect(badge.className).toContain('top-1');
+  });
+
+  it.each([
+    ['sin dato (la lectura falló)', null],
+    ['con cero abiertos', 0],
+  ])('%s no muestra contador', (_name, initialOpenIncidents) => {
+    render(<AdminNav operatorName="Lautaro" initialOpenIncidents={initialOpenIncidents} />);
+    expect(screen.queryByTestId('admin-nav-incidents-count')).toBeNull();
+    expect(sidebarNav().getByRole('link', { name: 'Incidentes' }).textContent).toBe('Incidentes');
   });
 });

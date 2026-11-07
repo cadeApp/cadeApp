@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { INCIDENT_DECISIONS, INCIDENT_KINDS, incidentDecisionSchema, incidentKindSchema } from '@/domain';
 import {
+  INCIDENT_DECISIONS,
+  INCIDENT_KINDS,
+  INCIDENT_STATUSES,
+  incidentDecisionSchema,
+  incidentKindSchema,
+} from '@/domain';
+import {
+  INCIDENT_INBOX_TABS,
+  INCIDENT_TAB_STATUSES,
   incidentsInboxHref,
+  legacyIncidentsTabRedirect,
   parseIncidentsSearchParams,
   reportIncidentFormSchema,
   resolveIncidentFormSchema,
@@ -95,13 +104,13 @@ describe('PR113-H04/H06: parseIncidentsSearchParams valida pestaña y cursor com
     expect(parseIncidentsSearchParams({})).toEqual({ tab: 'open' });
   });
 
-  it('acepta la pestaña cerrados y un cursor { createdAt, id } con microsegundos', () => {
+  it('acepta la pestaña resueltos y un cursor { createdAt, id } con microsegundos', () => {
     expect(
-      parseIncidentsSearchParams({ tab: 'closed', cursor: serializeIncidentsCursor(cursor) })
-    ).toEqual({ tab: 'closed', cursor });
+      parseIncidentsSearchParams({ tab: 'resolved', cursor: serializeIncidentsCursor(cursor) })
+    ).toEqual({ tab: 'resolved', cursor });
   });
 
-  it.each(['resolved', 'OPEN', '', ['open', 'closed']])('una pestaña inválida (%s) vuelve a abiertos', (tab) => {
+  it.each(['closed', 'reviewing', 'OPEN', '', ['open', 'resolved']])('una pestaña inválida (%s) vuelve a abiertos', (tab) => {
     expect(parseIncidentsSearchParams({ tab })).toEqual({ tab: 'open' });
   });
 
@@ -114,11 +123,11 @@ describe('PR113-H04/H06: parseIncidentsSearchParams valida pestaña y cursor com
     ['inyección', "1' or '1'='1"],
     ['arreglo', [serializeIncidentsCursor(cursor)]],
   ])('descarta el cursor inválido (%s) sin afectar la pestaña', (_name, raw) => {
-    expect(parseIncidentsSearchParams({ tab: 'closed', cursor: raw })).toEqual({ tab: 'closed' });
+    expect(parseIncidentsSearchParams({ tab: 'dismissed', cursor: raw })).toEqual({ tab: 'dismissed' });
   });
 
   it('el link de la bandeja conserva pestaña y cursor completo', () => {
-    const href = incidentsInboxHref('closed', cursor);
+    const href = incidentsInboxHref('dismissed', cursor);
     const url = new URL(href, 'http://localhost');
     expect(url.pathname).toBe('/admin/incidents');
     expect(
@@ -126,7 +135,34 @@ describe('PR113-H04/H06: parseIncidentsSearchParams valida pestaña y cursor com
         tab: url.searchParams.get('tab'),
         cursor: url.searchParams.get('cursor'),
       })
-    ).toEqual({ tab: 'closed', cursor });
+    ).toEqual({ tab: 'dismissed', cursor });
     expect(incidentsInboxHref('open')).toBe('/admin/incidents');
+  });
+});
+
+describe('T-406: tres pestañas sin mezclar estados', () => {
+  it('cada estado de incidente cae en exactamente una pestaña', () => {
+    for (const status of INCIDENT_STATUSES) {
+      const tabs = INCIDENT_INBOX_TABS.filter((tab) =>
+        (INCIDENT_TAB_STATUSES[tab] as readonly string[]).includes(status)
+      );
+      expect({ status, tabs: tabs.length }).toEqual({ status, tabs: 1 });
+    }
+  });
+
+  it('abiertos agrupa open y reviewing; resueltos y desestimados quedan separados', () => {
+    expect(INCIDENT_TAB_STATUSES).toEqual({
+      open: ['open', 'reviewing'],
+      resolved: ['resolved'],
+      dismissed: ['dismissed'],
+    });
+  });
+
+  it('el link viejo ?tab=closed redirige a resueltos y descarta el cursor', () => {
+    expect(legacyIncidentsTabRedirect({ tab: 'closed', cursor: 'x' })).toBe('/admin/incidents?tab=resolved');
+  });
+
+  it.each([undefined, 'open', 'resolved', 'dismissed', ['closed']])('sin redirección para %s', (tab) => {
+    expect(legacyIncidentsTabRedirect({ tab })).toBeNull();
   });
 });

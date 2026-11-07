@@ -88,3 +88,7 @@ export type LiveErrorResponse = z.infer<typeof liveErrorResponseSchema>;
 // CC-041 (T-415): conteo agregado de repartidores conectados para el comercio (mismo contrato que la RPC).
 export const liveOnlineCouriersResponseSchema = getOnlineCouriersCountOutputSchema;
 export type LiveOnlineCouriersResponse = z.infer<typeof liveOnlineCouriersResponseSchema>;
+
+/** T-406 (D01 = C): incidentes abiertos (`open` + `reviewing`) para el contador de la navegación admin. */
+export const liveOpenIncidentsResponseSchema = z.object({ count: z.number().int().nonnegative() }).strict();
+export type LiveOpenIncidentsResponse = z.infer<typeof liveOpenIncidentsResponseSchema>;

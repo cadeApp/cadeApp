@@ -9,6 +9,7 @@ import { EmptyState } from '@/ui/empty-state';
 import { INCIDENTS_COPY } from '../copy';
 import { INCIDENT_INBOX_TABS, incidentsInboxHref, type IncidentInboxTab } from '../schemas';
 import type { IncidentsQueueResult } from '../types';
+import type { IncidentTabCounts } from '../queries';
 import { IncidentStatusBadge } from './incident-status-badge';
 
 const COPY = INCIDENTS_COPY.inbox;
@@ -18,6 +19,8 @@ const LINK_FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visibl
 export interface IncidentsInboxProps {
   readonly result: IncidentsQueueResult;
   readonly tab: IncidentInboxTab;
+  /** T-406: cantidad exacta de cada pestaña, con la misma condición que su filtro. */
+  readonly counts: IncidentTabCounts;
   /** Cursor de la página actual; si existe, se ofrece volver al inicio. */
   readonly currentCursor?: IncidentsCursor;
 }
@@ -25,7 +28,7 @@ export interface IncidentsInboxProps {
 /**
  * A05: bandeja de incidentes con pestañas por estado, paginada por el keyset compuesto de `admin_list_incidents`.
  */
-export function IncidentsInbox({ result, tab, currentCursor }: IncidentsInboxProps) {
+export function IncidentsInbox({ result, tab, counts, currentCursor }: IncidentsInboxProps) {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -49,7 +52,7 @@ export function IncidentsInbox({ result, tab, currentCursor }: IncidentsInboxPro
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
-              {COPY.tabs[option]}
+              {COPY.tabWithCount(COPY.tabs[option], counts[option])}
             </Link>
           );
         })}

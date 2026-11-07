@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { QueryClient, QueryClientContext, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -43,12 +44,52 @@ const FOCUS_ON_INK =
 
 const ITEM_CLASS = 'flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium';
 
+/** T-406 (D01 = C): el contador se relee cada minuto, solo con la pestaña visible, y al volver a ella. */
+export const OPEN_INCIDENTS_REFETCH_MS = 60_000;
+
+export const openIncidentsQueryKey = ['admin', 'open-incidents'] as const;
+
+/** Lectura por la ruta en vivo, validada con el contrato (cero lecturas de Supabase desde el cliente). */
+export async function fetchOpenIncidentsCount(): Promise<number> {
+  const response = await fetch('/api/live/open-incidents', { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const json: unknown = await response.json();
+  const { liveOpenIncidentsResponseSchema } = await import('@/lib/live-contracts');
+  return liveOpenIncidentsResponseSchema.parse(json).count;
+}
+
+export function openIncidentsQueryOptions(initial: number | null) {
+  return {
+    queryKey: openIncidentsQueryKey,
+    queryFn: fetchOpenIncidentsCount,
+    refetchInterval: OPEN_INCIDENTS_REFETCH_MS,
+    // El valor del layout vale un minuto: sin esto se volvería a leer apenas monta.
+    staleTime: OPEN_INCIDENTS_REFETCH_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: 'always' as const,
+    refetchOnReconnect: 'always' as const,
+    // Best-effort: si falla, se conserva el último número y se reintenta en el próximo minuto.
+    retry: false,
+    ...(initial !== null ? { initialData: initial, initialDataUpdatedAt: Date.now() } : {}),
+  };
+}
+
+function useOpenIncidentsCount(initial: number | null): number | null {
+  const contextClient = React.useContext(QueryClientContext);
+  const [fallbackClient] = React.useState(() => new QueryClient());
+  return useQuery(openIncidentsQueryOptions(initial), contextClient ?? fallbackClient).data ?? null;
+}
+
 /** T-427: preferencia de la barra contraída; la lee el layout (servidor) para que la recarga no parpadee. */
 export const ADMIN_SIDEBAR_COOKIE = 'admin_sidebar';
 
 export interface AdminNavProps {
   readonly operatorName: string;
   readonly initialCollapsed?: boolean;
+  /** T-406: incidentes abiertos al cargar el panel (`null` si no se pudo leer). */
+  readonly initialOpenIncidents?: number | null;
 }
 
 /**
@@ -56,11 +97,12 @@ export interface AdminNavProps {
  * abre la misma navegación en un Sheet. Ninguna sección queda inaccesible en ningún ancho.
  * T-425: en escritorio la barra se contrae a solo íconos (nombre en tooltip) y el logo queda en la moto.
  */
-export function AdminNav({ operatorName, initialCollapsed = false }: AdminNavProps) {
+export function AdminNav({ operatorName, initialCollapsed = false, initialOpenIncidents = null }: AdminNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(initialCollapsed);
+  const openIncidents = useOpenIncidentsCount(initialOpenIncidents);
 
   function toggleCollapsed() {
     const next = !collapsed;
@@ -104,8 +146,9 @@ export function AdminNav({ operatorName, initialCollapsed = false }: AdminNavPro
           {ADMIN_NAV_TABS.map((tab) => {
             const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
             const Icon = NAV_ICONS[tab.href];
+            const badge = tab.href === '/admin/incidents' && openIncidents ? openIncidents : null;
             return (
-              <li key={tab.href}>
+              <li key={tab.href} className="relative">
                 {withTooltip(
                   tab.label,
                   <Link
@@ -126,6 +169,20 @@ export function AdminNav({ operatorName, initialCollapsed = false }: AdminNavPro
                   </Link>,
                   iconOnly
                 )}
+                {badge ? (
+                  // T-406: fuera del link para que su nombre siga siendo la sección; se lee como «3 incidentes abiertos».
+                  <span
+                    role="img"
+                    aria-label={ADMIN_COPY.nav.openIncidents(badge)}
+                    data-testid="admin-nav-incidents-count"
+                    className={cn(
+                      'pointer-events-none absolute inline-flex min-w-6 items-center justify-center rounded-full bg-destructive px-1.5 text-sm font-semibold leading-6 text-destructive-foreground',
+                      iconOnly ? 'right-1 top-1' : 'right-3 top-1/2 -translate-y-1/2'
+                    )}
+                  >
+                    {badge}
+                  </span>
+                ) : null}
               </li>
             );
           })}
