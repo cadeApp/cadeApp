@@ -1,5 +1,5 @@
 import { test, type Page } from '@playwright/test';
-import { collectRevealState, inspectStreamingSegments, type StreamingDiagnostics } from './streaming';
+import { collectRevealState, inspectStreamingSegments, isStreamingSettled, type StreamingDiagnostics } from './streaming';
 
 export interface WaitForNoSkeletonsOptions {
   timeout?: number;
@@ -7,7 +7,7 @@ export interface WaitForNoSkeletonsOptions {
 }
 
 // Las funciones viajan al navegador como texto: no pueden usar imports ni closures (ver streaming.ts).
-const NO_PENDING_SEGMENTS = `(${inspectStreamingSegments.toString()})(document).pending.length === 0`;
+const STREAMING_SETTLED = `(${isStreamingSettled.toString()})(document)`;
 const STREAMING_DIAGNOSTICS = `({ ...(${inspectStreamingSegments.toString()})(document), ...(${collectRevealState.toString()})(window) })`;
 
 /**
@@ -18,8 +18,9 @@ const STREAMING_DIAGNOSTICS = `({ ...(${inspectStreamingSegments.toString()})(do
  * - Monitorea selectores oficiales de cadeApp: .animate-pulse, [aria-busy="true"], [data-slot="skeleton"].
  * - Si no hay skeletons presentes al momento de invocar, resuelve de inmediato sin demoras.
  *
- * T-429: después espera, con el mismo timeout, a que React revele los segmentos de streaming pendientes. Si queda un
- * segmento huérfano (su boundary ya no existe), lo informa con diagnóstico en la consola y en las anotaciones del test.
+ * T-429: después espera a que React termine el streaming (sin boundaries `B:` ni segmentos pendientes). El `timeout` es
+ * para toda la función (PR655-H02): el streaming solo usa lo que dejaron los skeletons. Si queda un segmento huérfano
+ * (su boundary ya no existe), lo informa con diagnóstico en la consola y en las anotaciones del test.
  */
 export async function waitForNoSkeletons(
   page: Page,
@@ -29,14 +30,17 @@ export async function waitForNoSkeletons(
   const selector =
     options.selector ?? '.animate-pulse, [aria-busy="true"], [data-slot="skeleton"]';
 
-  // waitForSelector con state: 'detached' espera hasta que el elemento no esté en el DOM.
-  // Si ya no existe, Playwright resuelve de inmediato sin esperar el timeout.
-  await page.waitForSelector(selector, { state: 'detached', timeout }).catch(async () => {
-    // Si sigue en el DOM pero con visibilidad oculta, valida state: 'hidden'
-    await page.waitForSelector(selector, { state: 'hidden', timeout });
-  });
+  const deadline = performance.now() + timeout;
 
-  await page.waitForFunction(NO_PENDING_SEGMENTS, undefined, { timeout });
+  // Ningún skeleton visible: resuelve de inmediato si no hay, o cuando todos se van o quedan ocultos.
+  await page.locator(selector).filter({ visible: true }).first().waitFor({ state: 'detached', timeout });
+
+  const remaining = Math.floor(deadline - performance.now());
+  if (remaining <= 0) {
+    // Nunca timeout 0: en Playwright eso desactiva el límite.
+    throw new Error(`waitForNoSkeletons: timeout de ${timeout}ms agotado por los skeletons, antes del streaming`);
+  }
+  await page.waitForFunction(STREAMING_SETTLED, undefined, { timeout: remaining });
   await reportOrphanedSegments(page);
 }
 

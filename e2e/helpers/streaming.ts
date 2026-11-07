@@ -49,3 +49,16 @@ export function collectRevealState(win: Window): RevealState {
     revealQueueLength: Array.isArray(queue) ? queue.length : null,
   };
 }
+
+/**
+ * PR655-H01: el streaming terminó cuando no queda ningún boundary `B:` (un `B:` aislado espera un segmento que todavía
+ * no llegó) ni segmentos pendientes. Un `S:` huérfano, sin su `B:`, no bloquea. Autocontenida, igual que las demás.
+ */
+export function isStreamingSettled(doc: Document): boolean {
+  if (doc.querySelector('template[id^="B:"]')) return false;
+  let pending = 0;
+  doc.querySelectorAll('div[hidden][id^="S:"]').forEach((segment) => {
+    if (doc.getElementById('B:' + segment.id.slice(2))) pending += 1;
+  });
+  return pending === 0;
+}
