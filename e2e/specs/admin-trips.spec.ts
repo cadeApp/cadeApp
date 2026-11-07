@@ -190,7 +190,8 @@ test.describe('T-410 — Admin: sección Viajes', () => {
     await page.getByRole('link', { name: 'Todos' }).click();
     await page.waitForURL(/filter=all/);
     await waitForNoSkeletons(page);
-    await expect(page.getByText(requestCode(completeId))).toBeVisible();
+    // T-429 (D01 = B): solo lo visible; React puede dejar un segmento de streaming oculto con el mismo texto.
+    await expect(page.getByText(requestCode(completeId)).filter({ visible: true })).toBeVisible();
 
     // Detalle del parcial.
     await page.goto(`/admin/trips/${partialId}`);
@@ -199,7 +200,8 @@ test.describe('T-410 — Admin: sección Viajes', () => {
     const failedDrop = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /Entrega 2/ }) });
     await expect(failedDrop.getByText('No entregada')).toBeVisible();
     await expect(failedDrop.getByText(`Motivo: ${FAILED_REASON}`)).toBeVisible();
-    await expect(page.getByText('Entrega 1 entregada')).toBeVisible();
+    // T-429 (D01 = B): solo lo visible; React puede dejar un segmento de streaming oculto con el mismo texto.
+    await expect(page.getByText('Entrega 1 entregada').filter({ visible: true })).toBeVisible();
     // Sin datos del destinatario.
     await expect(page.getByText('Cliente 1')).toHaveCount(0);
     await expect(page.getByText('Calle 2')).toHaveCount(0);
