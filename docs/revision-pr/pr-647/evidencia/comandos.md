@@ -153,3 +153,39 @@ git status --short
 ```
 
 **No ejecutado localmente en ronda 2** por ausencia de checkout/pnpm; tampoco se leyó `.env*` ni se corrieron servicios remotos. `e2e-preview` solo se considera completo GREEN cuando el gate trusted oficial de la integración corregida lo indique. No exigir un nuevo green por un commit que únicamente toque `docs/revision-pr/pr-647`.
+
+---
+
+## Ronda 3 — evidencia de aceptación final (2026-11-07)
+
+**SHA exacto revisado:** `2629198c017364b707f308257fb399886feed828`.
+
+### GitHub Actions verificado por el revisor
+
+- [CI 42347461806](https://github.com/cadeApp/cadeApp/actions/runs/42347461806): `head_sha = 2629198c`, todos los jobs `unit`, `db-tests`, `typecheck`, `build`, `lint`, `audit` y `bundle-budget` concluyeron `success`.
+- [E2E trusted 42348140310](https://github.com/cadeApp/cadeApp/actions/runs/42348140310), job 128330314643: workflow disparado desde develop `b0060d51`, **pero el checkout exacto fue `ref: 2629198c`**. Log: `Running 123 tests using 1 worker`, `✓ courier-onboarding.spec.ts:1056` (primer intento), `✓ incidents.spec.ts:372` (T-406), `122 passed (42.2m)`, `1 flaky` (`admin-audit-filters.spec.ts:69` falló primer intento y retry #1, pasó retry #2), luego `7 passed (3.5m)` global-settings. Job y workflow `success`. No afirmar `123 passed` de primer intento.
+- `approval-policy`: check-run SHA `2629198c` `success` tras cuerpo con informe de revisión actualizado.
+- Estructura commit: `2629198c` tiene padres `[1448833c (revisión R2), b0060d51 (develop con #654/T-428)]`. GitHub PR `mergeable: true`, `behind:0` comparando develop con SHA. No se ejecutó merge-tree local.
+- Comparación `b0060d51...2629198c`: 27 archivos dentro de la lista autorizada T-406 y los archivos de revisión. La fixture modificada por T-428 **no** forma parte del diff contra develop actual.
+
+### Confirmación del arreglo T-428
+
+En `e2e/specs/courier-onboarding.spec.ts:1090-1145` (contenidos GitHub), el test consulta `couriers.active_vehicle_id` del usuario de prueba, exige que exista y al insertar la fila `kind: 'license'` agrega `vehicle_id: activeVehicleId`. Antes no lo hacía. Verificación runtime externa: gate 42348140310 `✓ courier-onboarding.spec.ts:1056`, sin retry. La causa y el cambio se documentaron en PR #654, mergeada a develop.
+
+### No comprobado localmente
+
+No hay clon ni `pnpm` ejecutados por el revisor; se verificó el **resultado de los runners oficiales** y el código a través del conector GitHub. No se ejecutó Playwright, Supabase, Docker ni mutación local en esta sesión. No se modificaron archivos fuera de `docs/revision-pr/pr-647/` ni se realizó merge.
+
+### Reproducción futura si cambia el SHA de aplicación
+
+```bash
+git fetch origin
+git status --short
+git diff --stat origin/develop...HEAD
+git merge-tree --write-tree origin/develop HEAD
+pnpm typecheck && pnpm lint && pnpm test
+node docs/revision-pr/analizar.mjs verificacion
+git status --short
+```
+
+Para E2E, usar el gate trusted del nuevo SHA y conservar el seguimiento de #639/#655: el estado flaky no equivale a test estable. **Este commit documental posterior no invalida por sí solo el gate del SHA de implementación aceptado.**

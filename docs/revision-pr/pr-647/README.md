@@ -4,37 +4,35 @@
 |---|---|
 | **PR** | https://github.com/cadeApp/cadeApp/pull/647 |
 | **Tarea** | T-406 · issue #487 |
-| **Autor** | @Lautaro073 |
-| **Rama** | `feat/T-406-incidentes-pestanas` → `develop` |
-| **SHA de implementación revisado R2** | `4fce771d774ccf5837992e228d46f6de4322f6f1` |
-| **Base develop exacta** | `4ae5404ee14651d00ad0c9286f250ba6c5441c49` |
-| **Resultado** | SIN BLOQUEANTES propios del diff T-406; **MERGE BLOQUEADO** por gate E2E completo rojo (externo) |
+| **Autor / rama** | @Lautaro073 · `feat/T-406-incidentes-pestanas` → `develop` |
+| **SHA aceptado de aplicación** | `2629198c017364b707f308257fb399886feed828` |
+| **Base develop integrada** | `b0060d51773f65f3f446d9ea9a1be382e8a153f5` |
+| **Dictamen final de revisión** | **ACEPTADA: SIN BLOQUEANTES**, apta técnicamente para merge (a decisión de Lautaro073) |
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA de implementación evaluado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `abf3f63873f4c8a9a1288d604735c7689708b0de` | H01 bloqueante; D01=C decidida | [ronda 1](revisiones/ronda-1.md) |
-| 2 | `4fce771d774ccf5837992e228d46f6de4322f6f1` | H01 verificado por gate trusted; D01 implementada; H02 body de PR corregido | [ronda 2](revisiones/ronda-2.md) |
+| 1 | `abf3f63873f4c8a9a1288d604735c7689708b0de` | H01 bloqueante, D01=C aprobada | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `4fce771d774ccf5837992e228d46f6de4322f6f1` | H01 verificado, D01 implementada; E2E externo rojo | [ronda-2.md](revisiones/ronda-2.md) |
+| 3 (aceptación final) | `2629198c017364b707f308257fb399886feed828` | **SIN BLOQUEANTES**, CI+gate `success` | [ronda-3.md](revisiones/ronda-3.md) |
 
-## Estado por hallazgo
+## Hallazgos y decisiones
 
-| ID | Diagnóstico | Estado | Evidencia |
-|---|---|---|---|
-| PR647-H01 | Dos TOTP en el mismo E2E de incidentes | **arreglado-verificado**, R2 | Trusted gate [42303370007](https://github.com/cadeApp/cadeApp/actions/runs/42303370007) ejecutó checkout del SHA y T-406 pasó |
-| PR647-H02 | Faltaba sección de informe en body; `approval-policy` rojo | **arreglado-verificado**, R2 | Informe agregado al body; [42309455413](https://github.com/cadeApp/cadeApp/actions/runs/42309455413) `success` |
-| D01=C | Contador inicial del layout + polling 60 s visible/foco, sin Realtime | **implementado; inspección de código y unit CI** | Endpoint admin+AAL2 y hook TanStack Query; no se reprodujeron localmente timers |
+| ID | Resultado | Verificación |
+|---|---|---|
+| PR647-H01 | **arreglado-verificado** (R2, revalidado R3) | Un factor MFA; escenario T-406 E2E official PASS en `4fce771d` y `2629198c` |
+| PR647-H02 | **arreglado-verificado** (R2, revalidado R3) | Informe completo incorporado al body; `approval-policy` PASS en SHA final |
+| D01=C | **implementada y aceptada** | Conteo inicial del layout + endpoint admin+AAL2 + TanStack Query 60 s mientras visible/refetch foco, sin Realtime |
 
-Datos: [hallazgos.jsonl](hallazgos.jsonl) · [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).
+## Evidencia de aceptación en SHA exacto
 
-## Bloqueos restantes para el MERGE (no imputados al diff de T-406)
+- CI general: [42347461806](https://github.com/cadeApp/cadeApp/actions/runs/42347461806) — 7 jobs `success`, unit 198 archivos / 3735 pruebas (declaración local del autor corroborada por CI).
+- E2E trusted: [42348140310](https://github.com/cadeApp/cadeApp/actions/runs/42348140310) — `checkout ref: 2629198c...`, gate `success`, 122 tests `passed`, **1 flaky** ajeno a T-406, 0 `failed`; global-settings 7 `passed`.
+- T-428 hotfix: merge de develop `b0060d51` con corrección de fixture del vehículo activo; `courier-onboarding.spec.ts:1056` pasó **sin retry**. El E2E T-406 `incidents.spec.ts:372` pasó.
+- El flaky persistente de Auditoría (`admin-audit-filters.spec.ts:69`) **falló en primer intento y retry #1; pasó en retry #2**. Tiene seguimiento externo en [issue #639](https://github.com/cadeApp/cadeApp/issues/639) y [PR #655 / T-429](https://github.com/cadeApp/cadeApp/pull/655). No se afirma que esté solucionado ni se deshabilitó para aceptar T-406.
+- `approval-policy` y `e2e-preview` aparecen `success` asociados al SHA; GitHub informó `mergeable: true`, base actual incluida como padre. No se ejecutó `git merge-tree` localmente.
 
-1. **T-407 Auditoría:** `admin-audit-filters.spec.ts:69` encuentra dos textos idénticos y falla 3/3 por strict mode. Issue [#636](https://github.com/cadeApp/cadeApp/issues/636), **reabierto** tras este gate.
-2. **T-419/T-356 licencia:** `courier-onboarding.spec.ts:1056` no ve `Rechazado / requiere corrección`, falla 3/3. Fixture inserta `license` sin `vehicle_id` tras CC-042; causa probable no confirmada. Issue [#653](https://github.com/cadeApp/cadeApp/issues/653), nuevo.
-3. **Flaky conocido** de `admin-trips.spec.ts:167`, 1 caso recuperado en retry; seguir [#585](https://github.com/cadeApp/cadeApp/issues/585). No confundirlo con los dos rojos persistentes.
+**Decisión:** la revisión independiente acepta T-406 sin bloqueantes. El flaky QA sigue registrado con responsable de tarea independiente. El acto de pasar de Draft a Ready y **mergear** corresponde exclusivamente a Lautaro073; el revisor no lo hizo.
 
-**Decisión de revisión:** arreglar ambos E2E persistentes en PRs de QA independientes, mergearlos a `develop`, traer `develop` a #647 con merge normal (no rebase) y exigir un gate trusted **completo verde** sobre el nuevo código integrado. **No** suprimir tests, subir retries ni exceptuar el gate; la ficha T-406 mantiene el requisito E2E verde. No aprobar ni mergear desde la revisión.
-
-CI general de `4fce771d` [42302308824](https://github.com/cadeApp/cadeApp/actions/runs/42302308824): 7 jobs `success`, unit 198 files / 3735 tests. Gate E2E [42303370007](https://github.com/cadeApp/cadeApp/actions/runs/42303370007): 120 passed, 1 flaky, 2 failed; escenario T-406 y T-308 pasan. PR en Draft al revisar.
-
-El commit documental de esta ronda **moverá el head** y podría activar checks nuevos; no exigir otro green por solo esta documentación. La verificación de H01 apunta al SHA original de código `4fce771d`, no al commit del informe.
+Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl) · [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md). Esta ronda preserva intactos los informes de las rondas 1 y 2.

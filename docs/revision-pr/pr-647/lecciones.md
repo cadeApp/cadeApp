@@ -36,3 +36,13 @@ D01=C: preferir un contador mínimo independiente de la vida del layout, con Tan
 **Lección del gate externo:** cuando un E2E falla sin archivos de la tarea modificados, probar atribución por blob del archivo y contexto de migraciones, pero no dar por probada la causa raíz de un fixture solo por inferencia. En PR #647 dos E2E ajenos siguen rojos; se rastrean por #636 (reabierto) y #653 (nuevo), y solo un gate completo verde reabre la posibilidad del merge.
 
 **No se reserva numeración AG nueva.** Son observaciones de la ronda, no modificación de `AGENTS.md`. Los probes estáticos propios son solo análisis; las mutaciones/runtime del autor no se contaron como ejecutadas por el revisor.
+
+## Ronda 3 — aceptación final tras T-428 (2026-11-07)
+
+**Regresión externa resuelta:** el caso T-356 que fallaba por licencia sin vehículo activo ya pasó sin retries al actualizar la fixture en T-428 y mergearla en develop. No se debilitó la aserción ni se corrigió desde la PR #647; respeta la separación de tareas y la autoría del test.
+
+**Falso cierre evitado:** el gate Playwright puede terminar `success` con un flaky recuperado en retry; no hay que escribir «todos pasaron a la primera». El resultado preciso es 122 `passed`, 1 `flaky` (Auditoría T-407) y global-settings 7 `passed`. El issue #639 / PR #655 siguen a cargo de QA, sin atribuirle resolución a incidentes.
+
+**Criterio de aceptación:** evitar dos extremos: ni ocultar el flaky ni mantener bloqueada indefinidamente la PR ajena cuando el gate oficial está GREEN y el defecto está fuera de su diff, con issue/tarea responsable. La aceptación documenta expresamente ese riesgo y Lautaro073 conserva la decisión de merge.
+
+**No se introduce regla AG adicional** sin comprobar reincidencia y numeración. La mejora de testing de polling (ticks reales) queda sugerida, no bloqueante para T-406.
