@@ -6,10 +6,12 @@ import { AvailabilitySwitch } from './availability-switch';
 
 const mocks = vi.hoisted(() => ({
   setAvailabilityAction: vi.fn(),
+  courierHeartbeatAction: vi.fn(),
 }));
 
 vi.mock('../actions', () => ({
   setAvailabilityAction: mocks.setAvailabilityAction,
+  courierHeartbeatAction: mocks.courierHeartbeatAction,
 }));
 
 vi.mock('@/ui/notify', () => {
@@ -59,5 +61,29 @@ describe('PR87-R06: AvailabilitySwitch no depende de notify', () => {
       expect(onAvailabilityChange).toHaveBeenCalledWith(true);
       expect((toggle as HTMLButtonElement).disabled).toBe(false);
     });
+  });
+});
+
+describe('T-415: el interruptor manda la señal de presencia', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.courierHeartbeatAction.mockResolvedValue({ ok: true, data: { lastSeenAt: '2026-10-26T12:00:00.000000Z' } });
+  });
+  afterEach(cleanup);
+
+  it('disponible al entrar: manda la señal; no disponible: no', () => {
+    render(<AvailabilitySwitch initialAvailable />);
+    expect(mocks.courierHeartbeatAction).toHaveBeenCalledTimes(1);
+    cleanup();
+    vi.clearAllMocks();
+    render(<AvailabilitySwitch initialAvailable={false} />);
+    expect(mocks.courierHeartbeatAction).not.toHaveBeenCalled();
+  });
+
+  it('al prender «Disponible» manda la señal enseguida', async () => {
+    mocks.setAvailabilityAction.mockResolvedValue({ ok: true, data: { courierId: 'c1', available: true } });
+    render(<AvailabilitySwitch initialAvailable={false} />);
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(mocks.courierHeartbeatAction).toHaveBeenCalledTimes(1));
   });
 });

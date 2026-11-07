@@ -6,6 +6,9 @@ import {
   adminUpdateSettingInputSchema,
   adminUpsertPublicationPlanInputSchema,
   civilDateSchema,
+  isoTimestampSchema,
+  merchantSubscriptionStatusSchema,
+  type MerchantSubscriptionStatus,
 } from '@/domain';
 
 export const adminApplicantTabSchema = z
@@ -14,19 +17,53 @@ export const adminApplicantTabSchema = z
 
 export type AdminApplicantTab = z.infer<typeof adminApplicantTabSchema>;
 
-export const adminApplicantsCursorSchema = z.string().uuid().optional();
+/**
+ * T-420: cursor «fecha de alta~id» de las listas ordenadas por registro (de la más nueva a la más vieja). Se valida
+ * entero porque sus partes terminan en el filtro de PostgREST.
+ */
+export const adminRegisteredCursorSchema = z
+  .string()
+  .max(120)
+  .refine((raw) => {
+    const [createdAt, id, ...rest] = raw.split('~');
+    return rest.length === 0 && isoTimestampSchema.safeParse(createdAt).success && z.guid().safeParse(id).success;
+  });
 
-export const adminApplicantsSearchParamsSchema = z.object({
-  tab: adminApplicantTabSchema,
-  cursor: adminApplicantsCursorSchema.catch(undefined),
-});
+export const adminApplicantsCursorSchema = adminRegisteredCursorSchema.optional();
+
+/** T-403: término «Buscar por nombre» (`?q=`): recortado, hasta 80 caracteres; vacío o inválido = sin búsqueda. */
+export const adminApplicantsQuerySchema = z
+  .string()
+  .trim()
+  .max(80)
+  .transform((value) => value || undefined)
+  .optional();
+
+export const adminApplicantsSearchParamsSchema = z
+  .object({
+    tab: adminApplicantTabSchema,
+    cursor: adminApplicantsCursorSchema.catch(undefined),
+    // T-403: «prev» vuelve a la página anterior desde el primer ítem; sin cursor no hay a dónde volver.
+    dir: z.enum(['next', 'prev']).catch('next').optional(),
+    q: adminApplicantsQuerySchema.catch(undefined),
+  })
+  .transform(({ tab, cursor, dir, q }) => ({
+    tab,
+    cursor,
+    direction: cursor && dir === 'prev' ? ('prev' as const) : ('next' as const),
+    query: q,
+  }));
 
 export function parseAdminApplicantsSearchParams(raw: {
   tab?: unknown;
   cursor?: unknown;
+  dir?: unknown;
+  q?: unknown;
 }): {
   tab: AdminApplicantTab;
   cursor?: string;
+  direction: 'next' | 'prev';
+  query?: string;
 } {
   return adminApplicantsSearchParamsSchema.parse(raw);
 }
@@ -37,30 +74,30 @@ export const adminMfaSchema = z.object({
 });
 
 export const viewCourierDocumentSchema = z.object({
-  documentId: z.string().uuid(),
-  courierId: z.string().uuid(),
+  documentId: z.string().guid(),
+  courierId: z.string().guid(),
 });
 
 export const decideCourierSchema = z.object({
-  courierId: z.string().uuid(),
+  courierId: z.string().guid(),
   decision: z.enum(['approved', 'rejected']),
   reason: z.string().trim().min(1).max(500),
 });
 
 export const suspendCourierSchema = z.object({
-  courierId: z.string().uuid(),
+  courierId: z.string().guid(),
   reason: z.string().trim().min(1).max(500),
 });
 
 // CC-034: reactivar un suspendido o reconsiderar un rechazado.
 export const reinstateCourierSchema = z.object({
-  courierId: z.string().uuid(),
+  courierId: z.string().guid(),
   reason: z.string().trim().min(1).max(500),
 });
 
 export const verifyCourierDocumentSchema = z
   .object({
-    documentId: z.string().uuid(),
+    documentId: z.string().guid(),
     verified: z.boolean(),
     rejectionReason: z.string().trim().max(500).nullable().optional(),
   })
@@ -82,7 +119,37 @@ export const decisionFormSchema = z.object({
   reason: z.string().trim().min(1, 'El motivo de la decisión es obligatorio.').max(500),
 });
 
-export const adminApplicantIdSchema = z.string().uuid();
+// T-404 (A02-rechazar): el motivo del rechazo sale de una lista; con «Otro», el mensaje es obligatorio.
+export const APPLICANT_REJECTION_OPTIONS = [
+  'Foto ilegible',
+  'Datos no coinciden',
+  'Documento vencido',
+  'Otro',
+] as const;
+
+const REJECTION_MESSAGE_MAX = 450;
+
+export const rejectApplicantFormSchema = z
+  .object({
+    option: z.enum(APPLICANT_REJECTION_OPTIONS, { message: 'Elegí un motivo.' }),
+    message: z.string().trim().max(REJECTION_MESSAGE_MAX),
+  })
+  .refine((data) => data.option !== 'Otro' || data.message.length > 0, {
+    path: ['message'],
+    message: 'Con «Otro», escribí el mensaje para el postulante.',
+  });
+
+export const rejectCourierSchema = z
+  .object({ courierId: z.string().guid() })
+  .and(rejectApplicantFormSchema);
+
+/** Motivo que llega a la RPC: «<opción>: <mensaje>», o solo la opción si no hay mensaje. */
+export function composeRejectionReason(option: string, message: string): string {
+  const trimmed = message.trim();
+  return trimmed ? `${option}: ${trimmed}` : option;
+}
+
+export const adminApplicantIdSchema = z.string().guid();
 
 // T-123: las mutaciones de A03/A04 reutilizan exactamente los schemas de entrada de las RPC.
 export const setMerchantSubscriptionSchema = adminSetSubscriptionInputSchema;
@@ -91,9 +158,15 @@ export const updatePlatformSettingSchema = adminUpdateSettingInputSchema;
 export const AUDIT_TARGET_TYPES = [
   'courier',
   'courier_document',
+  'courier_vehicle',
   'merchant',
   'platform_setting',
   'delivery_request',
+  'announcement',
+  'incident',
+  'publication_plan',
+  'push_subscription',
+  'courier_document_orphan_claim',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
@@ -102,9 +175,59 @@ export interface AdminAuditFilters {
   readonly actorId?: string;
   readonly action?: string;
   readonly targetType?: AuditTargetType;
+  /** PR607-D02: eventos de un repartidor y de sus documentos (`?courier=<uuid>`). */
+  readonly courierId?: string;
+  /** T-407: `prev` lee las filas más nuevas que `cursor` («Anterior»); sin valor, las más viejas. */
+  readonly direction?: 'prev';
+  /** T-407: eventos de una entidad concreta (`?target=<uuid>`), p. ej. desde «Ver todo en Auditoría». */
+  readonly targetId?: string;
+  /** T-407: fechas civiles de Argentina (`YYYY-MM-DD`), ambas inclusive. */
+  readonly from?: string;
+  readonly to?: string;
+  /** T-407: la URL traía un rango que no se pudo usar; se descartó entero para no filtrar a medias. */
+  readonly invalidDateRange?: true;
 }
 
-const uuidParamSchema = z.string().uuid();
+/** T-407: máximo de días del rango, contando Desde y Hasta. */
+export const AUDIT_MAX_RANGE_DAYS = 366;
+const DAY_MS = 86_400_000;
+
+/**
+ * T-407: inicio del día civil de Argentina en UTC.
+ * shortcut: Argentina usa UTC-3 fijo (sin horario de verano desde 2009), igual que `src/lib/format`; si vuelve el
+ * horario de verano, calcular el desplazamiento con Intl para cada fecha.
+ */
+function argentinaDayStart(civilDate: string): Date {
+  return new Date(`${civilDate}T00:00:00-03:00`);
+}
+
+/**
+ * T-407: el rango de A06 como intervalo semiabierto `[gte, lt)` en UTC. `lt` es el inicio del día siguiente a Hasta:
+ * nunca `lte` a las 23:59:59, que perdería las filas del último segundo.
+ */
+export function auditDateRangeBounds(filters: Pick<AdminAuditFilters, 'from' | 'to'>): {
+  gte?: string;
+  lt?: string;
+} {
+  return {
+    ...(filters.from ? { gte: argentinaDayStart(filters.from).toISOString() } : {}),
+    ...(filters.to ? { lt: new Date(argentinaDayStart(filters.to).getTime() + DAY_MS).toISOString() } : {}),
+  };
+}
+
+/** T-407: Desde y Hasta juntos; un campo vacío del formulario es «sin borde», no un error. */
+function parseAuditDateRange(rawFrom: unknown, rawTo: unknown): Pick<AdminAuditFilters, 'from' | 'to' | 'invalidDateRange'> {
+  const isBlank = (raw: unknown) => raw === undefined || raw === '';
+  const from = isBlank(rawFrom) ? undefined : parseParam(civilDateSchema, rawFrom);
+  const to = isBlank(rawTo) ? undefined : parseParam(civilDateSchema, rawTo);
+  const invalidDate = (!isBlank(rawFrom) && from === undefined) || (!isBlank(rawTo) && to === undefined);
+  const days =
+    from && to ? Math.round((argentinaDayStart(to).getTime() - argentinaDayStart(from).getTime()) / DAY_MS) + 1 : 1;
+  if (invalidDate || days < 1 || days > AUDIT_MAX_RANGE_DAYS) return { invalidDateRange: true };
+  return { ...(from ? { from } : {}), ...(to ? { to } : {}) };
+}
+
+const uuidParamSchema = z.string().guid();
 const auditCursorParamSchema = z
   .string()
   .regex(/^[1-9]\d{0,15}$/)
@@ -116,16 +239,19 @@ const auditEntityParamSchema = z.enum(AUDIT_TARGET_TYPES);
 /**
  * Parsea un parámetro de URL con su schema; un valor inválido se descarta sin afectar al resto.
  */
-function parseParam<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, raw: unknown): T | undefined {
+function parseParam<T>(schema: z.ZodType<T, unknown>, raw: unknown): T | undefined {
   const parsed = schema.safeParse(raw);
   return parsed.success ? parsed.data : undefined;
 }
 
-export function parseAdminMerchantsSearchParams(raw: { cursor?: unknown }): {
+/** T-405: `?status=` del chip de A03; sin valor válido, «Todos». */
+export function parseAdminMerchantsSearchParams(raw: { cursor?: unknown; status?: unknown }): {
   cursor?: string;
+  status?: MerchantSubscriptionStatus;
 } {
-  const cursor = parseParam(uuidParamSchema, raw.cursor);
-  return cursor === undefined ? {} : { cursor };
+  const cursor = parseParam(adminRegisteredCursorSchema, raw.cursor);
+  const status = parseParam(merchantSubscriptionStatusSchema, raw.status);
+  return { ...(cursor !== undefined ? { cursor } : {}), ...(status !== undefined ? { status } : {}) };
 }
 
 /** CC-029: `/admin/merchants/[merchantId]/credits?before=<id>` (cursor del libro) y el id del comercio. */
@@ -144,17 +270,28 @@ export function parseAdminAuditSearchParams(raw: {
   actor?: unknown;
   action?: unknown;
   entity?: unknown;
+  courier?: unknown;
+  dir?: unknown;
+  target?: unknown;
+  from?: unknown;
+  to?: unknown;
 }): AdminAuditFilters {
   const cursor = parseParam(auditCursorParamSchema, raw.cursor);
   const actorId = parseParam(uuidParamSchema, raw.actor);
   const action = parseParam(auditActionParamSchema, raw.action);
   const targetType = parseParam(auditEntityParamSchema, raw.entity);
+  const courierId = parseParam(uuidParamSchema, raw.courier);
+  const targetId = parseParam(uuidParamSchema, raw.target);
 
   return {
     ...(cursor !== undefined ? { cursor } : {}),
+    ...(cursor !== undefined && raw.dir === 'prev' ? { direction: 'prev' as const } : {}),
+    ...(targetId !== undefined ? { targetId } : {}),
+    ...parseAuditDateRange(raw.from, raw.to),
     ...(actorId !== undefined ? { actorId } : {}),
     ...(action !== undefined ? { action } : {}),
     ...(targetType !== undefined ? { targetType } : {}),
+    ...(courierId !== undefined ? { courierId } : {}),
   };
 }
 
@@ -204,6 +341,10 @@ const boundedIntegerTextSchema = (min: number, max: number, message: string) =>
 export const dropsPerCreditFormSchema = z.object({
   value: boundedIntegerTextSchema(1, 1000, 'Ingresá una cantidad entera de entregas entre 1 y 1000.'),
 });
+// CC-041 (T-415): ventana de repartidores conectados, mismo rango que `admin_update_setting`.
+export const courierOnlineWindowFormSchema = z.object({
+  value: boundedIntegerTextSchema(2, 60, 'Ingresá una cantidad entera de minutos entre 2 y 60.'),
+});
 export const percentFormSchema = z.object({
   value: boundedIntegerTextSchema(0, 100, 'Ingresá un porcentaje entero entre 0 y 100.'),
 });
@@ -225,18 +366,15 @@ export const grantCreditsFormSchema = z.object({
 export type GrantCreditsFormInput = z.infer<typeof grantCreditsFormSchema>;
 
 export const registerPeriodFormSchema = z.object({
-  planId: z.string().uuid('Elegí un plan del catálogo.'),
+  planId: z.string().guid('Elegí un plan del catálogo.'),
   isPurchase: z.boolean(),
   note: noteFormSchema,
 });
 export type RegisterPeriodFormInput = z.infer<typeof registerPeriodFormSchema>;
 
+// CC-038: sin código; la base lo genera desde el nombre.
 export const publicationPlanFormSchema = z
   .object({
-    code: z
-      .string()
-      .trim()
-      .regex(/^[a-z0-9][a-z0-9_-]{1,39}$/, 'Usá de 2 a 40 letras minúsculas, números, guiones o guiones bajos.'),
     name: z.string().trim().min(2, 'Ingresá un nombre de al menos 2 caracteres.').max(80, 'Hasta 80 caracteres.'),
     kind: z.enum(['quota', 'unlimited']),
     monthlyCredits: z.string().trim(),
@@ -250,7 +388,7 @@ export const publicationPlanFormSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['monthlyCredits'],
-        message: 'Un plan con cupo lleva entre 1 y 100.000 créditos por mes.',
+        message: 'Un plan con créditos mensuales lleva entre 1 y 100.000 créditos por mes.',
       });
     }
     const price = Number(data.referencePriceArs);
@@ -276,5 +414,7 @@ export type ReinstateCourierInput = z.infer<typeof reinstateCourierSchema>;
 export type VerifyCourierDocumentInput = z.infer<typeof verifyCourierDocumentSchema>;
 export type RejectDocumentFormInput = z.infer<typeof rejectDocumentFormSchema>;
 export type DecisionFormInput = z.infer<typeof decisionFormSchema>;
+export type RejectApplicantFormInput = z.infer<typeof rejectApplicantFormSchema>;
+export type RejectCourierInput = z.infer<typeof rejectCourierSchema>;
 export type SetMerchantSubscriptionInput = z.infer<typeof setMerchantSubscriptionSchema>;
 export type UpdatePlatformSettingInput = z.infer<typeof updatePlatformSettingSchema>;

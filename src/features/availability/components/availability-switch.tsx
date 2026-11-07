@@ -6,6 +6,7 @@ import { Card } from '@/ui/card';
 import { getDomainErrorMessage } from '@/lib/error-messages';
 import { AVAILABILITY_COPY } from '../copy';
 import { setAvailabilityAction } from '../actions';
+import { useCourierPresence } from '../hooks/use-courier-presence';
 
 export interface AvailabilitySwitchProps {
   initialAvailable: boolean;
@@ -18,6 +19,8 @@ export function AvailabilitySwitch({
 }: AvailabilitySwitchProps) {
   const [available, setAvailable] = React.useState(initialAvailable);
   const [isPending, startTransition] = useTransition();
+  // T-415 (CC-041): mientras está «Disponible», la app avisa que el repartidor sigue conectado.
+  useCourierPresence(available);
 
   const handleToggle = () => {
     const nextState = !available;

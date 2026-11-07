@@ -23,6 +23,8 @@ import { useMerchantPanelRefresh } from '../hooks/use-merchant-panel-refresh';
 export interface MerchantRequestsListProps {
   readonly requests: readonly MerchantRequestSummary[];
   readonly metrics: MerchantMetrics;
+  /** T-417: tarjeta extra de métricas (repartidores conectados), al final de la grilla. */
+  readonly extraMetric?: React.ReactNode;
   readonly onCancel?: (
     requestId: string,
     reason: string
@@ -72,7 +74,7 @@ function getPackageLabel(packageType: string): string {
   }
 }
 
-export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRequestsListProps) {
+export function MerchantRequestsList({ requests, metrics, extraMetric, onCancel }: MerchantRequestsListProps) {
   const router = useRouter();
   // T-381: el conteo de ofertas de las tarjetas sigue a las pendientes reales al volver al panel.
   useMerchantPanelRefresh();
@@ -154,7 +156,7 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
       </div>
 
       {/* Métricas C02 (Anti-12px, piso 14px text-sm) */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className={extraMetric ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4' : 'grid grid-cols-1 gap-4 sm:grid-cols-3'}>
         <Card className="flex flex-col justify-between border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-sm font-medium">Despachos hoy</span>
@@ -184,6 +186,8 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
             {metrics.activeCount}
           </p>
         </Card>
+
+        {extraMetric}
       </div>
 
       {activeRequests.length === 0 ? (

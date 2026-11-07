@@ -61,6 +61,17 @@ function runCommand(cmd, args, description) {
   return res.stdout.trim();
 }
 
+// Migraciones posteriores (CC-042) redefinen lo que crea el archivo que se reaplica: al terminar se restaura lo vigente.
+function snapshotCurrentDefinitions() {
+  return runSql(`select string_agg(def, E'
+') from (
+    select pg_get_functiondef(p.oid) || ';' as def from pg_proc p
+    where p.pronamespace = 'public'::regnamespace and p.proname = any(array['admin_verify_document', 'replace_courier_document'])
+    union all
+    select 'drop index if exists public.courier_documents_unique_current; ' || pg_get_indexdef('public.courier_documents_unique_current'::regclass) || ';'
+  ) s;`);
+}
+
 function setupPreMigrationFixture(ids) {
   const { courier1Id, courier2Id, docOldId, docRecentId, docPreservedId, docC2RecentId } = ids;
 
@@ -282,10 +293,15 @@ async function runBackfillMutationCheck() {
 }
 
 async function main() {
-  if (process.argv.includes('--mutation-check')) {
-    await runBackfillMutationCheck();
-  } else {
-    await runBackfillTest();
+  const currentSql = snapshotCurrentDefinitions();
+  try {
+    if (process.argv.includes('--mutation-check')) {
+      await runBackfillMutationCheck();
+    } else {
+      await runBackfillTest();
+    }
+  } finally {
+    runSql(currentSql);
   }
 }
 

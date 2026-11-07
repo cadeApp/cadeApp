@@ -274,10 +274,10 @@ describe('T-334: updateSession lee el onboarding con el cliente del usuario', ()
     expect(selects).toContainEqual({ table: 'merchants', columns: 'business_name' });
   });
 
-  it('repartidor recién registrado (vehicle_type null) en /courier/feed va a /courier/onboarding/identity', async () => {
+  it('repartidor recién registrado (sin postulación enviada) en /courier/feed va a /courier/onboarding/identity', async () => {
     const { selects } = mockUserClient({
       profiles: { role: 'courier', consent_status: 'active' },
-      couriers: { vehicle_type: null },
+      couriers: { application_submitted: false },
     });
 
     const response = await updateSession(new NextRequest('http://localhost:3000/courier/feed'));
@@ -286,13 +286,25 @@ describe('T-334: updateSession lee el onboarding con el cliente del usuario', ()
     expect(response.headers.get('location')).toBe(
       'http://localhost:3000/courier/onboarding/identity'
     );
-    expect(selects).toContainEqual({ table: 'couriers', columns: 'vehicle_type' });
+    expect(selects).toContainEqual({ table: 'couriers', columns: 'application_submitted' });
+  });
+
+  it('CC-043: un vehículo cargado sin postulación enviada no habilita el feed', async () => {
+    mockUserClient({
+      profiles: { role: 'courier', consent_status: 'active' },
+      couriers: { application_submitted: false, vehicle_type: 'moto' },
+    });
+
+    const response = await updateSession(new NextRequest('http://localhost:3000/courier/feed'));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost:3000/courier/onboarding/identity');
   });
 
   it('repartidor incompleto puede abrir su onboarding sin redirección', async () => {
     mockUserClient({
       profiles: { role: 'courier', consent_status: 'active' },
-      couriers: { vehicle_type: null },
+      couriers: { application_submitted: false },
     });
 
     const response = await updateSession(
@@ -310,9 +322,10 @@ describe('T-334: updateSession lee el onboarding con el cliente del usuario', ()
     const merchant = await updateSession(new NextRequest('http://localhost:3000/merchant/dashboard'));
     expect(merchant.status).toBe(200);
 
+    // Incluye un envío histórico sin fecha (CC-043): la marca decide, no submitted_at.
     mockUserClient({
       profiles: { role: 'courier', consent_status: 'active' },
-      couriers: { vehicle_type: 'moto' },
+      couriers: { application_submitted: true, submitted_at: null },
     });
     const courier = await updateSession(new NextRequest('http://localhost:3000/courier/feed'));
     expect(courier.status).toBe(200);

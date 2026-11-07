@@ -5,6 +5,10 @@ import {
   getApplicantsQueue,
   getApplicantDetail,
   getAdminMerchants,
+  getMerchantStatusCounts,
+  getMerchantPlanMovements,
+  getAdminOperatorName,
+  getAdminMerchantHeader,
   getAuditActors,
   getAuditLog,
   getPlatformSettings,
@@ -22,201 +26,125 @@ vi.mock('@/server/supabase/admin', () => ({
   createAdminClient: vi.fn(),
 }));
 
+/** T-404: consentimientos y auditoría vacíos para los mocks del detalle que no los miran. */
+function emptyTable() {
+  const builder: Record<string, unknown> = {
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve),
+  };
+  for (const method of ['select', 'eq', 'or', 'order', 'limit']) builder[method] = () => builder;
+  return builder;
+}
+
 describe('Admin Queries (T-122 DoD)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('PR106-H07 y PR106-H12: Cola de postulantes (getApplicantsQueue)', () => {
-    it('utiliza await createClient() (sesión autenticada) y NO createAdminClient() (PR106-H12)', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      });
+  describe('T-403 / CC-044: Cola de postulantes (getApplicantsQueue) sobre admin_list_applicants', () => {
+    const COURIER_1 = 'c0000000-0000-4000-8000-000000000001';
+    const COURIER_2 = 'c0000000-0000-4000-8000-000000000002';
 
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                limit: mockLimit,
-              }),
-            }),
-          }),
-        }),
+    function rpcItem(id: string, overrides: Record<string, unknown> = {}) {
+      return {
+        id,
+        displayName: 'José Pérez',
+        phone: '3865123456',
+        vehicleType: 'moto',
+        status: 'pending',
+        hasDni: true,
+        docLevel: 1,
+        licenseStatus: 'verified',
+        insuranceStatus: 'submitted',
+        createdAt: '2026-11-03T16:00:00.000000Z',
+        submittedAt: '2026-11-03T18:00:00.000000Z',
+        documents: { dniFront: true, dniBack: true, selfie: true, license: true, insurance: false },
+        ...overrides,
       };
+    }
 
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
+    function page(overrides: Record<string, unknown> = {}) {
+      return { items: [rpcItem(COURIER_1)], total: 7, nextCursor: null, prevCursor: null, ...overrides };
+    }
 
+    it('usa la sesión del admin (createClient) y nunca createAdminClient (PR106-H12)', async () => {
+      mockClient({}, { data: page(), error: null });
       await getApplicantsQueue('pending');
-
       expect(serverSupabase.createClient).toHaveBeenCalled();
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
-    it('primera página usa limit(pageSize + 1) y NO llama a range() (PR106-H07)', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [
-          {
-            profile_id: 'courier-1',
-            status: 'pending',
-            vehicle_type: 'moto',
-            vehicle_plate: 'A123BCD',
-            dni_hmac: 'abcdef123456',
-            doc_level: 1,
-            license_status: 'submitted',
-            insurance_status: 'none',
-            profiles: {
-              display_name: 'Juan Perez',
-              phone: '3865123456',
-              created_at: '2026-09-25T10:00:00Z',
-            },
-            courier_documents: [
-              { kind: 'dni_front', status: 'submitted' },
-              { kind: 'dni_back', status: 'submitted' },
-              { kind: 'selfie', status: 'submitted' },
-            ],
-          },
-        ],
-        error: null,
+    it('la búsqueda, el estado, el cursor y la dirección llegan a la RPC; no lee couriers por PostgREST', async () => {
+      const { client, calls } = mockClient({}, { data: page(), error: null });
+      const cursor = `2026-11-03T16:22:06.662075+00:00~${COURIER_2}`;
+
+      await getApplicantsQueue('approved', { cursor, direction: 'prev', query: 'jose', pageSize: 20 });
+
+      expect(client.rpc).toHaveBeenCalledTimes(1);
+      expect(client.rpc).toHaveBeenCalledWith('admin_list_applicants', {
+        p_status: 'approved',
+        p_query: 'jose',
+        p_cursor_created_at: '2026-11-03T16:22:06.662075+00:00',
+        p_cursor_id: COURIER_2,
+        p_direction: 'prev',
+        p_limit: 20,
       });
-      const mockRange = vi.fn();
-
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                limit: mockLimit,
-                range: mockRange,
-              }),
-            }),
-          }),
-        }),
-      };
-
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
-
-      const result = await getApplicantsQueue('pending', { pageSize: 20 });
-      expect(mockLimit).toHaveBeenCalledWith(21);
-      expect(mockRange).not.toHaveBeenCalled();
-      expect(result.pageSize).toBe(20);
-      expect(result.hasNextPage).toBe(false);
-      expect(result.nextCursor).toBeNull();
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0]?.fullName).toBe('Juan Perez');
-      expect(result.items[0]?.documentsSummary.hasDniFront).toBe(true);
-      expect(result.items[0]?.documentsSummary.hasLicense).toBe(false);
+      // T-403: la búsqueda se resuelve en la base (CC-044); el cliente no filtra ni consulta couriers.
+      expect(calls).toEqual([]);
     });
 
-    it('con cursor válido aplica filtro .lt("profile_id", cursor) (PR106-H07)', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
+    it('sin búsqueda ni cursor pide la primera página hacia adelante', async () => {
+      const { client } = mockClient({}, { data: page(), error: null });
+      await getApplicantsQueue('pending');
+      expect(client.rpc).toHaveBeenCalledWith('admin_list_applicants', {
+        p_status: 'pending',
+        p_query: null,
+        p_cursor_created_at: null,
+        p_cursor_id: null,
+        p_direction: 'next',
+        p_limit: 20,
       });
-      const mockLt = vi.fn().mockReturnValue({
-        limit: mockLimit,
-      });
-
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                lt: mockLt,
-              }),
-            }),
-          }),
-        }),
-      };
-
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
-
-      const cursorUuid = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
-      await getApplicantsQueue('pending', { cursor: cursorUuid, pageSize: 20 });
-
-      expect(mockLt).toHaveBeenCalledWith('profile_id', cursorUuid);
-      expect(mockLimit).toHaveBeenCalledWith(21);
     });
 
-    it('calcula hasNextPage y nextCursor a partir del último item visible ante fila extra (PR106-H07)', async () => {
-      // Pedimos pageSize=2 -> limit(3) -> data devuelve 3 filas -> hasNextPage=true, nextCursor='c-2'
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [
-          {
-            profile_id: 'c-1',
-            status: 'pending',
-            profiles: null,
-            courier_documents: [],
-          },
-          {
-            profile_id: 'c-2',
-            status: 'pending',
-            profiles: null,
-            courier_documents: [],
-          },
-          {
-            profile_id: 'c-3',
-            status: 'pending',
-            profiles: null,
-            courier_documents: [],
-          },
-        ],
-        error: null,
-      });
-
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                limit: mockLimit,
-              }),
-            }),
+    it('devuelve el total, los ítems con «Enviado» y los dos cursores «fecha~id»', async () => {
+      mockClient(
+        {},
+        {
+          data: page({
+            items: [rpcItem(COURIER_1), rpcItem(COURIER_2, { submittedAt: null, vehicleType: null })],
+            nextCursor: { createdAt: '2026-11-03T15:00:00.000000Z', id: COURIER_2 },
+            prevCursor: { createdAt: '2026-11-03T16:00:00.000000Z', id: COURIER_1 },
           }),
-        }),
-      };
-
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+          error: null,
+        }
       );
 
       const result = await getApplicantsQueue('pending', { pageSize: 2 });
-      expect(mockLimit).toHaveBeenCalledWith(3);
+
+      expect(result.total).toBe(7);
+      expect(result.pageSize).toBe(2);
+      expect(result.nextCursor).toBe(`2026-11-03T15:00:00.000000Z~${COURIER_2}`);
+      expect(result.prevCursor).toBe(`2026-11-03T16:00:00.000000Z~${COURIER_1}`);
       expect(result.hasNextPage).toBe(true);
-      expect(result.nextCursor).toBe('c-2');
-      expect(result.items).toHaveLength(2);
-      expect(result.items[0]?.id).toBe('c-1');
-      expect(result.items[1]?.id).toBe('c-2');
+      expect(result.hasPrevPage).toBe(true);
+      expect(result.items[0]).toMatchObject({
+        id: COURIER_1,
+        fullName: 'José Pérez',
+        submittedAt: '2026-11-03T18:00:00.000000Z',
+        licenseStatus: 'verified',
+        insuranceStatus: 'submitted',
+        documentsSummary: { hasDniFront: true, hasDniBack: true, hasSelfie: true, hasLicense: true, hasInsurance: false },
+      });
+      expect(result.items[1]).toMatchObject({ submittedAt: null, vehicleType: null });
     });
 
-    it('propaga y lanza excepción ante error de DB en getApplicantsQueue (PR106-H08)', async () => {
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                limit: vi.fn().mockResolvedValue({
-                  data: null,
-                  error: { message: 'Database connection failed' },
-                }),
-              }),
-            }),
-          }),
-        }),
-      };
+    it('un error de la RPC se propaga como excepción, solo con el código (PR106-H08)', async () => {
+      mockClient({}, { data: null, error: { code: 'P0001', message: 'AAL2_REQUIRED' } });
+      await expect(getApplicantsQueue('pending')).rejects.toThrow('AAL2_REQUIRED');
+    });
 
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
-
-      await expect(getApplicantsQueue('pending')).rejects.toThrow('Database connection failed');
+    it('una salida fuera del contrato (por ejemplo con el hash del DNI) no llega a la UI', async () => {
+      mockClient({}, { data: page({ items: [rpcItem(COURIER_1, { dniHmac: 'ab'.repeat(32) })] }), error: null });
+      await expect(getApplicantsQueue('pending')).rejects.toThrow('INTERNAL_ERROR');
     });
   });
 
@@ -265,7 +193,7 @@ describe('Admin Queries (T-122 DoD)', () => {
               }),
             };
           }
-          return {};
+          return emptyTable();
         }),
       };
 
@@ -331,7 +259,7 @@ describe('Admin Queries (T-122 DoD)', () => {
               }),
             };
           }
-          return {};
+          return emptyTable();
         }),
       };
 
@@ -416,7 +344,7 @@ describe('Admin Queries (T-122 DoD)', () => {
               }),
             };
           }
-          return {};
+          return emptyTable();
         }),
       };
 
@@ -439,6 +367,83 @@ describe('Admin Queries (T-122 DoD)', () => {
       expect(detail?.documents[1]?.isCurrent).toBe(false);
       expect(detail?.documents[1]?.status).toBe('rejected');
       expect(detail?.documents[1]?.rejectionCode).toBe('IMAGE_BLURRY');
+    });
+
+    it('PR624-H07: agrupa licencia y seguro por vehicle_id aunque dos vehículos tengan el mismo tipo y patente', async () => {
+      const twin = { vehicle_type: 'moto', plate: 'AB 123 CD' };
+      const doc = (id: string, kind: string, vehicleId: string, uploadedAt: string, isCurrent = true) => ({
+        id,
+        kind,
+        storage_path: `courier-twins/${id}.webp`,
+        status: 'submitted',
+        uploaded_at: uploadedAt,
+        is_current: isCurrent,
+        rejection_code: null,
+        vehicle_id: vehicleId,
+        vehicle: twin,
+      });
+      const mockSupabase = {
+        from: vi.fn((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: {
+                      profile_id: 'courier-twins',
+                      status: 'pending',
+                      vehicle_type: 'moto',
+                      vehicle_plate: 'AB 123 CD',
+                      dni_hmac: null,
+                      doc_level: 0,
+                      license_status: 'submitted',
+                      insurance_status: 'submitted',
+                      decided_at: null,
+                      decided_by: null,
+                      deactivated_at: null,
+                      profiles: { display_name: 'Mellizos', phone: '3865000000', created_at: '2026-10-10T10:00:00Z' },
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  order: vi.fn().mockResolvedValue({
+                    // Fechas intercaladas entre los dos vehículos; el histórico de A va al final.
+                    data: [
+                      doc('b-insurance', 'insurance', 'veh-b', '2026-10-11T13:00:00Z'),
+                      doc('a-insurance', 'insurance', 'veh-a', '2026-10-11T12:00:00Z'),
+                      doc('b-license', 'license', 'veh-b', '2026-10-11T11:00:00Z'),
+                      doc('a-license-old', 'license', 'veh-a', '2026-10-11T10:30:00Z', false),
+                      doc('a-license', 'license', 'veh-a', '2026-10-11T10:00:00Z'),
+                    ],
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return emptyTable();
+        }),
+      };
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const detail = await getApplicantDetail('courier-twins');
+      expect(detail?.documents.map((document) => document.id)).toEqual([
+        'a-insurance',
+        'a-license',
+        'b-insurance',
+        'b-license',
+        'a-license-old',
+      ]);
     });
 
     it('retorna null si el repartidor no existe', async () => {
@@ -583,7 +588,7 @@ function merchantRow(id: string, overrides: Record<string, unknown> = {}) {
     business_name: 'Panadería La Espiga',
     subscription_status: 'active',
     paid_until: '2026-10-31',
-    profiles: { display_name: 'Rosa Díaz', phone: '3865551234' },
+    profiles: { display_name: 'Rosa Díaz', phone: '3865551234', created_at: '2026-10-01T12:00:00+00:00' },
     zones: { name: 'Centro' },
     ...overrides,
   };
@@ -644,7 +649,7 @@ describe('T-123: getAdminMerchants (A03)', () => {
       [MERCHANT_C, 7],
       [MERCHANT_B, 3],
     ]);
-    expect(result.nextCursor).toBe(MERCHANT_B);
+    expect(result.nextCursor).toBe(`2026-10-01T12:00:00+00:00~${MERCHANT_B}`);
   });
 
   it('no llama a la RPC si la página está vacía', async () => {
@@ -693,19 +698,24 @@ describe('T-123: getAdminMerchants (A03)', () => {
     const { calls } = mockClient({ merchants: { data: [], error: null } });
     await getAdminMerchants({ pageSize: 10 });
 
-    expect(callsOf(calls, 'merchants', 'order')[0]?.args).toEqual([
-      'profile_id',
-      { ascending: false },
+    // T-420: de la más nueva a la más vieja por fecha de registro, con el id para desempatar.
+    expect(callsOf(calls, 'merchants', 'order').map((call) => call.args)).toEqual([
+      ['profiles(created_at)', { ascending: false }],
+      ['profile_id', { ascending: false }],
     ]);
     expect(callsOf(calls, 'merchants', 'limit')[0]?.args).toEqual([11]);
     expect(callsOf(calls, 'merchants', 'range')).toHaveLength(0);
-    expect(callsOf(calls, 'merchants', 'lt')).toHaveLength(0);
+    expect(callsOf(calls, 'merchants', 'or')).toHaveLength(0);
   });
 
-  it('aplica el cursor con lt(profile_id)', async () => {
+  it('T-420: aplica el cursor «fecha~id» sobre el perfil embebido', async () => {
     const { calls } = mockClient({ merchants: { data: [], error: null } });
-    await getAdminMerchants({ cursor: MERCHANT_B });
-    expect(callsOf(calls, 'merchants', 'lt')[0]?.args).toEqual(['profile_id', MERCHANT_B]);
+    await getAdminMerchants({ cursor: `2026-10-01T12:00:00+00:00~${MERCHANT_B}` });
+    expect(callsOf(calls, 'merchants', 'or')[0]?.args).toEqual([
+      `created_at.lt."2026-10-01T12:00:00+00:00",and(created_at.eq."2026-10-01T12:00:00+00:00",id.lt.${MERCHANT_B})`,
+      { referencedTable: 'profiles' },
+    ]);
+    expect(callsOf(calls, 'merchants', 'lt')).toHaveLength(0);
   });
 
   it('acota el tamaño de página a 50 y usa 20 por defecto', async () => {
@@ -741,16 +751,165 @@ describe('T-123: getAdminMerchants (A03)', () => {
         subscriptionStatus: 'active',
         paidUntil: '2026-10-31',
         deliveredCount: 42,
+        createdAt: '2026-10-01T12:00:00+00:00',
+        signupIncomplete: false,
       },
     ]);
     expect(result.hasNextPage).toBe(true);
-    expect(result.nextCursor).toBe(MERCHANT_B);
+    expect(result.nextCursor).toBe(`2026-10-01T12:00:00+00:00~${MERCHANT_B}`);
     expect(JSON.stringify(result)).not.toMatch(/cuit|20-12345678-9/i);
   });
 
   it('propaga el error de base para el error boundary', async () => {
     mockClient({ merchants: { data: null, error: { message: 'boom' } } });
     await expect(getAdminMerchants()).rejects.toThrow();
+  });
+});
+
+describe('T-402: getAdminOperatorName (pie de la barra lateral)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const ADMIN_ID = 'a0000000-0000-4000-8000-000000000402';
+
+  function withUser(client: object, id: string | null) {
+    Object.assign(client, {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: id ? { id } : null }, error: null }) },
+    });
+  }
+
+  it('lee el display_name del admin de la sesión con el cliente de sesión', async () => {
+    const { client, calls } = mockClient({ profiles: { data: { display_name: '  Lautaro  ' }, error: null } });
+    withUser(client, ADMIN_ID);
+
+    await expect(getAdminOperatorName()).resolves.toBe('Lautaro');
+    expect(callsOf(calls, 'profiles', 'eq')[0]?.args).toEqual(['id', ADMIN_ID]);
+    expect(String(callsOf(calls, 'profiles', 'select')[0]?.args[0])).toBe('display_name');
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('sin nombre, sin sesión o con error de base devuelve «Operador sin nombre» sin romper el panel', async () => {
+    const empty = mockClient({ profiles: { data: { display_name: ' ' }, error: null } });
+    withUser(empty.client, ADMIN_ID);
+    await expect(getAdminOperatorName()).resolves.toBe('Operador sin nombre');
+
+    const broken = mockClient({ profiles: { data: null, error: { message: 'boom' } } });
+    withUser(broken.client, ADMIN_ID);
+    await expect(getAdminOperatorName()).resolves.toBe('Operador sin nombre');
+
+    const anonymous = mockClient({});
+    withUser(anonymous.client, null);
+    await expect(getAdminOperatorName()).resolves.toBe('Operador sin nombre');
+    expect(anonymous.calls).toEqual([]);
+  });
+});
+
+describe('T-401: el hash del DNI no viaja al cliente', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const HMAC = '97b2a93e5f0c4d1e8a7b6c5d4e3f2a1b';
+  const COURIER = 'c0000000-0000-4000-8000-000000000401';
+  const COURIER_B401 = 'c0000000-0000-4000-8000-000000000402';
+
+  function queueRow(dniHmac: string | null) {
+    return {
+      profile_id: COURIER,
+      status: 'pending',
+      vehicle_type: 'moto',
+      vehicle_plate: 'A123BCD',
+      dni_hmac: dniHmac,
+      doc_level: 1,
+      license_status: 'none',
+      insurance_status: 'none',
+      profiles: { display_name: 'Juan Perez', phone: '3865123456', created_at: '2026-10-01T12:00:00Z' },
+      courier_documents: [],
+    };
+  }
+
+  it('la cola devuelve si el DNI está cargado, sin la propiedad dniHash ni el hash', async () => {
+    const item = (id: string, hasDni: boolean) => ({
+      id,
+      displayName: 'Juan Perez',
+      phone: '3865123456',
+      vehicleType: 'moto',
+      status: 'pending',
+      hasDni,
+      docLevel: 1,
+      licenseStatus: 'none',
+      insuranceStatus: 'none',
+      createdAt: '2026-10-01T12:00:00.000000Z',
+      submittedAt: null,
+      documents: { dniFront: false, dniBack: false, selfie: false, license: false, insurance: false },
+    });
+    mockClient(
+      {},
+      { data: { items: [item(COURIER, true), item(COURIER_B401, false)], total: 2, nextCursor: null, prevCursor: null }, error: null }
+    );
+
+    const { items } = await getApplicantsQueue('pending');
+
+    expect(items.map((entry) => entry.hasDni)).toEqual([true, false]);
+    for (const entry of items) expect(entry).not.toHaveProperty('dniHash');
+    expect(JSON.stringify(items)).not.toContain(HMAC.slice(0, 8));
+  });
+
+  it('el detalle devuelve si el DNI está cargado, sin la propiedad dniHash ni el hash', async () => {
+    const decision = { decided_at: null, decided_by: null, deactivated_at: null };
+    mockClient({
+      couriers: { data: { ...queueRow(HMAC), ...decision }, error: null },
+      courier_documents: { data: [], error: null },
+    });
+
+    const detail = await getApplicantDetail(COURIER);
+
+    expect(detail?.hasDni).toBe(true);
+    expect(detail).not.toHaveProperty('dniHash');
+    expect(JSON.stringify(detail)).not.toContain(HMAC.slice(0, 8));
+
+    mockClient({
+      couriers: { data: { ...queueRow(null), ...decision }, error: null },
+      courier_documents: { data: [], error: null },
+    });
+    expect((await getApplicantDetail(COURIER))?.hasDni).toBe(false);
+  });
+});
+
+describe('T-401: comercio con el alta sin completar', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('un business_name vacío o en blanco se devuelve con el texto de respaldo y marcado como alta sin completar', async () => {
+    mockClient({
+      merchants: {
+        data: [
+          merchantRow(MERCHANT_A, { business_name: '' }),
+          merchantRow(MERCHANT_B, { business_name: '   ' }),
+          merchantRow('f0000000-0000-4000-8000-00000000000c', { business_name: '  Kiosco Centro ' }),
+        ],
+        error: null,
+      },
+    });
+
+    const { items } = await getAdminMerchants();
+
+    expect(items.map((item) => [item.businessName, item.signupIncomplete])).toEqual([
+      ['Alta sin completar', true],
+      ['Alta sin completar', true],
+      ['Kiosco Centro', false],
+    ]);
+    expect(items[0]?.ownerName).toBe('Rosa Díaz');
+  });
+
+  it('el encabezado de créditos usa el mismo texto de respaldo', async () => {
+    mockClient({ merchants: { data: { profile_id: MERCHANT_A, business_name: ' ' }, error: null } });
+    await expect(getAdminMerchantHeader(MERCHANT_A)).resolves.toEqual({
+      id: MERCHANT_A,
+      businessName: 'Alta sin completar',
+    });
   });
 });
 
@@ -783,6 +942,7 @@ describe('T-123: getPlatformSettings (A04)', () => {
       pilotTermsVersion: '1.1',
       subscriptionGraceDays: 3,
       maxDropsPerRequest: 5,
+      courierOnlineWindowMinutes: 10,
       publicationDropsPerCredit: 2,
       carryoverBasePct: 5,
       carryoverStepPct: 5,
@@ -806,6 +966,19 @@ describe('T-123: getPlatformSettings (A04)', () => {
       platform_settings: { data: rows.filter((row) => row.key !== 'carryover_cap_pct'), error: null },
     });
     await expect(getPlatformSettings()).rejects.toThrow(/carryover_cap_pct/);
+  });
+
+  it('PR551-H04: lee la ventana de repartidores conectados guardada, no un valor fijo', async () => {
+    mockClient({
+      platform_settings: { data: [...rows, { key: 'courier_online_window_minutes', value: 27 }], error: null },
+    });
+    await expect(getPlatformSettings()).resolves.toMatchObject({ courierOnlineWindowMinutes: 27 });
+  });
+
+  it('PR551-H04: sin la fila de la ventana usa 10', async () => {
+    expect(rows.some((row) => row.key === 'courier_online_window_minutes')).toBe(false);
+    mockClient({ platform_settings: { data: rows, error: null } });
+    await expect(getPlatformSettings()).resolves.toMatchObject({ courierOnlineWindowMinutes: 10 });
   });
 
   it('si falta el piso no inventa 1000: falla', async () => {
@@ -913,6 +1086,92 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
     expect(eqArgs).toContainEqual(['target_type', 'platform_setting']);
   });
 
+  it('T-407: el rango de fechas llega a la base como [gte, lt) con los bordes del día de Argentina en UTC', async () => {
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getAuditLog({ from: '2026-10-21', to: '2026-10-21' });
+
+    expect(callsOf(calls, 'audit_log', 'gte').map((call) => call.args)).toEqual([
+      ['created_at', '2026-10-21T03:00:00.000Z'],
+    ]);
+    expect(callsOf(calls, 'audit_log', 'lt').map((call) => call.args)).toEqual([
+      ['created_at', '2026-10-22T03:00:00.000Z'],
+    ]);
+    expect(callsOf(calls, 'audit_log', 'lte')).toHaveLength(0);
+  });
+
+  it('T-407: filtra por targetId (y targetType) en la base', async () => {
+    const target = 'c0000000-0000-4000-8000-000000000407';
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getAuditLog({ targetId: target, targetType: 'courier' });
+
+    const eqArgs = callsOf(calls, 'audit_log', 'eq').map((call) => call.args);
+    expect(eqArgs).toContainEqual(['target_id', target]);
+    expect(eqArgs).toContainEqual(['target_type', 'courier']);
+  });
+
+  it('T-407: la primera página no ofrece «Anterior» ni consulta filas más nuevas', async () => {
+    const { calls } = mockClient({ audit_log: { data: AUDIT_ROWS, error: null } });
+    const page = await getAuditLog({ pageSize: 2 });
+
+    expect(page.items.map((item) => item.id)).toEqual([90, 89]);
+    expect(page).toMatchObject({ hasNextPage: true, nextCursor: 89, hasPrevPage: false, prevCursor: null });
+    expect(callsOf(calls, 'audit_log', 'gte')).toHaveLength(0);
+  });
+
+  it('T-407: «Siguiente» con cursor busca filas más nuevas con los mismos filtros para ofrecer «Anterior»', async () => {
+    const { calls } = mockClient({ audit_log: { data: AUDIT_ROWS, error: null } });
+    const page = await getAuditLog({ pageSize: 2, cursor: 91, action: 'admin_update_setting' });
+
+    expect(callsOf(calls, 'audit_log', 'lt')[0]?.args).toEqual(['id', 91]);
+    expect(callsOf(calls, 'audit_log', 'gte').map((call) => call.args)).toEqual([['id', 91]]);
+    // El sondeo repite el filtro de evento: si no, ofrecería «Anterior» hacia filas que el filtro excluye.
+    expect(callsOf(calls, 'audit_log', 'eq').filter((call) => call.args[0] === 'action')).toHaveLength(2);
+    expect(page).toMatchObject({ prevCursor: 90, hasPrevPage: true, nextCursor: 89, hasNextPage: true });
+  });
+
+  it('T-407: «Anterior» (dir=prev) lee las más viejas por encima del cursor en orden ascendente y las devuelve de nueva a vieja', async () => {
+    const ascending = [...AUDIT_ROWS].reverse();
+    const { calls } = mockClient({ audit_log: { data: ascending, error: null } });
+    const page = await getAuditLog({ pageSize: 2, cursor: 87, direction: 'prev' });
+
+    expect(callsOf(calls, 'audit_log', 'gt')[0]?.args).toEqual(['id', 87]);
+    expect(callsOf(calls, 'audit_log', 'order')[0]?.args).toEqual(['id', { ascending: true }]);
+    expect(callsOf(calls, 'audit_log', 'lte').map((call) => call.args)).toEqual([['id', 87]]);
+    expect(page.items.map((item) => item.id)).toEqual([89, 88]);
+    expect(page).toMatchObject({ hasPrevPage: true, prevCursor: 89, hasNextPage: true, nextCursor: 88 });
+  });
+
+  it('T-407: ida y vuelta: «Anterior» desde la página 2 vuelve a las mismas filas de la página 1', async () => {
+    mockClient({ audit_log: { data: AUDIT_ROWS, error: null } });
+    const first = await getAuditLog({ pageSize: 1 });
+    expect(first.items.map((item) => item.id)).toEqual([90]);
+
+    mockClient({ audit_log: { data: AUDIT_ROWS.slice(1), error: null } });
+    const second = await getAuditLog({ pageSize: 1, cursor: first.nextCursor ?? undefined });
+    expect(second.items.map((item) => item.id)).toEqual([89]);
+
+    // Lo que devuelve la base para id > 89 ascendente: solo la 90; no hay más nuevas.
+    mockClient({ audit_log: { data: [AUDIT_ROWS[0]], error: null } });
+    const back = await getAuditLog({ pageSize: 1, cursor: second.prevCursor ?? undefined, direction: 'prev' });
+    expect(back.items.map((item) => item.id)).toEqual(first.items.map((item) => item.id));
+    expect(back).toMatchObject({ hasPrevPage: false, prevCursor: null, hasNextPage: true, nextCursor: 90 });
+  });
+
+  it('T-407: «Anterior» sin filas más viejas detrás del cursor no ofrece «Siguiente»', async () => {
+    const { client } = mockClient({ audit_log: { data: [AUDIT_ROWS[0]], error: null } });
+    const empty = { data: [], error: null };
+    const builder = (result: unknown) => {
+      const b: Record<string, unknown> = { then: (r: (v: unknown) => unknown) => Promise.resolve(result).then(r) };
+      for (const method of ['select', 'eq', 'gt', 'lte', 'order', 'limit']) b[method] = () => b;
+      return b;
+    };
+    client.from
+      .mockImplementationOnce(() => builder({ data: [AUDIT_ROWS[0]], error: null }))
+      .mockImplementationOnce(() => builder(empty));
+    const page = await getAuditLog({ pageSize: 1, cursor: 89, direction: 'prev' });
+    expect(page).toMatchObject({ hasNextPage: false, nextCursor: null });
+  });
+
   it('no selecciona columnas de contacto ni PII del operador', async () => {
     const { calls } = mockClient({ audit_log: { data: [], error: null } });
     await getAuditLog();
@@ -920,7 +1179,7 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
     expect(columns).not.toMatch(/phone|email|dni/i);
   });
 
-  it('devuelve nextCursor y el detalle saneado sin motivos ni notas libres', async () => {
+  it('devuelve nextCursor y el detalle saneado sin notas libres (el motivo del admin sí, T-400)', async () => {
     mockClient({ audit_log: { data: AUDIT_ROWS, error: null } });
 
     const result = await getAuditLog({ pageSize: 2 });
@@ -932,7 +1191,6 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain('Juan Pérez');
     expect(serialized).not.toContain('3865 44-1122');
-    expect(serialized).not.toContain('30111222');
 
     const [subscription, decision] = result.items;
     expect(subscription).toMatchObject({
@@ -940,7 +1198,7 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
       actorName: 'Lautaro',
       action: 'admin_set_subscription',
       targetType: 'merchant',
-      hasReason: false,
+      reason: null,
     });
     expect(subscription?.changes).toEqual(
       expect.arrayContaining([
@@ -948,7 +1206,7 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
         { field: 'paid_until', before: null, after: '2026-10-31' },
       ])
     );
-    expect(decision).toMatchObject({ hasReason: true });
+    expect(decision).toMatchObject({ reason: 'DNI 30111222 ilegible' });
     expect(decision?.changes).toEqual([{ field: 'status', before: 'pending', after: 'rejected' }]);
   });
 
@@ -965,6 +1223,193 @@ describe('T-123: getAuditLog (A06, append-only y paginada server-side)', () => {
   it('propaga el error de base para el error boundary', async () => {
     mockClient({ audit_log: { data: null, error: { message: 'boom' } } });
     await expect(getAuditLog()).rejects.toThrow();
+  });
+});
+
+const T400_ADMIN = 'a0000000-0000-4000-8000-000000000001';
+const T400_COURIER = 'b0000000-0000-4000-8000-000000000002';
+const T400_DOC_OWNER = 'b0000000-0000-4000-8000-000000000003';
+const T400_DOC_VERIFIED = 'd0000000-0000-4000-8000-000000000001';
+const T400_DOC_REPLACED = 'd0000000-0000-4000-8000-000000000002';
+const T400_REQUEST = 'e1a2b3c4-0000-4000-8000-000000000001';
+const T400_INCIDENT = '90000000-0000-4000-8000-000000000001';
+
+function auditRow(
+  id: number,
+  action: string,
+  targetType: string,
+  targetId: string,
+  before: unknown,
+  after: unknown
+) {
+  return {
+    id,
+    created_at: '2026-10-21T12:00:00.000Z',
+    actor_id: T400_ADMIN,
+    action,
+    target_type: targetType,
+    target_id: targetId,
+    before,
+    after,
+    profiles: { display_name: 'Lautaro' },
+  };
+}
+
+describe('T-400: getAuditLog (motivos del admin)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('muestra el motivo completo solo en decidir, suspender, rehabilitar y revisar documentos', async () => {
+    // PR582-H01: espacios y saltos en los extremos incluidos; el motivo no se recorta.
+    const reason = '\n  Línea 1 <b>sin HTML</b>\nLínea 2 con el texto completo del admin  \n';
+    mockClient({
+      audit_log: {
+        data: [
+          auditRow(6, 'admin_decide_courier', 'courier', T400_COURIER, { status: 'pending' }, { status: 'approved', reason }),
+          auditRow(5, 'admin_suspend_courier', 'courier', T400_COURIER, { status: 'approved' }, { status: 'suspended', reason, withdrawnOffersCount: 0 }),
+          auditRow(4, 'admin_reinstate_courier', 'courier', T400_COURIER, { status: 'suspended' }, { status: 'approved', reason }),
+          auditRow(3, 'admin_verify_document', 'courier_document', T400_DOC_VERIFIED, { status: 'submitted', kind: 'license', courier_id: T400_DOC_OWNER }, { status: 'rejected', reason, docLevel: 1 }),
+          auditRow(2, 'admin_resolve_incident', 'incident', T400_INCIDENT, { status: 'open' }, { status: 'resolved', reason: 'Datos del destinatario: Calle Falsa 123' }),
+          auditRow(1, 'admin_decide_courier', 'courier', T400_COURIER, { status: 'pending' }, { status: 'approved', reason: '   ' }),
+        ],
+        error: null,
+      },
+    });
+
+    const { items } = await getAuditLog();
+
+    expect(items.slice(0, 4).map((item) => item.reason)).toEqual([reason, reason, reason, reason]);
+    expect(items[4]?.reason).toBeNull();
+    expect(items[5]?.reason).toBeNull();
+    expect(JSON.stringify(items)).not.toContain('Calle Falsa');
+  });
+
+  it('PR582-H01: conserva el motivo exacto, con espacios y salto final', async () => {
+    const exactReason = '  Primera línea\nSegunda línea  \n';
+    mockClient({
+      audit_log: {
+        data: [
+          auditRow(100, 'admin_suspend_courier', 'courier', T400_COURIER, { status: 'approved' }, { status: 'suspended', reason: exactReason }),
+        ],
+        error: null,
+      },
+    });
+    expect((await getAuditLog()).items[0]?.reason).toBe(exactReason);
+  });
+});
+
+describe('T-400: getAuditLog (nombres de la entidad resueltos en el servidor)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const rows = [
+    auditRow(7, 'admin_reinstate_courier', 'courier', T400_COURIER, { status: 'suspended' }, { status: 'approved', reason: 'ok' }),
+    auditRow(6, 'admin_verify_document', 'courier_document', T400_DOC_VERIFIED, { status: 'submitted', kind: 'license', courier_id: T400_DOC_OWNER }, { status: 'verified', docLevel: 2 }),
+    auditRow(5, 'replace_courier_document', 'courier_document', T400_DOC_REPLACED, { kind: 'insurance' }, { kind: 'insurance', status: 'submitted' }),
+    auditRow(4, 'admin_set_subscription', 'merchant', MERCHANT_A, { subscription_status: 'pilot' }, { subscription_status: 'active' }),
+    auditRow(3, 'admin_grant_publication_credits', 'merchant', MERCHANT_B, null, { credits: 10 }),
+    auditRow(2, 'cancel_request', 'delivery_request', T400_REQUEST, { status: 'published' }, { status: 'cancelled' }),
+    auditRow(1, 'admin_resolve_incident', 'incident', T400_INCIDENT, { status: 'open' }, { status: 'resolved' }),
+    auditRow(0, 'admin_update_setting', 'platform_setting', 'min_offer_ars', { value: 1000 }, { value: 1500 }),
+  ];
+
+  function namedClient() {
+    return mockClient({
+      audit_log: { data: rows, error: null },
+      courier_documents: {
+        data: [{ id: T400_DOC_REPLACED, courier_id: T400_COURIER, kind: 'insurance' }],
+        error: null,
+      },
+      profiles: {
+        data: [
+          { id: T400_COURIER, display_name: 'Ana Gómez' },
+          { id: T400_DOC_OWNER, display_name: 'Bruno Díaz' },
+        ],
+        error: null,
+      },
+      merchants: {
+        data: [
+          { profile_id: MERCHANT_A, business_name: 'Panadería Sol', profiles: { display_name: 'Carla' } },
+          { profile_id: MERCHANT_B, business_name: '  ', profiles: { display_name: 'Diego Ruiz' } },
+        ],
+        error: null,
+      },
+    });
+  }
+
+  it('resuelve el nombre del afectado de cada tipo', async () => {
+    namedClient();
+    const { items } = await getAuditLog();
+    const byId = new Map(items.map((item) => [item.id, item]));
+
+    expect(byId.get(7)).toMatchObject({ targetName: 'Ana Gómez', targetRef: 'b0000000' });
+    expect(byId.get(6)).toMatchObject({
+      targetName: 'Bruno Díaz · Licencia de Conducir',
+      targetRef: 'd0000000',
+    });
+    expect(byId.get(5)).toMatchObject({ targetName: 'Ana Gómez · Seguro de Vehículo' });
+    expect(byId.get(4)).toMatchObject({ targetName: 'Panadería Sol', targetRef: 'f0000000' });
+    expect(byId.get(3)).toMatchObject({ targetName: 'Diego Ruiz' });
+    expect(byId.get(2)).toMatchObject({ targetName: 'REQ-E1A2B3C4' });
+    expect(byId.get(1)).toMatchObject({ targetName: null, targetRef: '90000000' });
+    expect(byId.get(0)).toMatchObject({ targetName: null, targetRef: 'min_offer_ars' });
+  });
+
+  it('consulta en lote, una vez por tipo y con los ids completos (sin N+1)', async () => {
+    const { client, calls } = namedClient();
+    await getAuditLog();
+
+    const tables = client.from.mock.calls.map(([table]) => table);
+    expect(tables.filter((table) => table === 'profiles')).toHaveLength(1);
+    expect(tables.filter((table) => table === 'merchants')).toHaveLength(1);
+    expect(tables.filter((table) => table === 'courier_documents')).toHaveLength(1);
+
+    expect(callsOf(calls, 'courier_documents', 'in')[0]?.args).toEqual(['id', [T400_DOC_REPLACED]]);
+    const [profileColumn, profileIds] = callsOf(calls, 'profiles', 'in')[0]?.args ?? [];
+    expect(profileColumn).toBe('id');
+    expect([...(profileIds as string[])].sort()).toEqual([T400_COURIER, T400_DOC_OWNER].sort());
+    const [merchantColumn, merchantIds] = callsOf(calls, 'merchants', 'in')[0]?.args ?? [];
+    expect(merchantColumn).toBe('profile_id');
+    expect([...(merchantIds as string[])].sort()).toEqual([MERCHANT_A, MERCHANT_B].sort());
+  });
+
+  it('al navegador no llega ningún id completo', async () => {
+    namedClient();
+    const serialized = JSON.stringify(await getAuditLog());
+    for (const fullId of [
+      T400_COURIER,
+      T400_DOC_OWNER,
+      T400_DOC_VERIFIED,
+      T400_DOC_REPLACED,
+      MERCHANT_A,
+      MERCHANT_B,
+      T400_REQUEST,
+      T400_INCIDENT,
+    ]) {
+      expect(serialized).not.toContain(fullId);
+    }
+  });
+
+  it('sin fila o sin permiso, cae al id corto sin error', async () => {
+    mockClient({
+      audit_log: { data: rows, error: null },
+      profiles: { data: null, error: { message: 'permission denied' } },
+      merchants: { data: [], error: null },
+      courier_documents: { data: [], error: null },
+    });
+
+    const { items } = await getAuditLog();
+    expect(items.find((item) => item.id === 7)).toMatchObject({ targetName: null, targetRef: 'b0000000' });
+    expect(items.find((item) => item.id === 4)).toMatchObject({ targetName: null, targetRef: 'f0000000' });
+    expect(items.find((item) => item.id === 2)).toMatchObject({ targetName: 'REQ-E1A2B3C4' });
+  });
+
+  it('una página sin entidades con nombre no hace consultas extra', async () => {
+    const { client } = mockClient({ audit_log: { data: [rows[7]], error: null } });
+    await getAuditLog();
+    expect(client.from.mock.calls.map(([table]) => table)).toEqual(['audit_log']);
   });
 });
 
@@ -1020,17 +1465,6 @@ describe('T-321: Desambiguación de embeds PostgREST con foreign keys canónicas
     vi.clearAllMocks();
   });
 
-  it('getApplicantsQueue usa profiles!couriers_profile_id_fkey y no profiles:profile_id', async () => {
-    const { calls } = mockClient({ couriers: { data: [], error: null } });
-    await getApplicantsQueue('pending');
-
-    const [select] = callsOf(calls, 'couriers', 'select');
-    expect(select).toBeDefined();
-    const selectStr = String(select?.args[0]);
-    expect(selectStr).toMatch(/profiles!couriers_profile_id_fkey\s*\(/);
-    expect(selectStr).not.toMatch(/profiles:profile_id/);
-  });
-
   it('getApplicantDetail usa profiles!couriers_profile_id_fkey y no profiles:profile_id', async () => {
     const { calls } = mockClient({
       couriers: { data: null, error: null },
@@ -1052,7 +1486,7 @@ describe('T-321: Desambiguación de embeds PostgREST con foreign keys canónicas
     const [select] = callsOf(calls, 'merchants', 'select');
     expect(select).toBeDefined();
     const selectStr = String(select?.args[0]);
-    expect(selectStr).toMatch(/profiles!merchants_profile_id_fkey\s*\(/);
+    expect(selectStr).toMatch(/profiles!merchants_profile_id_fkey(!inner)?\s*\(/);
     expect(selectStr).not.toMatch(/profiles:profile_id/);
   });
 
@@ -1181,5 +1615,430 @@ describe('T-369 / CC-029: catálogo de planes y créditos del comercio', () => {
       p_before_id: 12,
     });
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('T-404: detalle con consentimientos e historial real (getApplicantDetail)', () => {
+  const COURIER = 'c0000000-0000-4000-8000-000000000404';
+  const DOC = 'd0000000-0000-4000-8000-000000000404';
+
+  function courierRow(overrides: Record<string, unknown> = {}) {
+    return {
+      profile_id: COURIER,
+      status: 'suspended',
+      vehicle_type: 'moto',
+      vehicle_plate: 'AE 404 EE',
+      dni_hmac: 'ab'.repeat(32),
+      doc_level: 1,
+      license_status: 'none',
+      insurance_status: 'none',
+      decided_at: null,
+      decided_by: null,
+      deactivated_at: null,
+      submitted_at: '2026-11-01T11:00:00+00:00',
+      profiles: { display_name: 'José Pérez', phone: '3865123456', created_at: '2026-11-01T10:00:00+00:00' },
+      ...overrides,
+    };
+  }
+
+  // Las filas llegan como las pide la consulta: las más nuevas primero.
+  const auditRows = [
+    {
+      id: 3,
+      created_at: '2026-11-03T10:00:00+00:00',
+      actor_id: 'e0000000-0000-4000-8000-000000000001',
+      action: 'admin_suspend_courier',
+      target_type: 'courier',
+      target_id: COURIER,
+      before: { status: 'approved' },
+      after: { status: 'suspended', reason: 'Reclamos reiterados' },
+      profiles: { display_name: 'Lautaro' },
+    },
+    {
+      id: 2,
+      created_at: '2026-11-02T10:00:00+00:00',
+      actor_id: 'e0000000-0000-4000-8000-000000000001',
+      action: 'view_courier_document',
+      target_type: 'courier_document',
+      target_id: DOC,
+      before: null,
+      after: { kind: 'dni_front', courier_id: COURIER },
+      profiles: { display_name: 'Lautaro' },
+    },
+  ];
+
+  function mockDetail(courier: Record<string, unknown>, audit: unknown[] = auditRows) {
+    return mockClient({
+      couriers: { data: courier, error: null },
+      courier_documents: {
+        data: [
+          { id: DOC, kind: 'dni_front', storage_path: `${COURIER}/dni_front.webp`, status: 'submitted', uploaded_at: '2026-11-01T10:30:00+00:00' },
+        ],
+        error: null,
+      },
+      consents: {
+        data: [
+          { document: 'tos', version: '2026-10', accepted_at: '2026-11-01T10:01:00+00:00' },
+          { document: 'courier_contract', version: '1', accepted_at: '2026-11-01T10:02:00+00:00' },
+        ],
+        error: null,
+      },
+      audit_log: { data: audit, error: null },
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('el historial va del más viejo al más nuevo: Registrado, Postulación enviada y las filas reales de auditoría', async () => {
+    mockDetail(courierRow());
+    const detail = await getApplicantDetail(COURIER);
+
+    expect(detail?.history?.map((event) => [event.kind, event.at])).toEqual([
+      ['registered', '2026-11-01T10:00:00+00:00'],
+      ['submitted', '2026-11-01T11:00:00+00:00'],
+      ['audit', '2026-11-02T10:00:00+00:00'],
+      ['audit', '2026-11-03T10:00:00+00:00'],
+    ]);
+    expect(detail?.history?.[2]).toMatchObject({ label: 'Vio un documento', detail: 'DNI Frente', reason: null });
+    expect(detail?.history?.[3]).toMatchObject({
+      label: 'Suspendió un repartidor',
+      reason: 'Reclamos reiterados',
+      actorName: 'Lautaro',
+    });
+  });
+
+  it('sin submitted_at no hay «Postulación enviada» ni eventos que la base no registre', async () => {
+    mockDetail(courierRow({ submitted_at: null }), []);
+    const detail = await getApplicantDetail(COURIER);
+
+    expect(detail?.history).toEqual([{ kind: 'registered', id: 'registered', at: '2026-11-01T10:00:00+00:00' }]);
+  });
+
+  /** N filas como las devuelve la consulta (`created_at DESC`, nunca más de su `limit(50)`). */
+  function auditPage(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      ...auditRows[0],
+      id: 100 - index,
+      created_at: new Date(Date.UTC(2026, 10, 3, 10, count - index)).toISOString(),
+    }));
+  }
+
+  it.each([0, 49, 50])(
+    'PR607-H01 (D03 = C): con %i filas de auditoría conserva los dos hitos, sin recortar el total',
+    async (count) => {
+      mockDetail(courierRow(), auditPage(count));
+      const history = (await getApplicantDetail(COURIER))?.history ?? [];
+
+      expect(history).toHaveLength(count + 2);
+      expect(history.filter((event) => event.kind !== 'audit').map((event) => event.kind)).toEqual([
+        'registered',
+        'submitted',
+      ]);
+      expect(history.filter((event) => event.kind === 'audit')).toHaveLength(count);
+      const times = history.map((event) => new Date(event.at).getTime());
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+    }
+  );
+
+  it('PR607-H01: los empates de fecha se ordenan igual siempre (hitos primero, auditoría por id)', async () => {
+    const at = '2026-11-01T10:00:00+00:00';
+    mockDetail(courierRow({ submitted_at: at }), [
+      { ...auditRows[0], id: 8, created_at: at },
+      { ...auditRows[0], id: 7, created_at: at },
+    ]);
+    const history = (await getApplicantDetail(COURIER))?.history ?? [];
+    expect(history.map((event) => event.id)).toEqual(['registered', 'submitted', 'audit-7', 'audit-8']);
+  });
+
+  it('la auditoría se filtra por el repartidor y sus documentos, con la sesión del admin y hasta 50 filas', async () => {
+    const { calls } = mockDetail(courierRow());
+    await getApplicantDetail(COURIER);
+
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    const [filter] = callsOf(calls, 'audit_log', 'or');
+    expect(String(filter?.args[0])).toBe(
+      `and(target_type.eq.courier,target_id.eq.${COURIER}),and(target_type.eq.courier_document,or(after->>courier_id.eq.${COURIER},before->>courier_id.eq.${COURIER},target_id.in.(${DOC})))`
+    );
+    expect(callsOf(calls, 'audit_log', 'order')[0]?.args).toEqual(['created_at', { ascending: false }]);
+    expect(callsOf(calls, 'audit_log', 'limit')[0]?.args).toEqual([50]);
+  });
+
+  it('los consentimientos salen de consents con documento, versión y fecha', async () => {
+    const { calls } = mockDetail(courierRow());
+    const detail = await getApplicantDetail(COURIER);
+
+    expect(callsOf(calls, 'consents', 'eq')[0]?.args).toEqual(['profile_id', COURIER]);
+    expect(detail?.consents).toEqual([
+      { document: 'tos', version: '2026-10', acceptedAt: '2026-11-01T10:01:00+00:00' },
+      { document: 'courier_contract', version: '1', acceptedAt: '2026-11-01T10:02:00+00:00' },
+    ]);
+  });
+});
+
+describe('PR607-D02: getAuditLog filtrado por repartidor', () => {
+  const COURIER = 'c0000000-0000-4000-8000-000000000607';
+  const DOC = 'd0000000-0000-4000-8000-000000000607';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('trae los eventos del repartidor y de sus documentos (id o courier_id), paginados por id', async () => {
+    const { calls } = mockClient({
+      courier_documents: { data: [{ id: DOC }], error: null },
+      audit_log: { data: [], error: null },
+    });
+    await getAuditLog({ courierId: COURIER, pageSize: 20 });
+
+    expect(callsOf(calls, 'courier_documents', 'eq')[0]?.args).toEqual(['courier_id', COURIER]);
+    expect(String(callsOf(calls, 'audit_log', 'or')[0]?.args[0])).toBe(
+      `and(target_type.eq.courier,target_id.eq.${COURIER}),and(target_type.eq.courier_document,or(after->>courier_id.eq.${COURIER},before->>courier_id.eq.${COURIER},target_id.in.(${DOC})))`
+    );
+    expect(callsOf(calls, 'audit_log', 'order')[0]?.args).toEqual(['id', { ascending: false }]);
+    expect(callsOf(calls, 'audit_log', 'limit')[0]?.args).toEqual([21]);
+  });
+
+  it('el filtro se aplica en la base antes del limit(pageSize + 1) y no menciona a otro repartidor', async () => {
+    const { calls } = mockClient({
+      courier_documents: { data: [], error: null },
+      audit_log: { data: [], error: null },
+    });
+    await getAuditLog({ courierId: COURIER, targetType: 'courier_document', cursor: 90 });
+
+    const auditCalls = calls.filter((call) => call.table === 'audit_log').map((call) => call.method);
+    expect(auditCalls.indexOf('or')).toBeLessThan(auditCalls.indexOf('limit'));
+    expect(callsOf(calls, 'audit_log', 'eq')[0]?.args).toEqual(['target_type', 'courier_document']);
+    expect(callsOf(calls, 'audit_log', 'lt')[0]?.args).toEqual(['id', 90]);
+    const filter = String(callsOf(calls, 'audit_log', 'or')[0]?.args[0]);
+    expect(filter).toContain(`after->>courier_id.eq.${COURIER},before->>courier_id.eq.${COURIER}`);
+    expect(filter).not.toContain('target_id.in.');
+    expect(filter.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g)).toEqual([
+      COURIER,
+      COURIER,
+      COURIER,
+    ]);
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('si falla la lectura de documentos del repartidor, el error se propaga', async () => {
+    mockClient({
+      courier_documents: { data: null, error: { message: 'permission denied' } },
+      audit_log: { data: [], error: null },
+    });
+    await expect(getAuditLog({ courierId: COURIER })).rejects.toThrow('permission denied');
+  });
+
+  it('sin filtro por repartidor no consulta documentos ni agrega el or()', async () => {
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getAuditLog();
+    expect(callsOf(calls, 'audit_log', 'or')).toHaveLength(0);
+    expect(calls.filter((call) => call.table === 'courier_documents')).toHaveLength(0);
+  });
+});
+
+describe('T-405: resumen por estado, filtro por chip y últimos movimientos (A03)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** Tabla `merchants` simulada que solo responde conteos: registra cada select y el estado pedido. */
+  function mockCounts(byStatus: Record<string, number>, total: number) {
+    const selects: { columns: unknown; options: unknown; status: string | null }[] = [];
+    const from = vi.fn(() => {
+      const entry: { columns: unknown; options: unknown; status: string | null } = {
+        columns: null,
+        options: null,
+        status: null,
+      };
+      const builder: Record<string, unknown> = {
+        select: (columns: unknown, options: unknown) => {
+          entry.columns = columns;
+          entry.options = options;
+          selects.push(entry);
+          return builder;
+        },
+        eq: (column: string, value: string) => {
+          if (column === 'subscription_status') entry.status = value;
+          return builder;
+        },
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({
+            data: null,
+            error: null,
+            count: entry.status === null ? total : (byStatus[entry.status] ?? 0),
+          }).then(resolve),
+      };
+      return builder;
+    });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ from } as unknown as ServerClient);
+    return { from, selects };
+  }
+
+  it('cuenta cada estado (incluido cancelled) y el total con head: true, sin traer filas', async () => {
+    const { selects } = mockCounts({ pilot: 12, active: 5, expired: 2, cancelled: 3 }, 22);
+    const counts = await getMerchantStatusCounts();
+
+    expect(counts).toEqual({ all: 22, pilot: 12, active: 5, expired: 2, cancelled: 3 });
+    expect(selects).toHaveLength(5);
+    for (const entry of selects) {
+      expect(entry.options).toEqual({ count: 'exact', head: true });
+    }
+    expect(selects.map((entry) => String(entry.status)).sort()).toEqual(
+      ['active', 'cancelled', 'expired', 'null', 'pilot']
+    );
+  });
+
+  it('«Todos» es el conteo sin filtro: los cancelados nunca quedan afuera', async () => {
+    mockCounts({ pilot: 1, active: 1, expired: 1, cancelled: 4 }, 7);
+    expect((await getMerchantStatusCounts()).all).toBe(7);
+  });
+
+  it('los conteos usan la misma condición que la tabla (inner join con profiles)', async () => {
+    const { selects } = mockCounts({}, 0);
+    await getMerchantStatusCounts();
+    for (const entry of selects) {
+      expect(String(entry.columns)).toMatch(/profiles!merchants_profile_id_fkey!inner/);
+    }
+  });
+
+  it('propaga el error de un conteo', async () => {
+    const from = vi.fn(() => {
+      const builder: Record<string, unknown> = {
+        select: () => builder,
+        eq: () => builder,
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({ data: null, error: { message: 'boom' }, count: null }).then(resolve),
+      };
+      return builder;
+    });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ from } as unknown as ServerClient);
+    await expect(getMerchantStatusCounts()).rejects.toThrow(/boom/);
+  });
+
+  it('el chip filtra la tabla en la base por subscription_status', async () => {
+    const { calls } = mockClient({ merchants: { data: [], error: null } });
+    await getAdminMerchants({ status: 'expired' });
+    expect(callsOf(calls, 'merchants', 'eq').map((call) => call.args)).toContainEqual([
+      'subscription_status',
+      'expired',
+    ]);
+  });
+
+  it('sin chip la tabla no filtra por estado (incluye cancelados)', async () => {
+    const { calls } = mockClient({ merchants: { data: [], error: null } });
+    await getAdminMerchants();
+    expect(
+      callsOf(calls, 'merchants', 'eq').filter((call) => call.args[0] === 'subscription_status')
+    ).toHaveLength(0);
+  });
+
+  const MERCHANT = 'f0000000-0000-4000-8000-000000000405';
+  const OTHER = 'f0000000-0000-4000-8000-000000000999';
+
+  function auditEvent(id: number, action: string, targetId: string, after: Record<string, unknown> = {}) {
+    return {
+      id,
+      created_at: `2026-11-0${(id % 9) + 1}T12:00:00.000Z`,
+      actor_id: 'a0000000-0000-4000-8000-000000000001',
+      action,
+      target_type: 'merchant',
+      target_id: targetId,
+      before: { subscription_status: 'pilot' },
+      after: { subscription_status: 'pilot', paid_until: '2026-12-31', ...after },
+      profiles: { display_name: 'Lautaro' },
+    };
+  }
+
+  /**
+   * `audit_log` simulada que aplica en memoria los filtros que recibe (eq, in, order, limit), como haría la base.
+   * Si la consulta no filtra por comercio o por acción, las filas ajenas aparecen.
+   */
+  function fakeAuditLog(rows: ReturnType<typeof auditEvent>[]) {
+    const calls: RecordedCall[] = [];
+    const from = vi.fn((table: string) => {
+      let result: Record<string, unknown>[] = table === 'audit_log' ? [...rows] : [];
+      const builder: Record<string, unknown> = {
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({ data: result, error: null }).then(resolve),
+      };
+      for (const method of CHAIN_METHODS) {
+        builder[method] = (...args: unknown[]) => {
+          calls.push({ table, method, args });
+          const column = String(args[0]);
+          if (method === 'eq') result = result.filter((row) => row[column] === args[1]);
+          if (method === 'in') result = result.filter((row) => (args[1] as unknown[]).includes(row[column]));
+          if (method === 'order') {
+            const ascending = (args[1] as { ascending?: boolean } | undefined)?.ascending ?? true;
+            result = [...result].sort((a, b) => (Number(a[column]) - Number(b[column])) * (ascending ? 1 : -1));
+          }
+          if (method === 'limit') result = result.slice(0, Number(args[0]));
+          return builder;
+        };
+      }
+      return builder;
+    });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ from } as unknown as ServerClient);
+    return { calls };
+  }
+
+  const MIXED = [
+    auditEvent(20, 'admin_grant_publication_credits', MERCHANT),
+    auditEvent(19, 'merchant_profile_update', MERCHANT),
+    auditEvent(18, 'admin_set_subscription', OTHER),
+    auditEvent(17, 'admin_set_subscription', MERCHANT, { subscription_status: 'active' }),
+    auditEvent(16, 'admin_register_plan_period', MERCHANT),
+    auditEvent(15, 'admin_set_subscription', MERCHANT),
+    auditEvent(14, 'admin_grant_publication_credits', MERCHANT),
+    auditEvent(13, 'admin_register_plan_period', OTHER),
+    auditEvent(12, 'admin_set_subscription', MERCHANT),
+    auditEvent(11, 'admin_set_subscription', MERCHANT),
+    auditEvent(10, 'admin_set_subscription', MERCHANT),
+  ];
+
+  it('trae hasta 5 cambios de plan del comercio, del más nuevo al más viejo, sin créditos, perfil ni otros comercios', async () => {
+    fakeAuditLog(MIXED);
+    const items = await getMerchantPlanMovements(MERCHANT);
+    expect(items.map((item) => item.id)).toEqual([17, 16, 15, 12, 11]);
+  });
+
+  it('filtra por entidad, comercio y acción en la base antes de limitar a 5', async () => {
+    const { calls } = fakeAuditLog(MIXED);
+    await getMerchantPlanMovements(MERCHANT);
+
+    const audit = calls.filter((call) => call.table === 'audit_log');
+    const index = (method: string) => audit.findIndex((call) => call.method === method);
+    expect(audit.filter((call) => call.method === 'eq').map((call) => call.args)).toEqual(
+      expect.arrayContaining([
+        ['target_type', 'merchant'],
+        ['target_id', MERCHANT],
+      ])
+    );
+    expect(audit.find((call) => call.method === 'in')?.args).toEqual([
+      'action',
+      ['admin_set_subscription', 'admin_register_plan_period'],
+    ]);
+    expect(audit.find((call) => call.method === 'limit')?.args).toEqual([5]);
+    expect(index('in')).toBeLessThan(index('limit'));
+  });
+
+  it('nunca lee merchant_plan_periods directo', async () => {
+    const { calls } = fakeAuditLog(MIXED);
+    await getMerchantPlanMovements(MERCHANT);
+    expect(calls.some((call) => call.table === 'merchant_plan_periods')).toBe(false);
+  });
+
+  it('formatea cada movimiento con el saneamiento de T-400 (quién y qué cambió, sin notas)', async () => {
+    fakeAuditLog([
+      auditEvent(17, 'admin_set_subscription', MERCHANT, {
+        subscription_status: 'active',
+        notes: 'tel 3865 44-1122',
+      }),
+    ]);
+    const [item] = await getMerchantPlanMovements(MERCHANT);
+    expect(item?.actorName).toBe('Lautaro');
+    expect(item?.changes).toContainEqual({ field: 'subscription_status', before: 'pilot', after: 'active' });
+    expect(JSON.stringify(item)).not.toMatch(/3865/);
   });
 });

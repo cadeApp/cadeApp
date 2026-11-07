@@ -4,7 +4,10 @@ import {
   courierOnboardingAction,
   replaceCourierDocumentAction,
   addCourierOptionalDocumentAction,
-  updateCourierVehicleAction,
+  addCourierVehicleAction,
+  updateCourierVehiclePlateAction,
+  removeCourierVehicleAction,
+  setActiveCourierVehicleAction,
   validateCurrentDocumentSet,
   updateCourierPhoneAction,
 } from './actions';
@@ -24,6 +27,18 @@ vi.mock('@/server/env', () => ({
     NODE_ENV: 'test',
   },
 }));
+
+// CC-043: respuesta de finalize_courier_application en un primer envío.
+const FINALIZE_OK = {
+  data: { ok: true, idempotent: false, submittedAt: '2026-11-04T12:00:00.000000Z' },
+  error: null,
+};
+const EXPECTED_FINALIZE_ARGS = {
+  p_courier_id: 'courier-current-user-uuid',
+  p_dni_hmac: '593c04e9d598a3bef0bbefa513180b4225b33b31f4682d9d44d81805e15c01e2',
+  p_vehicle_type: 'moto',
+  p_vehicle_plate: 'A 123 BCD',
+};
 
 describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboarding', () => {
   const currentUserId = 'courier-current-user-uuid';
@@ -148,6 +163,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
 
     vi.mocked(adminAuth.createAdminClient).mockReturnValue({
       from: mockAdminFrom,
+      rpc: vi.fn().mockResolvedValue(FINALIZE_OK),
     } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
 
     const result = await courierOnboardingAction({
@@ -219,6 +235,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
 
     vi.mocked(adminAuth.createAdminClient).mockReturnValue({
       from: mockAdminFrom,
+      rpc: vi.fn().mockResolvedValue(FINALIZE_OK),
     } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
 
     const result = await courierOnboardingAction({
@@ -312,8 +329,10 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
       return { select: vi.fn().mockReturnThis() };
     });
 
+    const mockFinalize = vi.fn().mockResolvedValue(FINALIZE_OK);
     vi.mocked(adminAuth.createAdminClient).mockReturnValue({
       from: mockAdminFrom,
+      rpc: mockFinalize,
     } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
 
     const result = await courierOnboardingAction({
@@ -344,13 +363,14 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
     // Consulta de DNI con dni_hmac
     expect(mockAdminEq).toHaveBeenCalledWith('dni_hmac', expectedHmac);
 
-    // Se actualizó dni_hmac y vehículo mediante admin client
-    expect(mockAdminUpdate).toHaveBeenCalledWith({
-      dni_hmac: expectedHmac,
-      vehicle_type: 'moto',
-      vehicle_plate: 'A 123 BCD',
+    // CC-043: el envío lo registra finalize_courier_application con el id de la sesión; no hay update directo
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(mockFinalize).toHaveBeenCalledWith('finalize_courier_application', {
+      ...EXPECTED_FINALIZE_ARGS,
+      p_dni_hmac: expectedHmac,
     });
-    expect(mockUpdateCourier).toHaveBeenCalledWith('profile_id', currentUserId);
+    expect(mockAdminUpdate).not.toHaveBeenCalled();
+    expect(mockUpdateCourier).not.toHaveBeenCalled();
 
     // PR77-H03 / H13: Afirmaciones explícitas de consentimientos idempotentes con ignoreDuplicates
     expect(mockUpsertConsents).toHaveBeenCalledTimes(1);
@@ -594,6 +614,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
 
     vi.mocked(adminAuth.createAdminClient).mockReturnValue({
       from: mockAdminFrom,
+      rpc: vi.fn().mockResolvedValue(FINALIZE_OK),
     } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
 
     const result = await courierOnboardingAction({
@@ -687,6 +708,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
 
     vi.mocked(adminAuth.createAdminClient).mockReturnValue({
       from: mockAdminFrom,
+      rpc: vi.fn().mockResolvedValue(FINALIZE_OK),
     } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
 
     const result = await courierOnboardingAction({
@@ -757,7 +779,9 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
     const mockAdminUpdate = vi.fn().mockReturnValue({
       eq: vi.fn().mockResolvedValue({ error: null }),
     });
+    const mockFinalize = vi.fn().mockResolvedValue(FINALIZE_OK);
     vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+      rpc: mockFinalize,
       from: vi.fn().mockImplementation((table: string) => {
         if (table === 'couriers') {
           return {
@@ -774,7 +798,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       }),
     } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
 
-    return { mockAdminUpdate, mockUpsertConsents, mockRpcDocuments };
+    return { mockAdminUpdate, mockFinalize, mockUpsertConsents, mockRpcDocuments };
   }
 
   const validInput = {
@@ -798,17 +822,18 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
   };
 
   it('si falla el upsert de consentimientos, no se escribe el marcador del courier', async () => {
-    const { mockAdminUpdate, mockUpsertConsents } = setupClients({ consents: true });
+    const { mockAdminUpdate, mockFinalize, mockUpsertConsents } = setupClients({ consents: true });
 
     const result = await courierOnboardingAction(validInput);
 
     expect(mockUpsertConsents).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
     expect(mockAdminUpdate).not.toHaveBeenCalled();
+    expect(mockFinalize).not.toHaveBeenCalled();
   });
 
   it('si falla la RPC de documentos, no se escribe el marcador del courier', async () => {
-    const { mockAdminUpdate, mockRpcDocuments } = setupClients({ documents: true });
+    const { mockAdminUpdate, mockFinalize, mockRpcDocuments } = setupClients({ documents: true });
 
     const result = await courierOnboardingAction(validInput);
 
@@ -843,33 +868,20 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       profileRole = 'courier',
       consentStatus = 'active',
       courierStatus = 'pending' as 'pending' | 'approved' | 'rejected' | 'suspended',
-      adminUpdateError = null as unknown,
-      adminUpdatedRows = ['pending', 'approved'].includes(courierStatus)
-        ? [{ profile_id: currentUserId }]
-        : [] as Array<{ profile_id: string }>,
+      // CC-043: la RPC de finalización revalida el estado bajo lock; rejected/suspended → UNAUTHORIZED_ACTOR.
+      finalizeResponse = ['pending', 'approved'].includes(courierStatus)
+        ? (FINALIZE_OK as { data: unknown; error: unknown })
+        : { data: null, error: { code: 'P0001', message: 'UNAUTHORIZED_ACTOR' } },
     }: {
       rpcResponse?: { data: unknown; error: unknown };
       profileRole?: string;
       consentStatus?: string;
       courierStatus?: 'pending' | 'approved' | 'rejected' | 'suspended';
-      adminUpdateError?: unknown;
-      adminUpdatedRows?: Array<{ profile_id: string }>;
+      finalizeResponse?: { data: unknown; error: unknown };
     } = {}) {
       const mockRpc = vi.fn().mockResolvedValue(rpcResponse);
-
-      const mockAdminSelect = vi.fn().mockResolvedValue({
-        data: adminUpdatedRows,
-        error: adminUpdateError,
-      });
-      const mockAdminIn = vi.fn().mockReturnValue({
-        select: mockAdminSelect,
-      });
-      const mockAdminEq = vi.fn().mockReturnValue({
-        in: mockAdminIn,
-      });
-      const mockAdminUpdate = vi.fn().mockReturnValue({
-        eq: mockAdminEq,
-      });
+      const mockFinalize = vi.fn().mockResolvedValue(finalizeResponse);
+      const mockAdminUpdate = vi.fn();
       const mockUpsertConsents = vi.fn().mockResolvedValue({ error: null });
 
       vi.mocked(serverAuth.createClient).mockResolvedValue({
@@ -896,6 +908,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
 
       vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        rpc: mockFinalize,
         from: vi.fn().mockImplementation((table: string) => {
           if (table === 'couriers') {
             return {
@@ -915,11 +928,11 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
         }),
       } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
 
-      return { mockRpc, mockAdminUpdate, mockAdminEq, mockAdminIn, mockAdminSelect, mockUpsertConsents };
+      return { mockRpc, mockFinalize, mockAdminUpdate, mockUpsertConsents };
     }
 
-    it('a) primer onboarding con cuatro kinds sin docs: llamada a RPC atómica submit_courier_onboarding_documents y actualización de courier', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest();
+    it('a) primer onboarding con cuatro kinds sin docs: llamada a RPC atómica submit_courier_onboarding_documents y finalización del envío', async () => {
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest();
 
       const result = await courierOnboardingAction(validOnboardingPayload);
 
@@ -933,11 +946,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
           { kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg' },
         ],
       });
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('b) reintento con mismos kinds/path existentes: RPC retorna reused_count=4 -> éxito idempotente', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: { ok: true, courier_id: currentUserId, inserted_count: 0, reused_count: 4 },
           error: null,
@@ -948,11 +962,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('c) reintento con path distinto sobre documento vigente: RPC retorna VALIDATION_ERROR y cero courier update', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'VALIDATION_ERROR' },
@@ -963,11 +978,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('d) colisión concurrente con mismos paths (idempotencia en carrera): RPC serializa y retorna éxito idempotente', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: { ok: true, courier_id: currentUserId, inserted_count: 0, reused_count: 4 },
           error: null,
@@ -978,11 +994,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('e) colisión concurrente con path distinto: RPC retorna VALIDATION_ERROR y cero courier update', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'VALIDATION_ERROR' },
@@ -993,11 +1010,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('f) fallo en DB en RPC: retorna INTERNAL_ERROR y cero courier update', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'XX000', message: 'connection dropped' },
@@ -1008,11 +1026,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('g) nunca toca documentos verified/submitted: la RPC maneja el estado sin mutaciones destructivas', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: { ok: true, courier_id: currentUserId, inserted_count: 2, reused_count: 2 },
           error: null,
@@ -1023,11 +1042,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('h) PR364-R03: actor con consentimiento no activo -> RPC devuelve CONSENT_REQUIRED -> rechazar con UNAUTHORIZED_ACTOR', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'CONSENT_REQUIRED' },
@@ -1038,11 +1058,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('i) PR364-R03: actor con rol no autorizado -> RPC devuelve UNAUTHORIZED_ACTOR -> rechazar con UNAUTHORIZED_ACTOR', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'UNAUTHORIZED_ACTOR' },
@@ -1053,11 +1074,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('j) PR364-R03: courier con status rejected o suspended bajo lock en DB -> RPC devuelve UNAUTHORIZED_ACTOR', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'UNAUTHORIZED_ACTOR' },
@@ -1068,6 +1090,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
@@ -1121,7 +1144,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
     });
 
     it('l) Fase B / ambigüedad en DB: coexisten múltiples filas is_current=true para el mismo kind -> RPC devuelve INTERNAL_ERROR sin mutar ni llamar a update', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'INTERNAL_ERROR' },
@@ -1132,11 +1155,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('m) Fase B / defensa en profundidad: paths que intentan directory traversal (..) o prefijo inválido son rechazados con VALIDATION_ERROR', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest();
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest();
 
       const invalidTraversalPayload = {
         ...validOnboardingPayload,
@@ -1150,6 +1174,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
       expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
@@ -1174,13 +1199,8 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
         return { data: { ok: true, courier_id: currentUserId, inserted_count: 0, reused_count: 4 }, error: null };
       });
 
-      const mockAdminUpdate = vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          in: vi.fn().mockReturnValue({
-            select: vi.fn().mockResolvedValue({ data: [{ profile_id: currentUserId }], error: null }),
-          }),
-        }),
-      });
+      const mockAdminUpdate = vi.fn();
+      const mockFinalize = vi.fn().mockResolvedValue(FINALIZE_OK);
 
       vi.mocked(serverAuth.createClient).mockResolvedValue({
         auth: {
@@ -1203,6 +1223,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
 
       vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        rpc: mockFinalize,
         from: vi.fn().mockImplementation((table: string) => {
           if (table === 'couriers') {
             return {
@@ -1239,11 +1260,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       expect(successes).toHaveLength(1);
       expect(failures).toHaveLength(1);
       expect(failures[0]).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('o) PR376-H02: documento vigente en status "rejected" -> RPC devuelve VALIDATION_ERROR, couriers.update no llamado', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'VALIDATION_ERROR' },
@@ -1254,11 +1276,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('p) PR376-H03: 3 docs previos submitted pero uno en status "rejected" -> RPC devuelve VALIDATION_ERROR, couriers.update no llamado', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'VALIDATION_ERROR' },
@@ -1269,11 +1292,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('q) PR376-H03: post-revisión detecta storage_path discrepante -> RPC devuelve VALIDATION_ERROR, couriers.update no llamado', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: null,
           error: { code: 'P0001', message: 'VALIDATION_ERROR' },
@@ -1284,11 +1308,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
     it('r) PR376-H03: payload sin uno de los kinds requeridos -> rechazo con VALIDATION_ERROR, couriers.update no llamado', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest();
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest();
 
       const invalidMissingPayload = {
         ...validOnboardingPayload,
@@ -1302,11 +1327,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
       expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockFinalize).not.toHaveBeenCalled();
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
-    it('s) PR376-H02/H03: todos los documentos vigentes con paths exactos y status submitted o verified -> ok:true (GREEN), couriers.update llamado', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
+    it('s) PR376-H02/H03: todos los documentos vigentes con paths exactos y status submitted o verified -> ok:true (GREEN), envío finalizado', async () => {
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         rpcResponse: {
           data: { ok: true, courier_id: currentUserId, inserted_count: 4, reused_count: 0 },
           error: null,
@@ -1317,11 +1343,12 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
 
-    it('t) PR376-R02: RPC exitosa pero courier suspendido administrativamente tras la RPC (UPDATE afecta 0 filas) -> rechazo seguro con UNAUTHORIZED_ACTOR', async () => {
-      const { mockRpc, mockAdminUpdate, mockAdminIn } = setupRpcTest({
+    it('t) PR376-R02: RPC exitosa pero courier suspendido administrativamente tras la RPC (la RPC de finalización lo revalida bajo lock) -> rechazo seguro con UNAUTHORIZED_ACTOR', async () => {
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         courierStatus: 'suspended',
       });
 
@@ -1329,12 +1356,13 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
-      expect(mockAdminIn).toHaveBeenCalledWith('status', ['pending', 'approved']);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+      expect(mockFinalize).toHaveBeenCalledWith('finalize_courier_application', EXPECTED_FINALIZE_ARGS);
     });
 
-    it('u) PR376-R02: RPC exitosa pero courier rechazado administrativamente tras la RPC (UPDATE afecta 0 filas) -> rechazo seguro con UNAUTHORIZED_ACTOR', async () => {
-      const { mockRpc, mockAdminUpdate, mockAdminIn } = setupRpcTest({
+    it('u) PR376-R02: RPC exitosa pero courier rechazado administrativamente tras la RPC (la RPC de finalización lo revalida bajo lock) -> rechazo seguro con UNAUTHORIZED_ACTOR', async () => {
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         courierStatus: 'rejected',
       });
 
@@ -1342,12 +1370,13 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
-      expect(mockAdminIn).toHaveBeenCalledWith('status', ['pending', 'approved']);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+      expect(mockFinalize).toHaveBeenCalledWith('finalize_courier_application', EXPECTED_FINALIZE_ARGS);
     });
 
-    it('v) PR376-R02: RPC exitosa y courier en status pending (UPDATE afecta exactamente 1 fila) -> ok: true', async () => {
-      const { mockRpc, mockAdminUpdate, mockAdminIn } = setupRpcTest({
+    it('v) PR376-R02: RPC exitosa y courier en status pending (la RPC de finalización registra el envío) -> ok: true', async () => {
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         courierStatus: 'pending',
       });
 
@@ -1355,12 +1384,13 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
-      expect(mockAdminIn).toHaveBeenCalledWith('status', ['pending', 'approved']);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+      expect(mockFinalize).toHaveBeenCalledWith('finalize_courier_application', EXPECTED_FINALIZE_ARGS);
     });
 
-    it('w) PR376-R02: RPC exitosa y courier en status approved (UPDATE afecta exactamente 1 fila) -> ok: true', async () => {
-      const { mockRpc, mockAdminUpdate, mockAdminIn } = setupRpcTest({
+    it('w) PR376-R02: RPC exitosa y courier en status approved (la RPC de finalización registra el envío) -> ok: true', async () => {
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
         courierStatus: 'approved',
       });
 
@@ -1368,20 +1398,76 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
-      expect(mockAdminIn).toHaveBeenCalledWith('status', ['pending', 'approved']);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+      expect(mockFinalize).toHaveBeenCalledWith('finalize_courier_application', EXPECTED_FINALIZE_ARGS);
     });
 
-    it('x) PR376-R02: fallo de base de datos en update administrativo -> rechazo seguro con INTERNAL_ERROR', async () => {
-      const { mockRpc, mockAdminUpdate } = setupRpcTest({
-        adminUpdateError: { message: 'Database connection failed' },
+    it('x) PR376-R02: fallo de base de datos en la RPC de finalización -> rechazo seguro con INTERNAL_ERROR', async () => {
+      const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest({
+        finalizeResponse: { data: null, error: { code: 'XX000', message: 'Database connection failed' } },
       });
 
       const result = await courierOnboardingAction(validOnboardingPayload);
 
       expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
       expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFinalize).toHaveBeenCalledTimes(1);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+    });
+
+    describe('CC-043: finalize_courier_application', () => {
+      it.each([
+        ['NOT_FOUND', 'UNAUTHORIZED_ACTOR'],
+        ['UNAUTHORIZED_ACTOR', 'UNAUTHORIZED_ACTOR'],
+        ['CONSENT_REQUIRED', 'UNAUTHORIZED_ACTOR'],
+        ['VALIDATION_ERROR', 'VALIDATION_ERROR'],
+        ['DNI_ALREADY_REGISTERED', 'DNI_ALREADY_REGISTERED'],
+        ['INVALID_STATE_TRANSITION', 'INVALID_STATE_TRANSITION'],
+        ['ALGO_INESPERADO', 'INTERNAL_ERROR'],
+      ])('mapea %s de la RPC a %s', async (rpcCode, expected) => {
+        const { mockFinalize } = setupRpcTest({
+          finalizeResponse: { data: null, error: { code: 'P0001', message: rpcCode } },
+        });
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({ ok: false, code: expected });
+        expect(mockFinalize).toHaveBeenCalledTimes(1);
+      });
+
+      it('un error que no es P0001 es INTERNAL_ERROR', async () => {
+        setupRpcTest({ finalizeResponse: { data: null, error: { code: '42501', message: 'permission denied' } } });
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      });
+
+      it('una salida que no cumple el contrato no se toma como envío', async () => {
+        setupRpcTest({ finalizeResponse: { data: { ok: true }, error: null } });
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      });
+
+      it('un reintento idempotente (histórico sin fecha incluido) termina el onboarding', async () => {
+        setupRpcTest({ finalizeResponse: { data: { ok: true, idempotent: true, submittedAt: null }, error: null } });
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({
+          ok: true,
+          data: { redirectTo: '/onboarding/status' },
+        });
+      });
+
+      it('bici sin patente manda p_vehicle_plate null y una patente en minúsculas va en mayúsculas', async () => {
+        const bike = setupRpcTest();
+        await courierOnboardingAction({ ...validOnboardingPayload, vehicleType: 'bike', vehiclePlate: null });
+        expect(bike.mockFinalize).toHaveBeenCalledWith('finalize_courier_application', {
+          ...EXPECTED_FINALIZE_ARGS,
+          p_vehicle_type: 'bike',
+          p_vehicle_plate: null,
+        });
+
+        const moto = setupRpcTest();
+        await courierOnboardingAction({ ...validOnboardingPayload, vehiclePlate: ' a 123 bcd ' });
+        expect(moto.mockFinalize).toHaveBeenCalledWith('finalize_courier_application', EXPECTED_FINALIZE_ARGS);
+      });
     });
   });
 
@@ -1464,253 +1550,6 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
     });
   });
 
-  describe('T-357: Actualización de vehículo del repartidor desde perfil (updateCourierVehicleAction)', () => {
-    const courierId = 'courier-test-uuid-357';
-
-    function setupCourierMock({
-      user = { id: courierId, email: 'courier@cadeapp.test' } as { id: string; email: string } | null,
-      role = 'courier',
-      courierRecord = { profile_id: courierId, status: 'approved', vehicle_type: 'moto' } as
-        { profile_id: string; status: string; vehicle_type: string | null } | null,
-      updateFails = false,
-      updateMissing = false,
-      readFails = false,
-    } = {}) {
-      const mockUpdateResult = vi.fn().mockResolvedValue({
-        data: updateMissing ? null : { profile_id: user?.id ?? courierId },
-        error: updateFails ? { message: 'update failed' } : null,
-      });
-      const mockIn = vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({ maybeSingle: mockUpdateResult }),
-      });
-      const mockNot = vi.fn().mockReturnValue({ in: mockIn });
-      const mockEqUpdate = vi.fn().mockReturnValue({ not: mockNot });
-      const mockUpdate = vi.fn().mockReturnValue({ eq: mockEqUpdate });
-      const mockUpsertDocuments = vi.fn().mockResolvedValue({ error: null });
-      vi.mocked(serverAuth.createClient).mockResolvedValue({
-        auth: {
-          getUser: vi.fn().mockResolvedValue({
-            data: { user },
-            error: user ? null : new Error('No auth'),
-          }),
-        },
-        from: vi.fn().mockImplementation((table: string) => {
-          if (table === 'profiles') {
-            return {
-              select: vi.fn().mockReturnThis(),
-              eq: vi.fn().mockReturnThis(),
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: user && role ? { role } : null,
-                error: null,
-              }),
-            };
-          }
-          if (table === 'couriers') {
-            return {
-              select: vi.fn().mockReturnThis(),
-              eq: vi.fn().mockReturnThis(),
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: courierRecord,
-                error: readFails ? { message: 'read failed' } : null,
-              }),
-              update: mockUpdate,
-            };
-          }
-          if (table === 'courier_documents') {
-            return { upsert: mockUpsertDocuments };
-          }
-          return { select: vi.fn().mockReturnThis() };
-        }),
-      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
-      return { mockUpdate, mockEqUpdate, mockNot, mockIn, mockUpsertDocuments };
-    }
-
-    it('rechaza la acción si el usuario no está autenticado', async () => {
-      setupCourierMock({ user: null });
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-      });
-      expect(result).toEqual({ ok: false, code: 'UNAUTHENTICATED' });
-    });
-
-    it('rechaza la acción si el usuario autenticado no tiene rol courier', async () => {
-      setupCourierMock({ role: 'merchant' });
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-      });
-      expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
-    });
-
-    it('rechaza la acción si el legajo courier no existe (NOT_FOUND)', async () => {
-      setupCourierMock({ courierRecord: null });
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-      });
-      expect(result).toEqual({ ok: false, code: 'NOT_FOUND' });
-    });
-
-    it('rechaza la acción si el tipo de transporte no es válido (VALIDATION_ERROR)', async () => {
-      setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'helicoptero',
-        vehiclePlate: 'AB 123 CD',
-      });
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-    });
-
-    it('rechaza la acción si el vehículo es moto y no tiene patente', async () => {
-      setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: '',
-      });
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-    });
-
-    it('rechaza la acción si la patente tiene formato inválido para moto o auto', async () => {
-      setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'car',
-        vehiclePlate: 'PATENTE_INVALIDA_123',
-      });
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-    });
-
-    it('actualiza exitosamente moto con patente argentina formateada a mayúsculas', async () => {
-      const { mockUpdate } = setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'ab 123 cd',
-      });
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data.redirectTo).toBe('/courier/profile');
-      }
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate.mock.calls[0]?.[0]).toEqual({
-        vehicle_type: 'moto',
-        vehicle_plate: 'AB 123 CD',
-      });
-    });
-
-    it('actualiza exitosamente auto con patente tradicional argentina (ela 666) a mayúsculas', async () => {
-      const { mockUpdate } = setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'car',
-        vehiclePlate: 'ela 666',
-      });
-
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate.mock.calls[0]?.[0]).toEqual({
-        vehicle_type: 'car',
-        vehicle_plate: 'ELA 666',
-      });
-    });
-
-    it('actualiza exitosamente a pie o bici normalizando vehicle_plate a null', async () => {
-      const { mockUpdate } = setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'bike',
-        vehiclePlate: 'AB 123 CD', // si viniera residuo de patente, debe normalizarse a null
-      });
-
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate.mock.calls[0]?.[0]).toEqual({
-        vehicle_type: 'bike',
-        vehicle_plate: null,
-      });
-    });
-
-    it('rechaza campos documentales de edición antes de cualquier mutación', async () => {
-      const { mockUpdate, mockUpsertDocuments } = setupCourierMock();
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-        documents: { license: 'courier/otro/archivo.jpg' },
-      });
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-      expect(mockUpsertDocuments).not.toHaveBeenCalled();
-    });
-
-    it('no exige reconsentimientos legales ni DNI/selfie en la edición', async () => {
-      const { mockUpdate } = setupCourierMock();
-      // Payload sin consents ni DNI
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'car',
-        vehiclePlate: 'AA 000 BB',
-      });
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-    });
-
-    it('asegura que la actualización está estrictamente restringida a auth.user.id (actor A no puede afectar a B)', async () => {
-      const courierAId = 'courier-a-uuid-1111';
-      const courierBId = 'courier-b-uuid-2222';
-      const { mockUpdate, mockEqUpdate } = setupCourierMock({
-        user: { id: courierAId, email: 'courier-a@cadeapp.test' },
-        courierRecord: { profile_id: courierAId, status: 'approved', vehicle_type: 'moto' },
-      });
-
-      const result = await updateCourierVehicleAction({
-        vehicleType: 'car',
-        vehiclePlate: 'ELA 666',
-      });
-
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockEqUpdate).toHaveBeenCalledWith('profile_id', courierAId);
-      expect(mockEqUpdate).not.toHaveBeenCalledWith('profile_id', courierBId);
-    });
-
-    it('bloquea la edición si no se completó el onboarding', async () => {
-      const { mockUpdate } = setupCourierMock({
-        courierRecord: { profile_id: courierId, status: 'pending', vehicle_type: null },
-      });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-    });
-
-    it.each(['rejected', 'suspended'])('bloquea legajo %s en edición', async (status) => {
-      const { mockUpdate } = setupCourierMock({
-        courierRecord: { profile_id: courierId, status, vehicle_type: 'moto' },
-      });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-    });
-
-    it('distingue fallo de lectura de legajo inexistente', async () => {
-      const { mockUpdate } = setupCourierMock({ readFails: true });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'INTERNAL_ERROR' });
-      expect(mockUpdate).not.toHaveBeenCalled();
-    });
-
-    it('no informa éxito cuando update devuelve cero filas; la guarda se repite en UPDATE', async () => {
-      const { mockUpdate, mockEqUpdate, mockNot, mockIn } = setupCourierMock({ updateMissing: true });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'NOT_FOUND' });
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockEqUpdate).toHaveBeenCalledWith('profile_id', courierId);
-      expect(mockNot).toHaveBeenCalledWith('vehicle_type', 'is', null);
-      expect(mockIn).toHaveBeenCalledWith('status', ['pending', 'approved']);
-    });
-
-    it('reporta error de update en vez de OK', async () => {
-      const { mockUpdate } = setupCourierMock({ updateFails: true });
-      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
-        .toEqual({ ok: false, code: 'INTERNAL_ERROR' });
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-    });
-  });
 });
 
 describe('CC-025 / T-356: replaceCourierDocumentAction', () => {
@@ -2330,4 +2169,117 @@ describe('T-376 / CC-033: addCourierOptionalDocumentAction', () => {
       expect(revalidatePath).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('T-419 / CC-042: acciones de vehículos del repartidor (RPC, sin update directo)', () => {
+  const VEHICLE = 'c0000000-0000-4000-8000-000000000419';
+
+  function setup({
+    user = { id: 'courier-419' } as { id: string } | null,
+    rpcResult = { data: { vehicleId: VEHICLE }, error: null } as { data: unknown; error: unknown },
+  } = {}) {
+    const rpc = vi.fn().mockResolvedValue(rpcResult);
+    const from = vi.fn();
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user }, error: user ? null : new Error('No auth') }),
+      },
+      from,
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+    return { rpc, from };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sin sesión devuelve UNAUTHENTICATED y no llama a la RPC', async () => {
+    const { rpc } = setup({ user: null });
+    expect(await addCourierVehicleAction({ vehicleType: 'bike', plate: null })).toEqual({
+      ok: false,
+      code: 'UNAUTHENTICATED',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('agrega un vehículo con add_courier_vehicle (sin tocar couriers) y revalida perfil, feed y vehículos', async () => {
+    const { rpc, from } = setup();
+    expect(await addCourierVehicleAction({ vehicleType: 'car', plate: 'ELA 666', makeActive: true })).toEqual({
+      ok: true,
+      data: { vehicleId: VEHICLE },
+    });
+    expect(rpc).toHaveBeenCalledWith('add_courier_vehicle', {
+      p_vehicle_type: 'car',
+      p_plate: 'ELA 666',
+      p_make_active: true,
+    });
+    expect(from).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith('/courier/profile');
+    expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+  });
+
+  it('edita la patente, quita y activa con sus RPC', async () => {
+    const { rpc } = setup();
+    await updateCourierVehiclePlateAction({ vehicleId: VEHICLE, plate: 'AB 123 CD' });
+    expect(rpc).toHaveBeenLastCalledWith('update_courier_vehicle', { p_vehicle_id: VEHICLE, p_plate: 'AB 123 CD' });
+    await removeCourierVehicleAction({ vehicleId: VEHICLE });
+    expect(rpc).toHaveBeenLastCalledWith('remove_courier_vehicle', { p_vehicle_id: VEHICLE });
+
+    rpc.mockResolvedValueOnce({ data: { activeVehicleId: VEHICLE }, error: null });
+    expect(await setActiveCourierVehicleAction({ vehicleId: VEHICLE })).toEqual({
+      ok: true,
+      data: { activeVehicleId: VEHICLE },
+    });
+    expect(rpc).toHaveBeenLastCalledWith('set_active_courier_vehicle', { p_vehicle_id: VEHICLE });
+  });
+
+  it('propaga VEHICLE_SWITCH_BLOCKED y DUPLICATE_VEHICLE de la RPC sin revalidar', async () => {
+    setup({ rpcResult: { data: null, error: { code: 'P0001', message: 'VEHICLE_SWITCH_BLOCKED' } } });
+    expect(await setActiveCourierVehicleAction({ vehicleId: VEHICLE })).toEqual({
+      ok: false,
+      code: 'VEHICLE_SWITCH_BLOCKED',
+    });
+    setup({ rpcResult: { data: null, error: { code: 'P0001', message: 'DUPLICATE_VEHICLE' } } });
+    expect(await addCourierVehicleAction({ vehicleType: 'moto', plate: 'AB 123 CD' })).toEqual({
+      ok: false,
+      code: 'DUPLICATE_VEHICLE',
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('una entrada inválida devuelve VALIDATION_ERROR sin llamar a la RPC', async () => {
+    const { rpc } = setup();
+    expect(await setActiveCourierVehicleAction({ vehicleId: 'no-es-uuid' })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('CC-042: la licencia o el seguro de un vehículo viajan con vehicleId en el payload', async () => {
+    const { rpc } = setup({
+      rpcResult: {
+        data: { documentId: 'a0000000-0000-4000-8000-000000000419', kind: 'license', status: 'submitted', isCurrent: true, idempotent: false },
+        error: null,
+      },
+    });
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }) })) })),
+    }));
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'courier-419' } }, error: null }) },
+      from,
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    await addCourierOptionalDocumentAction({
+      kind: 'license',
+      storagePath: 'courier/courier-419/license_1730000000000.jpg',
+      vehicleId: VEHICLE,
+    });
+    expect(rpc).toHaveBeenCalledWith('add_courier_optional_document', {
+      p_payload: { kind: 'license', storagePath: 'courier/courier-419/license_1730000000000.jpg', vehicleId: VEHICLE },
+    });
+  });
 });

@@ -7,6 +7,8 @@ import {
   generateTotp,
   seedDeliveryRequestInState,
   seedOffersForFirstRequest,
+  seedStagingData,
+  type StagingSeedContext,
   type UserCredentials,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
@@ -14,7 +16,8 @@ import { waitForFormHydration } from '../helpers/hydration';
 import { createAdminClient } from '@/server/supabase/admin';
 import { evaluateRouteGuard } from '@/features/auth/guards';
 import { ADMIN_COPY } from '@/features/admin/copy';
-import { COURIER_ONBOARDING_COPY } from '@/features/courier-onboarding/copy';
+import { COURIER_ONBOARDING_COPY, COURIER_VEHICLES_COPY } from '@/features/courier-onboarding/copy';
+import { getDomainErrorMessage } from '@/lib/error-messages';
 import { COURIER_DOCS_BUCKET } from '@/features/courier-onboarding/upload-manager';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 
@@ -94,28 +97,26 @@ async function expectStoredPdf(storagePath: string, sent: Buffer): Promise<void>
  */
 
 /**
- * Restablece al repartidor a la precondición inicial previa al onboarding (H03).
+ * CC-043 (H03): el envío de la postulación no se deshace, así que la precondición «sin onboarding» es un repartidor
+ * nuevo que nunca envió. Lo siembra en la misma corrida (lo limpia el teardown) y lo pone en el lugar `index`, para que
+ * `loginAsCourier(index)` entre con él.
  */
-async function resetCourierToPendingOnboarding(courierId: string): Promise<void> {
-  const dbAdmin = createAdminClient();
-  await dbAdmin.from('courier_documents').delete().eq('courier_id', courierId);
-  const { error } = await dbAdmin
-    .from('couriers')
-    .update({
-      status: 'pending',
-      available: false,
-      vehicle_type: null,
-      vehicle_plate: null,
-      dni_hmac: null,
-      decided_at: null,
-      decided_by: null,
-    })
-    .eq('profile_id', courierId);
+async function usePendingOnboardingCourier(context: StagingSeedContext, index: number): Promise<UserCredentials> {
+  const couriers = context.courierUsers ?? [];
+  await seedStagingData(context, { couriersCount: couriers.length + 1, courierApplication: 'not_submitted' });
+  const fresh = context.courierUsers?.pop();
+  if (!fresh || !context.courierUsers) {
+    throw new Error('[E2E Seed Error] No se pudo sembrar el postulante sin envío');
+  }
+  context.courierUsers[index] = fresh;
+  return fresh;
+}
 
+/** Borra los documentos del repartidor antes de que la prueba siembre los suyos (índice único de vigentes). */
+async function clearCourierDocuments(courierId: string): Promise<void> {
+  const { error } = await createAdminClient().from('courier_documents').delete().eq('courier_id', courierId);
   if (error) {
-    throw new Error(
-      `[E2E Reset Error] Falló restablecimiento de courier ${courierId}: ${error.message}`
-    );
+    throw new Error(`[E2E Reset Error] No se pudieron borrar los documentos de ${courierId}: ${error.message}`);
   }
 }
 
@@ -196,6 +197,73 @@ async function pickAvailableDni(
   throw new Error('[E2E Seed Error] No se encontró un DNI libre en 10 intentos');
 }
 
+type CourierClient = Awaited<ReturnType<typeof createAuthenticatedClient>>;
+
+/** IDs de los vehículos de un tipo del repartidor, archivados incluidos (para saber cuáles crea la prueba). */
+async function vehicleIdsOfType(courierId: string, vehicleType: 'bike' | 'car'): Promise<Set<string>> {
+  const { data, error } = await createAdminClient()
+    .from('courier_vehicles')
+    .select('id')
+    .eq('courier_id', courierId)
+    .eq('vehicle_type', vehicleType);
+  if (error) throw new Error(`[E2E Error] courier_vehicles: ${error.message}`);
+  return new Set((data ?? []).map((row) => row.id));
+}
+
+/**
+ * PR624-H06 / PR624-R01: deja al repartidor como lo dejó el seed aunque la prueba falle a mitad de camino. Retira la
+ * oferta que siga pendiente, vuelve a activar la moto por la RPC (no se borra un vehículo activo) y recién después
+ * borra, por id, solo los vehículos que creó la prueba (los que no estaban en `preexistingIds`): un histórico del mismo
+ * tipo no se toca. Devuelve los errores de limpieza; si la moto no se puede reactivar (viaje activo), no borra nada.
+ */
+async function restoreSeedVehicle(
+  courierClient: CourierClient,
+  courierId: string,
+  motoId: string,
+  addedType: 'bike' | 'car',
+  preexistingIds: ReadonlySet<string>,
+  offerId: string | null = null
+): Promise<string[]> {
+  const dbAdmin = createAdminClient();
+  const errors: string[] = [];
+  if (offerId) {
+    const { data: offer } = await dbAdmin.from('offers').select('status').eq('id', offerId).maybeSingle();
+    if (offer?.status === 'pending') {
+      const { error } = await courierClient.rpc('withdraw_offer', { p_offer_id: offerId });
+      if (error) errors.push(`withdraw_offer: ${error.message}`);
+    }
+  }
+  const { data: current, error: currentError } = await dbAdmin
+    .from('couriers')
+    .select('active_vehicle_id')
+    .eq('profile_id', courierId)
+    .single();
+  if (currentError) return [...errors, `couriers: ${currentError.message}`];
+  if (current.active_vehicle_id !== motoId) {
+    const { error } = await courierClient.rpc('set_active_courier_vehicle', { p_vehicle_id: motoId });
+    if (error) return [...errors, `set_active_courier_vehicle: ${error.message}`];
+  }
+  let created: string[] = [];
+  try {
+    created = [...(await vehicleIdsOfType(courierId, addedType))].filter((id) => !preexistingIds.has(id));
+  } catch (error) {
+    return [...errors, String(error)];
+  }
+  if (created.length > 0) {
+    const { error: deleteError } = await dbAdmin.from('courier_vehicles').delete().in('id', created);
+    if (deleteError) errors.push(`courier_vehicles ${created.join(', ')}: ${deleteError.message}`);
+  }
+  return errors;
+}
+
+/** Un error de limpieza no tapa el de la prueba: si la prueba ya falló, solo se reporta. */
+function reportCleanup(errors: string[], primaryError: unknown): void {
+  if (errors.length === 0) return;
+  const message = `[E2E cleanup] ${errors.join('; ')}`;
+  if (primaryError) console.warn(message);
+  else throw new Error(message);
+}
+
 test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado', () => {
   // ---------------------------------------------------------------------------
   // DoD Invariante 1: Falla si se quita el chequeo de MFA en aprobación
@@ -230,12 +298,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const unElevatedClient = await createAuthenticatedClient(adminCredentials);
 
     // Preparar repartidor postulante en estado pending con precondición limpia (H03)
-    const courier = stagingContext.courierUsers?.[0];
-    if (!courier) {
-      throw new Error('[E2E Error] Se requiere al menos un courier en stagingContext');
-    }
-
-    await resetCourierToPendingOnboarding(courier.id);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
     const dbAdmin = createAdminClient();
 
     // 3. Intento de aprobación por admin con AAL1: el backend rechaza incondicionalmente
@@ -305,7 +368,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     loginAsCourier,
   }) => {
     const courier1 = stagingContext.courierUsers?.[0];
-    const courier2 = stagingContext.courierUsers?.[1];
+    const courier2 = await usePendingOnboardingCourier(stagingContext, 1);
     if (!courier1 || !courier2) {
       throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
     }
@@ -333,7 +396,6 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     }
 
     // 2. Restablecer courier 2 a estado inicial sin onboarding completado (H03)
-    await resetCourierToPendingOnboarding(courier2.id);
 
     // 3. Courier 2 inicia sesión en el navegador
     await loginAsCourier(1, page);
@@ -431,17 +493,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     stagingContext,
     loginAsCourier,
   }) => {
-    const courier = stagingContext.courierUsers?.[0];
-    if (!courier) {
-      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
-    }
+    // Precondición limpia: postulante sin onboarding completado (H03, CC-043)
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
 
     const dbAdmin = createAdminClient();
     let uploadedDocs: Record<string, string> = {};
 
     try {
-      // Precondición limpia: postulante sin onboarding completado (H03)
-      await resetCourierToPendingOnboarding(courier.id);
 
       // 1. Iniciar sesión como repartidor en el navegador
       await loginAsCourier(0, page);
@@ -604,7 +662,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
       const { data: courierRow, error: courierErr } = await dbAdmin
         .from('couriers')
-        .select('status, vehicle_type, vehicle_plate, dni_hmac')
+        .select('status, vehicle_type, vehicle_plate, dni_hmac, application_submitted, submitted_at')
         .eq('profile_id', courier.id)
         .single();
 
@@ -612,6 +670,11 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       expect(courierRow?.vehicle_type).toBe('moto');
       expect(courierRow?.vehicle_plate).toBe('AB 123 CD');
       expect(courierRow?.dni_hmac).toBeTruthy();
+      // CC-043: el envío real lo registró finalize_courier_application con la hora del servidor.
+      expect(courierRow?.application_submitted).toBe(true);
+      expect(courierRow?.submitted_at).toBeTruthy();
+      const submittedAtMs = Date.parse(courierRow?.submitted_at ?? '');
+      expect(Math.abs(Date.now() - submittedAtMs)).toBeLessThan(10 * 60_000);
     } finally {
       // 8. Cleanup aislado: eliminar filas de courier_documents y archivos físicos en Storage
       await dbAdmin.from('courier_documents').delete().eq('courier_id', courier.id);
@@ -629,8 +692,6 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         const filesToDelete = fileList.map((f) => `courier/${courier.id}/${f.name}`);
         await dbAdmin.storage.from(COURIER_DOCS_BUCKET).remove(filesToDelete);
       }
-
-      await resetCourierToPendingOnboarding(courier.id);
     }
   });
 
@@ -643,7 +704,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     loginAsCourier,
   }) => {
     const courier1 = stagingContext.courierUsers?.[0];
-    const courier2 = stagingContext.courierUsers?.[1];
+    const courier2 = await usePendingOnboardingCourier(stagingContext, 1);
     if (!courier1 || !courier2) {
       throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
     }
@@ -665,7 +726,6 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     }
 
     // Restablecer courier 2 a precondición limpia (H03)
-    await resetCourierToPendingOnboarding(courier2.id);
 
     // 2. Iniciar sesión como courier 2 en el navegador
     await loginAsCourier(1, page);
@@ -746,12 +806,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
   }) => {
     // 1. Crear admin y courier postulante en estado pending con reset limpio (H03)
     const admin = await seedAdminUser(stagingContext);
-    const courier = stagingContext.courierUsers?.[0];
-    if (!courier) {
-      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
-    }
-
-    await resetCourierToPendingOnboarding(courier.id);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
     const dbAdmin = createAdminClient();
 
     // 2. Enrolar y verificar factor TOTP para la cuenta del admin conservando secret (H04)
@@ -848,6 +903,86 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     expect(auditLogEntry?.actor_id).toBe(admin.id);
   });
 
+  test('T-404: Admin en UI rechaza con un motivo de la lista y el motivo compuesto queda en la auditoría y el historial', async ({
+    page,
+    stagingContext,
+  }) => {
+    const admin = await seedAdminUser(stagingContext);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
+    const { secret } = await enrollAdminTotpFactor(admin);
+
+    await page.goto(`/login?redirectTo=${encodeURIComponent(`/admin/applicants/${courier.id}`)}`);
+    await waitForNoSkeletons(page);
+    const loginSubmitBtn = page.getByRole('button', { name: /iniciar sesión|ingresar|continuar/i });
+    await waitForFormHydration(loginSubmitBtn);
+    await page.getByLabel(/^email$/i).fill(admin.email);
+    await page.getByLabel(/^contraseña$/i).fill(admin.password);
+    await loginSubmitBtn.click();
+    await page.waitForURL((url) => url.pathname.includes('/login/mfa'), { timeout: 15000 });
+    const totpInput = page.locator('#totp-code');
+    await waitForFormHydration(totpInput);
+    await totpInput.fill(generateTotp(secret));
+    await page.getByRole('button', { name: new RegExp(ADMIN_COPY.mfa.verifyButton, 'i') }).click();
+    await page.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+
+    await page.goto(`/admin/applicants/${courier.id}`);
+    await waitForNoSkeletons(page);
+
+    // Barra fija de un pendiente: Rechazar / Aprobar, sin Suspender.
+    const toolbar = page.getByRole('toolbar', { name: ADMIN_COPY.detail.actionsBarLabel });
+    await expect(toolbar.getByRole('button')).toHaveText([
+      ADMIN_COPY.detail.applicantActions.reject,
+      ADMIN_COPY.detail.applicantActions.approve,
+    ]);
+
+    const dialog = page.getByRole('dialog');
+    await expect(async () => {
+      await toolbar.getByRole('button', { name: ADMIN_COPY.detail.applicantActions.reject }).click();
+      await expect(dialog).toBeVisible({ timeout: 1_000 });
+    }).toPass();
+
+    // «Otro» sin mensaje no se envía.
+    await dialog.getByRole('combobox', { name: ADMIN_COPY.detail.rejectApplicant.optionLabel }).click();
+    await page.getByRole('option', { name: 'Otro' }).click();
+    await dialog.getByRole('button', { name: ADMIN_COPY.detail.rejectApplicant.confirm, exact: true }).click();
+    await expect(dialog.getByText('Con «Otro», escribí el mensaje para el postulante.')).toBeVisible();
+
+    // «Foto ilegible» con mensaje: el motivo que llega a la RPC es «<opción>: <mensaje>».
+    const message = `La foto del DNI dorso está borrosa (E2E ${stagingContext.testRunId}).`;
+    await dialog.getByRole('combobox', { name: ADMIN_COPY.detail.rejectApplicant.optionLabel }).click();
+    await page.getByRole('option', { name: 'Foto ilegible' }).click();
+    await dialog.getByLabel(ADMIN_COPY.detail.rejectApplicant.messageLabel).fill(message);
+    await dialog.getByRole('button', { name: ADMIN_COPY.detail.rejectApplicant.confirm, exact: true }).click();
+    await expect(dialog).toBeHidden();
+
+    const composed = `Foto ilegible: ${message}`;
+    await expect(toolbar.getByRole('button')).toHaveText([ADMIN_COPY.detail.applicantActions.reconsider]);
+
+    const { data: auditRows, error: auditErr } = await createAdminClient()
+      .from('audit_log')
+      .select('actor_id, after')
+      .eq('action', 'admin_decide_courier')
+      .eq('target_id', courier.id);
+    if (auditErr) throw new Error(`[E2E Inspect Error] ${auditErr.message}`);
+    expect(auditRows).toEqual([{ actor_id: admin.id, after: expect.objectContaining({ status: 'rejected', reason: composed }) }]);
+
+    // El historial del detalle muestra la decisión real con su motivo.
+    const history = page.getByRole('list', { name: ADMIN_COPY.detail.historyListLabel });
+    const decision = history.getByRole('listitem').filter({ hasText: 'Decidió una postulación' });
+    await expect(decision).toHaveCount(1);
+    await expect(decision).toContainText(`Motivo: ${composed}`);
+    await expect(history.getByRole('listitem').first()).toContainText(ADMIN_COPY.detail.historyRegistered);
+
+    // PR607-D02: «Ver todo en Auditoría» abre la auditoría filtrada por este repartidor, con su decisión real.
+    await page.getByRole('link', { name: ADMIN_COPY.detail.historySeeAll }).click();
+    await page.waitForURL((url) => url.pathname === '/admin/audit' && url.searchParams.get('courier') === courier.id);
+    await waitForNoSkeletons(page);
+    await expect(page.getByText(ADMIN_COPY.audit.filters.courierActive)).toBeVisible();
+    const decisionRow = page.getByRole('row').filter({ hasText: composed });
+    await expect(decisionRow).toHaveCount(1);
+    await expect(decisionRow.getByRole('cell', { name: /decidió una postulación/i })).toBeVisible();
+  });
+
   // ---------------------------------------------------------------------------
   // T-353: Validación semántica en UI de onboarding (PR362-H06)
   // ---------------------------------------------------------------------------
@@ -856,11 +991,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     stagingContext,
     loginAsCourier,
   }) => {
-    const courier = stagingContext.courierUsers?.[0];
-    if (!courier) {
-      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
-    }
-    await resetCourierToPendingOnboarding(courier.id);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
     await loginAsCourier(0, page);
 
     await page.goto('/courier/onboarding/identity');
@@ -935,8 +1066,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const dbAdmin = createAdminClient();
 
     try {
-      // 1. Precondición en DB: repartidor con onboarding completo y moto
-      await resetCourierToPendingOnboarding(courier.id);
+      // 1. Precondición en DB: repartidor con onboarding completo (enviado por el seed, CC-043) y moto
+      await clearCourierDocuments(courier.id);
       const uniqueDni = `39${Math.floor(100000 + Math.random() * 900000)}`;
       const secret = process.env.DNI_HMAC_SECRET ?? 'development_dni_hmac_secret_cadeapp';
       const dniHmac = createHmac('sha256', secret).update(uniqueDni).digest('hex');
@@ -952,6 +1083,17 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
           insurance_status: 'none',
         })
         .eq('profile_id', courier.id);
+
+      // T-428 (CC-042): la licencia es del vehículo; el perfil solo muestra la del vehículo activo del seed (la moto).
+      const { data: seededVehicle, error: seededVehicleError } = await dbAdmin
+        .from('couriers')
+        .select('active_vehicle_id')
+        .eq('profile_id', courier.id)
+        .single();
+      const activeVehicleId = seededVehicle?.active_vehicle_id;
+      if (seededVehicleError || !activeVehicleId) {
+        throw new Error('[E2E Error] El seed tiene que dejar un vehículo activo para asociarle la licencia (CC-042)');
+      }
 
       // Subir documentos base con license en 'submitted' (PR358-R03: rechazo real mediante admin_verify_document)
       const dummyPng = Buffer.from(
@@ -998,6 +1140,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
             status: 'submitted',
             is_current: true,
             rejection_code: null,
+            vehicle_id: activeVehicleId,
           },
         ])
         .select('id, kind');
@@ -1186,7 +1329,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       }
     } finally {
       // Limpieza de datos en DB y Storage
-      await resetCourierToPendingOnboarding(courier.id);
+      await clearCourierDocuments(courier.id);
       const { data: files } = await dbAdmin.storage
         .from(COURIER_DOCS_BUCKET)
         .list(`courier/${courier.id}`);
@@ -1201,7 +1344,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
   // ---------------------------------------------------------------------------
   // T-357: Actualización de vehículo desde el perfil del repartidor (Issue #344)
   // ---------------------------------------------------------------------------
-  test('T-357: Flujo completo de actualización de vehículo desde perfil (moto -> car con ELA 666 -> bike -> walk) sin reonboarding ni documentos extras', async ({
+  test('T-419: «Mis vehículos» agrega un auto con patente validada, lo activa y la moto conserva su patente, sin tocar documentos', async ({
     page,
     stagingContext,
     loginAsCourier,
@@ -1213,177 +1356,93 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     const dbAdmin = createAdminClient();
 
-    // Snapshot inicial de courier_documents para verificar que no sufre inserciones/modificaciones
+    // Snapshot inicial de courier_documents: cambiar de vehículo no inserta ni modifica documentos.
     const { data: initialDocs, error: docsError } = await dbAdmin
       .from('courier_documents')
       .select('kind, storage_path, status')
       .eq('courier_id', courier.id);
     expect(docsError).toBeNull();
 
-    // Precondición: courier con vehículo moto existente y habilitado (DoD 1: seed comprueba error:null y 1 fila)
+    // Precondición del seed (CC-042): la postulación creó la moto como vehículo activo.
     const { data: seeded, error: seedError } = await dbAdmin
       .from('couriers')
-      .update({
-        vehicle_type: 'moto',
-        vehicle_plate: 'AB 123 CD',
-        status: 'approved',
-      })
+      .select('vehicle_type, vehicle_plate, active_vehicle_id')
       .eq('profile_id', courier.id)
-      .select('profile_id');
+      .single();
     expect(seedError).toBeNull();
-    expect(seeded).toHaveLength(1);
+    expect(seeded?.vehicle_type).toBe('moto');
+    const motoId = seeded?.active_vehicle_id;
+    if (!motoId) throw new Error('[E2E Error] El seed tiene que dejar la moto como vehículo activo');
+    const motoPlate = seeded?.vehicle_plate ?? '';
+    expect(motoPlate).not.toBe('');
 
-    // 1. Iniciar sesión como repartidor y navegar al perfil
-    await loginAsCourier(0, page);
-    await page.goto('/courier/profile');
-    await waitForNoSkeletons(page);
+    const preexistingCars = await vehicleIdsOfType(courier.id, 'car');
+    const courierClient = await createAuthenticatedClient(courier);
+    let primaryError: unknown = null;
+    try {
+      // 1. Desde el perfil, «Actualizar» lleva a «Mis vehículos» (sin stepper, consentimientos ni alta documental).
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+      await page.getByRole('link', { name: /Actualizar/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), { timeout: 15000 });
+      await waitForNoSkeletons(page);
+      await expect(page.getByRole('heading', { name: COURIER_VEHICLES_COPY.title })).toBeVisible();
+      await expect(page.getByText(COURIER_ONBOARDING_COPY.stepCounter2)).not.toBeVisible();
+      await expect(page.getByTestId('courier-vehicle-moto')).toContainText(motoPlate);
 
-    // 2. Verificar que se muestra Motocicleta con su patente Mercosur inicial y el enlace «Actualizar»
-    await expect(page.getByText('Motocicleta')).toBeVisible();
-    await expect(page.getByText(/Patente: AB 123 CD/i)).toBeVisible();
+      // 2. Patente inválida: el alta queda deshabilitada; con ELA 666 se agrega el auto (inactivo).
+      await page.getByRole('radio', { name: COURIER_VEHICLES_COPY.types.car }).click();
+      const plateInput = page.locator('#new-vehicle-plate');
+      await plateInput.fill('PATENTE_INVALIDA');
+      const addButton = page.getByRole('button', { name: COURIER_VEHICLES_COPY.addButton });
+      await expect(addButton).toBeDisabled();
+      await plateInput.fill('ELA 666');
+      await expect(addButton).toBeEnabled();
+      await addButton.click();
+      const carCard = page.getByTestId('courier-vehicle-car');
+      await expect(carCard).toContainText('ELA 666');
+      await expect(page.getByTestId('courier-vehicle-moto')).toContainText(COURIER_VEHICLES_COPY.activeBadge);
 
-    const updateLink = page.getByRole('link', { name: /Actualizar/i });
-    await expect(updateLink).toBeVisible();
-    await updateLink.click();
+      // 3. Activar el auto: el reflejo de couriers y el perfil muestran Automóvil ELA 666.
+      await carCard.getByRole('button', { name: COURIER_VEHICLES_COPY.useThis }).click();
+      await expect(carCard).toContainText(COURIER_VEHICLES_COPY.activeBadge);
+      const { data: carActive } = await dbAdmin
+        .from('couriers')
+        .select('vehicle_type, vehicle_plate')
+        .eq('profile_id', courier.id)
+        .single();
+      expect(carActive).toMatchObject({ vehicle_type: 'car', vehicle_plate: 'ELA 666' });
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+      await expect(page.getByText('Automóvil')).toBeVisible();
+      await expect(page.getByText(/Patente: ELA 666/i)).toBeVisible();
 
-    // 3. Verifica llegada a la pantalla de edición: sin stepper de onboarding, sin checkboxes ni subida documental
-    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
-      timeout: 15000,
-    });
-    await waitForNoSkeletons(page);
+      // 4. Volver a la moto: su patente se conserva.
+      await page.goto('/courier/onboarding/vehicle?mode=edit');
+      await waitForNoSkeletons(page);
+      await page.getByTestId('courier-vehicle-moto').getByRole('button', { name: COURIER_VEHICLES_COPY.useThis }).click();
+      await expect(page.getByTestId('courier-vehicle-moto')).toContainText(COURIER_VEHICLES_COPY.activeBadge);
+      const { data: motoActive } = await dbAdmin
+        .from('couriers')
+        .select('vehicle_type, vehicle_plate')
+        .eq('profile_id', courier.id)
+        .single();
+      expect(motoActive).toMatchObject({ vehicle_type: 'moto', vehicle_plate: motoPlate });
 
-    await expect(page.getByRole('heading', { name: /Actualizar vehículo/i })).toBeVisible();
-    await expect(page.getByText(COURIER_ONBOARDING_COPY.stepCounter2)).not.toBeVisible();
-    await expect(page.getByRole('checkbox')).toHaveCount(0);
-    await expect(page.getByText(COURIER_ONBOARDING_COPY.optionalDocsTitle)).not.toBeVisible();
-
-    // 4. Validación de patente inválida: ingresar patente con formato incorrecto
-    const carOption = page.locator('label:has(input[value="car"])');
-    await carOption.click();
-
-    const plateInput = page.getByLabel(/Patente del vehículo/i);
-    await expect(plateInput).toBeVisible();
-    await plateInput.fill('PATENTE_INVALIDA');
-    await plateInput.blur();
-
-    const plateError = page.locator('#plate-error');
-    await expect(plateError).toBeVisible();
-    await expect(plateError).toHaveText(/Formato de patente inválido/i);
-
-    const saveButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
-    await expect(saveButton).toBeDisabled();
-
-    // 5. Corregir con patente argentina tradicional (formato ELA 666)
-    await plateInput.fill('ELA 666');
-    await plateInput.blur();
-    await expect(plateError).not.toBeVisible();
-    await expect(saveButton).toBeEnabled();
-    await saveButton.click();
-
-    // 6. Verifica redirección al perfil y persistencia de Automóvil + ELA 666 tras reload
-    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
-      timeout: 15000,
-    });
-    await waitForNoSkeletons(page);
-
-    await expect(page.getByText('Automóvil')).toBeVisible();
-    await expect(page.getByText(/Patente: ELA 666/i)).toBeVisible();
-    await page.reload();
-    await waitForNoSkeletons(page);
-    await expect(page.getByText('Automóvil')).toBeVisible();
-    await expect(page.getByText(/Patente: ELA 666/i)).toBeVisible();
-
-    const { data: carPersisted, error: carPersistError } = await dbAdmin
-      .from('couriers')
-      .select('vehicle_type, vehicle_plate, status')
-      .eq('profile_id', courier.id)
-      .single();
-    expect(carPersistError).toBeNull();
-    expect(carPersisted).toMatchObject({
-      vehicle_type: 'car',
-      vehicle_plate: 'ELA 666',
-      status: 'approved',
-    });
-
-    // 7. Modificar a Bicicleta: desaparece campo patente y se normaliza a null
-    await page.getByRole('link', { name: /Actualizar/i }).click();
-    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
-      timeout: 15000,
-    });
-    await waitForNoSkeletons(page);
-
-    const bikeOption = page.locator('label:has(input[value="bike"])');
-    await bikeOption.click();
-    await expect(page.getByLabel(/Patente del vehículo/i)).not.toBeVisible();
-
-    const saveBikeButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
-    await expect(saveBikeButton).toBeEnabled();
-    await saveBikeButton.click();
-
-    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
-      timeout: 15000,
-    });
-    await waitForNoSkeletons(page);
-    await expect(page.getByText('Bicicleta')).toBeVisible();
-    await page.reload();
-    await waitForNoSkeletons(page);
-    await expect(page.getByText('Bicicleta')).toBeVisible();
-
-    const { data: bikePersisted, error: bikePersistError } = await dbAdmin
-      .from('couriers')
-      .select('vehicle_type, vehicle_plate, status')
-      .eq('profile_id', courier.id)
-      .single();
-    expect(bikePersistError).toBeNull();
-    expect(bikePersisted).toMatchObject({
-      vehicle_type: 'bike',
-      vehicle_plate: null,
-      status: 'approved',
-    });
-
-    // 8. Modificar a A pie: sin patente y persiste walk
-    await page.getByRole('link', { name: /Actualizar/i }).click();
-    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
-      timeout: 15000,
-    });
-    await waitForNoSkeletons(page);
-
-    const walkOption = page.locator('label:has(input[value="walk"])');
-    await walkOption.click();
-    await expect(page.getByLabel(/Patente del vehículo/i)).not.toBeVisible();
-
-    const saveWalkButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
-    await expect(saveWalkButton).toBeEnabled();
-    await saveWalkButton.click();
-
-    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
-      timeout: 15000,
-    });
-    await waitForNoSkeletons(page);
-    await expect(page.getByText('A pie')).toBeVisible();
-    await page.reload();
-    await waitForNoSkeletons(page);
-    await expect(page.getByText('A pie')).toBeVisible();
-
-    const { data: walkPersisted, error: walkPersistError } = await dbAdmin
-      .from('couriers')
-      .select('vehicle_type, vehicle_plate, status')
-      .eq('profile_id', courier.id)
-      .single();
-    expect(walkPersistError).toBeNull();
-    expect(walkPersisted).toMatchObject({
-      vehicle_type: 'walk',
-      vehicle_plate: null,
-      status: 'approved',
-    });
-
-    // 9. Verificar que courier_documents no fue alterado durante las 3 actualizaciones
-    const { data: finalDocs, error: finalDocsError } = await dbAdmin
-      .from('courier_documents')
-      .select('kind, storage_path, status')
-      .eq('courier_id', courier.id);
-    expect(finalDocsError).toBeNull();
-    expect(finalDocs).toEqual(initialDocs);
+      // 5. Ningún cambio de vehículo tocó los documentos.
+      const { data: finalDocs, error: finalDocsError } = await dbAdmin
+        .from('courier_documents')
+        .select('kind, storage_path, status')
+        .eq('courier_id', courier.id);
+      expect(finalDocsError).toBeNull();
+      expect(finalDocs).toEqual(initialDocs);
+    } catch (error) {
+      primaryError = error;
+      throw error;
+    } finally {
+      reportCleanup(await restoreSeedVehicle(courierClient, courier.id, motoId, 'car', preexistingCars), primaryError);
+    }
   });
 
   test('T-357: E2E negativo: postulante con alta incompleta nunca ve edición con ?mode=edit y mantiene precondición con aislamiento entre actores', async ({
@@ -1391,15 +1450,10 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     stagingContext,
     loginAsCourier,
   }) => {
-    const courier2 = stagingContext.courierUsers?.[1];
-    if (!courier2) {
-      throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
-    }
-
     const dbAdmin = createAdminClient();
 
-    // Precondición: postulante con onboarding incompleto (vehicle_type nulo)
-    await resetCourierToPendingOnboarding(courier2.id);
+    // Precondición: postulante con onboarding incompleto (sin postulación enviada, CC-043)
+    const courier2 = await usePendingOnboardingCourier(stagingContext, 1);
 
     // 1. Iniciar sesión como courier 2
     await loginAsCourier(1, page);
@@ -1465,12 +1519,10 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
   // ---------------------------------------------------------------------------
   // T-357: Vista de viaje en vivo para el comercio dueño (Issue #344 / DoD H04)
   // ---------------------------------------------------------------------------
-  test('T-357: Vista de viaje refleja en vivo actualización de vehículo y patente para el comercio dueño con recarga y cleanup', async ({
+  test('T-419: con un viaje activo no se puede cambiar de vehículo y el comercio sigue viendo el mismo vehículo y patente', async ({
     page,
-    browser,
     stagingContext,
     loginAsCourier,
-    loginAsMerchant,
   }) => {
     const merchant = stagingContext.merchantUser;
     const courier = stagingContext.courierUsers?.[0];
@@ -1479,127 +1531,70 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     }
 
     const dbAdmin = createAdminClient();
+    const courierClient = await createAuthenticatedClient(courier);
 
-    // Precondición: courier con vehículo moto inicial (DoD 1: seed comprueba error:null y 1 fila)
-    const { data: initialSeed, error: initialSeedError } = await dbAdmin
+    const { data: seeded } = await dbAdmin
       .from('couriers')
-      .update({
-        vehicle_type: 'moto',
-        vehicle_plate: 'AB 123 CD',
-        status: 'approved',
-      })
+      .select('active_vehicle_id')
       .eq('profile_id', courier.id)
-      .select('profile_id');
-    expect(initialSeedError).toBeNull();
-    expect(initialSeed).toHaveLength(1);
+      .single();
+    const motoId = seeded?.active_vehicle_id;
+    if (!motoId) throw new Error('[E2E Error] El seed tiene que dejar la moto como vehículo activo');
 
-    // Sembrar solicitud en estado matched vinculando al merchant y al courier de fixture
-    const seedResult = await seedDeliveryRequestInState(stagingContext, {
-      status: 'matched',
-      merchantId: merchant.id,
-      assignedCourierId: courier.id,
-      withContacts: true,
-    });
-    const requestId = seedResult.requestId;
-
-    const merchantClient = await createAuthenticatedClient(merchant);
-
-    // Snapshot previo de lectura RPC get_trip_details (proyecta moto y patente AB 123 CD)
-    const { data: initialTripRpc, error: initialRpcError } = await merchantClient.rpc('get_trip_details', {
-      p_request_id: requestId,
-    });
-    expect(initialRpcError).toBeNull();
-    const initialTrip = initialTripRpc as { vehicleType: string; vehiclePlate: string | null };
-    expect(initialTrip.vehicleType).toBe('moto');
-    expect(initialTrip.vehiclePlate).toBe('AB 123 CD');
-
-    // Sesión aislada de navegador para el comercio dueño
-    const merchantContext = await browser.newContext();
+    const preexistingCars = await vehicleIdsOfType(courier.id, 'car');
+    let primaryError: unknown = null;
     try {
-      const merchantBrowserPage = await merchantContext.newPage();
-      await loginAsMerchant(merchantBrowserPage);
-
-      // 1. Comercio abre /trips/{requestId} y comprueba bloque «Repartidor asignado» con Moto y patente inicial
-      await merchantBrowserPage.goto(`/trips/${requestId}`);
-      await waitForNoSkeletons(merchantBrowserPage);
-      await expect(merchantBrowserPage.getByRole('heading', { name: 'Repartidor asignado' })).toBeVisible();
-      await expect(merchantBrowserPage.getByText('Moto')).toBeVisible();
-      await expect(merchantBrowserPage.getByText(/Patente:.*AB 123 CD/i)).toBeVisible();
-
-      // 2. Repartidor autenticado cambia movilidad a Auto (car) con patente tradicional ELA 666 desde su perfil
-      await loginAsCourier(0, page);
-      await page.goto('/courier/profile');
-      await waitForNoSkeletons(page);
-      await page.getByRole('link', { name: /Actualizar/i }).click();
-      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
-        timeout: 15000,
+      // Precondición: además de la moto activa del seed, el repartidor tiene un auto cargado (inactivo).
+      const { error: addError } = await courierClient.rpc('add_courier_vehicle', {
+        p_vehicle_type: 'car',
+        p_plate: 'ELA 667',
+        p_make_active: false,
       });
-      await waitForNoSkeletons(page);
-
-      await page.locator('label:has(input[value="car"])').click();
-      const plateInput = page.getByLabel(/Patente del vehículo/i);
-      await plateInput.fill('ELA 666');
-      await plateInput.blur();
-      await page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i }).click();
-      await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
-        timeout: 15000,
-      });
-      await waitForNoSkeletons(page);
-
-      // 3. En la sesión del comercio dueño, recargar el viaje y comprobar que muestra Auto y ELA 666
-      await merchantBrowserPage.reload();
-      await waitForNoSkeletons(merchantBrowserPage);
-      await expect(merchantBrowserPage.getByText('Auto')).toBeVisible();
-      await expect(merchantBrowserPage.getByText(/Patente:.*ELA 666/i)).toBeVisible();
-
-      // Contrastar con la RPC get_trip_details autorizada
-      const { data: updatedCarRpc, error: carRpcError } = await merchantClient.rpc('get_trip_details', {
-        p_request_id: requestId,
-      });
-      expect(carRpcError).toBeNull();
-      const updatedCar = updatedCarRpc as { vehicleType: string; vehiclePlate: string | null };
-      expect(updatedCar.vehicleType).toBe('car');
-      expect(updatedCar.vehiclePlate).toBe('ELA 666');
-
-      // 4. Repartidor cambia a Bicicleta (bike): desaparece la patente
-      await page.getByRole('link', { name: /Actualizar/i }).click();
-      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
-        timeout: 15000,
-      });
-      await waitForNoSkeletons(page);
-
-      await page.locator('label:has(input[value="bike"])').click();
-      await page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i }).click();
-      await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
-        timeout: 15000,
-      });
-      await waitForNoSkeletons(page);
-
-      // 5. En la sesión del comercio dueño, recargar el viaje: se refleja Bicicleta y la patente desaparece
-      await merchantBrowserPage.reload();
-      await waitForNoSkeletons(merchantBrowserPage);
-      await expect(merchantBrowserPage.getByText('Bicicleta')).toBeVisible();
-      await expect(merchantBrowserPage.getByText(/Patente:/i)).not.toBeVisible();
-
-      // Contrastar con RPC get_trip_details
-      const { data: updatedBikeRpc, error: bikeRpcError } = await merchantClient.rpc('get_trip_details', {
-        p_request_id: requestId,
-      });
-      expect(bikeRpcError).toBeNull();
-      const updatedBike = updatedBikeRpc as { vehicleType: string; vehiclePlate: string | null };
-      expect(updatedBike.vehicleType).toBe('bike');
-      expect(updatedBike.vehiclePlate).toBeNull();
-    } finally {
-      await merchantContext.close();
-      // Cleanup: restaurar estado asumido por la fixture global del courier
-      await dbAdmin
+      expect(addError).toBeNull();
+      const { data: before } = await dbAdmin
         .from('couriers')
-        .update({
-          vehicle_type: 'moto',
-          vehicle_plate: 'AB 123 CD',
-          status: 'approved',
-        })
-        .eq('profile_id', courier.id);
+        .select('vehicle_type, vehicle_plate')
+        .eq('profile_id', courier.id)
+        .single();
+      expect(before?.vehicle_type).toBe('moto');
+
+      const seedResult = await seedDeliveryRequestInState(stagingContext, {
+        status: 'matched',
+        merchantId: merchant.id,
+        assignedCourierId: courier.id,
+        withContacts: true,
+      });
+      const merchantClient = await createAuthenticatedClient(merchant);
+
+      // 1. En el feed, el cambio rápido muestra los dos vehículos; elegir el auto se rechaza con el motivo.
+      await loginAsCourier(0, page);
+      await page.goto('/courier/feed');
+      await waitForNoSkeletons(page);
+      const quickSwitch = page.getByRole('radiogroup', { name: COURIER_VEHICLES_COPY.quickSwitchAria });
+      await expect(quickSwitch).toBeVisible();
+      await quickSwitch.getByRole('radio', { name: /Auto/ }).click();
+      await expect(page.getByRole('alert').filter({ hasText: getDomainErrorMessage('VEHICLE_SWITCH_BLOCKED') })).toBeVisible();
+
+      // 2. Nada cambió: ni el reflejo de couriers ni lo que ve el comercio en el viaje.
+      const { data: after } = await dbAdmin
+        .from('couriers')
+        .select('vehicle_type, vehicle_plate')
+        .eq('profile_id', courier.id)
+        .single();
+      expect(after).toEqual(before);
+      const { data: tripRpc, error: tripError } = await merchantClient.rpc('get_trip_details', {
+        p_request_id: seedResult.requestId,
+      });
+      expect(tripError).toBeNull();
+      const trip = tripRpc as { vehicleType: string; vehiclePlate: string | null };
+      expect(trip.vehicleType).toBe('moto');
+      expect(trip.vehiclePlate).toBe(before?.vehicle_plate);
+    } catch (error) {
+      primaryError = error;
+      throw error;
+    } finally {
+      // El auto nunca quedó activo (el viaje bloquea el cambio): restoreSeedVehicle lo comprueba antes de borrarlo.
+      reportCleanup(await restoreSeedVehicle(courierClient, courier.id, motoId, 'car', preexistingCars), primaryError);
     }
   });
 

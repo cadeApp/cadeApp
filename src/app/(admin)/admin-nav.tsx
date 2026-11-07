@@ -1,19 +1,114 @@
 'use client';
 
 import * as React from 'react';
+import { QueryClient, QueryClientContext, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  Megaphone,
+  Menu,
+  Route,
+  ScrollText,
+  SlidersHorizontal,
+  Store,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import { BrandLogo } from '@/ui/brand-logo';
-import { Button } from '@/ui/button';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/ui/sheet';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/ui/tooltip';
 import { ADMIN_COPY, ADMIN_NAV_TABS } from '@/features/admin';
 import { cn } from '@/ui/cn';
 import { logoutAction } from '@/features/auth';
 
 export { ADMIN_NAV_TABS };
 
-export function AdminNav() {
+type AdminNavHref = (typeof ADMIN_NAV_TABS)[number]['href'];
+
+const NAV_ICONS: Record<AdminNavHref, LucideIcon> = {
+  '/admin/applicants': Users,
+  '/admin/merchants': Store,
+  '/admin/trips': Route,
+  '/admin/incidents': AlertTriangle,
+  '/admin/announcements': Megaphone,
+  '/admin/settings': SlidersHorizontal,
+  '/admin/audit': ScrollText,
+};
+
+const FOCUS_ON_INK =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-secondary';
+
+const ITEM_CLASS = 'flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium';
+
+/** T-406 (D01 = C): el contador se relee cada minuto, solo con la pestaña visible, y al volver a ella. */
+export const OPEN_INCIDENTS_REFETCH_MS = 60_000;
+
+export const openIncidentsQueryKey = ['admin', 'open-incidents'] as const;
+
+/** Lectura por la ruta en vivo, validada con el contrato (cero lecturas de Supabase desde el cliente). */
+export async function fetchOpenIncidentsCount(): Promise<number> {
+  const response = await fetch('/api/live/open-incidents', { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const json: unknown = await response.json();
+  const { liveOpenIncidentsResponseSchema } = await import('@/lib/live-contracts');
+  return liveOpenIncidentsResponseSchema.parse(json).count;
+}
+
+export function openIncidentsQueryOptions(initial: number | null) {
+  return {
+    queryKey: openIncidentsQueryKey,
+    queryFn: fetchOpenIncidentsCount,
+    refetchInterval: OPEN_INCIDENTS_REFETCH_MS,
+    // El valor del layout vale un minuto: sin esto se volvería a leer apenas monta.
+    staleTime: OPEN_INCIDENTS_REFETCH_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: 'always' as const,
+    refetchOnReconnect: 'always' as const,
+    // Best-effort: si falla, se conserva el último número y se reintenta en el próximo minuto.
+    retry: false,
+    ...(initial !== null ? { initialData: initial, initialDataUpdatedAt: Date.now() } : {}),
+  };
+}
+
+function useOpenIncidentsCount(initial: number | null): number | null {
+  const contextClient = React.useContext(QueryClientContext);
+  const [fallbackClient] = React.useState(() => new QueryClient());
+  return useQuery(openIncidentsQueryOptions(initial), contextClient ?? fallbackClient).data ?? null;
+}
+
+/** T-427: preferencia de la barra contraída; la lee el layout (servidor) para que la recarga no parpadee. */
+export const ADMIN_SIDEBAR_COOKIE = 'admin_sidebar';
+
+export interface AdminNavProps {
+  readonly operatorName: string;
+  readonly initialCollapsed?: boolean;
+  /** T-406: incidentes abiertos al cargar el panel (`null` si no se pudo leer). */
+  readonly initialOpenIncidents?: number | null;
+}
+
+/**
+ * T-402: shell del admin. En escritorio (≥ lg) barra lateral fija en tinta; en angosto, barra superior con «Menú» que
+ * abre la misma navegación en un Sheet. Ninguna sección queda inaccesible en ningún ancho.
+ * T-425: en escritorio la barra se contrae a solo íconos (nombre en tooltip) y el logo queda en la moto.
+ */
+export function AdminNav({ operatorName, initialCollapsed = false, initialOpenIncidents = null }: AdminNavProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(initialCollapsed);
+  const openIncidents = useOpenIncidentsCount(initialOpenIncidents);
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    document.cookie = `${ADMIN_SIDEBAR_COOKIE}=${next ? 'collapsed' : 'expanded'}; path=/admin; max-age=31536000; samesite=lax`;
+  }
 
   async function handleLogout() {
     await logoutAction();
@@ -21,56 +116,170 @@ export function AdminNav() {
     router.refresh();
   }
 
-  return (
-    <header className="sticky top-0 z-40 w-full border-b border-border bg-card shadow-sm">
-      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6">
-        <div className="flex items-center gap-8">
-          <Link
-            href="/admin/applicants"
-            aria-label={ADMIN_COPY.nav.brandLabel}
-            className="inline-flex items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <BrandLogo size="md" variant="default" showWordmark={true} />
-          </Link>
+  function brand(showWordmark = true) {
+    return (
+      <Link
+        href="/admin/applicants"
+        aria-label={ADMIN_COPY.nav.brandLabel}
+        className={cn('inline-flex items-center rounded-sm', FOCUS_ON_INK)}
+      >
+        <BrandLogo size="md" variant="inverse" showWordmark={showWordmark} className={showWordmark ? undefined : 'h-auto w-10'} />
+      </Link>
+    );
+  }
 
-          <nav aria-label={ADMIN_COPY.nav.ariaLabel} className="hidden items-center gap-1 md:flex">
-            {ADMIN_NAV_TABS.map((tab) => {
-              const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+  // Contraída, el texto queda para lectores de pantalla y el nombre se ve en el tooltip.
+  function withTooltip(label: string, item: React.ReactElement, iconOnly: boolean) {
+    if (!iconOnly) return item;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{item}</TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
+    );
+  }
 
-              return (
-                <Link
-                  key={tab.href}
-                  href={tab.href}
-                  className={cn(
-                    'relative px-4 py-5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    isActive
-                      ? 'font-semibold text-primary after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  {tab.label}
-                </Link>
-              );
-            })}
-          </nav>
+  function navList(onNavigate?: () => void, iconOnly = false) {
+    return (
+      <nav aria-label={ADMIN_COPY.nav.ariaLabel}>
+        <ul className="space-y-1">
+          {ADMIN_NAV_TABS.map((tab) => {
+            const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+            const Icon = NAV_ICONS[tab.href];
+            const badge = tab.href === '/admin/incidents' && openIncidents ? openIncidents : null;
+            return (
+              <li key={tab.href} className="relative">
+                {withTooltip(
+                  tab.label,
+                  <Link
+                    href={tab.href}
+                    onClick={onNavigate}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={cn(
+                      ITEM_CLASS,
+                      FOCUS_ON_INK,
+                      iconOnly && 'justify-center',
+                      isActive
+                        ? 'bg-primary font-semibold text-primary-foreground'
+                        : 'text-secondary-foreground hover:bg-secondary-foreground/10'
+                    )}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <span className={cn(iconOnly && 'sr-only')}>{tab.label}</span>
+                  </Link>,
+                  iconOnly
+                )}
+                {badge ? (
+                  // T-406: fuera del link para que su nombre siga siendo la sección; se lee como «3 incidentes abiertos».
+                  <span
+                    role="img"
+                    aria-label={ADMIN_COPY.nav.openIncidents(badge)}
+                    data-testid="admin-nav-incidents-count"
+                    className={cn(
+                      'pointer-events-none absolute inline-flex min-w-6 items-center justify-center rounded-full bg-destructive px-1.5 text-sm font-semibold leading-6 text-destructive-foreground',
+                      iconOnly ? 'right-1 top-1' : 'right-3 top-1/2 -translate-y-1/2'
+                    )}
+                  >
+                    {badge}
+                  </span>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    );
+  }
+
+  function footer(iconOnly = false) {
+    return (
+      <div className="space-y-3 border-t border-secondary-foreground/20 pt-4">
+        <div className={cn(iconOnly && 'sr-only')}>
+          <p className="truncate text-sm font-semibold text-secondary-foreground">{operatorName}</p>
+          <p className="text-sm text-secondary-foreground/80">{ADMIN_COPY.nav.badgeText}</p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <span className="hidden rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground sm:inline-block">
-            {ADMIN_COPY.nav.badgeText}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
+        {withTooltip(
+          ADMIN_COPY.nav.logoutButton,
+          <button
             type="button"
             onClick={handleLogout}
-            className="text-sm text-muted-foreground"
+            className={cn(
+              ITEM_CLASS,
+              'w-full text-secondary-foreground hover:bg-secondary-foreground/10',
+              iconOnly && 'justify-center',
+              FOCUS_ON_INK
+            )}
           >
-            {ADMIN_COPY.nav.logoutButton}
-          </Button>
-        </div>
+            <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
+            <span className={cn(iconOnly && 'sr-only')}>{ADMIN_COPY.nav.logoutButton}</span>
+          </button>,
+          iconOnly
+        )}
       </div>
-    </header>
+    );
+  }
+
+  const toggleLabel = collapsed ? ADMIN_COPY.nav.expandSidebar : ADMIN_COPY.nav.collapseSidebar;
+  const ToggleIcon = collapsed ? ChevronRight : ChevronLeft;
+
+  return (
+    <>
+      <TooltipProvider delayDuration={200}>
+        <aside
+          className={cn(
+            'relative hidden bg-secondary text-secondary-foreground lg:sticky lg:top-0 lg:z-30 lg:flex lg:h-screen lg:shrink-0',
+            collapsed ? 'lg:w-20' : 'lg:w-64'
+          )}
+        >
+          {/* El scroll va adentro para que el botón redondo pueda asomar sobre el borde con el contenido. */}
+          <div className="flex h-full w-full flex-col gap-6 overflow-y-auto p-4">
+            <div className={cn('pt-2', collapsed ? 'flex justify-center' : 'px-2')}>{brand(!collapsed)}</div>
+            <div className="flex-1">{navList(undefined, collapsed)}</div>
+            {footer(collapsed)}
+          </div>
+          {withTooltip(
+            toggleLabel,
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-expanded={!collapsed}
+              aria-label={toggleLabel}
+              className={cn(
+                // T-427: chico y redondo sobre el borde; el pseudo-elemento agranda el área para tocarlo.
+                'absolute -right-3 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md hover:bg-muted before:absolute before:-inset-3',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+              )}
+            >
+              <ToggleIcon className="h-4 w-4" aria-hidden="true" />
+            </button>,
+            true
+          )}
+        </aside>
+      </TooltipProvider>
+
+      <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between bg-secondary px-4 text-secondary-foreground lg:hidden">
+        {brand()}
+        <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+          <SheetTrigger
+            aria-expanded={menuOpen}
+            className={cn(
+              'inline-flex min-h-12 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-secondary-foreground hover:bg-secondary-foreground/10',
+              FOCUS_ON_INK
+            )}
+          >
+            <Menu className="h-5 w-5" aria-hidden="true" />
+            {ADMIN_COPY.nav.menuButton}
+          </SheetTrigger>
+          <SheetContent
+            side="right"
+            className="flex flex-col gap-6 overflow-y-auto border-secondary bg-secondary text-secondary-foreground"
+          >
+            <SheetTitle className="text-secondary-foreground">{ADMIN_COPY.nav.menuTitle}</SheetTitle>
+            {navList(() => setMenuOpen(false))}
+            {footer()}
+          </SheetContent>
+        </Sheet>
+      </header>
+    </>
   );
 }

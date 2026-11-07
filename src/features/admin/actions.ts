@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/server/supabase/server';
 import { createAdminClient } from '@/server/supabase/admin';
@@ -16,18 +17,22 @@ import {
   adminUpdateSettingRpc,
   adminVerifyDocumentRpc,
 } from '@/server/rpc/admin';
-import type { DocumentContentType, ViewDocumentResult } from './types';
+import type { AuditLogItem, DocumentContentType, ViewDocumentResult } from './types';
+import { getMerchantPlanMovements } from './queries';
 import { sanitizeAdminRedirect } from './redirect';
 import {
   adminMfaSchema,
   viewCourierDocumentSchema,
   decideCourierSchema,
+  rejectCourierSchema,
+  composeRejectionReason,
   suspendCourierSchema,
   reinstateCourierSchema,
   verifyCourierDocumentSchema,
   type AdminMfaInput,
   type ViewCourierDocumentInput,
   type DecideCourierInput,
+  type RejectCourierInput,
   type SuspendCourierInput,
   type ReinstateCourierInput,
   type VerifyCourierDocumentInput,
@@ -269,6 +274,24 @@ export async function decideCourierAction(
   revalidatePath('/admin/applicants');
   revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
   return ok({ success: true });
+}
+
+/**
+ * T-404 (A02-rechazar): rechaza con un motivo de la lista. El motivo que recibe `admin_decide_courier` es
+ * «<opción>: <mensaje>», o solo la opción si no hay mensaje; con «Otro», el mensaje es obligatorio.
+ */
+export async function rejectCourierAction(
+  input: RejectCourierInput
+): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+  const parsed = rejectCourierSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+  return decideCourierAction({
+    courierId: parsed.data.courierId,
+    decision: 'rejected',
+    reason: composeRejectionReason(parsed.data.option, parsed.data.message),
+  });
 }
 
 /**
@@ -529,4 +552,30 @@ export async function listPublicationPlansAction(
     return err(rpcResult.code);
   }
   return ok(rpcResult.data);
+}
+
+const merchantPlanMovementsSchema = z.object({ merchantId: z.string().guid() });
+
+/**
+ * T-405 (A03): «Últimos movimientos» del panel lateral. Valida el id, exige admin con AAL2 y lee `audit_log` con la
+ * sesión (RLS admin), con el mismo saneamiento que la auditoría.
+ */
+export async function getMerchantPlanMovementsAction(
+  input: unknown
+): Promise<ActionResult<readonly AuditLogItem[], DomainErrorCode>> {
+  const parsed = merchantPlanMovementsSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  try {
+    return ok(await getMerchantPlanMovements(parsed.data.merchantId));
+  } catch {
+    return err('INTERNAL_ERROR');
+  }
 }

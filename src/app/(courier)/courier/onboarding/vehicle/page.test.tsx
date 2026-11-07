@@ -7,6 +7,8 @@ import * as serverSupabase from '@/server/supabase/server';
 
 const mocks = vi.hoisted(() => ({
   VehicleForm: vi.fn((_props: Record<string, unknown>) => <div data-testid="vehicle-form" />),
+  CourierVehiclesManager: vi.fn((_props: Record<string, unknown>) => <div data-testid="vehicles-manager" />),
+  getMyCourierVehicles: vi.fn(),
 }));
 
 vi.mock('@/server/supabase/server');
@@ -15,8 +17,10 @@ vi.mock('@/features/courier-onboarding', async (importOriginal) => {
   return {
     ...actual,
     VehicleForm: mocks.VehicleForm,
+    CourierVehiclesManager: mocks.CourierVehiclesManager,
   };
 });
+vi.mock('@/features/courier-onboarding/server', () => ({ getMyCourierVehicles: mocks.getMyCourierVehicles }));
 
 describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
   const courierUserId = 'test-courier-user-357';
@@ -43,7 +47,12 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
     }
   });
 
-  it('detecta vehículo existente en base de datos y pasa isEditing={true} y valores iniciales a VehicleForm', async () => {
+  it('CC-042: con la postulación enviada muestra «Mis vehículos» con los vehículos de la RPC, no el formulario de alta', async () => {
+    const vehicles = {
+      activeVehicleId: 'vehicle-moto',
+      vehicles: [{ id: 'vehicle-moto', vehicleType: 'moto', plate: 'AB 123 CD', licenseStatus: 'none', insuranceStatus: 'none' }],
+    };
+    mocks.getMyCourierVehicles.mockResolvedValue(vehicles);
     vi.mocked(serverSupabase.createClient).mockResolvedValue({
       auth: {
         getUser: vi.fn().mockResolvedValue({
@@ -60,6 +69,7 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
                 vehicle_type: 'moto',
                 vehicle_plate: 'AB 123 CD',
                 status: 'approved',
+                application_submitted: true,
               },
               error: null,
             }),
@@ -71,17 +81,12 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
 
     render(await CanonicalCourierOnboardingVehiclePage({}));
 
-    expect(mocks.VehicleForm).toHaveBeenCalledTimes(1);
-    const passedProps = mocks.VehicleForm.mock.calls[0]?.[0];
-    expect(passedProps).toMatchObject({
-      courierId: courierUserId,
-      isEditing: true,
-      initialVehicleType: 'moto',
-      initialVehiclePlate: 'AB 123 CD',
-    });
+    expect(mocks.VehicleForm).not.toHaveBeenCalled();
+    expect(mocks.CourierVehiclesManager).toHaveBeenCalledTimes(1);
+    expect(mocks.CourierVehiclesManager.mock.calls[0]?.[0]).toMatchObject({ courierId: courierUserId, vehicles });
   });
 
-  it('si el repartidor no tiene vehículo declarado (onboarding incompleto), pasa isEditing={false}', async () => {
+  it('si el repartidor no envió la postulación (onboarding incompleto), muestra el formulario de alta', async () => {
     vi.mocked(serverSupabase.createClient).mockResolvedValue({
       auth: {
         getUser: vi.fn().mockResolvedValue({
@@ -98,6 +103,7 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
                 vehicle_type: null,
                 vehicle_plate: null,
                 status: 'pending',
+                application_submitted: false,
               },
               error: null,
             }),
@@ -111,10 +117,8 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
 
     expect(mocks.VehicleForm).toHaveBeenCalledTimes(1);
     const passedProps = mocks.VehicleForm.mock.calls[0]?.[0];
-    expect(passedProps).toMatchObject({
-      courierId: courierUserId,
-      isEditing: false,
-    });
+    expect(passedProps).toMatchObject({ courierId: courierUserId });
+    expect(mocks.CourierVehiclesManager).not.toHaveBeenCalled();
   });
   it('mode=edit no convierte un alta incompleta en edición', async () => {
     vi.mocked(serverSupabase.createClient).mockResolvedValue({
@@ -123,12 +127,14 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
         maybeSingle: vi.fn().mockResolvedValue({
-          data: { vehicle_type: null, vehicle_plate: null, status: 'pending' }, error: null,
+          data: { vehicle_type: null, vehicle_plate: null, status: 'pending', application_submitted: false }, error: null,
         }),
       }),
     } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
     render(await CanonicalCourierOnboardingVehiclePage({ searchParams: Promise.resolve({ mode: 'edit' }) }));
-    expect(mocks.VehicleForm.mock.calls[0]?.[0]).toMatchObject({ isEditing: false });
+    expect(mocks.VehicleForm).toHaveBeenCalledTimes(1);
+    expect(mocks.CourierVehiclesManager).not.toHaveBeenCalled();
+    expect(mocks.getMyCourierVehicles).not.toHaveBeenCalled();
   });
 
   it('error al consultar no debe dibujar un onboarding falso', async () => {

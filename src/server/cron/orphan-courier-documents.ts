@@ -27,7 +27,7 @@ const claimResultSchema = z.object({
   claimed: z
     .array(
       z.object({
-        claimId: z.string().uuid(),
+        claimId: z.string().guid(),
         storagePath: z.string().min(1),
       })
     )

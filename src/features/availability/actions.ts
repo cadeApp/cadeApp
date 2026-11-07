@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/server/supabase/server';
 import { setAvailabilityRpc } from '@/server/rpc/offers';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
+import { RPC_CONTRACTS, type RpcOutput } from '@/domain';
 import { profileRoleSchema } from '@/domain/schemas';
 import { setAvailabilitySchema } from './schemas';
 
@@ -56,4 +57,27 @@ export async function setAvailabilityAction(
 
   revalidatePath('/courier/feed');
   return ok(rpcResult.data);
+}
+
+/**
+ * CC-041 (T-415): señal de presencia del repartidor. La autorización (repartidor aprobado con consentimiento activo) y
+ * la hora viven en la RPC; acá solo se valida la respuesta contra el contrato.
+ */
+export async function courierHeartbeatAction(): Promise<
+  ActionResult<RpcOutput<'courier_heartbeat'>, DomainErrorCode>
+> {
+  const contract = RPC_CONTRACTS.courier_heartbeat;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc('courier_heartbeat');
+    if (error) {
+      const candidate = error.message.trim();
+      const allowed: readonly string[] = contract.errorCodes;
+      return err(allowed.includes(candidate) ? (candidate as DomainErrorCode) : 'INTERNAL_ERROR');
+    }
+    const parsed = contract.outputSchema.safeParse(data);
+    return parsed.success ? ok(parsed.data) : err('INTERNAL_ERROR');
+  } catch {
+    return err('INTERNAL_ERROR');
+  }
 }

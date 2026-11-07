@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as courierRpc from './courier';
 import {
+  courierVehicleRpc,
+  mapCourierVehicleRpcError,
   mapReplaceCourierDocumentRpcError,
   replaceCourierDocumentRpc,
 } from './courier';
@@ -286,5 +288,46 @@ describe('CC-033 — addCourierOptionalDocumentRpc', () => {
     await expect(
       invokeAddOptionalDocument(caller, { kind: 'insurance', storagePath }),
     ).resolves.toMatchObject({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+});
+
+describe('CC-042: courierVehicleRpc', () => {
+  const VEHICLE = 'c0000000-0000-4000-8000-000000000042';
+
+  it('arma los argumentos de cada RPC de vehículos y valida la salida', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { vehicleId: VEHICLE }, error: null });
+    expect(await courierVehicleRpc({ rpc }, 'add_courier_vehicle', { vehicleType: 'bike', plate: null })).toEqual({
+      ok: true,
+      data: { vehicleId: VEHICLE },
+    });
+    expect(rpc).toHaveBeenLastCalledWith('add_courier_vehicle', { p_vehicle_type: 'bike', p_plate: null, p_make_active: false });
+
+    await courierVehicleRpc({ rpc }, 'update_courier_vehicle', { vehicleId: VEHICLE, plate: 'AB 123 CD' });
+    expect(rpc).toHaveBeenLastCalledWith('update_courier_vehicle', { p_vehicle_id: VEHICLE, p_plate: 'AB 123 CD' });
+
+    rpc.mockResolvedValueOnce({ data: { vehicleId: 'no-es-uuid' }, error: null });
+    expect(await courierVehicleRpc({ rpc }, 'remove_courier_vehicle', { vehicleId: VEHICLE })).toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+  });
+
+  it('mapea los errores del contrato y rechaza la entrada inválida sin llamar a la RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: 'VEHICLE_SWITCH_BLOCKED' } });
+    expect(await courierVehicleRpc({ rpc }, 'set_active_courier_vehicle', { vehicleId: VEHICLE })).toEqual({
+      ok: false,
+      code: 'VEHICLE_SWITCH_BLOCKED',
+    });
+    expect(mapCourierVehicleRpcError('remove_courier_vehicle', { code: '42501', message: 'permission denied' })).toBe(
+      'UNAUTHORIZED_ACTOR'
+    );
+    expect(mapCourierVehicleRpcError('get_my_courier_vehicles', { code: 'XX000', message: 'boom' })).toBe('INTERNAL_ERROR');
+
+    const untouched = vi.fn();
+    expect(await courierVehicleRpc({ rpc: untouched }, 'set_active_courier_vehicle', { vehicleId: 'x' })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(untouched).not.toHaveBeenCalled();
   });
 });

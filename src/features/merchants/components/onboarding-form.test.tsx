@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MerchantOnboardingForm } from './onboarding-form';
 import { merchantOnboardingAction, updateMerchantProfileAction } from '../actions';
+import type { MapGeocodeOutcome, MapGeocodeRequest } from '@/ui/map-geocode';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -22,13 +23,31 @@ interface MockMapPickerProps {
   readonly onChange?: (coords: { lat: number; lng: number }) => void;
   readonly defaultZoneCenter?: { lat: number; lng: number } | null;
   readonly showMarkerWhenEmpty?: boolean;
+  readonly geocodeRequest?: MapGeocodeRequest | null;
+  readonly onGeocodeResult?: (outcome: MapGeocodeOutcome, request: MapGeocodeRequest) => void;
 }
 
 let mockOnChange: ((coords: { lat: number; lng: number }) => void) | undefined;
+// T-423: último pedido de búsqueda que recibió el mapa y cómo responderlo como lo hace MapPicker (CC-045).
+let mockGeocodeRequest: MapGeocodeRequest | null | undefined;
+let mockAnswerGeocode: ((outcome: MapGeocodeOutcome) => void) | undefined;
 
 vi.mock('@/ui/map', () => ({
-  MapPicker: ({ value, onChange, defaultZoneCenter, showMarkerWhenEmpty }: MockMapPickerProps) => {
+  MapPicker: ({
+    value,
+    onChange,
+    defaultZoneCenter,
+    showMarkerWhenEmpty,
+    geocodeRequest,
+    onGeocodeResult,
+  }: MockMapPickerProps) => {
     mockOnChange = onChange;
+    mockGeocodeRequest = geocodeRequest;
+    mockAnswerGeocode = (outcome) => {
+      if (!geocodeRequest) throw new Error('No hay búsqueda pendiente');
+      if (outcome.status === 'found') onChange?.(outcome.coords);
+      onGeocodeResult?.(outcome, geocodeRequest);
+    };
     return (
       <div data-testid="map-picker">
         <span data-testid="map-value">{JSON.stringify(value)}</span>
@@ -928,5 +947,172 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
         defaultPickupLng: null,
       });
     });
+  });
+});
+
+describe('T-423: la dirección de retiro habitual se ubica en el mapa (CC-045)', () => {
+  const zoneCentro = {
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Centro',
+    centroidLat: -27.431111,
+    centroidLng: -65.611111,
+  };
+  const FOUND = { lat: -27.4322, lng: -65.6162 };
+
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOnChange = undefined;
+    mockGeocodeRequest = undefined;
+    mockAnswerGeocode = undefined;
+  });
+
+  function answer(outcome: MapGeocodeOutcome) {
+    act(() => {
+      mockAnswerGeocode?.(outcome);
+    });
+  }
+
+  it('alta: al salir del campo busca la dirección y found pone el pin', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+
+    expect(mockGeocodeRequest?.id).toBe(1);
+    expect(mockGeocodeRequest?.query).toMatch(/^San Martín 450, (Centro, )?Aguilares, Tucumán, Argentina$/);
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify(FOUND));
+    expect(screen.getByRole('status').textContent).toBe('Revisá que el pin esté en la puerta de tu negocio.');
+  });
+
+  it('alta: not_found avisa en línea y no pone pin', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'Calle inventada 1' } });
+    fireEvent.blur(input);
+
+    answer({ status: 'not_found' });
+    expect(screen.getByRole('alert').textContent).toBe('No encontramos esa dirección. Marcá el local en el mapa.');
+    expect(screen.getByTestId('map-value').textContent).toBe('null');
+  });
+
+  it('edición: el pin guardado no se pisa al salir del campo; el botón sí busca', async () => {
+    render(
+      <MerchantOnboardingForm
+        zones={[zoneCentro]}
+        initialData={{
+          isComplete: true,
+          businessName: 'Panadería La Espiga',
+          phone: '3815550123',
+          defaultPickupAddress: 'San Martín 450',
+          defaultPickupZoneId: zoneCentro.id,
+          defaultPickupLat: -27.435,
+          defaultPickupLng: -65.615,
+          notes: '',
+        }}
+      />
+    );
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 500' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequest ?? null).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ubicar en el mapa' }));
+    expect(mockGeocodeRequest).toEqual({
+      id: 1,
+      query: 'San Martín 500, Centro, Aguilares, Tucumán, Argentina',
+    });
+    answer({ status: 'found', coords: FOUND, approximate: true });
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify(FOUND));
+    expect(screen.getByRole('status').textContent).toBe(
+      'Ubicación aproximada: mové el pin a la puerta de tu negocio.'
+    );
+  });
+
+  it('alta: editar la dirección mientras busca cancela ese pedido (PR620-H03)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequest).not.toBeNull();
+
+    fireEvent.change(input, { target: { value: 'Mitre 10' } });
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ubicar en el mapa' })).toBeDefined();
+
+    fireEvent.blur(input);
+    expect(mockGeocodeRequest?.query).toMatch(/^Mitre 10, (Centro, )?Aguilares, Tucumán, Argentina$/);
+  });
+
+  it('alta: un pin que vino de la búsqueda se borra si cambia la dirección (PR620-H03)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify(FOUND));
+
+    fireEvent.change(input, { target: { value: 'Mitre 10' } });
+    expect(screen.getByTestId('map-value').textContent).toBe('null');
+  });
+
+  it('alta: A → B → A vuelve a buscar la dirección al salir del campo (PR620-H07)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    const first = mockGeocodeRequest;
+    answer({ status: 'found', coords: FOUND, approximate: false });
+
+    fireEvent.change(input, { target: { value: 'Mitre 10' } });
+    expect(screen.getByTestId('map-value').textContent).toBe('null');
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+
+    expect(mockGeocodeRequest?.query).toBe(first?.query);
+    expect(mockGeocodeRequest?.id).toBeGreaterThan(first?.id ?? 0);
+    answer({ status: 'found', coords: FOUND, approximate: false });
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify(FOUND));
+  });
+
+  it('alta: A → B → A con pin manual no lo borra ni busca al salir del campo (PR620-H07)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    fireEvent.click(screen.getByTestId('simulate-map-pin'));
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.change(input, { target: { value: 'Mitre 10' } });
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify({ lat: -27.435, lng: -65.615 }));
+  });
+
+  it('alta: un pin manual mientras busca cancela el pedido (PR620-H02)', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByTestId('simulate-map-pin'));
+    expect(mockGeocodeRequest ?? null).toBeNull();
+    expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify({ lat: -27.435, lng: -65.615 }));
+  });
+
+  it('alta: un pin movido a mano no se pisa al salir del campo', async () => {
+    render(<MerchantOnboardingForm zones={[zoneCentro]} />);
+    await screen.findByTestId('map-picker');
+    fireEvent.click(screen.getByTestId('simulate-map-pin'));
+    const input = screen.getByLabelText(/dirección de retiro habitual/i);
+    fireEvent.change(input, { target: { value: 'San Martín 450' } });
+    fireEvent.blur(input);
+    expect(mockGeocodeRequest ?? null).toBeNull();
   });
 });

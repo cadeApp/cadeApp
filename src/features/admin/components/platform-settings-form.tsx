@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { AlertTriangle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { z } from 'zod';
@@ -14,6 +15,7 @@ import { getDomainErrorMessage } from '@/lib/error-messages';
 import { updatePlatformSettingAction } from '../actions';
 import { ADMIN_COPY } from '../copy';
 import {
+  courierOnlineWindowFormSchema,
   dropsPerCreditFormSchema,
   graceDaysFormSchema,
   maxDropsFormSchema,
@@ -41,7 +43,7 @@ interface ValueFormInput {
   value: string;
 }
 
-type ValueFormSchema = z.ZodType<ValueFormInput, z.ZodTypeDef, ValueFormInput>;
+type ValueFormSchema = z.ZodType<ValueFormInput, ValueFormInput>;
 
 /**
  * Guarda un parámetro vía la Server Action y devuelve el mensaje de error visible, o null si salió bien.
@@ -81,9 +83,17 @@ export interface PlatformSettingsFormProps {
 export function PlatformSettingsForm({ settings }: PlatformSettingsFormProps) {
   return (
     <div className="space-y-4">
-      <Card className="border border-border bg-muted/70 p-4 shadow-none">
-        <p className="text-sm font-semibold text-foreground">{COPY.warningTitle}</p>
-        <p className="text-sm text-muted-foreground">{COPY.warning}</p>
+      {/* T-406: tono de advertencia de los tokens (`badge-warning`: contraste AA verificado en ui-system). */}
+      <Card
+        role="note"
+        data-testid="platform-settings-warning"
+        className="badge-warning flex gap-3 border p-4 shadow-none"
+      >
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-semibold">{COPY.warningTitle}</p>
+          <p className="text-sm">{COPY.warning}</p>
+        </div>
       </Card>
 
       <ValueSettingRow
@@ -116,6 +126,12 @@ export function PlatformSettingsForm({ settings }: PlatformSettingsFormProps) {
         schema={maxDropsFormSchema}
         initialValue={String(settings.maxDropsPerRequest)}
         toInput={(value) => ({ key: 'max_drops_per_request', value: Number(value) })}
+      />
+      <ValueSettingRow
+        settingKey="courier_online_window_minutes"
+        schema={courierOnlineWindowFormSchema}
+        initialValue={String(settings.courierOnlineWindowMinutes)}
+        toInput={(value) => ({ key: 'courier_online_window_minutes', value: Number(value) })}
       />
 
       <section aria-labelledby="settings-credits-title" className="space-y-4 pt-2">

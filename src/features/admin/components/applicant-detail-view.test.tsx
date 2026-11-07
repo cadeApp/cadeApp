@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ApplicantDetailView } from './applicant-detail-view';
 import { ApplicantsQueue } from './applicants-queue';
 import {
   viewCourierDocumentAction,
   decideCourierAction,
+  rejectCourierAction,
   suspendCourierAction,
   reinstateCourierAction,
   verifyCourierDocumentAction,
@@ -24,6 +25,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('../actions', () => ({
   viewCourierDocumentAction: vi.fn(),
   decideCourierAction: vi.fn(),
+  rejectCourierAction: vi.fn(),
   suspendCourierAction: vi.fn(),
   reinstateCourierAction: vi.fn(),
   verifyCourierDocumentAction: vi.fn(),
@@ -33,7 +35,7 @@ const mockApplicant: ApplicantDetail = {
   id: 'a0000000-0000-0000-0000-000000000001',
   fullName: 'Juan Repartidor',
   status: 'pending',
-  dniHash: 'hash-dni-1234',
+  hasDni: true,
   phone: '3865123456',
   vehicleType: 'moto',
   vehiclePlate: 'ABC 123',
@@ -329,6 +331,64 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
     expect(image.className).toContain('rotate-0');
   });
 
+  it('T-419 (CC-042): la licencia y el seguro muestran su vehículo, para verificarlos por vehículo', () => {
+    const applicantWithVehicles: ApplicantDetail = {
+      ...mockApplicant,
+      documents: [
+        {
+          id: 'd0000000-0000-0000-0000-000000000041',
+          documentType: 'license',
+          storagePath: 'courier/x/license_1.jpg',
+          status: 'submitted',
+          uploadedAt: '2026-09-20T10:08:00.000Z',
+          vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
+        },
+        {
+          id: 'd0000000-0000-0000-0000-000000000042',
+          documentType: 'license',
+          storagePath: 'courier/x/license_2.jpg',
+          status: 'verified',
+          uploadedAt: '2026-09-20T10:09:00.000Z',
+          vehicle: { vehicleType: 'car', plate: 'ELA 666' },
+        },
+      ],
+    };
+
+    render(<ApplicantDetailView applicant={applicantWithVehicles} />);
+    const tabNames = screen.getAllByRole('tab').map((tab) => tab.textContent ?? '');
+    expect(tabNames.some((name) => name.includes('Moto AB 123 CD'))).toBe(true);
+    expect(tabNames.some((name) => name.includes('Automóvil ELA 666'))).toBe(true);
+  });
+
+  it('PR624-H07: dos vehículos con el mismo tipo y patente (uno archivado) no se fusionan', () => {
+    const applicantWithTwins: ApplicantDetail = {
+      ...mockApplicant,
+      documents: [
+        {
+          id: 'd0000000-0000-0000-0000-000000000043',
+          documentType: 'license',
+          storagePath: 'courier/x/license_3.jpg',
+          status: 'submitted',
+          uploadedAt: '2026-09-21T10:00:00.000Z',
+          vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
+        },
+        {
+          id: 'd0000000-0000-0000-0000-000000000044',
+          documentType: 'license',
+          storagePath: 'courier/x/license_4.jpg',
+          status: 'verified',
+          uploadedAt: '2026-09-01T10:00:00.000Z',
+          isCurrent: true,
+          vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
+        },
+      ],
+    };
+
+    render(<ApplicantDetailView applicant={applicantWithTwins} />);
+    const twinTabs = screen.getAllByRole('tab').filter((tab) => (tab.textContent ?? '').includes('Moto AB 123 CD'));
+    expect(twinTabs).toHaveLength(2);
+  });
+
   it('9. DoD T-354: muestra el tab con el nombre completo «Selfie con el DNI» cuando hay documento selfie', () => {
     const applicantWithSelfie: ApplicantDetail = {
       ...mockApplicant,
@@ -355,7 +415,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
     const applicantItem: ApplicantListItem = {
       id: 'a0000000-0000-0000-0000-000000000001',
       fullName: 'Juan Repartidor',
-      dniHash: 'hash-1234',
+      hasDni: true,
       phone: '3865123456',
       vehicleType: 'moto',
       docLevel: 1,
@@ -571,7 +631,7 @@ describe('T-376 / CC-033: señal de documento opcional en revisión en la cola d
     return {
       id: 'a0000000-0000-0000-0000-000000000376',
       fullName: 'Rita Repartidora',
-      dniHash: 'hash-376',
+      hasDni: true,
       phone: '3865000376',
       vehicleType: 'moto',
       docLevel: 1,
@@ -689,5 +749,200 @@ describe('T-387: visor auditado de un PDF', () => {
     const frame = await screen.findByTitle(/documento dni frente \(pdf\)/i);
     expect(frame.tagName).toBe('IFRAME');
     expect(screen.queryByRole('img', { name: /documento dni frente/i })).toBeNull();
+  });
+});
+
+describe('T-401: el hash del DNI no se muestra', () => {
+  const queueItem: ApplicantListItem = {
+    id: 'a0000000-0000-0000-0000-000000000401',
+    fullName: 'Juan Repartidor',
+    hasDni: true,
+    phone: '3865123456',
+    vehicleType: 'moto',
+    docLevel: 1,
+    createdAt: '2026-09-20T10:00:00.000Z',
+    status: 'pending',
+    licenseStatus: 'none',
+    insuranceStatus: 'none',
+    documentsSummary: { hasDniFront: true, hasDniBack: true, hasSelfie: true, hasLicense: false, hasInsurance: false },
+  };
+
+  it('la cola muestra «DNI cargado» o «DNI pendiente» y nunca «DNI Hash»', () => {
+    render(
+      <ApplicantsQueue
+        initialTab="pending"
+        applicants={[queueItem, { ...queueItem, id: 'a0000000-0000-0000-0000-000000000402', fullName: 'Ana Pendiente', hasDni: false }]}
+      />
+    );
+    const rows = screen.getAllByRole('row');
+    expect(rows.find((row) => row.textContent?.includes('Juan Repartidor'))?.textContent).toContain('DNI cargado');
+    expect(rows.find((row) => row.textContent?.includes('Ana Pendiente'))?.textContent).toContain('DNI pendiente');
+    expect(document.body.textContent ?? '').not.toMatch(/hash/i);
+  });
+
+  it('el detalle muestra «DNI cargado» o «DNI pendiente» y nunca «DNI Hash»', () => {
+    const { unmount } = render(<ApplicantDetailView applicant={mockApplicant} />);
+    expect(screen.queryByText('DNI cargado')).not.toBeNull();
+    expect(document.body.textContent ?? '').not.toMatch(/hash/i);
+    unmount();
+
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, hasDni: false }} />);
+    expect(screen.queryByText('DNI pendiente')).not.toBeNull();
+  });
+});
+
+describe('T-404: detalle según A02', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const a02Applicant: ApplicantDetail = {
+    ...mockApplicant,
+    submittedAt: '2026-09-20T11:00:00.000Z',
+    consents: [
+      { document: 'tos', version: '2026-09', acceptedAt: '2026-09-20T10:01:00.000Z' },
+      { document: 'courier_contract', version: '1', acceptedAt: '2026-09-20T10:02:00.000Z' },
+    ],
+    history: [
+      { kind: 'registered', id: 'registered', at: '2026-09-20T10:00:00.000Z' },
+      { kind: 'submitted', id: 'submitted', at: '2026-09-20T11:00:00.000Z' },
+    ],
+  };
+
+  function toolbarButtons(): string[] {
+    const toolbar = screen.getByRole('toolbar', { name: 'Acciones sobre el postulante' });
+    return within(toolbar)
+      .getAllByRole('button')
+      .map((button) => button.textContent ?? '');
+  }
+
+  it('la columna de datos muestra nombre, teléfono, vehículo con patente, alta y nivel, sin CBU ni DNI', () => {
+    render(<ApplicantDetailView applicant={a02Applicant} />);
+    const data = screen.getByText('Datos del postulante').closest('[class*="border"]');
+    const text = data?.textContent ?? '';
+
+    expect(text).toContain('Juan Repartidor');
+    expect(text).toContain('3865123456');
+    expect(text).toContain('Moto · ABC 123');
+    expect(text).toContain('20/09/2026');
+    expect(document.body.textContent ?? '').not.toMatch(/cbu|alias bancario|DNI terminado/i);
+  });
+
+  it('los consentimientos muestran documento, versión y fecha', () => {
+    render(<ApplicantDetailView applicant={a02Applicant} />);
+    const items = within(screen.getByRole('list', { name: 'Consentimientos' })).getAllByRole('listitem');
+
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toContain('Términos y condiciones');
+    expect(items[0]?.textContent).toMatch(/Versión 2026-09 · 20\/09\/2026/);
+    expect(items[1]?.textContent).toContain('Contrato de repartidor');
+  });
+
+  it('el historial llega a la línea de tiempo tal cual, en su orden', () => {
+    render(<ApplicantDetailView applicant={a02Applicant} />);
+    const items = within(screen.getByRole('list', { name: 'Historial del postulante' })).getAllByRole('listitem');
+    expect(items.map((item) => item.querySelector('p')?.textContent)).toEqual(['Registrado', 'Postulación enviada']);
+  });
+
+  it.each([
+    ['pending' as const, ['Rechazar postulación', 'Aprobar repartidor']],
+    ['approved' as const, ['Suspender repartidor']],
+    ['suspended' as const, ['Reactivar repartidor']],
+    ['rejected' as const, ['Reconsiderar aprobación']],
+  ])('con estado %s, la barra fija ofrece solo %j', (status, expected) => {
+    render(<ApplicantDetailView applicant={{ ...a02Applicant, status }} />);
+    expect(toolbarButtons()).toEqual(expected);
+  });
+
+  it('la barra es sticky al pie, dentro del flujo: reserva su alto y no tapa contenido', () => {
+    render(<ApplicantDetailView applicant={a02Applicant} />);
+    const toolbar = screen.getByRole('toolbar', { name: 'Acciones sobre el postulante' });
+    expect(toolbar.className).toContain('sticky');
+    expect(toolbar.className).toContain('bottom-0');
+    expect(toolbar.className).not.toContain('fixed');
+  });
+
+  function openReject() {
+    render(<ApplicantDetailView applicant={a02Applicant} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Rechazar postulación' }));
+    expect(screen.getByRole('heading', { name: 'Rechazar a Juan Repartidor' })).toBeDefined();
+  }
+
+  function chooseOption(option: string) {
+    fireEvent.click(screen.getByRole('combobox', { name: /motivo/i }));
+    fireEvent.click(screen.getByRole('option', { name: option }));
+  }
+
+  it('el rechazo exige elegir un motivo de la lista', async () => {
+    openReject();
+    fireEvent.click(screen.getByRole('button', { name: 'Rechazar' }));
+
+    expect(await screen.findByText('Elegí un motivo.')).toBeDefined();
+    expect(rejectCourierAction).not.toHaveBeenCalled();
+  });
+
+  it('con «Otro», el mensaje es obligatorio; con mensaje, llama a rejectCourierAction', async () => {
+    vi.mocked(rejectCourierAction).mockResolvedValue({ ok: true, data: { success: true } });
+    openReject();
+    chooseOption('Otro');
+    fireEvent.click(screen.getByRole('button', { name: 'Rechazar' }));
+
+    expect(await screen.findByText('Con «Otro», escribí el mensaje para el postulante.')).toBeDefined();
+    expect(rejectCourierAction).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText(/mensaje para el postulante/i), {
+      target: { value: 'No coincide el barrio declarado.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Rechazar' }));
+
+    await waitFor(() => {
+      expect(rejectCourierAction).toHaveBeenCalledWith({
+        courierId: mockApplicant.id,
+        option: 'Otro',
+        message: 'No coincide el barrio declarado.',
+      });
+      expect(refresh).toHaveBeenCalled();
+    });
+    expect(decideCourierAction).not.toHaveBeenCalled();
+  });
+
+  it('una opción que no es «Otro» puede ir sin mensaje', async () => {
+    vi.mocked(rejectCourierAction).mockResolvedValue({ ok: true, data: { success: true } });
+    openReject();
+    chooseOption('Foto ilegible');
+    fireEvent.click(screen.getByRole('button', { name: 'Rechazar' }));
+
+    await waitFor(() =>
+      expect(rejectCourierAction).toHaveBeenCalledWith({
+        courierId: mockApplicant.id,
+        option: 'Foto ilegible',
+        message: '',
+      })
+    );
+  });
+
+  it('regresión del visor: aviso de auditoría arriba, pestañas, zoom, rotación y «Restablecer»', async () => {
+    vi.mocked(viewCourierDocumentAction).mockResolvedValue({
+      ok: true,
+      data: { signedUrl: 'https://example.com/signed/dni_front.webp', contentType: 'image', expiresInSeconds: 60 },
+    });
+    render(<ApplicantDetailView applicant={a02Applicant} />);
+
+    const notice = screen.getByText('Este acceso queda registrado en la auditoría.');
+    const tablist = screen.getByRole('tablist');
+    expect(notice.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: /cargar documento seguro/i }));
+    const image = await screen.findByRole('img', { name: /documento dni frente/i });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aumentar zoom' }));
+    expect(image.className).toContain('scale-125');
+    fireEvent.click(screen.getByRole('button', { name: 'Rotar 90 grados' }));
+    expect(image.className).toContain('rotate-90');
+
+    fireEvent.click(screen.getByTitle('Restablecer vista'));
+    expect(image.className).toContain('scale-100');
+    expect(image.className).toContain('rotate-0');
   });
 });

@@ -7,7 +7,7 @@ import { sendPushNotification, pushPayloadSchema } from '@/server/push/sender';
 export const runtime = 'nodejs';
 
 const sendPushRouteSchema = z.object({
-  userIds: z.array(z.string().uuid()).min(1),
+  userIds: z.array(z.string().guid()).min(1),
   event: pushPayloadSchema,
 });
 

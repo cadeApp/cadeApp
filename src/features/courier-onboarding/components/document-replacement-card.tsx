@@ -30,6 +30,8 @@ export interface DocumentReplacementCardProps {
    * seguro que no se cargaron en el onboarding (`add_courier_optional_document`) y se muestra solo con estado `none`.
    */
   mode?: 'replace' | 'add';
+  /** CC-042: vehículo de la licencia o el seguro; sin él, la RPC usa el vehículo activo. */
+  vehicleId?: string;
 }
 
 /** T-376: un mensaje por causa de falla del alta de un documento opcional. */
@@ -71,6 +73,7 @@ export function DocumentReplacementCard({
   rejectionMessage,
   onReplaced,
   mode = 'replace',
+  vehicleId,
 }: DocumentReplacementCardProps) {
   const [currentStatus, setCurrentStatus] = React.useState<DocumentReviewStatus>(initialStatus);
   const [uploadStatus, setUploadStatus] = React.useState<DocumentUploadStatus>('idle');
@@ -187,6 +190,7 @@ export function DocumentReplacementCard({
         kind,
         storagePath: attempt.storagePath,
         idempotencyKey: attempt.idempotencyKey,
+        ...(vehicleId ? { vehicleId } : {}),
       };
       let result: ActionResult<{ status: DocumentReviewStatus }, DomainErrorCode>;
       if (mode === 'add') {

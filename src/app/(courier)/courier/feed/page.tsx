@@ -1,12 +1,15 @@
 import * as React from 'react';
 import { redirect } from 'next/navigation';
+import { AnnouncementBanner } from '@/features/announcements';
+import { VehicleQuickSwitch } from '@/features/availability';
+import { getMyAnnouncement } from '@/features/announcements/server';
 import { CourierFeed, type ActiveTripSummary } from '@/features/offers';
 import {
   getAvailableRequests,
   getCourierStatusAndAvailability,
   getPlatformMinOfferArs,
 } from '@/features/offers/server';
-import { getCourierDocumentsStatus } from '@/features/courier-onboarding/server';
+import { getCourierDocumentsStatus, getMyCourierVehicles } from '@/features/courier-onboarding/server';
 import { getActiveTripsForCourier } from '@/features/trips/server';
 import { createClient } from '@/server/supabase/server';
 
@@ -31,21 +34,23 @@ async function getPendingCourierDocuments() {
 }
 
 export default async function CourierFeedPage() {
-  const [statusInfo, minOfferArs, feedPage] = await Promise.all([
+  const [statusInfo, minOfferArs, feedPage, announcement] = await Promise.all([
     getCourierStatusAndAvailability(),
     getPlatformMinOfferArs(),
     getAvailableRequests(),
+    getMyAnnouncement(),
   ]);
 
   const documents =
     statusInfo.status === 'pending' ? await getPendingCourierDocuments() : undefined;
 
   let activeTripsResult: { courierId: string; trips: ActiveTripSummary[] } | undefined;
+  let vehicles: Awaited<ReturnType<typeof getMyCourierVehicles>> = null;
   if (statusInfo.status === 'approved') {
-    activeTripsResult = await getActiveTripsForCourier();
+    [activeTripsResult, vehicles] = await Promise.all([getActiveTripsForCourier(), getMyCourierVehicles()]);
   }
 
-  return (
+  const feed = (
     <CourierFeed
       courierStatus={statusInfo.status}
       isAvailable={statusInfo.available}
@@ -56,5 +61,27 @@ export default async function CourierFeedPage() {
       courierId={activeTripsResult?.courierId}
       initialActiveTrips={activeTripsResult?.trips}
     />
+  );
+
+  // CC-042: con más de un vehículo, el cambio rápido va junto a «Disponible» (arriba del feed).
+  const vehicleSwitch =
+    vehicles && vehicles.vehicles.length > 1 ? (
+      <div className="mx-auto w-full max-w-3xl px-4 pt-6 sm:px-6">
+        <VehicleQuickSwitch activeVehicleId={vehicles.activeVehicleId} vehicles={vehicles.vehicles} />
+      </div>
+    ) : null;
+
+  // T-414: la novedad vigente va arriba del feed; sin novedad, el feed se ve igual que siempre.
+  if (!announcement && !vehicleSwitch) return feed;
+  return (
+    <>
+      {announcement && (
+        <div className="mx-auto w-full max-w-3xl px-4 pt-6 sm:px-6">
+          <AnnouncementBanner key={announcement.id} announcement={announcement} />
+        </div>
+      )}
+      {vehicleSwitch}
+      {feed}
+    </>
   );
 }

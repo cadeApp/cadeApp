@@ -8,6 +8,8 @@ import {
   type RpcInput,
   type RpcName,
   type RpcOutput,
+  type AnnouncementAudience,
+  type AnnouncementCta,
   type PublicationBalance,
   RPC_CONTRACTS,
   validateOfferAmountAgainstFloor,
@@ -59,6 +61,8 @@ export interface FakePlatformSettings {
   readonly carryoverCapPct?: number;
   readonly launchDiscountPct?: number;
   readonly looseCreditReferencePriceArs?: number | null;
+  /** CC-041: ventana de repartidores conectados (por defecto 10). */
+  readonly courierOnlineWindowMinutes?: number;
 }
 
 export interface FakeSeedDrop {
@@ -205,6 +209,11 @@ export interface FakeSeedCourier {
   readonly phone?: string | null;
   readonly vehicleType?: VehicleType | null;
   readonly vehiclePlate?: string | null;
+  // CC-043/CC-044: alta de la cuenta, envío de la postulación y DNI cargado (solo los lee admin_list_applicants).
+  readonly createdAt?: string;
+  readonly applicationSubmitted?: boolean;
+  readonly submittedAt?: string | null;
+  readonly hasDni?: boolean;
 }
 
 export interface FakeCourierRecord {
@@ -217,6 +226,22 @@ export interface FakeCourierRecord {
   phone: string | null;
   vehicleType: VehicleType | null;
   vehiclePlate: string | null;
+  createdAt: string;
+  applicationSubmitted: boolean;
+  submittedAt: string | null;
+  hasDni: boolean;
+}
+
+// CC-042: vehículo del repartidor (archivedAt = borrado lógico).
+export interface FakeVehicleRecord {
+  readonly id: string;
+  readonly courierId: string;
+  readonly vehicleType: VehicleType;
+  plate: string | null;
+  licenseStatus: DocumentReviewStatus;
+  insuranceStatus: DocumentReviewStatus;
+  readonly createdAt: string;
+  archivedAt: string | null;
 }
 
 export interface FakeSeedMerchant {
@@ -283,6 +308,23 @@ export interface FakeSeedIncident {
 }
 
 // CC-035: fila de `push_subscriptions` del fake (una por endpoint, como el índice único).
+// CC-040: una novedad del admin con su vigencia y el resultado del push.
+interface FakeAnnouncementRecord {
+  readonly id: string;
+  readonly audience: AnnouncementAudience;
+  readonly title: string;
+  readonly body: string;
+  readonly cta: AnnouncementCta;
+  readonly createdAt: string;
+  readonly createdAtMs: number;
+  readonly visibleUntil: string;
+  readonly visibleUntilMs: number;
+  push: { targets: number; sent: number; failed: number } | null;
+}
+
+const ANNOUNCEMENT_DAILY_LIMIT = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export interface FakePushSubscriptionRecord {
   readonly subscriptionId: string;
   readonly endpoint: string;
@@ -445,6 +487,17 @@ const DEFAULT_ACTOR: FakeActorContext = {
   merchantPaidUntil: null,
 };
 
+// CC-042: patente normalizada por tipo (mismo formato que la RPC); false si es inválida.
+const ARGENTINA_PLATE_PATTERN =
+  /^([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2}|[A-Z]\s?[0-9]{3}\s?[A-Z]{3}|[A-Z]{3}\s?[0-9]{3}|[0-9]{3}\s?[A-Z]{3})$/;
+function normalizeVehiclePlate(vehicleType: VehicleType, plate: string | null): string | null | false {
+  const normalized = plate?.trim().toUpperCase() || null;
+  if (vehicleType === 'moto' || vehicleType === 'car') {
+    return normalized !== null && ARGENTINA_PLATE_PATTERN.test(normalized) ? normalized : false;
+  }
+  return normalized === null ? null : false;
+}
+
 const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } = {
   update_my_merchant_profile: ['merchant'],
   reconcile_expired_requests: ['merchant'],
@@ -480,12 +533,29 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_update_setting: ['admin'],
   admin_resolve_incident: ['admin'],
   admin_list_incidents: ['admin'],
+  admin_list_trips: ['admin'],
+  admin_list_applicants: ['admin'],
   admin_upsert_publication_plan: ['admin'],
   admin_grant_publication_credits: ['admin'],
   admin_register_plan_period: ['admin'],
   admin_get_merchant_publication_credits: ['admin'],
   admin_list_publication_plans: ['admin'],
   get_my_publication_balance: ['merchant'],
+  get_publication_offer: ['merchant'],
+  admin_count_announcement_audience: ['admin'],
+  admin_create_announcement: ['admin'],
+  admin_record_announcement_push: ['admin'],
+  admin_list_announcements: ['admin'],
+  get_my_announcement: ['merchant', 'courier'],
+  dismiss_announcement: ['merchant', 'courier'],
+  set_promotions_opt_in: ['merchant', 'courier'],
+  courier_heartbeat: ['courier'],
+  get_online_couriers_count: ['merchant'],
+  get_my_courier_vehicles: ['courier'],
+  add_courier_vehicle: ['courier'],
+  update_courier_vehicle: ['courier'],
+  remove_courier_vehicle: ['courier'],
+  set_active_courier_vehicle: ['courier'],
   get_request_cancellation_history: ['merchant', 'courier', 'admin'],
 };
 
@@ -523,6 +593,67 @@ export function isoTimestampToEpochMicros(iso: string): bigint {
     BigInt(fraction.padEnd(6, '0')) -
     BigInt(offsetMinutes) * 60_000_000n
   );
+}
+
+// CC-038: misma base que app_private.publication_plan_code_base, con la misma tabla del translate de tildes.
+const PLAN_CODE_ACCENTS = 'áàäâãéèëêíìïîóòöôõúùüûñç';
+const PLAN_CODE_PLAIN = 'aaaaaeeeeiiiiooooouuuunc';
+
+function publicationPlanCodeBase(name: string): string {
+  const plain = Array.from(name.toLowerCase(), (char) => {
+    const index = PLAN_CODE_ACCENTS.indexOf(char);
+    return index === -1 ? char : PLAN_CODE_PLAIN.charAt(index);
+  }).join('');
+  const base = plain
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32)
+    .replace(/-+$/, '');
+  return base.length < 2 ? 'plan' : base;
+}
+
+// CC-038: la base libre se usa tal cual; si no, sigue al mayor sufijo «base-N» (la base sola cuenta como 1).
+function nextPublicationPlanCode(base: string, codes: readonly string[]): string {
+  if (!codes.includes(base)) return base;
+  const pattern = new RegExp(`^${base}-([0-9]{1,7})$`);
+  const max = codes.reduce((acc, code) => {
+    const match = pattern.exec(code);
+    return match ? Math.max(acc, Number(match[1])) : acc;
+  }, 1);
+  return `${base}-${max + 1}`;
+}
+
+// CC-044: la misma normalización que app_private.search_normalize (NFD, sin U+0300–U+036F, espacios colapsados,
+// minúsculas).
+export function normalizeApplicantSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+// CC-044: keyset de admin_list_applicants (profiles.created_at DESC, profile_id DESC).
+function compareApplicantKeysetDesc(
+  a: { readonly createdAt: string; readonly courierId: string },
+  b: { readonly createdAt: string; readonly courierId: string }
+): number {
+  const aMicros = isoTimestampToEpochMicros(a.createdAt);
+  const bMicros = isoTimestampToEpochMicros(b.createdAt);
+  if (aMicros !== bMicros) return aMicros > bMicros ? -1 : 1;
+  return a.courierId < b.courierId ? 1 : a.courierId > b.courierId ? -1 : 0;
+}
+
+// CC-037: keyset de admin_list_trips (created_at DESC, id DESC) con precisión de microsegundos.
+function compareTripKeysetDesc(
+  a: { readonly createdAt: string; readonly requestId: string },
+  b: { readonly createdAt: string; readonly requestId: string }
+): number {
+  const aMicros = isoTimestampToEpochMicros(a.createdAt);
+  const bMicros = isoTimestampToEpochMicros(b.createdAt);
+  if (aMicros !== bMicros) return aMicros > bMicros ? -1 : 1;
+  return a.requestId < b.requestId ? 1 : a.requestId > b.requestId ? -1 : 0;
 }
 
 function compareIncidentKeysetDesc(
@@ -618,9 +749,38 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const couriers = new Map<string, FakeCourierRecord>();
   const merchants = new Map<string, FakeMerchantRecord>();
   const documents = new Map<string, FakeDocumentRecord>();
+  // CC-042: vehículos del repartidor y su activo (el reflejo vive en FakeCourierRecord).
+  const vehicles = new Map<string, FakeVehicleRecord>();
+  const activeVehicleByCourier = new Map<string, string>();
   const storedCourierDocumentPaths = new Set<string>();
   const incidents = new Map<string, FakeIncidentRecord>();
   const pushSubscriptions = new Map<string, FakePushSubscriptionRecord>();
+  // CC-040: novedades, cierres por cuenta y preferencia de promociones (true acepta, false se dio de baja).
+  const announcements: FakeAnnouncementRecord[] = [];
+  const announcementDismissals = new Set<string>();
+  const promotionPreferences = new Map<string, boolean>();
+  let announcementSeq = 0;
+  // CC-041: última señal de cada repartidor, en ms (la pone el fake con su reloj, como la base con now()).
+  const courierPresence = new Map<string, number>();
+  // PR551: último consentimiento conocido de cada perfil que fue actor (el conteo excluye a quien no está activo).
+  const profileConsent = new Map<string, ConsentStatus>();
+
+  // CC-040: público de una novedad. El fake no modela el consentimiento de cada perfil: todo comercio con alta y todo
+  // repartidor aprobado cuenta como activo (el consentimiento del actor sí se valida en cada RPC).
+  function announcementAudienceIds(audience: AnnouncementAudience): string[] {
+    const ids: string[] = [];
+    if (audience !== 'couriers') merchants.forEach((_, id) => ids.push(id));
+    if (audience !== 'merchants') {
+      couriers.forEach((courier, id) => {
+        if (courier.status === 'approved') ids.push(id);
+      });
+    }
+    return ids;
+  }
+
+  function isAnnouncementMember(audience: AnnouncementAudience, profileId: string): boolean {
+    return announcementAudienceIds(audience).includes(profileId);
+  }
   const cancellationReasons: FakeCancellationReasonRecord[] = [];
   let cancellationReasonSeq = 0;
   const rateLimits = new Map<string, number>();
@@ -1198,6 +1358,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       // `null` es un valor explícito (onboarding incompleto); solo `undefined` toma el previo o el default.
       vehicleType: c.vehicleType === undefined ? (prev?.vehicleType ?? 'moto') : c.vehicleType,
       vehiclePlate: c.vehiclePlate ?? prev?.vehiclePlate ?? 'AA123BB',
+      createdAt: c.createdAt ?? prev?.createdAt ?? '2026-09-22T14:00:00.000Z',
+      // Sin dato explícito, como el backfill de CC-043: con vehículo cuenta como enviada (sin fecha).
+      applicationSubmitted:
+        c.applicationSubmitted ??
+        prev?.applicationSubmitted ??
+        (c.vehicleType === undefined ? (prev?.vehicleType ?? 'moto') : c.vehicleType) !== null,
+      submittedAt: c.submittedAt === undefined ? (prev?.submittedAt ?? null) : c.submittedAt,
+      hasDni: c.hasDni ?? prev?.hasDni ?? false,
     });
   }
 
@@ -1255,6 +1423,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   }
 
   function syncActorRecords(currentActor: FakeActorContext) {
+    if (currentActor.consentStatus) profileConsent.set(currentActor.userId, currentActor.consentStatus);
     if (currentActor.role === 'courier') {
       putCourier({
         courierId: currentActor.userId,
@@ -1289,6 +1458,85 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
     if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
     return ok(courier);
+  }
+
+  // CC-042: el vehículo actual de un repartidor anterior pasa a ser su vehículo activo (como el backfill).
+  function ensureCourierVehicles(courier: FakeCourierRecord) {
+    if (activeVehicleByCourier.has(courier.courierId) || courier.vehicleType === null) return;
+    const id = crypto.randomUUID();
+    const withDocuments = courier.vehicleType === 'moto' || courier.vehicleType === 'car';
+    vehicles.set(id, {
+      id,
+      courierId: courier.courierId,
+      vehicleType: courier.vehicleType,
+      plate: withDocuments ? courier.vehiclePlate : null,
+      licenseStatus: withDocuments ? courier.licenseStatus : 'none',
+      insuranceStatus: withDocuments ? courier.insuranceStatus : 'none',
+      createdAt: courier.createdAt,
+      archivedAt: null,
+    });
+    activeVehicleByCourier.set(courier.courierId, id);
+  }
+
+  function listCourierVehicles(courierId: string): FakeVehicleRecord[] {
+    return [...vehicles.values()]
+      .filter((vehicle) => vehicle.courierId === courierId && vehicle.archivedAt === null)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+
+  function toVehicleOutput(vehicle: FakeVehicleRecord) {
+    return {
+      id: vehicle.id,
+      vehicleType: vehicle.vehicleType,
+      plate: vehicle.plate,
+      licenseStatus: vehicle.licenseStatus,
+      insuranceStatus: vehicle.insuranceStatus,
+    };
+  }
+
+  function ownVehicle(vehicleId: string): FakeVehicleRecord | undefined {
+    const vehicle = vehicles.get(vehicleId);
+    return vehicle && vehicle.courierId === actor.userId && vehicle.archivedAt === null ? vehicle : undefined;
+  }
+
+  // Misma precedencia que app_private.cc042_lock_vehicle_owner.
+  function lockVehicleOwner(): ActionResult<FakeCourierRecord, 'UNAUTHORIZED_ACTOR' | 'INVALID_STATE_TRANSITION'> {
+    if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+    const courier = couriers.get(actor.userId);
+    if (!courier || courier.status === 'rejected' || courier.status === 'suspended') {
+      return err('UNAUTHORIZED_ACTOR');
+    }
+    if (!courier.applicationSubmitted) return err('INVALID_STATE_TRANSITION');
+    ensureCourierVehicles(courier);
+    return ok(courier);
+  }
+
+  // Ofertas pendientes vigentes o un viaje activo: el comercio eligió viendo un vehículo y una patente.
+  function isVehicleSwitchBlocked(courierId: string): boolean {
+    const nowMs = nowFn().getTime();
+    for (const offer of offers.values()) {
+      if (offer.courierId !== courierId) continue;
+      const request = requests.get(offer.requestId);
+      if (!request) continue;
+      const pendingLive =
+        offer.status === 'pending' &&
+        request.status === 'published' &&
+        (request.expiresAt === null || new Date(request.expiresAt).getTime() > nowMs);
+      const activeTrip =
+        request.acceptedOfferId === offer.offerId &&
+        (request.status === 'matched' || request.status === 'in_transit');
+      if (pendingLive || activeTrip) return true;
+    }
+    return false;
+  }
+
+  function syncCourierReflection(courier: FakeCourierRecord) {
+    const active = vehicles.get(activeVehicleByCourier.get(courier.courierId) ?? '');
+    if (!active) return;
+    courier.vehicleType = active.vehicleType;
+    courier.vehiclePlate = active.plate;
+    courier.licenseStatus = active.licenseStatus;
+    courier.insuranceStatus = active.insuranceStatus;
   }
 
   async function executeRpc<K extends RpcName>(
@@ -3363,6 +3611,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           case 'loose_credit_reference_price_ars':
             settings = { ...settings, looseCreditReferencePriceArs: input.value };
             break;
+          case 'courier_online_window_minutes':
+            settings = { ...settings, courierOnlineWindowMinutes: input.value };
+            break;
         }
         return ok(input);
       }),
@@ -3370,11 +3621,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     // CC-029 (T-369): catálogo, acreditación, períodos y lecturas de créditos de publicación.
     admin_upsert_publication_plan: (rawInput) =>
       executeRpc('admin_upsert_publication_plan', rawInput, true, (input) => {
-        const duplicate = [...plans.values()].find((p) => p.code === input.code && p.id !== input.planId);
-        if (duplicate) return err('VALIDATION_ERROR');
         let plan: FakePublicationPlanRecord;
         if (input.planId === null) {
-          plan = { id: nextCreditId(), code: input.code, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
+          const code = nextPublicationPlanCode(
+            publicationPlanCodeBase(input.name),
+            [...plans.values()].map((p) => p.code)
+          );
+          plan = { id: nextCreditId(), code, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
           plans.set(plan.id, plan);
         } else {
           const existing = plans.get(input.planId);
@@ -3385,7 +3638,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           ) {
             return err('PLAN_IN_USE');
           }
-          plan = { ...existing, code: input.code, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
+          plan = { ...existing, name: input.name, kind: input.kind, monthlyCredits: input.monthlyCredits, referencePriceArs: input.referencePriceArs, active: input.active, sort: input.sort };
           plans.set(plan.id, plan);
         }
         return ok({
@@ -3625,6 +3878,253 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         return ok(publicationBalance(merchant, currentNow));
       }),
 
+    // CC-039: planes activos (sort, id; hasta 50) sin código, precio del crédito suelto y descuento si corresponde.
+    // CC-041: presencia del repartidor aprobado y conteo de conectados para el comercio. El consentimiento de cada
+    // repartidor es el último que tuvo como actor (sin dato, activo), igual que el join con profiles en la base.
+    // CC-042: vehículos del repartidor.
+    get_my_courier_vehicles: (rawInput) =>
+      executeRpc('get_my_courier_vehicles', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        const courier = couriers.get(actor.userId);
+        if (!courier || courier.status === 'rejected' || courier.status === 'suspended') {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+        ensureCourierVehicles(courier);
+        return ok({
+          activeVehicleId: activeVehicleByCourier.get(actor.userId) ?? null,
+          vehicles: listCourierVehicles(actor.userId).map(toVehicleOutput),
+        });
+      }),
+
+    add_courier_vehicle: (rawInput) =>
+      executeRpc('add_courier_vehicle', rawInput, false, (input) => {
+        const owner = lockVehicleOwner();
+        if (!owner.ok) return owner;
+        const plate = normalizeVehiclePlate(input.vehicleType, input.plate);
+        if (plate === false) return err('VALIDATION_ERROR');
+        if (listCourierVehicles(actor.userId).some((vehicle) => vehicle.vehicleType === input.vehicleType)) {
+          return err('DUPLICATE_VEHICLE');
+        }
+        const currentActive = activeVehicleByCourier.get(actor.userId) ?? null;
+        const activate = input.makeActive || currentActive === null;
+        if (activate && currentActive !== null && isVehicleSwitchBlocked(actor.userId)) {
+          return err('VEHICLE_SWITCH_BLOCKED');
+        }
+        const id = crypto.randomUUID();
+        vehicles.set(id, {
+          id,
+          courierId: actor.userId,
+          vehicleType: input.vehicleType,
+          plate,
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          createdAt: nowFn().toISOString(),
+          archivedAt: null,
+        });
+        if (activate) {
+          activeVehicleByCourier.set(actor.userId, id);
+          syncCourierReflection(owner.data);
+        }
+        return ok({ vehicleId: id });
+      }),
+
+    update_courier_vehicle: (rawInput) =>
+      executeRpc('update_courier_vehicle', rawInput, false, (input) => {
+        const owner = lockVehicleOwner();
+        if (!owner.ok) return owner;
+        const vehicle = ownVehicle(input.vehicleId);
+        if (!vehicle) return err('NOT_FOUND');
+        const plate = normalizeVehiclePlate(vehicle.vehicleType, input.plate);
+        if (plate === false) return err('VALIDATION_ERROR');
+        if (plate === vehicle.plate) return ok({ vehicleId: vehicle.id });
+        const isActive = activeVehicleByCourier.get(actor.userId) === vehicle.id;
+        if (isActive && isVehicleSwitchBlocked(actor.userId)) return err('VEHICLE_SWITCH_BLOCKED');
+        // El seguro es de esa patente: vuelve a cargarse; la licencia se conserva.
+        vehicle.plate = plate;
+        vehicle.insuranceStatus = 'none';
+        if (isActive) syncCourierReflection(owner.data);
+        return ok({ vehicleId: vehicle.id });
+      }),
+
+    remove_courier_vehicle: (rawInput) =>
+      executeRpc('remove_courier_vehicle', rawInput, false, (input) => {
+        const owner = lockVehicleOwner();
+        if (!owner.ok) return owner;
+        const vehicle = ownVehicle(input.vehicleId);
+        if (!vehicle) return err('NOT_FOUND');
+        if (activeVehicleByCourier.get(actor.userId) === vehicle.id) return err('INVALID_STATE_TRANSITION');
+        vehicle.archivedAt = nowFn().toISOString();
+        return ok({ vehicleId: vehicle.id });
+      }),
+
+    set_active_courier_vehicle: (rawInput) =>
+      executeRpc('set_active_courier_vehicle', rawInput, false, (input) => {
+        const owner = lockVehicleOwner();
+        if (!owner.ok) return owner;
+        const vehicle = ownVehicle(input.vehicleId);
+        if (!vehicle) return err('NOT_FOUND');
+        if (activeVehicleByCourier.get(actor.userId) === vehicle.id) return ok({ activeVehicleId: vehicle.id });
+        if (isVehicleSwitchBlocked(actor.userId)) return err('VEHICLE_SWITCH_BLOCKED');
+        activeVehicleByCourier.set(actor.userId, vehicle.id);
+        syncCourierReflection(owner.data);
+        return ok({ activeVehicleId: vehicle.id });
+      }),
+
+    courier_heartbeat: (rawInput) =>
+      executeRpc('courier_heartbeat', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        if (couriers.get(actor.userId)?.status !== 'approved') return err('COURIER_NOT_APPROVED');
+        const nowMs = nowFn().getTime();
+        courierPresence.set(actor.userId, nowMs);
+        return ok({ lastSeenAt: new Date(nowMs).toISOString() });
+      }),
+
+    get_online_couriers_count: (rawInput) =>
+      executeRpc('get_online_couriers_count', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active' || !merchants.has(actor.userId)) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+        const windowMinutes = settings.courierOnlineWindowMinutes ?? 10;
+        const since = nowFn().getTime() - windowMinutes * 60_000;
+        let count = 0;
+        courierPresence.forEach((lastSeenMs, courierId) => {
+          const courier = couriers.get(courierId);
+          const consentActive = (profileConsent.get(courierId) ?? 'active') === 'active';
+          if (courier?.status === 'approved' && courier.available && consentActive && lastSeenMs > since) count += 1;
+        });
+        return ok({ count, windowMinutes });
+      }),
+
+    // CC-040: novedades del admin.
+    admin_count_announcement_audience: (rawInput) =>
+      executeRpc('admin_count_announcement_audience', rawInput, true, (input) => {
+        const ids = announcementAudienceIds(input.audience);
+        const subscribed = new Set([...pushSubscriptions.values()].map((sub) => sub.userId));
+        return ok({
+          recipients: ids.filter((id) => promotionPreferences.get(id) !== false).length,
+          pushRecipients: ids.filter((id) => promotionPreferences.get(id) === true && subscribed.has(id)).length,
+        });
+      }),
+
+    admin_create_announcement: (rawInput) =>
+      executeRpc('admin_create_announcement', rawInput, true, (input) => {
+        const nowMs = nowFn().getTime();
+        if (announcements.filter((row) => row.createdAtMs > nowMs - DAY_MS).length >= ANNOUNCEMENT_DAILY_LIMIT) {
+          return err('RATE_LIMITED');
+        }
+        announcementSeq += 1;
+        const visibleUntilMs = nowMs + input.visibleDays * DAY_MS;
+        const row: FakeAnnouncementRecord = {
+          id: `90000000-0000-4000-8000-${String(announcementSeq).padStart(12, '0')}`,
+          audience: input.audience,
+          title: input.title,
+          body: input.body,
+          cta: input.cta,
+          createdAt: new Date(nowMs).toISOString(),
+          createdAtMs: nowMs,
+          visibleUntil: new Date(visibleUntilMs).toISOString(),
+          visibleUntilMs,
+          push: null,
+        };
+        announcements.push(row);
+        return ok({ announcementId: row.id, visibleUntil: row.visibleUntil });
+      }),
+
+    admin_record_announcement_push: (rawInput) =>
+      executeRpc('admin_record_announcement_push', rawInput, true, (input) => {
+        const row = announcements.find((candidate) => candidate.id === input.announcementId);
+        if (!row) return err('NOT_FOUND');
+        if (row.push) return err('INVALID_STATE_TRANSITION');
+        row.push = { targets: input.targets, sent: input.sent, failed: input.failed };
+        return ok({ announcementId: row.id });
+      }),
+
+    admin_list_announcements: (rawInput) =>
+      executeRpc('admin_list_announcements', rawInput, true, (input) => {
+        const limit = input.limit ?? DEFAULT_INCIDENTS_PAGE_SIZE;
+        const cursor = input.cursor ? { createdAt: input.cursor.createdAt, requestId: input.cursor.id } : null;
+        const rows = announcements
+          .map((row) => ({ row, key: { createdAt: row.createdAt, requestId: row.id } }))
+          .sort((a, b) => compareTripKeysetDesc(a.key, b.key))
+          .filter((entry) => !cursor || compareTripKeysetDesc(entry.key, cursor) > 0);
+        const page = rows.slice(0, limit);
+        const last = page[page.length - 1];
+        return ok({
+          items: page.map(({ row }) => ({
+            id: row.id,
+            audience: row.audience,
+            title: row.title,
+            body: row.body,
+            cta: row.cta,
+            visibleUntil: row.visibleUntil,
+            createdAt: row.createdAt,
+            createdByName: '',
+            pushTargets: row.push?.targets ?? null,
+            pushSent: row.push?.sent ?? null,
+            pushFailed: row.push?.failed ?? null,
+          })),
+          nextCursor: rows.length > limit && last ? { createdAt: last.row.createdAt, id: last.row.id } : null,
+        });
+      }),
+
+    get_my_announcement: (rawInput) =>
+      executeRpc('get_my_announcement', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        if (promotionPreferences.get(actor.userId) === false) return ok({ announcement: null });
+        const nowMs = nowFn().getTime();
+        const visible = announcements
+          .filter(
+            (row) =>
+              row.visibleUntilMs > nowMs &&
+              isAnnouncementMember(row.audience, actor.userId) &&
+              !announcementDismissals.has(`${row.id}:${actor.userId}`)
+          )
+          .sort((a, b) => compareTripKeysetDesc({ createdAt: a.createdAt, requestId: a.id }, { createdAt: b.createdAt, requestId: b.id }));
+        const latest = visible[0];
+        return ok({
+          announcement: latest ? { id: latest.id, title: latest.title, body: latest.body, cta: latest.cta } : null,
+        });
+      }),
+
+    dismiss_announcement: (rawInput) =>
+      executeRpc('dismiss_announcement', rawInput, false, (input) => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        const row = announcements.find((candidate) => candidate.id === input.announcementId);
+        if (!row || !isAnnouncementMember(row.audience, actor.userId)) return err('NOT_FOUND');
+        announcementDismissals.add(`${row.id}:${actor.userId}`);
+        return ok({ dismissed: true as const });
+      }),
+
+    set_promotions_opt_in: (rawInput) =>
+      executeRpc('set_promotions_opt_in', rawInput, false, (input) => {
+        if ((actor.consentStatus ?? 'active') !== 'active') return err('UNAUTHORIZED_ACTOR');
+        promotionPreferences.set(actor.userId, input.enabled);
+        return ok({ enabled: input.enabled });
+      }),
+
+    get_publication_offer: (rawInput) =>
+      executeRpc('get_publication_offer', rawInput, false, () => {
+        if ((actor.consentStatus ?? 'active') !== 'active' || !merchants.has(actor.userId)) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+        const active = [...plans.values()]
+          .filter((p) => p.active)
+          .sort((a, b) => a.sort - b.sort || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+          .slice(0, 50);
+        const pct = settings.launchDiscountPct ?? 0;
+        return ok({
+          plans: active.map((p) => ({
+            planId: p.id,
+            name: p.name,
+            kind: p.kind,
+            monthlyCredits: p.monthlyCredits,
+            referencePriceArs: p.referencePriceArs,
+          })),
+          looseCreditReferencePriceArs: settings.looseCreditReferencePriceArs ?? null,
+          launchDiscountPct: pct > 0 && !launchDiscounts.has(actor.userId) ? pct : null,
+        });
+      }),
+
     // CC-012 / D06-A: la suspensión preventiva deriva el repartidor desde la oferta accepted de la
     // solicitud del incidente. Todas las comprobaciones ocurren antes de mutar (atomicidad).
     admin_resolve_incident: (rawInput) =>
@@ -3702,6 +4202,129 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             reporterName: incident.reporterName,
           })),
           nextCursor: ordered.length > limit && last ? { createdAt: last.createdAt, id: last.incidentId } : null,
+        });
+      }),
+
+    // CC-044: mismo filtro de estado y envío, búsqueda normalizada, total y keyset en los dos sentidos que la RPC SQL.
+    admin_list_applicants: (rawInput) =>
+      executeRpc('admin_list_applicants', rawInput, true, (input) => {
+        const limit = input.limit ?? DEFAULT_INCIDENTS_PAGE_SIZE;
+        const direction = input.direction ?? 'next';
+        const cursorKey = input.cursor ? { createdAt: input.cursor.createdAt, courierId: input.cursor.id } : null;
+        const needle = input.query ? normalizeApplicantSearch(input.query) : '';
+
+        const base = [...couriers.values()]
+          .filter((courier) => courier.status === input.status)
+          .filter((courier) => input.status !== 'pending' || courier.applicationSubmitted)
+          .filter((courier) => needle === '' || normalizeApplicantSearch(courier.displayName).includes(needle))
+          .sort(compareApplicantKeysetDesc);
+
+        const after = base.filter((row) => !cursorKey || compareApplicantKeysetDesc(row, cursorKey) > 0);
+        const before = base.filter((row) => cursorKey !== null && compareApplicantKeysetDesc(row, cursorKey) < 0);
+        const page = direction === 'prev' ? before.slice(Math.max(0, before.length - limit)) : after.slice(0, limit);
+        const first = page[0];
+        const last = page[page.length - 1];
+        const toCursor = (row: FakeCourierRecord) => ({ createdAt: row.createdAt, id: row.courierId });
+        const hasDocument = (courierId: string, kind: CourierDocumentKind) =>
+          [...documents.values()].some((doc) => doc.courierId === courierId && doc.kind === kind && doc.isCurrent);
+
+        return ok({
+          items: page.map((row) => ({
+            id: row.courierId,
+            displayName: row.displayName,
+            phone: row.phone,
+            vehicleType: row.vehicleType,
+            status: row.status,
+            hasDni: row.hasDni,
+            docLevel: (row.licenseStatus === 'verified' ? 1 : 0) + (row.insuranceStatus === 'verified' ? 1 : 0),
+            licenseStatus: row.licenseStatus,
+            insuranceStatus: row.insuranceStatus,
+            createdAt: row.createdAt,
+            submittedAt: row.submittedAt,
+            documents: {
+              dniFront: hasDocument(row.courierId, 'dni_front'),
+              dniBack: hasDocument(row.courierId, 'dni_back'),
+              selfie: hasDocument(row.courierId, 'selfie'),
+              license: hasDocument(row.courierId, 'license'),
+              insurance: hasDocument(row.courierId, 'insurance'),
+            },
+          })),
+          total: base.length,
+          nextCursor: last && base.some((row) => compareApplicantKeysetDesc(row, last) > 0) ? toCursor(last) : null,
+          prevCursor: first && base.some((row) => compareApplicantKeysetDesc(row, first) < 0) ? toCursor(first) : null,
+        });
+      }),
+
+    // CC-037: mismo filtro, conteos y keyset que la RPC SQL. El fake no guarda `published_at` ni `cancelled_at`.
+    admin_list_trips: (rawInput) =>
+      executeRpc('admin_list_trips', rawInput, true, (input) => {
+        const limit = input.limit ?? DEFAULT_INCIDENTS_PAGE_SIZE;
+        const cursor = input.cursor ?? null;
+        const cursorKey = cursor ? { createdAt: cursor.createdAt, requestId: cursor.id } : null;
+
+        const rows = [...requests.values()]
+          .filter((request) => request.status !== 'draft')
+          .map((request) => {
+            const reasons = cancellationReasons.filter((row) => row.requestId === request.requestId);
+            const requestIncidents = [...incidents.values()].filter((row) => row.requestId === request.requestId);
+            const legacy = request.drops.length === 0;
+            const offer = request.acceptedOfferId ? offers.get(request.acceptedOfferId) : undefined;
+            const acceptedOffer = offer?.status === 'accepted' ? offer : undefined;
+            return {
+              request,
+              failedDrops: request.drops.filter((drop) => drop.status === 'failed').length,
+              courierReleases: reasons.filter((row) => row.action === 'courier_cancel_match').length,
+              noShowReports: reasons.filter((row) => row.action === 'report_no_show').length,
+              incidentsCount: requestIncidents.length,
+              openIncidents: requestIncidents.filter((row) => row.status === 'open' || row.status === 'reviewing')
+                .length,
+              dropsCount: legacy ? 1 : request.drops.length,
+              deliveredDrops: legacy
+                ? request.status === 'delivered'
+                  ? 1
+                  : 0
+                : request.drops.filter((drop) => drop.status === 'delivered').length,
+              courierId: acceptedOffer?.courierId ?? null,
+            };
+          })
+          .filter(
+            (row) =>
+              input.filter === 'all' ||
+              row.failedDrops > 0 ||
+              row.courierReleases > 0 ||
+              row.noShowReports > 0 ||
+              row.request.status === 'cancelled' ||
+              row.incidentsCount > 0
+          )
+          .sort((a, b) => compareTripKeysetDesc(a.request, b.request))
+          .filter((row) => !cursorKey || compareTripKeysetDesc(row.request, cursorKey) > 0);
+
+        const page = rows.slice(0, limit);
+        const last = page[page.length - 1];
+        return ok({
+          items: page.map((row) => ({
+            id: row.request.requestId,
+            code: `REQ-${row.request.requestId.slice(0, 8).toUpperCase()}`,
+            status: row.request.status,
+            createdAt: row.request.createdAt,
+            publishedAt: null,
+            deliveredAt: row.request.deliveredAt,
+            cancelledAt: null,
+            merchantId: row.request.merchantId,
+            merchantName: merchants.get(row.request.merchantId)?.businessName ?? '',
+            courierId: row.courierId,
+            courierName: row.courierId ? (couriers.get(row.courierId)?.displayName ?? null) : null,
+            dropsCount: row.dropsCount,
+            deliveredDrops: row.deliveredDrops,
+            failedDrops: row.failedDrops,
+            courierReleases: row.courierReleases,
+            noShowReports: row.noShowReports,
+            cancelled: row.request.status === 'cancelled',
+            incidents: row.incidentsCount,
+            openIncidents: row.openIncidents,
+          })),
+          nextCursor:
+            rows.length > limit && last ? { createdAt: last.request.createdAt, id: last.request.requestId } : null,
         });
       }),
   };

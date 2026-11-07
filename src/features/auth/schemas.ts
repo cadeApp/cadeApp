@@ -17,7 +17,7 @@ export const registerSchema = z.object({
   displayName: z.string().trim().min(1, 'Ingresá tu nombre y apellido').max(100),
   phone: z.string().trim().min(1, 'Ingresá tu teléfono').max(30),
   acceptTerms: z.literal(true, {
-    errorMap: () => ({ message: authCopy.register.errorTermsRequired }),
+    error: authCopy.register.errorTermsRequired,
   }),
   acceptedTermsVersion: z.string().trim().min(1),
   acceptedPrivacyVersion: z.string().trim().min(1),

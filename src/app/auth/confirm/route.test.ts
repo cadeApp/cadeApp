@@ -48,7 +48,7 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
               table === 'merchants'
                 ? { default_pickup_address: 'Av. San Martín 123' }
                 : table === 'couriers'
-                  ? { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' }
+                  ? { application_submitted: true }
                   : { role: 'merchant', consent_status: 'active' },
             error: null,
           }),
@@ -84,7 +84,7 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
             maybeSingle: vi.fn().mockResolvedValue({
               data:
                 table === 'couriers'
-                  ? { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' }
+                  ? { application_submitted: true }
                   : { role: 'courier', consent_status: 'active' },
               error: null,
             }),
@@ -171,7 +171,7 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
               select: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   maybeSingle: vi.fn().mockResolvedValue({
-                    data: { dni_hmac: null, vehicle_type: null },
+                    data: { application_submitted: false },
                     error: null,
                   }),
                 }),
@@ -253,7 +253,7 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
               select: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   maybeSingle: vi.fn().mockResolvedValue({
-                    data: { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' },
+                    data: { application_submitted: true },
                     error: null,
                   }),
                 }),
@@ -276,6 +276,45 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
         expect(response.headers.get('location')).toBe(`http://localhost:3000${expectedDestination}`);
       }
     );
+  });
+
+  describe('CC-043: marca de onboarding del repartidor', () => {
+    function mockCourierRow(result: { data: unknown; error: unknown }) {
+      mockFrom.mockImplementation((table: string) => ({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue(
+              table === 'profiles' ? { data: { role: 'courier', consent_status: 'active' }, error: null } : result
+            ),
+          }),
+        }),
+      }));
+    }
+
+    it('un vehículo cargado sin postulación enviada va al onboarding', async () => {
+      mockCourierRow({ data: { application_submitted: false, vehicle_type: 'moto' }, error: null });
+
+      const response = await GET(new NextRequest('http://localhost:3000/auth/confirm?code=pkce-courier-vehicle'));
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/courier/onboarding/identity');
+    });
+
+    it('un error de lectura no fuerza el onboarding (fail-open de T-334)', async () => {
+      mockCourierRow({ data: null, error: { message: 'read failed' } });
+
+      const response = await GET(new NextRequest('http://localhost:3000/auth/confirm?code=pkce-courier-error'));
+
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe('http://localhost:3000/courier/feed');
+    });
+
+    it('sin fila de courier va al onboarding', async () => {
+      mockCourierRow({ data: null, error: null });
+
+      const response = await GET(new NextRequest('http://localhost:3000/auth/confirm?code=pkce-courier-none'));
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/courier/onboarding/identity');
+    });
   });
 
   describe('Verificación con token_hash y type', () => {

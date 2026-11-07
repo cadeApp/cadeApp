@@ -113,6 +113,27 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
     expect(screen.getByText('2')).toBeDefined();
   });
 
+  it('T-417: la métrica extra va al final de la grilla, que pasa a 4 columnas en pantallas anchas', () => {
+    render(
+      <MerchantRequestsList
+        requests={mockRequests}
+        metrics={mockMetrics}
+        extraMetric={<div data-testid="extra-metric">Repartidores conectados</div>}
+      />
+    );
+    const extra = screen.getByTestId('extra-metric');
+    const grid = extra.parentElement;
+    expect(grid?.className).toContain('lg:grid-cols-4');
+    expect(grid?.lastElementChild).toBe(extra);
+  });
+
+  it('T-417: sin métrica extra la grilla sigue en 3 columnas', () => {
+    render(<MerchantRequestsList requests={mockRequests} metrics={mockMetrics} />);
+    const grid = screen.getByText('Solicitudes activas').closest('.grid');
+    expect(grid?.className).toContain('sm:grid-cols-3');
+    expect(grid?.children).toHaveLength(3);
+  });
+
   it('renderiza botón "Nueva solicitud" con enlace a /merchant/requests/new', () => {
     render(<MerchantRequestsList requests={mockRequests} metrics={mockMetrics} />);
 

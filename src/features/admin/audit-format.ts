@@ -17,6 +17,51 @@ export function auditActionLabel(action: string): string {
   return lookup(ADMIN_COPY.audit.actions, action) ?? ADMIN_COPY.audit.unknownAction;
 }
 
+/** T-407: tono de la etiqueta de acción en A06. El texto siempre acompaña: el color nunca es la única señal. */
+export type AuditActionTone = 'positive' | 'negative' | 'neutral' | 'access';
+
+const ACTION_TONES: Readonly<Record<string, AuditActionTone>> = {
+  view_courier_document: 'access',
+  admin_reinstate_courier: 'positive',
+  admin_grant_publication_credits: 'positive',
+  mark_delivered: 'positive',
+  admin_suspend_courier: 'negative',
+  cancel_request: 'negative',
+  courier_cancel_match: 'negative',
+  report_no_show: 'negative',
+  expired: 'negative',
+  legacy_migration_inconsistent: 'negative',
+  orphan_storage_object_purged: 'negative',
+};
+
+/** Decisiones cuyo tono depende del estado al que llevaron (aprobó, rechazó, resolvió o desestimó). */
+const STATUS_TONES: Readonly<Record<string, AuditActionTone>> = {
+  approved: 'positive',
+  verified: 'positive',
+  rejected: 'negative',
+  suspended: 'negative',
+  resolved: 'positive',
+  dismissed: 'neutral',
+};
+
+const STATUS_DRIVEN_ACTIONS: ReadonlySet<string> = new Set([
+  'admin_decide_courier',
+  'admin_verify_document',
+  'admin_resolve_incident',
+]);
+
+function toneOf(tones: Readonly<Record<string, AuditActionTone>>, key: string): AuditActionTone {
+  return Object.prototype.hasOwnProperty.call(tones, key) ? (tones[key] ?? 'neutral') : 'neutral';
+}
+
+export function auditActionTone(item: Pick<AuditLogItem, 'action' | 'changes'>): AuditActionTone {
+  if (STATUS_DRIVEN_ACTIONS.has(item.action)) {
+    const status = item.changes.find((change) => change.field === 'status')?.after;
+    return typeof status === 'string' ? toneOf(STATUS_TONES, status) : 'neutral';
+  }
+  return toneOf(ACTION_TONES, item.action);
+}
+
 export function auditEntityLabel(targetType: string): string {
   return lookup(ADMIN_COPY.audit.entities, targetType) ?? ADMIN_COPY.audit.unknownEntity;
 }
@@ -34,8 +79,31 @@ export function settingLabel(key: string): string {
 }
 
 /** Referencia legible de la entidad afectada. */
-export function auditTargetLabel(item: Pick<AuditLogItem, 'targetType' | 'targetRef'>): string {
-  return item.targetType === 'platform_setting' ? settingLabel(item.targetRef) : item.targetRef;
+export function auditTargetLabel(
+  item: Pick<AuditLogItem, 'targetType' | 'targetRef' | 'targetName'>
+): string {
+  if (item.targetType === 'platform_setting') return settingLabel(item.targetRef);
+  return item.targetName ?? item.targetRef;
+}
+
+export type AuditChangeDisplay =
+  { readonly before: string; readonly after: string } | { readonly value: string };
+
+/**
+ * T-400: un campo de un solo lado (o igual en los dos) es un dato o contexto, no un cambio «→ —».
+ */
+export function describeAuditChange(
+  item: Pick<AuditLogItem, 'targetType' | 'targetRef'>,
+  change: AuditChange
+): AuditChangeDisplay {
+  const { before, after } = change;
+  if (before !== undefined && after !== undefined && before !== after) {
+    return {
+      before: formatAuditValue(item, change.field, before),
+      after: formatAuditValue(item, change.field, after),
+    };
+  }
+  return { value: formatAuditValue(item, change.field, after ?? before ?? null) };
 }
 
 export function formatAuditValue(

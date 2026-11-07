@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
 import * as offersRpc from '@/server/rpc/offers';
-import { setAvailabilityAction } from './actions';
+import { courierHeartbeatAction, setAvailabilityAction } from './actions';
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
@@ -185,5 +185,37 @@ describe('T-114 DoD: setAvailabilityAction (Disponibilidad del repartidor)', () 
       expect(result.data.available).toBe(true);
     }
     expect(offersRpc.setAvailabilityRpc).toHaveBeenCalledWith(mockSupabase, { available: true });
+  });
+});
+
+describe('T-415 / CC-041: courierHeartbeatAction', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function mockRpc(result: { data: unknown; error: { message: string } | null } | Error) {
+    const rpc = result instanceof Error ? vi.fn().mockRejectedValue(result) : vi.fn().mockResolvedValue(result);
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({ rpc } as unknown as Awaited<
+      ReturnType<typeof serverSupabase.createClient>
+    >);
+    return rpc;
+  }
+
+  it('llama a courier_heartbeat con la sesión y devuelve la hora de la base', async () => {
+    const rpc = mockRpc({ data: { lastSeenAt: '2026-10-26T12:00:00.000000Z' }, error: null });
+    await expect(courierHeartbeatAction()).resolves.toEqual({
+      ok: true,
+      data: { lastSeenAt: '2026-10-26T12:00:00.000000Z' },
+    });
+    expect(rpc).toHaveBeenCalledWith('courier_heartbeat');
+  });
+
+  it('mapea los errores del contrato; lo demás es INTERNAL_ERROR', async () => {
+    mockRpc({ data: null, error: { message: 'COURIER_NOT_APPROVED' } });
+    await expect(courierHeartbeatAction()).resolves.toEqual({ ok: false, code: 'COURIER_NOT_APPROVED' });
+    mockRpc({ data: null, error: { message: 'function courier_heartbeat does not exist' } });
+    await expect(courierHeartbeatAction()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    mockRpc({ data: { lastSeenAt: 'ayer' }, error: null });
+    await expect(courierHeartbeatAction()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    mockRpc(new Error('fetch failed'));
+    await expect(courierHeartbeatAction()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
   });
 });

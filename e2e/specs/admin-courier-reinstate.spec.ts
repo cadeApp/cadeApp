@@ -97,11 +97,12 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
     await loginAdminWithMfa(page, credentials, totpSecret);
     await page.goto(`/admin/applicants/${courier.id}`);
     await waitForNoSkeletons(page);
-    await expect(page.getByText('Aprobado', { exact: true })).toBeVisible();
+    // PR617 (T-407-D06): el estado del detalle vive en <main>; fuera aparecía un segundo «Aprobado» (strict mode).
+    await expect(page.getByRole('main').getByText('Aprobado', { exact: true })).toBeVisible();
 
     // 2. Suspende con motivo.
     await decideWithReason(page, 'Suspender repartidor', `Suspensión E2E ${stagingContext.testRunId}`);
-    await expect(page.getByText('Suspendido', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Suspendido', { exact: true })).toBeVisible();
 
     // 3. El repartidor suspendido ve el aviso y no el feed.
     const courierContext = await browser.newContext({ baseURL });
@@ -117,9 +118,20 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
       // 4. El admin lo reactiva con motivo y ve «Aprobado» (no «Ocurrió un inconveniente inesperado»).
       const reason = `Reactivación E2E ${stagingContext.testRunId}: el reclamo no se confirmó.`;
       await decideWithReason(page, 'Reactivar repartidor', reason);
-      await expect(page.getByText('Aprobado', { exact: true })).toBeVisible();
+      await expect(page.getByRole('main').getByText('Aprobado', { exact: true })).toBeVisible();
       await expect(page.getByText(/inconveniente inesperado/i)).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Suspender repartidor' })).toBeVisible();
+
+      // T-404: el historial del detalle muestra la suspensión y la reactivación, en orden y con sus motivos.
+      const history = page.getByRole('list', { name: 'Historial del postulante' });
+      const suspension = history.getByRole('listitem').filter({ hasText: 'Suspendió un repartidor' });
+      const reinstatement = history.getByRole('listitem').filter({ hasText: 'Reactivó un repartidor' });
+      await expect(suspension.last()).toContainText(`Motivo: Suspensión E2E ${stagingContext.testRunId}`);
+      await expect(reinstatement).toHaveCount(1);
+      await expect(reinstatement).toContainText(`Motivo: ${reason}`);
+      const items = await history.getByRole('listitem').allTextContents();
+      const lastIndexWith = (label: string) => items.map((text) => text.includes(label)).lastIndexOf(true);
+      expect(lastIndexWith('Reactivó un repartidor')).toBeGreaterThan(lastIndexWith('Suspendió un repartidor'));
 
       // Lo que dejó la RPC: aprobado, sin disponibilidad y una auditoría con el motivo.
       const admin = createAdminClient();
@@ -144,6 +156,23 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
           after: { status: 'approved', reason },
         },
       ]);
+
+      // T-400: la fila de auditoría dice qué pasó, a quién y por qué.
+      const { data: courierProfile, error: profileErr } = await admin
+        .from('profiles')
+        .select('display_name')
+        .eq('id', courier.id)
+        .single();
+      if (profileErr || !courierProfile?.display_name) {
+        throw new Error(`[E2E Inspect Error] ${profileErr?.message ?? 'repartidor sin nombre'}`);
+      }
+      await page.goto('/admin/audit?action=admin_reinstate_courier&entity=courier');
+      await waitForNoSkeletons(page);
+      const auditRow = page.getByRole('row').filter({ hasText: reason });
+      await expect(auditRow).toHaveCount(1);
+      await expect(auditRow.getByRole('cell', { name: /reactivó un repartidor/i })).toBeVisible();
+      await expect(auditRow.getByText(courierProfile.display_name, { exact: true })).toBeVisible();
+      await expect(auditRow.getByText(reason, { exact: true })).toBeVisible();
 
       // 5. El repartidor vuelve sin disponibilidad; al activarla ve el feed.
       await courierPage.reload();

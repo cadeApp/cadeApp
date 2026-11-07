@@ -4,6 +4,7 @@ import {
   aguilaresLatSchema,
   aguilaresLngSchema,
   courierDocumentKindSchema,
+  courierStatusSchema,
   deliveryRequestStatusSchema,
   documentRejectionCodeSchema,
   documentReviewStatusSchema,
@@ -19,7 +20,7 @@ import {
   vehicleTypeSchema,
 } from './schemas';
 
-export const uuidSchema = z.string().uuid();
+export const uuidSchema = z.string().guid();
 
 export const isoTimestampSchema = z.string().datetime({ offset: true });
 
@@ -690,6 +691,8 @@ export const replaceCourierDocumentInputSchema = z.object({
   kind: courierDocumentKindSchema,
   storagePath: z.string().trim().min(1).max(500),
   idempotencyKey: uuidSchema.optional(),
+  // CC-042: vehículo de la licencia o el seguro (si no viene, la RPC usa el activo).
+  vehicleId: uuidSchema.optional(),
 });
 export const replaceCourierDocumentOutputSchema = z.object({
   documentId: uuidSchema,
@@ -708,6 +711,8 @@ export const addCourierOptionalDocumentInputSchema = z.object({
     .string()
     .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
     .optional(),
+  // CC-042: vehículo de la licencia o el seguro (si no viene, la RPC usa el activo).
+  vehicleId: uuidSchema.optional(),
 });
 export const addCourierOptionalDocumentOutputSchema = z.object({
   documentId: uuidSchema,
@@ -716,6 +721,33 @@ export const addCourierOptionalDocumentOutputSchema = z.object({
   isCurrent: z.boolean(),
   idempotent: z.boolean(),
 });
+
+// CC-042: vehículos del repartidor.
+export const courierVehicleSchema = z.object({
+  id: uuidSchema,
+  vehicleType: vehicleTypeSchema,
+  plate: z.string().nullable(),
+  licenseStatus: documentReviewStatusSchema,
+  insuranceStatus: documentReviewStatusSchema,
+});
+export const getMyCourierVehiclesInputSchema = z.object({}).strict();
+export const getMyCourierVehiclesOutputSchema = z.object({
+  activeVehicleId: uuidSchema.nullable(),
+  vehicles: z.array(courierVehicleSchema).max(4),
+});
+export const addCourierVehicleInputSchema = z.object({
+  vehicleType: vehicleTypeSchema,
+  plate: z.string().trim().max(20).nullable(),
+  makeActive: z.boolean().default(false),
+});
+export const courierVehicleIdOutputSchema = z.object({ vehicleId: uuidSchema });
+export const updateCourierVehicleInputSchema = z.object({
+  vehicleId: uuidSchema,
+  plate: z.string().trim().max(20).nullable(),
+});
+export const removeCourierVehicleInputSchema = z.object({ vehicleId: uuidSchema });
+export const setActiveCourierVehicleInputSchema = z.object({ vehicleId: uuidSchema });
+export const setActiveCourierVehicleOutputSchema = z.object({ activeVehicleId: uuidSchema });
 
 // 17. admin_set_subscription
 export const adminSetSubscriptionInputSchema = z.object({
@@ -781,6 +813,11 @@ export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
     key: z.literal('loose_credit_reference_price_ars'),
     value: z.number().int().min(0).max(100_000_000),
   }),
+  // CC-041 (T-415)
+  z.object({
+    key: z.literal('courier_online_window_minutes'),
+    value: z.number().int().min(2).max(60),
+  }),
 ]);
 export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
@@ -824,6 +861,101 @@ export const adminIncidentListItemSchema = z.object({
 export const adminListIncidentsOutputSchema = z.object({
   items: z.array(adminIncidentListItemSchema),
   nextCursor: incidentsCursorSchema.nullable(),
+});
+
+// 20b. admin_list_trips (CC-037): sección «Viajes» del admin con keyset estable (created_at DESC, id DESC). El filtro
+// «Con problemas» se evalúa en Postgres; la salida nunca trae datos del destinatario ni motivos.
+export const adminTripsFilterSchema = z.enum(['problems', 'all']);
+export type AdminTripsFilter = z.infer<typeof adminTripsFilterSchema>;
+export const adminTripsCursorSchema = z.object({
+  createdAt: isoTimestampSchema,
+  id: uuidSchema,
+});
+export type AdminTripsCursor = z.infer<typeof adminTripsCursorSchema>;
+export const adminListTripsInputSchema = z.object({
+  filter: adminTripsFilterSchema,
+  cursor: adminTripsCursorSchema.nullable().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+export const adminTripListItemSchema = z
+  .object({
+    id: uuidSchema,
+    code: z.string().regex(/^REQ-[0-9A-F]{8}$/),
+    status: deliveryRequestStatusSchema,
+    createdAt: isoTimestampSchema,
+    publishedAt: isoTimestampSchema.nullable(),
+    deliveredAt: isoTimestampSchema.nullable(),
+    cancelledAt: isoTimestampSchema.nullable(),
+    merchantId: uuidSchema,
+    merchantName: z.string(),
+    courierId: uuidSchema.nullable(),
+    courierName: z.string().nullable(),
+    dropsCount: z.number().int().min(1),
+    deliveredDrops: z.number().int().nonnegative(),
+    failedDrops: z.number().int().nonnegative(),
+    courierReleases: z.number().int().nonnegative(),
+    noShowReports: z.number().int().nonnegative(),
+    cancelled: z.boolean(),
+    incidents: z.number().int().nonnegative(),
+    openIncidents: z.number().int().nonnegative(),
+  })
+  .strict();
+export const adminListTripsOutputSchema = z.object({
+  items: z.array(adminTripListItemSchema),
+  nextCursor: adminTripsCursorSchema.nullable(),
+});
+
+// 20c. admin_list_applicants (CC-044): cola de postulantes con búsqueda por nombre sin tildes en Postgres, total exacto
+// y keyset (profiles.created_at DESC, profile_id DESC) en los dos sentidos. «pending» lista solo postulaciones enviadas
+// (CC-043). La salida nunca trae el hash del DNI ni rutas de documentos.
+export const adminApplicantsDirectionSchema = z.enum(['next', 'prev']);
+export type AdminApplicantsDirection = z.infer<typeof adminApplicantsDirectionSchema>;
+export const adminListApplicantsCursorSchema = z.object({
+  createdAt: isoTimestampSchema,
+  id: uuidSchema,
+});
+export type AdminListApplicantsCursor = z.infer<typeof adminListApplicantsCursorSchema>;
+export const adminListApplicantsInputSchema = z
+  .object({
+    status: courierStatusSchema,
+    query: z.string().trim().max(80).optional(),
+    cursor: adminListApplicantsCursorSchema.nullable().optional(),
+    direction: adminApplicantsDirectionSchema.optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  })
+  .refine((input) => input.direction !== 'prev' || Boolean(input.cursor), {
+    message: '«prev» necesita un cursor.',
+    path: ['cursor'],
+  });
+export const adminApplicantListItemSchema = z
+  .object({
+    id: uuidSchema,
+    displayName: z.string(),
+    phone: z.string().nullable(),
+    vehicleType: vehicleTypeSchema.nullable(),
+    status: courierStatusSchema,
+    hasDni: z.boolean(),
+    docLevel: z.number().int().min(0).max(2),
+    licenseStatus: documentReviewStatusSchema,
+    insuranceStatus: documentReviewStatusSchema,
+    createdAt: isoTimestampSchema,
+    submittedAt: isoTimestampSchema.nullable(),
+    documents: z
+      .object({
+        dniFront: z.boolean(),
+        dniBack: z.boolean(),
+        selfie: z.boolean(),
+        license: z.boolean(),
+        insurance: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+export const adminListApplicantsOutputSchema = z.object({
+  items: z.array(adminApplicantListItemSchema),
+  total: z.number().int().nonnegative(),
+  nextCursor: adminListApplicantsCursorSchema.nullable(),
+  prevCursor: adminListApplicantsCursorSchema.nullable(),
 });
 
 // update_my_merchant_profile (CC-028)
@@ -916,10 +1048,10 @@ export const publicationBalanceSchema = z.object({
 });
 export type PublicationBalance = z.infer<typeof publicationBalanceSchema>;
 
+// CC-038: el código del plan no viaja; la RPC lo genera desde el nombre y no lo cambia al editar.
 export const adminUpsertPublicationPlanInputSchema = z
   .object({
     planId: uuidSchema.nullable(),
-    code: z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,39}$/),
     name: z.string().trim().min(2).max(80),
     kind: publicationPlanKindSchema,
     monthlyCredits: z.number().int().min(1).max(100_000).nullable(),
@@ -928,7 +1060,7 @@ export const adminUpsertPublicationPlanInputSchema = z
     sort: z.number().int().min(0).max(1000),
   })
   .refine((data) => (data.kind === 'quota') === (data.monthlyCredits !== null), {
-    message: 'Un plan con cupo lleva créditos mensuales; uno ilimitado, no.',
+    message: 'Un plan con créditos mensuales lleva la cantidad por mes; uno ilimitado, no.',
     path: ['monthlyCredits'],
   });
 export const adminUpsertPublicationPlanOutputSchema = z.object({
@@ -1033,6 +1165,148 @@ export const adminListPublicationPlansOutputSchema = z.object({
 
 export const getMyPublicationBalanceInputSchema = z.object({}).strict();
 export const getMyPublicationBalanceOutputSchema = publicationBalanceSchema;
+
+// CC-039: oferta comercial para el comercio. De cada plan activo, solo lo comercial (sin código ni datos internos).
+export const publicationOfferPlanSchema = z
+  .object({
+    planId: uuidSchema,
+    name: z.string().min(1),
+    kind: publicationPlanKindSchema,
+    monthlyCredits: z.number().int().positive().nullable(),
+    referencePriceArs: z.number().int().nonnegative().nullable(),
+  })
+  .strict()
+  // PR528-H03: mismo check que publication_plans: un plan con cupo lleva créditos por mes; uno ilimitado, no.
+  .refine((plan) => (plan.kind === 'quota') === (plan.monthlyCredits !== null), {
+    message: 'El tipo del plan no coincide con sus créditos por mes.',
+    path: ['monthlyCredits'],
+  });
+export type PublicationOfferPlan = z.infer<typeof publicationOfferPlanSchema>;
+
+export const getPublicationOfferInputSchema = z.object({}).strict();
+export const getPublicationOfferOutputSchema = z
+  .object({
+    plans: z.array(publicationOfferPlanSchema).max(50),
+    looseCreditReferencePriceArs: z.number().int().nonnegative().nullable(),
+    launchDiscountPct: z.number().int().min(1).max(100).nullable(),
+  })
+  .strict();
+export type PublicationOffer = z.infer<typeof getPublicationOfferOutputSchema>;
+
+// CC-040: novedades del admin. Público, acción (solo pantallas de la app) y textos con los mismos límites que la base.
+export const announcementAudienceSchema = z.enum(['merchants', 'couriers', 'all']);
+export type AnnouncementAudience = z.infer<typeof announcementAudienceSchema>;
+export const announcementCtaSchema = z.enum(['none', 'merchant_plan', 'merchant_new_request', 'courier_feed']);
+export type AnnouncementCta = z.infer<typeof announcementCtaSchema>;
+
+const ANNOUNCEMENT_CTAS_BY_AUDIENCE: Record<AnnouncementAudience, readonly AnnouncementCta[]> = {
+  merchants: ['none', 'merchant_plan', 'merchant_new_request'],
+  couriers: ['none', 'courier_feed'],
+  all: ['none'],
+};
+
+/** La acción tiene que existir para todo el público: con «ambos», sin botón (check de `announcements`). */
+export function isAnnouncementCtaAllowed(audience: AnnouncementAudience, cta: AnnouncementCta): boolean {
+  return ANNOUNCEMENT_CTAS_BY_AUDIENCE[audience].includes(cta);
+}
+
+export const announcementTitleSchema = z.string().trim().min(1).max(60);
+export const announcementBodySchema = z.string().trim().min(1).max(140);
+
+export const adminCountAnnouncementAudienceInputSchema = z.object({ audience: announcementAudienceSchema }).strict();
+export const adminCountAnnouncementAudienceOutputSchema = z
+  .object({
+    recipients: z.number().int().nonnegative(),
+    pushRecipients: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const adminCreateAnnouncementInputSchema = z
+  .object({
+    audience: announcementAudienceSchema,
+    title: announcementTitleSchema,
+    body: announcementBodySchema,
+    cta: announcementCtaSchema,
+    visibleDays: z.number().int().min(1).max(30),
+  })
+  .strict()
+  .refine((input) => isAnnouncementCtaAllowed(input.audience, input.cta), {
+    message: 'La acción no corresponde al público elegido.',
+    path: ['cta'],
+  });
+export const adminCreateAnnouncementOutputSchema = z
+  .object({ announcementId: uuidSchema, visibleUntil: isoTimestampSchema })
+  .strict();
+
+export const adminRecordAnnouncementPushInputSchema = z
+  .object({
+    announcementId: uuidSchema,
+    targets: z.number().int().nonnegative(),
+    sent: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  })
+  .strict()
+  .refine((input) => input.sent + input.failed <= input.targets, {
+    message: 'Enviados y fallidos no pueden superar a los destinatarios.',
+    path: ['sent'],
+  });
+export const adminRecordAnnouncementPushOutputSchema = z.object({ announcementId: uuidSchema }).strict();
+
+export const adminAnnouncementsCursorSchema = z.object({ createdAt: isoTimestampSchema, id: uuidSchema }).strict();
+export type AdminAnnouncementsCursor = z.infer<typeof adminAnnouncementsCursorSchema>;
+export const adminListAnnouncementsInputSchema = z
+  .object({
+    cursor: adminAnnouncementsCursorSchema.nullable().optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  })
+  .strict();
+export const adminAnnouncementItemSchema = z
+  .object({
+    id: uuidSchema,
+    audience: announcementAudienceSchema,
+    title: z.string().min(1),
+    body: z.string().min(1),
+    cta: announcementCtaSchema,
+    visibleUntil: isoTimestampSchema,
+    createdAt: isoTimestampSchema,
+    createdByName: z.string(),
+    pushTargets: z.number().int().nonnegative().nullable(),
+    pushSent: z.number().int().nonnegative().nullable(),
+    pushFailed: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+export type AdminAnnouncementItem = z.infer<typeof adminAnnouncementItemSchema>;
+export const adminListAnnouncementsOutputSchema = z
+  .object({
+    items: z.array(adminAnnouncementItemSchema),
+    nextCursor: adminAnnouncementsCursorSchema.nullable(),
+  })
+  .strict();
+
+export const getMyAnnouncementInputSchema = z.object({}).strict();
+export const announcementBannerSchema = z
+  .object({ id: uuidSchema, title: z.string().min(1), body: z.string().min(1), cta: announcementCtaSchema })
+  .strict();
+export type AnnouncementBanner = z.infer<typeof announcementBannerSchema>;
+export const getMyAnnouncementOutputSchema = z.object({ announcement: announcementBannerSchema.nullable() }).strict();
+
+export const dismissAnnouncementInputSchema = z.object({ announcementId: uuidSchema }).strict();
+export const dismissAnnouncementOutputSchema = z.object({ dismissed: z.literal(true) }).strict();
+
+export const setPromotionsOptInInputSchema = z.object({ enabled: z.boolean() }).strict();
+export const setPromotionsOptInOutputSchema = z.object({ enabled: z.boolean() }).strict();
+
+// CC-041: presencia del repartidor (la hora la pone la base) y conteo agregado de conectados para el comercio.
+export const courierHeartbeatInputSchema = z.object({}).strict();
+export const courierHeartbeatOutputSchema = z.object({ lastSeenAt: isoTimestampSchema }).strict();
+export const getOnlineCouriersCountInputSchema = z.object({}).strict();
+export const getOnlineCouriersCountOutputSchema = z
+  .object({
+    count: z.number().int().nonnegative(),
+    windowMinutes: z.number().int().min(2).max(60),
+  })
+  .strict();
+export type OnlineCouriersCount = z.infer<typeof getOnlineCouriersCountOutputSchema>;
 
 export const RPC_CONTRACTS = {
   update_my_merchant_profile: {
@@ -1536,6 +1810,56 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  get_my_courier_vehicles: {
+    inputSchema: getMyCourierVehiclesInputSchema,
+    outputSchema: getMyCourierVehiclesOutputSchema,
+    errorCodes: ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR'] as const satisfies readonly DomainErrorCode[],
+  },
+  add_courier_vehicle: {
+    inputSchema: addCourierVehicleInputSchema,
+    outputSchema: courierVehicleIdOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'DUPLICATE_VEHICLE',
+      'INVALID_STATE_TRANSITION',
+      'VEHICLE_SWITCH_BLOCKED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  update_courier_vehicle: {
+    inputSchema: updateCourierVehicleInputSchema,
+    outputSchema: courierVehicleIdOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'INVALID_STATE_TRANSITION',
+      'NOT_FOUND',
+      'VEHICLE_SWITCH_BLOCKED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  remove_courier_vehicle: {
+    inputSchema: removeCourierVehicleInputSchema,
+    outputSchema: courierVehicleIdOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INVALID_STATE_TRANSITION',
+      'NOT_FOUND',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  set_active_courier_vehicle: {
+    inputSchema: setActiveCourierVehicleInputSchema,
+    outputSchema: setActiveCourierVehicleOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INVALID_STATE_TRANSITION',
+      'NOT_FOUND',
+      'VEHICLE_SWITCH_BLOCKED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_set_subscription: {
     inputSchema: adminSetSubscriptionInputSchema,
     outputSchema: adminSetSubscriptionOutputSchema,
@@ -1581,6 +1905,28 @@ export const RPC_CONTRACTS = {
   admin_list_incidents: {
     inputSchema: adminListIncidentsInputSchema,
     outputSchema: adminListIncidentsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  // CC-037 (T-410): misma precedencia que admin_list_incidents.
+  admin_list_trips: {
+    inputSchema: adminListTripsInputSchema,
+    outputSchema: adminListTripsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  // CC-044 (T-421): misma precedencia que admin_list_trips.
+  admin_list_applicants: {
+    inputSchema: adminListApplicantsInputSchema,
+    outputSchema: adminListApplicantsOutputSchema,
     errorCodes: [
       'UNAUTHENTICATED',
       'UNAUTHORIZED_ACTOR',
@@ -1661,6 +2007,96 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  admin_count_announcement_audience: {
+    inputSchema: adminCountAnnouncementAudienceInputSchema,
+    outputSchema: adminCountAnnouncementAudienceOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_create_announcement: {
+    inputSchema: adminCreateAnnouncementInputSchema,
+    outputSchema: adminCreateAnnouncementOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'RATE_LIMITED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_record_announcement_push: {
+    inputSchema: adminRecordAnnouncementPushInputSchema,
+    outputSchema: adminRecordAnnouncementPushOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_list_announcements: {
+    inputSchema: adminListAnnouncementsInputSchema,
+    outputSchema: adminListAnnouncementsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  get_my_announcement: {
+    inputSchema: getMyAnnouncementInputSchema,
+    outputSchema: getMyAnnouncementOutputSchema,
+    errorCodes: ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR'] as const satisfies readonly DomainErrorCode[],
+  },
+  dismiss_announcement: {
+    inputSchema: dismissAnnouncementInputSchema,
+    outputSchema: dismissAnnouncementOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  courier_heartbeat: {
+    inputSchema: courierHeartbeatInputSchema,
+    outputSchema: courierHeartbeatOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'COURIER_NOT_APPROVED',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  get_online_couriers_count: {
+    inputSchema: getOnlineCouriersCountInputSchema,
+    outputSchema: getOnlineCouriersCountOutputSchema,
+    errorCodes: ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR'] as const satisfies readonly DomainErrorCode[],
+  },
+  set_promotions_opt_in: {
+    inputSchema: setPromotionsOptInInputSchema,
+    outputSchema: setPromotionsOptInOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  get_publication_offer: {
+    inputSchema: getPublicationOfferInputSchema,
+    outputSchema: getPublicationOfferOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   get_request_cancellation_history: {
     inputSchema: getRequestCancellationHistoryInputSchema,
     outputSchema: getRequestCancellationHistoryOutputSchema,
@@ -1704,16 +2140,33 @@ export const ALL_RPC_NAMES = [
   'admin_verify_document',
   'replace_courier_document',
   'add_courier_optional_document',
+  'get_my_courier_vehicles',
+  'add_courier_vehicle',
+  'update_courier_vehicle',
+  'remove_courier_vehicle',
+  'set_active_courier_vehicle',
   'admin_set_subscription',
   'admin_update_setting',
   'admin_resolve_incident',
   'admin_list_incidents',
+  'admin_list_trips',
+  'admin_list_applicants',
   'admin_upsert_publication_plan',
   'admin_grant_publication_credits',
   'admin_register_plan_period',
   'admin_get_merchant_publication_credits',
   'admin_list_publication_plans',
   'get_my_publication_balance',
+  'get_publication_offer',
+  'admin_count_announcement_audience',
+  'admin_create_announcement',
+  'admin_record_announcement_push',
+  'admin_list_announcements',
+  'get_my_announcement',
+  'dismiss_announcement',
+  'set_promotions_opt_in',
+  'courier_heartbeat',
+  'get_online_couriers_count',
   'get_request_cancellation_history',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 

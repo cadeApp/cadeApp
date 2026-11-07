@@ -7,15 +7,25 @@ const mocks = vi.hoisted(() => ({
   getMerchantAccountProfile: vi.fn(),
   getSubscriptionDisplay: vi.fn(),
   getMyPublicationBalance: vi.fn(),
+  getPublicationOffer: vi.fn(),
 }));
 
-// Solo se simulan las lecturas del servidor: la sección de saldo se renderiza con el componente real.
+// Solo se simulan las lecturas del servidor: las secciones de saldo y de planes se renderizan con el componente real.
 vi.mock('@/features/merchants/server', async () => ({
   PublicationBalanceSection: (
     await vi.importActual<typeof import('@/features/merchants/components/publication-balance-section')>(
       '@/features/merchants/components/publication-balance-section'
     )
   ).PublicationBalanceSection,
+  PublicationOfferSection: (
+    await vi.importActual<typeof import('@/features/merchants/components/publication-offer-section')>(
+      '@/features/merchants/components/publication-offer-section'
+    )
+  ).PublicationOfferSection,
+  getPublicationOffer: mocks.getPublicationOffer,
+  buildSupportWhatsAppHref: (
+    await vi.importActual<typeof import('@/features/merchants/support-whatsapp')>('@/features/merchants/support-whatsapp')
+  ).buildSupportWhatsAppHref,
   getMerchantAccountProfile: mocks.getMerchantAccountProfile,
   getSubscriptionDisplay: mocks.getSubscriptionDisplay,
   getMyPublicationBalance: mocks.getMyPublicationBalance,
@@ -25,6 +35,8 @@ vi.mock('@/features/auth/server', () => ({
 }));
 
 import MerchantPlanPage from './page';
+
+const EMPTY_OFFER = { plans: [], looseCreditReferencePriceArs: null, launchDiscountPct: null };
 
 const PILOT_BALANCE = {
   merchantId: '20000000-0000-4000-8000-000000000369',
@@ -63,6 +75,7 @@ describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp conf
       untilLabel: 'Sin vencimiento registrado',
     });
     mocks.getMyPublicationBalance.mockResolvedValue({ ok: true, data: PILOT_BALANCE });
+    mocks.getPublicationOffer.mockResolvedValue({ ok: true, data: EMPTY_OFFER });
   });
 
   afterEach(() => {
@@ -122,6 +135,7 @@ describe('T-369 / CC-029 — Mi plan usa get_my_publication_balance', () => {
       subscriptionStatus: 'active',
       paidUntil: '2026-11-30',
     });
+    mocks.getPublicationOffer.mockResolvedValue({ ok: true, data: EMPTY_OFFER });
   });
   afterEach(cleanup);
 
@@ -141,5 +155,67 @@ describe('T-369 / CC-029 — Mi plan usa get_my_publication_balance', () => {
     expect(within(screen.getByRole('region', { name: 'Mi plan' })).getByRole('alert').textContent).toContain(
       'No pudimos cargar tu saldo de créditos'
     );
+  });
+});
+
+describe('T-412 / CC-039 — Mi plan muestra los planes disponibles', () => {
+  const originalNumber = process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER = '+54 9 3865 123456';
+    mocks.getMerchantAccountProfile.mockResolvedValue({
+      businessName: 'Comercio de prueba',
+      defaultPickupAddress: 'San Martín 100',
+      zoneName: 'Centro',
+      phone: '3865123456',
+      notes: null,
+      subscriptionStatus: 'active',
+      paidUntil: null,
+    });
+    mocks.getMyPublicationBalance.mockResolvedValue({ ok: true, data: PILOT_BALANCE });
+  });
+
+  afterEach(() => {
+    cleanup();
+    if (originalNumber === undefined) delete process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER;
+    else process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER = originalNumber;
+  });
+
+  it('lee la oferta y cada plan pide por el WhatsApp del soporte configurado', async () => {
+    mocks.getPublicationOffer.mockResolvedValue({
+      ok: true,
+      data: {
+        plans: [
+          {
+            planId: '00000000-0000-4000-8000-000000390001',
+            name: 'Plan 40',
+            kind: 'quota',
+            monthlyCredits: 40,
+            referencePriceArs: 20000,
+          },
+        ],
+        looseCreditReferencePriceArs: null,
+        launchDiscountPct: null,
+      },
+    });
+    render(await MerchantPlanPage());
+    expect(mocks.getPublicationOffer).toHaveBeenCalledTimes(1);
+    const section = screen.getByRole('region', { name: 'Planes disponibles' });
+    expect(within(section).getByRole('link', { name: 'Quiero este plan: Plan 40' }).getAttribute('href')).toBe(
+      `https://wa.me/5493865123456?text=${encodeURIComponent(
+        'Hola cadeApp, quiero contratar el plan «Plan 40» para mi comercio.'
+      )}`
+    );
+  });
+
+  it('si la oferta falla, el resto de la cuenta sigue visible', async () => {
+    mocks.getPublicationOffer.mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+    render(await MerchantPlanPage());
+    expect(screen.getByRole('heading', { name: 'Comercio de prueba' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Mi plan' })).toBeTruthy();
+    const section = screen.getByRole('region', { name: 'Planes disponibles' });
+    expect(within(section).getByRole('alert').textContent).toContain('No pudimos cargar los planes disponibles');
+    expect(screen.getByRole('link', { name: 'Hablar con cadeApp' })).toBeTruthy();
   });
 });

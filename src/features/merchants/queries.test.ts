@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
-import { getActiveZones, getMerchantAccountProfile, getMerchantProfileForEdit, getMyPublicationBalance } from './queries';
+import {
+  getActiveZones,
+  getMerchantAccountProfile,
+  getMerchantProfileForEdit,
+  getMyPublicationBalance,
+  getPublicationOffer,
+} from './queries';
 import { getSubscriptionDisplay, type MerchantSubscriptionStatus } from './copy';
 
 vi.mock('@/server/supabase/server', () => ({
@@ -345,5 +351,43 @@ describe('T-369 / CC-029 — getMyPublicationBalance', () => {
     await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
     mockRpc(new Error('fetch failed'));
     await expect(getMyPublicationBalance()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+});
+
+const OFFER = {
+  plans: [
+    {
+      planId: '00000000-0000-4000-8000-000000390001',
+      name: 'Plan 40',
+      kind: 'quota',
+      monthlyCredits: 40,
+      referencePriceArs: 20000,
+    },
+  ],
+  looseCreditReferencePriceArs: 900,
+  launchDiscountPct: null,
+};
+
+describe('T-412 / CC-039 — getPublicationOffer', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('llama a get_publication_offer con la sesión y devuelve la oferta validada', async () => {
+    const rpc = mockRpc({ data: OFFER, error: null });
+    await expect(getPublicationOffer()).resolves.toEqual({ ok: true, data: OFFER });
+    expect(rpc).toHaveBeenCalledWith('get_publication_offer');
+  });
+
+  it('mapea los códigos del contrato y todo lo demás a INTERNAL_ERROR', async () => {
+    mockRpc({ data: null, error: { message: 'UNAUTHORIZED_ACTOR', code: 'P0001' } });
+    await expect(getPublicationOffer()).resolves.toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    mockRpc({ data: null, error: { message: 'function get_publication_offer does not exist' } });
+    await expect(getPublicationOffer()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+
+  it('una respuesta fuera de contrato o una caída de red no se muestran como oferta', async () => {
+    mockRpc({ data: { ...OFFER, plans: [{ ...OFFER.plans[0], code: 'plan-40' }] }, error: null });
+    await expect(getPublicationOffer()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    mockRpc(new Error('fetch failed'));
+    await expect(getPublicationOffer()).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
   });
 });

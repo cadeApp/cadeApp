@@ -9,6 +9,92 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      announcement_dismissals: {
+        Row: {
+          announcement_id: string
+          dismissed_at: string
+          profile_id: string
+        }
+        Insert: {
+          announcement_id: string
+          dismissed_at?: string
+          profile_id: string
+        }
+        Update: {
+          announcement_id?: string
+          dismissed_at?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "announcement_dismissals_announcement_id_fkey"
+            columns: ["announcement_id"]
+            isOneToOne: false
+            referencedRelation: "announcements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "announcement_dismissals_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      announcements: {
+        Row: {
+          audience: string
+          body: string
+          created_at: string
+          created_by: string
+          cta: string
+          id: string
+          push_failed: number | null
+          push_recorded_at: string | null
+          push_sent: number | null
+          push_targets: number | null
+          title: string
+          visible_until: string
+        }
+        Insert: {
+          audience: string
+          body: string
+          created_at?: string
+          created_by: string
+          cta?: string
+          id?: string
+          push_failed?: number | null
+          push_recorded_at?: string | null
+          push_sent?: number | null
+          push_targets?: number | null
+          title: string
+          visible_until: string
+        }
+        Update: {
+          audience?: string
+          body?: string
+          created_at?: string
+          created_by?: string
+          cta?: string
+          id?: string
+          push_failed?: number | null
+          push_recorded_at?: string | null
+          push_sent?: number | null
+          push_targets?: number | null
+          title?: string
+          visible_until?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "announcements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action: string
@@ -92,6 +178,7 @@ export type Database = {
           status: Database["public"]["Enums"]["document_review_status"]
           storage_path: string
           uploaded_at: string
+          vehicle_id: string | null
         }
         Insert: {
           courier_id: string
@@ -105,6 +192,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["document_review_status"]
           storage_path: string
           uploaded_at?: string
+          vehicle_id?: string | null
         }
         Update: {
           courier_id?: string
@@ -118,6 +206,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["document_review_status"]
           storage_path?: string
           uploaded_at?: string
+          vehicle_id?: string | null
         }
         Relationships: [
           {
@@ -127,10 +216,87 @@ export type Database = {
             referencedRelation: "couriers"
             referencedColumns: ["profile_id"]
           },
+          {
+            foreignKeyName: "courier_documents_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "courier_vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courier_presence: {
+        Row: {
+          courier_id: string
+          last_seen_at: string
+        }
+        Insert: {
+          courier_id: string
+          last_seen_at: string
+        }
+        Update: {
+          courier_id?: string
+          last_seen_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_presence_courier_id_fkey"
+            columns: ["courier_id"]
+            isOneToOne: true
+            referencedRelation: "couriers"
+            referencedColumns: ["profile_id"]
+          },
+        ]
+      }
+      courier_vehicles: {
+        Row: {
+          archived_at: string | null
+          courier_id: string
+          created_at: string
+          id: string
+          insurance_status: Database["public"]["Enums"]["document_review_status"]
+          license_status: Database["public"]["Enums"]["document_review_status"]
+          plate: string | null
+          vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+        }
+        Insert: {
+          archived_at?: string | null
+          courier_id: string
+          created_at?: string
+          id?: string
+          insurance_status?: Database["public"]["Enums"]["document_review_status"]
+          license_status?: Database["public"]["Enums"]["document_review_status"]
+          plate?: string | null
+          vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+        }
+        Update: {
+          archived_at?: string | null
+          courier_id?: string
+          created_at?: string
+          id?: string
+          insurance_status?: Database["public"]["Enums"]["document_review_status"]
+          license_status?: Database["public"]["Enums"]["document_review_status"]
+          plate?: string | null
+          vehicle_type?: Database["public"]["Enums"]["vehicle_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_vehicles_courier_id_fkey"
+            columns: ["courier_id"]
+            isOneToOne: false
+            referencedRelation: "couriers"
+            referencedColumns: ["profile_id"]
+          },
         ]
       }
       couriers: {
         Row: {
+          active_vehicle_id: string | null
+          application_submitted: boolean
+          application_vehicle_plate: string | null
+          application_vehicle_type:
+            | Database["public"]["Enums"]["vehicle_type"]
+            | null
           available: boolean
           deactivated_at: string | null
           decided_at: string | null
@@ -141,10 +307,17 @@ export type Database = {
           license_status: Database["public"]["Enums"]["document_review_status"]
           profile_id: string
           status: Database["public"]["Enums"]["courier_status"]
+          submitted_at: string | null
           vehicle_plate: string | null
           vehicle_type: Database["public"]["Enums"]["vehicle_type"] | null
         }
         Insert: {
+          active_vehicle_id?: string | null
+          application_submitted?: boolean
+          application_vehicle_plate?: string | null
+          application_vehicle_type?:
+            | Database["public"]["Enums"]["vehicle_type"]
+            | null
           available?: boolean
           deactivated_at?: string | null
           decided_at?: string | null
@@ -155,10 +328,17 @@ export type Database = {
           license_status?: Database["public"]["Enums"]["document_review_status"]
           profile_id: string
           status?: Database["public"]["Enums"]["courier_status"]
+          submitted_at?: string | null
           vehicle_plate?: string | null
           vehicle_type?: Database["public"]["Enums"]["vehicle_type"] | null
         }
         Update: {
+          active_vehicle_id?: string | null
+          application_submitted?: boolean
+          application_vehicle_plate?: string | null
+          application_vehicle_type?:
+            | Database["public"]["Enums"]["vehicle_type"]
+            | null
           available?: boolean
           deactivated_at?: string | null
           decided_at?: string | null
@@ -169,10 +349,18 @@ export type Database = {
           license_status?: Database["public"]["Enums"]["document_review_status"]
           profile_id?: string
           status?: Database["public"]["Enums"]["courier_status"]
+          submitted_at?: string | null
           vehicle_plate?: string | null
           vehicle_type?: Database["public"]["Enums"]["vehicle_type"] | null
         }
         Relationships: [
+          {
+            foreignKeyName: "couriers_active_vehicle_id_fkey"
+            columns: ["active_vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "courier_vehicles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "couriers_decided_by_fkey"
             columns: ["decided_by"]
@@ -806,6 +994,32 @@ export type Database = {
         }
         Relationships: []
       }
+      promotion_preferences: {
+        Row: {
+          profile_id: string
+          push_promotions: boolean
+          updated_at: string
+        }
+        Insert: {
+          profile_id: string
+          push_promotions: boolean
+          updated_at?: string
+        }
+        Update: {
+          profile_id?: string
+          push_promotions?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promotion_preferences_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       publication_charge_lots: {
         Row: {
           amount: number
@@ -1296,6 +1510,28 @@ export type Database = {
         Args: { p_payload: Json }
         Returns: Json
       }
+      add_courier_vehicle: {
+        Args: {
+          p_make_active?: boolean
+          p_plate: string
+          p_vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+        }
+        Returns: Json
+      }
+      admin_count_announcement_audience: {
+        Args: { p_audience: string }
+        Returns: Json
+      }
+      admin_create_announcement: {
+        Args: {
+          p_audience: string
+          p_body: string
+          p_cta: string
+          p_title: string
+          p_visible_days: number
+        }
+        Returns: Json
+      }
       admin_decide_courier: {
         Args: { p_courier_id: string; p_decision: string; p_reason?: string }
         Returns: Json
@@ -1311,6 +1547,25 @@ export type Database = {
           p_note?: string
           p_operation_key: string
           p_source: string
+        }
+        Returns: Json
+      }
+      admin_list_announcements: {
+        Args: {
+          p_cursor_created_at?: string
+          p_cursor_id?: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
+      admin_list_applicants: {
+        Args: {
+          p_cursor_created_at?: string
+          p_cursor_id?: string
+          p_direction?: string
+          p_limit?: number
+          p_query?: string
+          p_status: string
         }
         Returns: Json
       }
@@ -1332,8 +1587,26 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_list_trips: {
+        Args: {
+          p_cursor_created_at?: string
+          p_cursor_id?: string
+          p_filter: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
       admin_merchant_delivered_counts: {
         Args: { p_merchant_ids: string[] }
+        Returns: Json
+      }
+      admin_record_announcement_push: {
+        Args: {
+          p_announcement_id: string
+          p_failed: number
+          p_sent: number
+          p_targets: number
+        }
         Returns: Json
       }
       admin_register_plan_period: {
@@ -1393,6 +1666,10 @@ export type Database = {
         }
         Returns: Json
       }
+      announcement_push_recipients: {
+        Args: { p_announcement_id: string }
+        Returns: string[]
+      }
       calculate_route_distance: {
         Args: {
           p_dropoff_lat?: number
@@ -1419,15 +1696,33 @@ export type Database = {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
       }
+      courier_heartbeat: { Args: never; Returns: Json }
       create_and_publish_multi_drop: {
         Args: { p_payload: Json }
+        Returns: Json
+      }
+      dismiss_announcement: {
+        Args: { p_announcement_id: string }
+        Returns: Json
+      }
+      finalize_courier_application: {
+        Args: {
+          p_courier_id: string
+          p_dni_hmac: string
+          p_vehicle_plate: string
+          p_vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+        }
         Returns: Json
       }
       get_merchant_request_private_fields: {
         Args: { p_request_id: string }
         Returns: Json
       }
+      get_my_announcement: { Args: never; Returns: Json }
+      get_my_courier_vehicles: { Args: never; Returns: Json }
       get_my_publication_balance: { Args: never; Returns: Json }
+      get_online_couriers_count: { Args: never; Returns: Json }
+      get_publication_offer: { Args: never; Returns: Json }
       get_request_cancellation_history: {
         Args: {
           p_before_created_at?: string
@@ -1456,6 +1751,7 @@ export type Database = {
         Returns: Json
       }
       register_push_subscription: { Args: { p_payload: Json }; Returns: Json }
+      remove_courier_vehicle: { Args: { p_vehicle_id: string }; Returns: Json }
       replace_courier_document: { Args: { p_payload: Json }; Returns: Json }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }
@@ -1469,7 +1765,12 @@ export type Database = {
         Args: { p_reason?: string; p_request_id: string }
         Returns: Json
       }
+      set_active_courier_vehicle: {
+        Args: { p_vehicle_id: string }
+        Returns: Json
+      }
       set_availability: { Args: { p_available: boolean }; Returns: Json }
+      set_promotions_opt_in: { Args: { p_enabled: boolean }; Returns: Json }
       submit_courier_onboarding_documents: {
         Args: { p_documents: Json }
         Returns: Json
@@ -1489,6 +1790,10 @@ export type Database = {
           p_message?: string
           p_request_id: string
         }
+        Returns: Json
+      }
+      update_courier_vehicle: {
+        Args: { p_plate: string; p_vehicle_id: string }
         Returns: Json
       }
       update_my_merchant_profile: { Args: { p_patch: Json }; Returns: Json }

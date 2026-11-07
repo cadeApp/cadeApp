@@ -9,6 +9,7 @@ import {
   AdvancedMarker,
   Marker,
   useMap,
+  useMapsLibrary,
   type MapCameraChangedEvent,
   type MapMouseEvent,
 } from '@vis.gl/react-google-maps';
@@ -24,8 +25,24 @@ import { z } from 'zod';
 import { publicEnv } from '@/lib/env.public';
 import { cn } from '@/ui/cn';
 import { MapSkeleton, type MapSkeletonProps } from '@/ui/map-skeleton';
+import {
+  AGUILARES_LAT_LNG_BOUNDS,
+  buildGeocodeQuery,
+  interpretGeocodeResponse,
+  type GeocoderResultLike,
+  type MapGeocodeOutcome,
+  type MapGeocodeRequest,
+} from '@/ui/map-geocode';
 
 export { MapSkeleton, type MapSkeletonProps };
+export {
+  buildGeocodeQuery,
+  interpretGeocodeResponse,
+  AGUILARES_LAT_LNG_BOUNDS,
+  type GeocoderResultLike,
+  type MapGeocodeOutcome,
+  type MapGeocodeRequest,
+};
 
 export interface MapCoordinates {
   lat: number;
@@ -65,6 +82,9 @@ export function isWithinAguilaresBounds(lat: number, lng: number): boolean {
   );
 }
 
+/** CC-045 / PR620-H04: plazo de una búsqueda antes de responder `unavailable`. */
+export const GEOCODE_TIMEOUT_MS = 10_000;
+
 function sameCoordinates(a: MapCoordinates, b: MapCoordinates): boolean {
   return a.lat === b.lat && a.lng === b.lng;
 }
@@ -82,6 +102,10 @@ export interface MapPickerProps {
   onLocationFound?: (coords: MapCoordinates) => void;
   onLocationError?: (error: string) => void;
   showMarkerWhenEmpty?: boolean;
+  /** CC-045: cada `id` nuevo busca `query` con la Geocoding API. */
+  geocodeRequest?: MapGeocodeRequest | null;
+  /** CC-045: resultado de cada búsqueda, con el pedido que la originó. */
+  onGeocodeResult?: (outcome: MapGeocodeOutcome, request: MapGeocodeRequest) => void;
 }
 
 function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
@@ -91,6 +115,57 @@ function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
       onFailed();
     }
   }, [status, onFailed]);
+  return null;
+}
+
+/**
+ * CC-045: vive adentro del APIProvider para usar el Geocoder. La consulta solo va a Google: nunca a `console`,
+ * `notify` ni estado persistido (AGENTS §2, excepción de CC-045).
+ */
+function MapGeocoder({
+  request,
+  onOutcome,
+}: {
+  request: MapGeocodeRequest;
+  onOutcome: (outcome: MapGeocodeOutcome, request: MapGeocodeRequest) => void;
+}) {
+  const geocoding = useMapsLibrary('geocoding');
+
+  React.useEffect(() => {
+    // MapPicker responde la consulta vacía (`not_found`) sin llegar a Google.
+    if (!geocoding || !request.query.trim()) return;
+    let active = true;
+    let pending: Promise<{ results: readonly GeocoderResultLike[] }>;
+    try {
+      pending = new geocoding.Geocoder().geocode({
+        address: request.query,
+        componentRestrictions: { country: 'AR' },
+        bounds: AGUILARES_LAT_LNG_BOUNDS,
+        // Sin resultados, Google resuelve con `results: []` en vez de rechazar (PR620-H06).
+        fulfillOnZeroResults: true,
+      });
+    } catch {
+      // Biblioteca incompleta o caída: el formulario sigue con la dirección escrita.
+      onOutcome({ status: 'unavailable' }, request);
+      return;
+    }
+    pending
+      .then(
+        ({ results }: { results: readonly GeocoderResultLike[] }) => interpretGeocodeResponse(results, 'OK'),
+        (error: unknown) => {
+          const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+          return interpretGeocodeResponse(null, code);
+        }
+      )
+      .then((outcome: MapGeocodeOutcome) => {
+        // Desmontado o con otro pedido: la respuesta ya no le corresponde a nadie (PR620-H02).
+        if (active) onOutcome(outcome, request);
+      });
+    return () => {
+      active = false;
+    };
+  }, [geocoding, request, onOutcome]);
+
   return null;
 }
 
@@ -202,6 +277,8 @@ export function MapPicker({
   onLocationFound,
   onLocationError,
   showMarkerWhenEmpty = true,
+  geocodeRequest = null,
+  onGeocodeResult,
 }: MapPickerProps) {
   const apiKey = publicEnv.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
   const mapId = publicEnv.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || undefined;
@@ -254,6 +331,10 @@ export function MapPicker({
     setCameraSyncVersion((version) => version + 1);
   }, []);
 
+  // CC-045: sube con cada selección manual (click, arrastre, teclado, GPS) o cambio externo de coordenadas; una
+  // búsqueda que termina después de una selección así no pisa el pin.
+  const selectionEpochRef = React.useRef(0);
+
   const updateActiveCoords = React.useCallback((coords: MapCoordinates) => {
     activeCoordsRef.current = coords;
     setActiveCoords(coords);
@@ -263,10 +344,31 @@ export function MapPicker({
     value ?? defaultZoneCenter ?? null
   );
 
+  // CC-045 / PR620-H01: un cambio de `value` que no es el eco de nuestro onChange (incluido A → null) cuenta como
+  // selección externa. Corre antes de la sincronización para comparar contra el pin vigente.
+  const previousValueRef = React.useRef<MapCoordinates | null>(value ?? null);
+  React.useEffect(() => {
+    const previous = previousValueRef.current;
+    const next = value ?? null;
+    previousValueRef.current = next;
+    const changed = previous === null || next === null ? previous !== next : !sameCoordinates(previous, next);
+    if (!changed) return;
+    if (next === null || !sameCoordinates(next, activeCoordsRef.current)) {
+      selectionEpochRef.current += 1;
+    }
+  }, [value]);
+
   React.useEffect(() => {
     const next = value ?? defaultZoneCenter ?? null;
     if (next === null) {
+      // PR620-H08: borrado externo sin centro de barrio. El marcador vuelve al centro de Aguilares en vez de quedar
+      // en el pin borrado; no es una selección, así que no llama a onChange.
+      const wasCleared = lastIncomingCoordsRef.current !== null;
       lastIncomingCoordsRef.current = null;
+      if (wasCleared && !sameCoordinates(activeCoordsRef.current, AGUILARES_CENTER)) {
+        updateActiveCoords(AGUILARES_CENTER);
+        requestCameraSync(AGUILARES_CENTER);
+      }
       return;
     }
 
@@ -282,6 +384,7 @@ export function MapPicker({
     const isEcho = sameCoordinates(next, activeCoordsRef.current);
     updateActiveCoords(next);
     if (!isEcho) {
+      selectionEpochRef.current += 1;
       requestCameraSync(next);
     }
   }, [value, defaultZoneCenter, updateActiveCoords, requestCameraSync]);
@@ -292,6 +395,49 @@ export function MapPicker({
   }, [onChange]);
 
   const isMapAvailable = Boolean(apiKey) && isOnline && !apiLoadFailed;
+
+  // CC-045: solo responde la última búsqueda, una vez; sin mapa responde `unavailable` enseguida.
+  const onGeocodeResultRef = React.useRef(onGeocodeResult);
+  React.useEffect(() => {
+    onGeocodeResultRef.current = onGeocodeResult;
+  }, [onGeocodeResult]);
+  const currentGeocodeIdRef = React.useRef<number | null>(geocodeRequest?.id ?? null);
+  const geocodeStartEpochRef = React.useRef(selectionEpochRef.current);
+  if (currentGeocodeIdRef.current !== (geocodeRequest?.id ?? null)) {
+    currentGeocodeIdRef.current = geocodeRequest?.id ?? null;
+    geocodeStartEpochRef.current = selectionEpochRef.current;
+  }
+  const answeredGeocodeIdRef = React.useRef<number | null>(null);
+
+  const answerGeocode = React.useCallback(
+    (outcome: MapGeocodeOutcome, request: MapGeocodeRequest) => {
+      if (currentGeocodeIdRef.current !== request.id || answeredGeocodeIdRef.current === request.id) return;
+      answeredGeocodeIdRef.current = request.id;
+      if (selectionEpochRef.current !== geocodeStartEpochRef.current) return;
+      if (outcome.status === 'found') {
+        updateActiveCoords(outcome.coords);
+        requestCameraSync(outcome.coords);
+        onChangeRef.current?.(outcome.coords);
+      }
+      onGeocodeResultRef.current?.(outcome, request);
+    },
+    [updateActiveCoords, requestCameraSync]
+  );
+
+  React.useEffect(() => {
+    if (!geocodeRequest) return;
+    if (!geocodeRequest.query.trim()) {
+      answerGeocode({ status: 'not_found' }, geocodeRequest);
+      return;
+    }
+    if (!isMapAvailable) {
+      answerGeocode({ status: 'unavailable' }, geocodeRequest);
+      return;
+    }
+    // PR620-H04: si la biblioteca no carga o Google no contesta, el pedido termina igual.
+    const timer = setTimeout(() => answerGeocode({ status: 'unavailable' }, geocodeRequest), GEOCODE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [geocodeRequest, isMapAvailable, answerGeocode]);
 
   // CC-027: Ocultar pin ficticio si showMarkerWhenEmpty es false y value es null.
   const hasMarker = showMarkerWhenEmpty ? true : value != null;
@@ -319,6 +465,7 @@ export function MapPicker({
       if (disabled) return;
       const coords = extractLatLng(ev);
       if (!coords) return;
+      selectionEpochRef.current += 1;
       updateActiveCoords(coords);
       onChangeRef.current?.(coords);
     },
@@ -330,6 +477,7 @@ export function MapPicker({
       if (disabled) return;
       const coords = extractLatLng(ev);
       if (!coords) return;
+      selectionEpochRef.current += 1;
       updateActiveCoords(coords);
       onChangeRef.current?.(coords);
     },
@@ -344,6 +492,7 @@ export function MapPicker({
         lat: Number((current.lat + dLat).toFixed(6)),
         lng: Number((current.lng + dLng).toFixed(6)),
       };
+      selectionEpochRef.current += 1;
       updateActiveCoords(next);
       requestCameraSync(next);
       onChangeRef.current?.(next);
@@ -408,6 +557,7 @@ export function MapPicker({
           return;
         }
 
+        selectionEpochRef.current += 1;
         updateActiveCoords(coords);
         requestCameraSync(coords);
         onChangeRef.current?.(coords);
@@ -525,6 +675,7 @@ export function MapPicker({
             }}
           >
             <MapStatusWatcher onFailed={() => setApiLoadFailed(true)} />
+            {geocodeRequest && <MapGeocoder request={geocodeRequest} onOutcome={answerGeocode} />}
             <GoogleMap
               defaultCenter={fallbackCenter}
               defaultZoom={15}

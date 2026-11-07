@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/ui/tabs';
 import { Textarea } from '@/ui/textarea';
 import { notify } from '@/ui/notify';
@@ -26,26 +27,37 @@ import type { DomainErrorCode } from '@/domain/errors';
 import {
   viewCourierDocumentAction,
   decideCourierAction,
+  rejectCourierAction,
   reinstateCourierAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
 } from '../actions';
 import {
+  APPLICANT_REJECTION_OPTIONS,
   decisionFormSchema,
+  rejectApplicantFormSchema,
   rejectDocumentFormSchema,
   type DecisionFormInput,
+  type RejectApplicantFormInput,
   type RejectDocumentFormInput,
 } from '../schemas';
 import { ADMIN_COPY } from '../copy';
 import type { ApplicantDetail, ApplicantDocumentDetail, DocumentContentType } from '../types';
+import { ApplicantHistory } from './applicant-history';
 
 interface ApplicantDetailViewProps {
   readonly applicant: ApplicantDetail;
 }
 
-type DecisionModal = 'approved' | 'rejected' | 'suspended' | 'reactivate' | 'reconsider';
+type DecisionModal = 'approved' | 'suspended' | 'reactivate' | 'reconsider';
 
 /** El texto genérico de INVALID_STATE_TRANSITION habla de pedidos; acá el estado es el del repartidor. */
+/** CC-042: «Moto · AB 123 CD» para la licencia o el seguro de un vehículo. */
+function documentVehicleLabel(vehicle: NonNullable<ApplicantDocumentDetail['vehicle']>): string {
+  const type = ADMIN_COPY.vehicleType[vehicle.vehicleType];
+  return vehicle.plate ? `${type} ${vehicle.plate}` : type;
+}
+
 function courierDecisionErrorMessage(code: DomainErrorCode): string {
   return code === 'INVALID_STATE_TRANSITION'
     ? ADMIN_COPY.detail.errors.invalidCourierTransition
@@ -95,6 +107,14 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
     resolver: zodResolver(decisionFormSchema),
     defaultValues: { reason: '' },
   });
+
+  // T-404 (A02-rechazar): rechazo con motivo de lista y mensaje para el postulante.
+  const [rejectApplicantOpen, setRejectApplicantOpen] = React.useState(false);
+  const rejectApplicantForm = useForm<RejectApplicantFormInput>({
+    resolver: zodResolver(rejectApplicantFormSchema),
+    defaultValues: { message: '' },
+  });
+  const rejectOption = rejectApplicantForm.watch('option');
 
   // Diálogo y formulario de rechazo documental específico
   const [rejectDocDialogOpen, setRejectDocDialogOpen] = React.useState(false);
@@ -283,6 +303,32 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
     }
   });
 
+  function closeRejectApplicant() {
+    setRejectApplicantOpen(false);
+    setDecisionError(null);
+    rejectApplicantForm.reset({ message: '' });
+  }
+
+  const onRejectApplicantSubmit = rejectApplicantForm.handleSubmit(async (data) => {
+    if (decisionInFlight.current) return;
+    decisionInFlight.current = true;
+    setDecisionError(null);
+    try {
+      const res = await rejectCourierAction({ courierId: applicant.id, option: data.option, message: data.message });
+      if (!res.ok) {
+        showDecisionError(courierDecisionErrorMessage(res.code));
+        return;
+      }
+      notify.success(ADMIN_COPY.detail.success.applicantRejected);
+      closeRejectApplicant();
+      router.refresh();
+    } catch {
+      showDecisionError(ADMIN_COPY.detail.errors.decisionConnection);
+    } finally {
+      decisionInFlight.current = false;
+    }
+  });
+
   return (
     <div className="space-y-6">
       {/* Navegación de regreso */}
@@ -295,109 +341,47 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
         </Link>
       </div>
 
-      {/* Encabezado y datos del postulante */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-border pb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">{applicant.fullName}</h1>
-            <Badge
-              variant={
-                applicant.status === 'approved'
-                  ? 'default'
-                  : applicant.status === 'rejected' || applicant.status === 'suspended'
-                  ? 'destructive'
-                  : 'secondary'
-              }
-            >
-              {ADMIN_COPY.applicantStatus[applicant.status]}
-            </Badge>
-          </div>
-          <div className="mt-1 flex flex-wrap gap-4 text-sm text-muted-foreground">
-            <div>
-              {ADMIN_COPY.detail.labels.dniHash}: <span className="font-mono text-foreground">{applicant.dniHash}</span>
-            </div>
-            {applicant.phone ? (
-              <div>
-                {ADMIN_COPY.detail.labels.phone}: <span className="font-medium text-foreground">{applicant.phone}</span>
-              </div>
-            ) : null}
-            <div>
-              {ADMIN_COPY.detail.labels.vehicle}: <span className="font-medium text-foreground">{ADMIN_COPY.vehicleType[applicant.vehicleType]}</span>
-              {applicant.vehiclePlate ? ` (${applicant.vehiclePlate})` : ''}
-            </div>
-            <div>
-              {ADMIN_COPY.detail.labels.level}: <span className="font-semibold text-foreground">{ADMIN_COPY.queue.level(applicant.docLevel)}</span>
-            </div>
-          </div>
+      {/* Encabezado */}
+      <div className="border-b border-border pb-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{applicant.fullName}</h1>
+          <Badge
+            variant={
+              applicant.status === 'approved'
+                ? 'default'
+                : applicant.status === 'rejected' || applicant.status === 'suspended'
+                ? 'destructive'
+                : 'secondary'
+            }
+          >
+            {ADMIN_COPY.applicantStatus[applicant.status]}
+          </Badge>
         </div>
-
-        {/* Acciones principales de decisión */}
-        <div className="flex flex-wrap items-center gap-2">
-          {applicant.status === 'pending' ? (
-            <>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => openDecisionModal('rejected')}
-              >
-                {ADMIN_COPY.detail.applicantActions.reject}
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => openDecisionModal('approved')}
-              >
-                {ADMIN_COPY.detail.applicantActions.approve}
-              </Button>
-            </>
-          ) : applicant.status === 'approved' ? (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => openDecisionModal('suspended')}
-            >
-              {ADMIN_COPY.detail.applicantActions.suspend}
-            </Button>
-          ) : applicant.status === 'suspended' ? (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => openDecisionModal('reactivate')}
-            >
-              {ADMIN_COPY.detail.applicantActions.reactivate}
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openDecisionModal('reconsider')}
-            >
-              {ADMIN_COPY.detail.applicantActions.reconsider}
-            </Button>
-          )}
-        </div>
+        <p className="mt-1 text-sm font-medium text-foreground">
+          {applicant.hasDni ? ADMIN_COPY.queue.dniLoaded : ADMIN_COPY.queue.dniPending}
+        </p>
       </div>
 
-      {/* Banner inmutable de seguridad y auditoría A02 */}
-      <div className="rounded-lg border badge-warning p-4 text-sm shadow-sm flex items-start gap-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+      {/* Columna izquierda (60 %): aviso de auditoría y visor actual */}
+      <div className="space-y-4 lg:col-span-3">
+      <div className="rounded-lg border badge-warning p-4 text-sm shadow-sm flex items-center gap-3" role="note">
         <svg
-          className="h-5 w-5 mt-0.5 shrink-0"
+          className="h-5 w-5 shrink-0"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
           aria-hidden="true"
         >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth="2"
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
           />
         </svg>
-        <div>
-          <span className="font-semibold">{ADMIN_COPY.detail.auditBannerTitle}</span>{' '}
-          {ADMIN_COPY.detail.auditBannerText}
-        </div>
+        <span className="font-semibold">{ADMIN_COPY.detail.viewerAuditNotice}</span>
       </div>
 
       {/* Tabs oficiales de documentos y visor A02 */}
@@ -407,9 +391,9 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
         orientation="vertical"
         className="w-full"
       >
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
           {/* Selector lateral oficial de documentos con TabsList */}
-          <Card className="lg:col-span-1 border border-border shadow-sm">
+          <Card className="xl:col-span-1 border border-border shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">
                 {ADMIN_COPY.detail.documentationTitle(applicant.documents.length)}
@@ -431,6 +415,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                   >
                     <span className="truncate">
                       {ADMIN_COPY.documentKind[doc.documentType]}
+                      {doc.vehicle && ` · ${documentVehicleLabel(doc.vehicle)}`}
                       {doc.isCurrent === false && ' (Histórico)'}
                     </span>
                     <span className="text-sm shrink-0 ml-2">
@@ -449,7 +434,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           </Card>
 
           {/* Panel central del visor con TabsContent */}
-          <div className="lg:col-span-3">
+          <div className="xl:col-span-3">
             {applicant.documents.length === 0 ? (
               <Card className="border border-border shadow-sm">
                 <CardContent className="p-6 text-center text-sm text-muted-foreground">
@@ -466,6 +451,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                         <div>
                           <CardTitle className="text-base font-semibold">
                             {ADMIN_COPY.documentKind[doc.documentType]}
+                            {doc.vehicle && ` · ${documentVehicleLabel(doc.vehicle)}`}
                           </CardTitle>
                           <CardDescription className="text-sm">
                             {ADMIN_COPY.detail.labels.state}:{' '}
@@ -650,6 +636,102 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           </div>
         </div>
       </Tabs>
+      </div>
+
+      {/* Columna derecha (40 %): datos sin CBU ni DNI, consentimientos e historial */}
+      <aside className="space-y-4 lg:col-span-2">
+        <Card className="border border-border shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">{ADMIN_COPY.detail.dataTitle}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">{ADMIN_COPY.detail.dataLabels.name}</dt>
+              <dd className="col-span-2 font-medium text-foreground">{applicant.fullName}</dd>
+              <dt className="text-muted-foreground">{ADMIN_COPY.detail.dataLabels.phone}</dt>
+              <dd className="col-span-2 font-medium text-foreground">{applicant.phone || '—'}</dd>
+              <dt className="text-muted-foreground">{ADMIN_COPY.detail.dataLabels.vehicle}</dt>
+              <dd className="col-span-2 font-medium text-foreground">
+                {ADMIN_COPY.detail.vehicleWithPlate(ADMIN_COPY.vehicleType[applicant.vehicleType], applicant.vehiclePlate)}
+              </dd>
+              <dt className="text-muted-foreground">{ADMIN_COPY.detail.dataLabels.registeredAt}</dt>
+              <dd className="col-span-2 font-medium text-foreground">{formatDate(applicant.createdAt)}</dd>
+              <dt className="text-muted-foreground">{ADMIN_COPY.detail.dataLabels.level}</dt>
+              <dd className="col-span-2 font-semibold text-foreground">{ADMIN_COPY.queue.level(applicant.docLevel)}</dd>
+            </dl>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">{ADMIN_COPY.detail.consentsTitle}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {applicant.consents && applicant.consents.length > 0 ? (
+              <ul aria-label={ADMIN_COPY.detail.consentsTitle} className="space-y-2 text-sm">
+                {applicant.consents.map((consent) => (
+                  <li key={`${consent.document}-${consent.version}`}>
+                    <span className="font-medium text-foreground">
+                      {ADMIN_COPY.detail.consentDocument[consent.document]}
+                    </span>
+                    <span className="block text-muted-foreground">
+                      {ADMIN_COPY.detail.consentLine(consent.version, formatDate(consent.acceptedAt, 'dateTime'))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.consentsEmpty}</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">{ADMIN_COPY.detail.historyTitle}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ApplicantHistory events={applicant.history ?? []} courierId={applicant.id} />
+          </CardContent>
+        </Card>
+      </aside>
+      </div>
+
+      {/* Barra de acciones fija (A02): sticky reserva su alto, así no tapa contenido */}
+      <div
+        role="toolbar"
+        aria-label={ADMIN_COPY.detail.actionsBarLabel}
+        className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background py-3"
+      >
+        {applicant.status === 'pending' ? (
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDecisionError(null);
+                setRejectApplicantOpen(true);
+              }}
+            >
+              {ADMIN_COPY.detail.applicantActions.reject}
+            </Button>
+            <Button variant="default" onClick={() => openDecisionModal('approved')}>
+              {ADMIN_COPY.detail.applicantActions.approve}
+            </Button>
+          </>
+        ) : applicant.status === 'approved' ? (
+          <Button variant="destructive" onClick={() => openDecisionModal('suspended')}>
+            {ADMIN_COPY.detail.applicantActions.suspend}
+          </Button>
+        ) : applicant.status === 'suspended' ? (
+          <Button variant="default" onClick={() => openDecisionModal('reactivate')}>
+            {ADMIN_COPY.detail.applicantActions.reactivate}
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => openDecisionModal('reconsider')}>
+            {ADMIN_COPY.detail.applicantActions.reconsider}
+          </Button>
+        )}
+      </div>
 
       {/* Dialog oficial de decisión sobre el postulante */}
       <Dialog
@@ -716,14 +798,107 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
               </Button>
               <Button
                 type="submit"
-                variant={
-                  decisionModal === 'rejected' || decisionModal === 'suspended' ? 'destructive' : 'default'
-                }
+                variant={decisionModal === 'suspended' ? 'destructive' : 'default'}
                 disabled={decisionForm.formState.isSubmitting}
               >
                 {decisionForm.formState.isSubmitting
                   ? ADMIN_COPY.detail.decisionDialogProcessing
                   : ADMIN_COPY.detail.decisionDialogConfirm}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* T-404 (A02-rechazar): motivo de lista + mensaje para el postulante */}
+      <Dialog
+        open={rejectApplicantOpen}
+        onOpenChange={(open) => {
+          if (!open) closeRejectApplicant();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{ADMIN_COPY.detail.rejectApplicant.title(applicant.fullName)}</DialogTitle>
+            <DialogDescription>{ADMIN_COPY.detail.rejectApplicant.description}</DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={onRejectApplicantSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="reject-applicant-option" className="block text-sm font-medium text-foreground">
+                {ADMIN_COPY.detail.rejectApplicant.optionLabel} <span className="text-destructive">*</span>
+              </label>
+              <Select
+                value={rejectOption ?? ''}
+                onValueChange={(value) =>
+                  rejectApplicantForm.setValue('option', value as RejectApplicantFormInput['option'], {
+                    shouldValidate: true,
+                  })
+                }
+              >
+                <SelectTrigger
+                  id="reject-applicant-option"
+                  hasError={Boolean(rejectApplicantForm.formState.errors.option)}
+                  aria-describedby={
+                    rejectApplicantForm.formState.errors.option ? 'reject-applicant-option-error' : undefined
+                  }
+                >
+                  <SelectValue placeholder={ADMIN_COPY.detail.rejectApplicant.optionPlaceholder} />
+                </SelectTrigger>
+                <SelectContent>
+                  {APPLICANT_REJECTION_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {rejectApplicantForm.formState.errors.option ? (
+                <p id="reject-applicant-option-error" className="text-sm font-medium text-destructive" role="alert">
+                  {rejectApplicantForm.formState.errors.option.message}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="reject-applicant-message" className="block text-sm font-medium text-foreground">
+                {ADMIN_COPY.detail.rejectApplicant.messageLabel}
+                {rejectOption === 'Otro' ? <span className="text-destructive"> *</span> : null}
+              </label>
+              <Textarea
+                id="reject-applicant-message"
+                rows={3}
+                maxLength={450}
+                {...rejectApplicantForm.register('message')}
+                placeholder={ADMIN_COPY.detail.rejectApplicant.messagePlaceholder}
+              />
+              <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.rejectApplicant.messageRequiredHint}</p>
+              {rejectApplicantForm.formState.errors.message ? (
+                <p className="text-sm font-medium text-destructive" role="alert">
+                  {rejectApplicantForm.formState.errors.message.message}
+                </p>
+              ) : null}
+            </div>
+
+            {decisionError ? (
+              <p className="text-sm font-medium text-destructive" role="alert">
+                {decisionError}
+              </p>
+            ) : null}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeRejectApplicant}
+                disabled={rejectApplicantForm.formState.isSubmitting}
+              >
+                {ADMIN_COPY.detail.cancelButton}
+              </Button>
+              <Button type="submit" variant="destructive" disabled={rejectApplicantForm.formState.isSubmitting}>
+                {rejectApplicantForm.formState.isSubmitting
+                  ? ADMIN_COPY.detail.rejectApplicant.processing
+                  : ADMIN_COPY.detail.rejectApplicant.confirm}
               </Button>
             </DialogFooter>
           </form>

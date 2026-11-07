@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { aguilaresLatSchema, aguilaresLngSchema } from '@/domain/schemas';
 
 import { extractValidArgentineTenDigits, isValidArgentinePhone } from '@/lib/whatsapp';
+import { requiredError } from '@/lib/zod-messages';
 
 const CONTROL_CHARS_REGEX = /[\x00-\x1F\x7F]/;
 const NOTES_CONTROL_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
@@ -9,7 +10,7 @@ const HAS_ALPHANUMERIC_REGEX = /[a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ]/;
 
 const merchantBaseFields = {
   businessName: z
-    .string({ required_error: 'El nombre del negocio es obligatorio' })
+    .string(requiredError('El nombre del negocio es obligatorio'))
     .trim()
     .min(1, 'El nombre del negocio es obligatorio')
     .max(100, 'El nombre es demasiado largo')
@@ -23,7 +24,7 @@ const merchantBaseFields = {
       message: 'El nombre debe contener al menos una letra o número',
     }),
   phone: z
-    .string({ required_error: 'El teléfono de contacto es obligatorio' })
+    .string(requiredError('El teléfono de contacto es obligatorio'))
     .trim()
     .min(1, 'El teléfono de contacto es obligatorio')
     .max(30, 'El teléfono es demasiado largo')
@@ -31,9 +32,9 @@ const merchantBaseFields = {
       message: 'El teléfono debe ser un número argentino válido (10 dígitos nacionales)',
     })
     .transform((val) => extractValidArgentineTenDigits(val)),
-  defaultPickupZoneId: z.string().uuid().nullable().optional(),
+  defaultPickupZoneId: z.string().guid().nullable().optional(),
   defaultPickupAddress: z
-    .string({ required_error: 'La dirección de retiro es obligatoria' })
+    .string(requiredError('La dirección de retiro es obligatoria'))
     .trim()
     .min(1, 'La dirección de retiro es obligatoria')
     .max(200, 'La dirección es demasiado larga')
@@ -63,7 +64,7 @@ export const merchantOnboardingSchema = z
   .object({
     ...merchantBaseFields,
     acceptPilotTerms: z.literal(true, {
-      errorMap: () => ({ message: 'Tenés que aceptar los Términos del piloto' }),
+      error: 'Tenés que aceptar los Términos del piloto',
     }),
     pilotTermsVersion: z.string().trim().min(1),
   })
@@ -114,7 +115,7 @@ export const merchantUpdateSchema = z
       })
       .transform((val) => extractValidArgentineTenDigits(val))
       .optional(),
-    defaultPickupZoneId: z.string().uuid().nullable().optional(),
+    defaultPickupZoneId: z.string().guid().nullable().optional(),
     defaultPickupAddress: z
       .string()
       .trim()

@@ -7,23 +7,18 @@ import type {
   PackageType,
   RecipientPaymentMethod,
 } from '@/domain/schemas';
+import { requiredError } from '@/lib/zod-messages';
 
 export type { PublicDropSummary };
 
 export const submitOfferFormSchema = z.object({
   requestId: uuidSchema,
   amountArs: z
-    .number({
-      required_error: 'Ingresá el monto de tu oferta.',
-      invalid_type_error: 'El monto debe ser un número entero.',
-    })
+    .number(requiredError('Ingresá el monto de tu oferta.', 'El monto debe ser un número entero.'))
     .int('El monto debe ser un número entero en pesos.')
     .min(1, 'El monto debe ser mayor a 0.'),
   etaMinutes: z
-    .number({
-      required_error: 'Seleccioná el tiempo estimado de llegada.',
-      invalid_type_error: 'El tiempo estimado debe ser un número.',
-    })
+    .number(requiredError('Seleccioná el tiempo estimado de llegada.', 'El tiempo estimado debe ser un número.'))
     .int()
     .min(1, 'El tiempo mínimo es 1 minuto.')
     .max(240, 'El tiempo máximo es 240 minutos (4 horas).'),
@@ -52,10 +47,7 @@ export type AcceptOfferFormInput = z.infer<typeof acceptOfferFormSchema>;
 export const takeRequestFormSchema = z.object({
   requestId: uuidSchema,
   etaMinutes: z
-    .number({
-      required_error: 'Seleccioná el tiempo estimado de llegada.',
-      invalid_type_error: 'El tiempo estimado debe ser un número.',
-    })
+    .number(requiredError('Seleccioná el tiempo estimado de llegada.', 'El tiempo estimado debe ser un número.'))
     .int()
     .min(1, 'El tiempo mínimo es 1 minuto.')
     .max(240, 'El tiempo máximo es 240 minutos (4 horas).'),

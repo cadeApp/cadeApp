@@ -9,7 +9,11 @@ export const PUSH_COPY = {
     benefitSpeedTitle: 'Cero demoras',
     benefitSpeedDesc: 'Enterate al segundo y agarrá viajes antes que nadie.',
     benefitNoSpamTitle: 'Sin spam molesto',
-    benefitNoSpamDesc: 'Solo alertas directas sobre tus pedidos activos.',
+    benefitNoSpamDesc: 'Alertas de tus pedidos y, de vez en cuando, alguna novedad de cadeApp.',
+    // T-414 (CC-040): al activar los avisos se aceptan también las novedades; la baja está en el banner del inicio.
+    benefitNewsTitle: 'Novedades y promociones',
+    benefitNewsDesc:
+      'También te avisamos promos de cadeApp. Podés dejar de recibirlas cuando quieras desde el aviso en tu inicio.',
     fallbackNote: 'Si no llegan, igual lo vas a ver en la app al abrirla.',
     statusSuccess: '¡Avisos activados con éxito!',
     statusDenied:

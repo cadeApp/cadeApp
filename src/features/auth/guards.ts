@@ -7,7 +7,8 @@ export interface AuthSession {
   readonly aal: 'aal1' | 'aal2';
   readonly consentStatus: ConsentStatus;
   /**
-   * T-334: si el comercio o repartidor terminó su onboarding (`business_name` no vacío / `vehicle_type` no nulo).
+   * T-334: si el comercio o repartidor terminó su onboarding (`business_name` no vacío / `application_submitted`,
+   * CC-043).
    * `false` lo manda al onboarding; `undefined` (dato no leído, admin o llamadores que no lo cargan) no cambia nada.
    */
   readonly onboardingComplete?: boolean;
@@ -46,20 +47,19 @@ export function getOnboardingPath(role: ProfileRole): string {
 }
 
 /**
- * T-334: interpreta la fila de `merchants` (`business_name`) o `couriers` (`vehicle_type`) leída con el cliente del
- * usuario. Sin fila → incompleto. Solo un valor explícito decide; si la columna no llega, el estado queda
- * desconocido (`undefined`) y el guard no redirige.
+ * T-334: interpreta la fila de `merchants` (`business_name`) o `couriers` (`application_submitted`, CC-043) leída
+ * con el cliente del usuario. Sin fila → incompleto. Solo un valor explícito decide; si la columna no llega, el estado
+ * queda desconocido (`undefined`) y el guard no redirige. Un vehículo cargado sin envío no cuenta como completo.
  */
 export function parseOnboardingComplete(role: ProfileRole, row: unknown): boolean | undefined {
   if (role !== 'merchant' && role !== 'courier') return undefined;
   if (row === null) return false;
   if (typeof row !== 'object' || row === undefined) return undefined;
-  const value = (row as Record<string, unknown>)[role === 'merchant' ? 'business_name' : 'vehicle_type'];
+  const value = (row as Record<string, unknown>)[role === 'merchant' ? 'business_name' : 'application_submitted'];
   if (role === 'merchant') {
     return typeof value === 'string' ? value.trim() !== '' : undefined;
   }
-  if (value === null) return false;
-  return typeof value === 'string' ? true : undefined;
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 /** Pantalla de inicio del admin. El guard la protege con MFA (AAL2). */

@@ -2,52 +2,40 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { Badge, type BadgeProps } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/ui/dialog';
 import { EmptyState } from '@/ui/empty-state';
-import { Input } from '@/ui/input';
-import { notify } from '@/ui/notify';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table';
 import { cn } from '@/ui/cn';
-import { formatPhone } from '@/lib/format';
-import { getDomainErrorMessage } from '@/lib/error-messages';
+import { formatDate, formatPhone } from '@/lib/format';
 import type { MerchantSubscriptionStatus } from '@/domain';
-import { setMerchantSubscriptionAction } from '../actions';
 import { formatCivilDate } from '../audit-format';
 import { ADMIN_COPY } from '../copy';
-import {
-  MERCHANT_PLAN_MODES,
-  merchantPlanFormSchema,
-  type MerchantPlanFormInput,
-  type MerchantPlanMode,
-} from '../schemas';
-import type { AdminMerchantListItem, AdminMerchantsResult } from '../types';
+import type { AdminMerchantListItem, AdminMerchantsResult, MerchantStatusCounts } from '../types';
+import { MerchantPlanSheet } from './merchant-plan-sheet';
 
 const COPY = ADMIN_COPY.merchants;
 
+// T-405: «Piloto» en el verde azulado de marca (`--primary` con `--primary-foreground`, AAA); «Activo» como éxito.
 const STATUS_BADGE: Record<MerchantSubscriptionStatus, BadgeProps['variant']> = {
-  pilot: 'secondary',
-  active: 'default',
+  pilot: 'default',
+  active: 'verified',
   expired: 'destructive',
   cancelled: 'outline',
 };
 
-const MODE_STATUS: Record<MerchantPlanMode, MerchantSubscriptionStatus> = {
-  paid: 'active',
-  pilot: 'pilot',
-};
+const STATUS_CHIPS = ['pilot', 'active', 'expired', 'cancelled'] as const;
+const MERCHANTS_PATH = '/admin/merchants';
+
+/** URL de A03 con el chip y el cursor; sin chip es «Todos». */
+function merchantsHref(status?: MerchantSubscriptionStatus, cursor?: string): string {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (cursor) params.set('cursor', cursor);
+  const query = params.toString();
+  return query ? `${MERCHANTS_PATH}?${query}` : MERCHANTS_PATH;
+}
 
 const HEADER_CLASS =
   'px-6 py-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground';
@@ -56,12 +44,17 @@ export interface MerchantsTableProps {
   readonly result: AdminMerchantsResult;
   /** Cursor de la página actual; si existe, se ofrece volver al inicio. */
   readonly currentCursor?: string;
+  /** T-405: conteos exactos por estado para los chips. */
+  readonly counts: MerchantStatusCounts;
+  /** T-405: chip activo; sin valor, «Todos». */
+  readonly status?: MerchantSubscriptionStatus;
 }
 
 /**
- * A03: tabla de comercios con Dialog para marcar un mes pagado o extender el piloto.
+ * A03: chips de resumen por estado, tabla de comercios y panel lateral para marcar un mes pagado o extender el
+ * piloto.
  */
-export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
+export function MerchantsTable({ result, currentCursor, counts, status }: MerchantsTableProps) {
   const [editing, setEditing] = React.useState<AdminMerchantListItem | null>(null);
 
   return (
@@ -79,6 +72,31 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
         </Link>
       </div>
 
+      <nav aria-label={COPY.chips.label}>
+        <ul className="flex flex-wrap gap-2">
+          {[undefined, ...STATUS_CHIPS].map((chip) => {
+            const selected = chip === status;
+            return (
+              <li key={chip ?? 'all'}>
+                <Link
+                  href={merchantsHref(chip)}
+                  aria-current={selected ? 'page' : undefined}
+                  className={cn(
+                    'inline-flex min-h-12 items-center gap-2 rounded-full border px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    selected
+                      ? 'border-secondary bg-secondary text-secondary-foreground'
+                      : 'border-border bg-card text-foreground hover:bg-muted'
+                  )}
+                >
+                  {chip ? COPY.chips[chip] : COPY.chips.all}
+                  <span className="tabular-nums">{chip ? counts[chip] : counts.all}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
       {result.items.length === 0 ? (
         <EmptyState title={COPY.emptyTitle} description={COPY.emptyDescription} />
       ) : (
@@ -86,6 +104,7 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
           <Table aria-label={COPY.tableLabel}>
             <TableHeader className="bg-muted/70">
               <TableRow>
+                <TableHead className={HEADER_CLASS}>{COPY.columns.registered}</TableHead>
                 <TableHead className={HEADER_CLASS}>{COPY.columns.business}</TableHead>
                 <TableHead className={HEADER_CLASS}>{COPY.columns.owner}</TableHead>
                 <TableHead className={HEADER_CLASS}>{COPY.columns.phone}</TableHead>
@@ -103,8 +122,20 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
             <TableBody className="bg-card">
               {result.items.map((merchant) => (
                 <TableRow key={merchant.id} className="hover:bg-muted/50">
+                  <TableCell className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
+                    {merchant.createdAt ? formatDate(merchant.createdAt) : COPY.empty}
+                  </TableCell>
                   <TableCell className="px-6 py-4 text-sm font-medium text-foreground">
-                    {merchant.businessName}
+                    {merchant.signupIncomplete ? (
+                      <>
+                        <span className="block">{merchant.ownerName || COPY.empty}</span>
+                        <span className="block text-sm font-normal text-muted-foreground">
+                          {merchant.businessName}
+                        </span>
+                      </>
+                    ) : (
+                      merchant.businessName
+                    )}
                   </TableCell>
                   <TableCell className="px-6 py-4 text-sm text-foreground">
                     {merchant.ownerName || COPY.empty}
@@ -155,7 +186,7 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
         <nav className="flex items-center justify-end gap-3" aria-label={COPY.paginationLabel}>
           {currentCursor ? (
             <Link
-              href="/admin/merchants"
+              href={merchantsHref(status)}
               className="inline-flex min-h-12 items-center px-2 text-sm font-medium text-muted-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {COPY.firstPage}
@@ -163,7 +194,7 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
           ) : null}
           {result.hasNextPage && result.nextCursor ? (
             <Link
-              href={`/admin/merchants?${new URLSearchParams({ cursor: result.nextCursor })}`}
+              href={merchantsHref(status, result.nextCursor)}
               className="inline-flex min-h-12 items-center rounded-md border border-border bg-card px-4 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {COPY.nextButton}
@@ -172,173 +203,7 @@ export function MerchantsTable({ result, currentCursor }: MerchantsTableProps) {
         </nav>
       ) : null}
 
-      <MerchantPlanDialog merchant={editing} onClose={() => setEditing(null)} />
+      <MerchantPlanSheet merchant={editing} onClose={() => setEditing(null)} />
     </div>
-  );
-}
-
-interface MerchantPlanDialogProps {
-  readonly merchant: AdminMerchantListItem | null;
-  readonly onClose: () => void;
-}
-
-function MerchantPlanDialog({ merchant, onClose }: MerchantPlanDialogProps) {
-  return (
-    <Dialog
-      open={merchant !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      {merchant ? (
-        <DialogContent>
-          <MerchantPlanForm key={merchant.id} merchant={merchant} onDone={onClose} />
-        </DialogContent>
-      ) : null}
-    </Dialog>
-  );
-}
-
-function MerchantPlanForm({
-  merchant,
-  onDone,
-}: {
-  readonly merchant: AdminMerchantListItem;
-  readonly onDone: () => void;
-}) {
-  const router = useRouter();
-  const [serverError, setServerError] = React.useState<string | null>(null);
-  const modeRefs = React.useRef<Record<MerchantPlanMode, HTMLButtonElement | null>>({
-    paid: null,
-    pilot: null,
-  });
-
-  const form = useForm<MerchantPlanFormInput>({
-    resolver: zodResolver(merchantPlanFormSchema),
-    defaultValues: {
-      mode: merchant.subscriptionStatus === 'pilot' ? 'pilot' : 'paid',
-      paidUntil: merchant.paidUntil ?? '',
-    },
-  });
-  const mode = form.watch('mode');
-
-  function selectMode(next: MerchantPlanMode) {
-    form.setValue('mode', next, { shouldDirty: true });
-  }
-
-  function handleModeKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
-    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-    event.preventDefault();
-    const next: MerchantPlanMode = mode === 'paid' ? 'pilot' : 'paid';
-    selectMode(next);
-    modeRefs.current[next]?.focus();
-  }
-
-  const onSubmit = form.handleSubmit(async (data) => {
-    setServerError(null);
-    try {
-      const res = await setMerchantSubscriptionAction({
-        merchantId: merchant.id,
-        subscriptionStatus: MODE_STATUS[data.mode],
-        paidUntil: data.paidUntil,
-      });
-      if (!res.ok) {
-        const message = getDomainErrorMessage(res.code);
-        setServerError(message);
-        notify.error(message);
-        return;
-      }
-      notify.success(COPY.success);
-      onDone();
-      router.refresh();
-    } catch {
-      setServerError(COPY.connectionError);
-      notify.error(COPY.connectionError);
-    }
-  });
-
-  const { errors, isSubmitting } = form.formState;
-  const dateInputId = `merchant-plan-date-${merchant.id}`;
-  const modeLabelId = `merchant-plan-mode-${merchant.id}`;
-
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>{COPY.dialog.title(merchant.businessName)}</DialogTitle>
-        <DialogDescription>{COPY.dialog.description}</DialogDescription>
-      </DialogHeader>
-
-      <form onSubmit={onSubmit} className="mt-4 space-y-4" noValidate>
-        <div className="space-y-2">
-          <p id={modeLabelId} className="text-sm font-semibold text-foreground">
-            {COPY.dialog.modeLabel}
-          </p>
-          <div role="radiogroup" aria-labelledby={modeLabelId} className="grid grid-cols-2 gap-3">
-            {MERCHANT_PLAN_MODES.map((option) => {
-              const checked = mode === option;
-              const helpId = `merchant-plan-mode-${option}-help-${merchant.id}`;
-              return (
-                <div key={option} className="space-y-1.5">
-                  <Button
-                    ref={(node) => {
-                      modeRefs.current[option] = node;
-                    }}
-                    type="button"
-                    role="radio"
-                    aria-checked={checked}
-                    aria-describedby={helpId}
-                    tabIndex={checked ? 0 : -1}
-                    variant={checked ? 'default' : 'outline'}
-                    size="sm"
-                    className="w-full"
-                    onClick={() => selectMode(option)}
-                    onKeyDown={handleModeKeyDown}
-                  >
-                    {COPY.dialog.modes[option]}
-                  </Button>
-                  <p id={helpId} className="text-sm text-muted-foreground">
-                    {COPY.dialog.modeHelp[option]}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <label htmlFor={dateInputId} className="block text-sm font-semibold text-foreground">
-            {COPY.dialog.dateLabel[mode]}
-          </label>
-          <Input
-            id={dateInputId}
-            type="date"
-            aria-invalid={Boolean(errors.paidUntil)}
-            {...form.register('paidUntil')}
-          />
-          {errors.paidUntil ? (
-            <p className="text-sm font-medium text-destructive" role="alert">
-              {errors.paidUntil.message}
-            </p>
-          ) : null}
-        </div>
-
-        <p className="text-sm text-muted-foreground">{COPY.dialog.paymentNote}</p>
-
-        {serverError ? (
-          <p className="text-sm font-medium text-destructive" role="alert">
-            {serverError}
-          </p>
-        ) : null}
-
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onDone} disabled={isSubmitting}>
-            {COPY.dialog.cancel}
-          </Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? COPY.dialog.saving : COPY.dialog.save}
-          </Button>
-        </DialogFooter>
-      </form>
-    </>
   );
 }

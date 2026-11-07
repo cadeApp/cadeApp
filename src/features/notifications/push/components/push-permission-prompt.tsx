@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Bell, BellOff, CheckCircle2, Info, ShieldCheck, Zap } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, CheckCircle2, Info, Megaphone, ShieldCheck, Zap } from 'lucide-react';
+import { setPromotionsOptInAction } from '@/features/announcements';
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
 import { cn } from '@/ui/cn';
@@ -152,6 +153,13 @@ export function PushPermissionPrompt({
     // Alta confirmada en backend y browser: marcar éxito y disparar onSuccess
     setStatus('granted');
 
+    // T-414 (CC-040): aceptar los avisos incluye las novedades. Best-effort: si falla, los avisos quedan activos.
+    try {
+      await setPromotionsOptInAction(true);
+    } catch {
+      // Sin aceptación registrada solo no llegan promos por push; el banner del inicio las sigue mostrando.
+    }
+
     setTimeout(() => {
       if (onSuccess) {
         onSuccess();
@@ -240,6 +248,16 @@ export function PushPermissionPrompt({
                 {PUSH_COPY.prompt.benefitNoSpamTitle}
               </p>
               <p className="text-sm text-muted-foreground">{PUSH_COPY.prompt.benefitNoSpamDesc}</p>
+            </div>
+          </div>
+
+          <div className="shadow-xs flex items-center gap-3.5 rounded-xl border border-border/40 bg-card p-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Megaphone className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-semibold text-foreground">{PUSH_COPY.prompt.benefitNewsTitle}</p>
+              <p className="text-sm text-muted-foreground">{PUSH_COPY.prompt.benefitNewsDesc}</p>
             </div>
           </div>
         </div>

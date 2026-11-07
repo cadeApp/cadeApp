@@ -1,0 +1,153 @@
+// @vitest-environment node
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createAdminClient } from '@/server/supabase/admin';
+import {
+  announcementPushUrl,
+  buildPushPayload,
+  getAnnouncementPushRecipients,
+  sendPushNotification,
+  type PushDatabaseClient,
+  type PushSubscriptionRecord,
+  type PushTransport,
+} from './sender';
+
+vi.mock('@/server/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+vi.mock('@/server/env', () => ({
+  serverEnv: { VAPID_PRIVATE_KEY: 'test-private-key', VAPID_SUBJECT: 'mailto:test@cadeapp.com' },
+}));
+vi.mock('@/lib/env.public', () => ({ publicEnv: { NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'test-public-key' } }));
+
+const ANNOUNCEMENT_ID = '90000000-0000-4000-8000-000000000001';
+const event = {
+  event: 'announcement' as const,
+  announcementId: ANNOUNCEMENT_ID,
+  title: 'Hoy los viajes múltiples cuestan 1 crédito',
+  body: 'Aprovechá la promo de hoy.',
+  url: '/merchant/plan' as const,
+};
+
+describe('T-414 / CC-040: evento push announcement', () => {
+  it('el payload lleva solo id, título, texto y una url de la lista fija', () => {
+    expect(buildPushPayload(event)).toEqual(event);
+    expect(() => buildPushPayload({ ...event, extra: 1 } as never)).toThrow();
+    expect(() => buildPushPayload({ ...event, title: 'x'.repeat(61) })).toThrow();
+    expect(() => buildPushPayload({ ...event, body: '' })).toThrow();
+    expect(() => buildPushPayload({ ...event, url: 'https://evil.example/' } as never)).toThrow();
+    expect(() => buildPushPayload({ ...event, announcementId: 'no-uuid' })).toThrow();
+  });
+
+  it('la url sale de la acción o de la home del público', () => {
+    expect(announcementPushUrl('merchants', 'merchant_plan')).toBe('/merchant/plan');
+    expect(announcementPushUrl('merchants', 'merchant_new_request')).toBe('/merchant/requests/new');
+    expect(announcementPushUrl('couriers', 'courier_feed')).toBe('/courier/feed');
+    expect(announcementPushUrl('merchants', 'none')).toBe('/merchant/dashboard');
+    expect(announcementPushUrl('couriers', 'none')).toBe('/courier/feed');
+    expect(announcementPushUrl('all', 'none')).toBe('/login');
+  });
+});
+
+describe('T-414: envío en tandas de 10', () => {
+  /** Vacía la cola de microtareas: el sender encadena awaits sin timers, así que alcanza con unos pocos ticks. */
+  async function flushMicrotasks(): Promise<void> {
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+  }
+
+  it('PR542-H06: nunca hay más de 10 envíos en vuelo y se mandan todos (barrera sin timers)', async () => {
+    const subscriptions: PushSubscriptionRecord[] = Array.from({ length: 25 }, (_, index) => ({
+      id: `sub-${index}`,
+      userId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      endpoint: `https://push.example.com/sub/${index}`,
+      p256dh: 'p256dh',
+      auth: 'auth',
+    }));
+    const db: PushDatabaseClient = {
+      getSubscriptionsForUsers: vi.fn(async () => subscriptions),
+      deleteSubscriptionByEndpoint: vi.fn(async () => undefined),
+    };
+    let started = 0;
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const pending: Array<() => void> = [];
+    const transport: PushTransport = {
+      send: vi.fn(
+        () =>
+          new Promise<{ status: number }>((resolve) => {
+            started += 1;
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            pending.push(() => {
+              inFlight -= 1;
+              resolve({ status: 201 });
+            });
+          })
+      ),
+    };
+    const releaseBatch = async () => {
+      pending.splice(0).forEach((release) => release());
+      await flushMicrotasks();
+    };
+
+    const run = sendPushNotification(
+      subscriptions.map((sub) => sub.userId),
+      event,
+      { db, transport }
+    );
+
+    await flushMicrotasks();
+    expect(started).toBe(10);
+    expect(maxInFlight).toBe(10);
+
+    await releaseBatch();
+    expect(started).toBe(20);
+    await releaseBatch();
+    expect(started).toBe(25);
+    await releaseBatch();
+
+    const result = await run;
+    expect(maxInFlight).toBe(10);
+    expect(result.sentCount).toBe(25);
+    expect(result.attempts).toHaveLength(25);
+  });
+});
+
+describe('T-414: destinatarios del push de una novedad', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('los pide a announcement_push_recipients con el cliente de servicio', async () => {
+    const range = vi.fn().mockResolvedValue({ data: ['00000000-0000-4000-8000-000000400002'], error: null });
+    const rpc = vi.fn().mockReturnValue({ range });
+    vi.mocked(createAdminClient).mockReturnValue({ rpc } as unknown as ReturnType<typeof createAdminClient>);
+
+    await expect(getAnnouncementPushRecipients(ANNOUNCEMENT_ID)).resolves.toEqual([
+      '00000000-0000-4000-8000-000000400002',
+    ]);
+    expect(rpc).toHaveBeenCalledWith('announcement_push_recipients', { p_announcement_id: ANNOUNCEMENT_ID });
+    expect(range).toHaveBeenCalledWith(0, 999);
+  });
+
+  it('PR542-H03: pagina de a 1000 hasta traer todos los destinatarios', async () => {
+    const all = Array.from({ length: 2500 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`);
+    const range = vi.fn(async (from: number, to: number) => ({ data: all.slice(from, to + 1), error: null }));
+    const rpc = vi.fn().mockReturnValue({ range });
+    vi.mocked(createAdminClient).mockReturnValue({ rpc } as unknown as ReturnType<typeof createAdminClient>);
+
+    await expect(getAnnouncementPushRecipients(ANNOUNCEMENT_ID)).resolves.toEqual(all);
+    expect(range.mock.calls).toEqual([
+      [0, 999],
+      [1000, 1999],
+      [2000, 2999],
+    ]);
+  });
+
+  it('un error o una respuesta fuera de forma se lanzan', async () => {
+    const failing = vi.fn().mockReturnValue({
+      range: vi.fn().mockResolvedValue({ data: null, error: { message: 'permission denied' } }),
+    });
+    vi.mocked(createAdminClient).mockReturnValue({ rpc: failing } as unknown as ReturnType<typeof createAdminClient>);
+    await expect(getAnnouncementPushRecipients(ANNOUNCEMENT_ID)).rejects.toThrow('permission denied');
+
+    const malformed = vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: ['no-uuid'], error: null }) });
+    vi.mocked(createAdminClient).mockReturnValue({ rpc: malformed } as unknown as ReturnType<typeof createAdminClient>);
+    await expect(getAnnouncementPushRecipients(ANNOUNCEMENT_ID)).rejects.toThrow();
+  });
+});

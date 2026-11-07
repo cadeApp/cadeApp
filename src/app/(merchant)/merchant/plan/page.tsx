@@ -8,43 +8,19 @@ import { cn } from '@/ui/cn';
 import { Store, MapPin, Phone, MessageCircle, Info, LogOut } from 'lucide-react';
 import {
   PublicationBalanceSection,
+  PublicationOfferSection,
+  buildSupportWhatsAppHref,
   getMerchantAccountProfile,
   getMyPublicationBalance,
+  getPublicationOffer,
 } from '@/features/merchants/server';
 import { logoutAction } from '@/features/auth/server';
-import { buildWhatsAppUrl } from '@/lib/whatsapp';
-import { z } from 'zod';
-
-/** Soporte configurado desde el servidor. Nunca construir un wa.me sin destinatario. */
-function getSupportWhatsAppHref(rawPhone: string | undefined): string | null {
-  const parsed = z.string().trim().regex(/^[+()\d\s-]{10,32}$/).safeParse(rawPhone);
-  if (!parsed.success) return null;
-
-  // Un prefijo internacional parcial no puede tratarse como diez dígitos nacionales.
-  // El helper compartido acepta dígitos sin prefijo: comprobamos aquí la forma internacional.
-  const digits = parsed.data.replace(/\D/g, '');
-  const incompleteInternationalPrefix = digits.startsWith('549')
-    ? digits.length !== 13
-    : digits.startsWith('54') && digits.length !== 12;
-  if (incompleteInternationalPrefix) {
-    return null;
-  }
-
-  try {
-    return buildWhatsAppUrl(
-      parsed.data,
-      'Hola cadeApp, quiero consultar sobre los planes para comercios.'
-    );
-  } catch {
-    // El helper también comprueba que el número nacional argentino tenga 10 dígitos.
-    return null;
-  }
-}
 
 export default async function MerchantPlanPage() {
-  const [profile, balance] = await Promise.all([
+  const [profile, balance, offer] = await Promise.all([
     getMerchantAccountProfile(),
     getMyPublicationBalance(),
+    getPublicationOffer(),
   ]);
 
   async function handleLogout() {
@@ -92,7 +68,12 @@ export default async function MerchantPlanPage() {
     );
   }
 
-  const supportWhatsAppHref = getSupportWhatsAppHref(process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER);
+  // Soporte configurado desde el servidor; sin número válido no hay enlace (nunca un wa.me sin destinatario).
+  const supportPhone = process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER;
+  const supportWhatsAppHref = buildSupportWhatsAppHref(
+    supportPhone,
+    'Hola cadeApp, quiero consultar sobre los planes para comercios.'
+  );
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
@@ -159,6 +140,9 @@ export default async function MerchantPlanPage() {
 
       {/* Sección 2: Mi plan (C08, CC-029): saldo y plan reales de get_my_publication_balance */}
       <PublicationBalanceSection result={balance} />
+
+      {/* Sección 2b: planes disponibles (CC-039), con pedido por WhatsApp al soporte */}
+      <PublicationOfferSection result={offer} supportPhone={supportPhone} />
 
       <div className="space-y-3">
         {/* Tarjeta: Después del período inicial */}

@@ -68,7 +68,7 @@ export type HistoryFilterStatus = z.infer<typeof historyFilterStatusSchema>;
 
 export const merchantHistoryCursorSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
-  id: z.string().uuid(),
+  id: z.string().guid(),
 });
 
 export interface ZoneOption {

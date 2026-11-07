@@ -1,4 +1,8 @@
-import { getAdminMerchants, parseAdminMerchantsSearchParams } from '@/features/admin/server';
+import {
+  getAdminMerchants,
+  getMerchantStatusCounts,
+  parseAdminMerchantsSearchParams,
+} from '@/features/admin/server';
 import { MerchantsTable } from '@/features/admin';
 
 export const metadata = {
@@ -7,12 +11,15 @@ export const metadata = {
 };
 
 interface MerchantsPageProps {
-  searchParams: Promise<{ cursor?: string | string[] }>;
+  searchParams: Promise<{ cursor?: string | string[]; status?: string | string[] }>;
 }
 
 export default async function MerchantsPage({ searchParams }: MerchantsPageProps) {
-  const { cursor } = parseAdminMerchantsSearchParams(await searchParams);
-  const result = await getAdminMerchants({ cursor, pageSize: 20 });
+  const { cursor, status } = parseAdminMerchantsSearchParams(await searchParams);
+  const [result, counts] = await Promise.all([
+    getAdminMerchants({ cursor, status, pageSize: 20 }),
+    getMerchantStatusCounts(),
+  ]);
 
-  return <MerchantsTable result={result} currentCursor={cursor} />;
+  return <MerchantsTable result={result} currentCursor={cursor} counts={counts} status={status} />;
 }

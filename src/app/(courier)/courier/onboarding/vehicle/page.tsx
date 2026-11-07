@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { redirect } from 'next/navigation';
-import { VehicleForm } from '@/features/courier-onboarding';
+import { COURIER_VEHICLES_COPY, CourierVehiclesManager, VehicleForm } from '@/features/courier-onboarding';
+import { getMyCourierVehicles } from '@/features/courier-onboarding/server';
 import { createClient } from '@/server/supabase/server';
 import type { VehicleType } from '@/domain/schemas';
 
@@ -24,25 +25,40 @@ export default async function CanonicalCourierOnboardingVehiclePage(
 
   const { data: courier, error: courierError } = await supabase
     .from('couriers')
-    .select('vehicle_type, vehicle_plate, status')
+    .select('vehicle_type, vehicle_plate, status, application_submitted')
     .eq('profile_id', user.id)
     .maybeSingle<{
       vehicle_type: VehicleType | null;
       vehicle_plate: string | null;
       status: string;
+      application_submitted: boolean;
     }>();
 
   if (courierError) {
     throw new Error('No se pudo consultar el legajo del repartidor.');
   }
-  // An URL parameter is not proof of completed onboarding.
-  const isEditing = Boolean(courier?.vehicle_type);
+
+  // An URL parameter is not proof of completed onboarding; CC-043: only a submitted application is.
+  // CC-042: after it, the courier manages several vehicles here (the onboarding form only creates the first one).
+  if (courier?.application_submitted === true) {
+    const vehicles = await getMyCourierVehicles();
+    return (
+      <div className="flex flex-col items-center justify-start px-4 py-6">
+        {vehicles ? (
+          <CourierVehiclesManager courierId={user.id} vehicles={vehicles} />
+        ) : (
+          <p role="alert" className="text-sm text-destructive">
+            {COURIER_VEHICLES_COPY.loadError}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center justify-start px-4 py-6">
       <VehicleForm
         courierId={user.id}
-        isEditing={isEditing}
         initialVehicleType={courier?.vehicle_type ?? undefined}
         initialVehiclePlate={courier?.vehicle_plate ?? undefined}
         courierStatus={courier?.status}
@@ -50,4 +66,3 @@ export default async function CanonicalCourierOnboardingVehiclePage(
     </div>
   );
 }
-

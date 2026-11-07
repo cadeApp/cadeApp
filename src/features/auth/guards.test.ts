@@ -7,6 +7,7 @@ import {
   isCourierRoute,
   isAdminRoute,
   isPublicRoute,
+  parseOnboardingComplete,
   resolvePostLoginRedirect,
   type AuthSession,
 } from './guards';
@@ -858,5 +859,24 @@ describe('T-334: onboarding incompleto redirige al onboarding sin loops', () => 
       };
       expect(evaluateRouteGuard('/login', reconsentCourier)).toEqual({ action: 'allow' });
     });
+  });
+});
+
+describe('CC-043: parseOnboardingComplete del repartidor lee application_submitted', () => {
+  it('true completa el onboarding, incluido un envío histórico sin fecha', () => {
+    expect(parseOnboardingComplete('courier', { application_submitted: true })).toBe(true);
+    expect(parseOnboardingComplete('courier', { application_submitted: true, submitted_at: null })).toBe(true);
+  });
+
+  it('false o sin fila lo deja incompleto, aunque haya vehículo', () => {
+    expect(parseOnboardingComplete('courier', { application_submitted: false })).toBe(false);
+    expect(parseOnboardingComplete('courier', { application_submitted: false, vehicle_type: 'moto' })).toBe(false);
+    expect(parseOnboardingComplete('courier', null)).toBe(false);
+  });
+
+  it('columna ausente o tipo raro queda desconocido (fail-open de T-334)', () => {
+    expect(parseOnboardingComplete('courier', { vehicle_type: 'moto' })).toBeUndefined();
+    expect(parseOnboardingComplete('courier', { application_submitted: 'true' })).toBeUndefined();
+    expect(parseOnboardingComplete('courier', undefined)).toBeUndefined();
   });
 });

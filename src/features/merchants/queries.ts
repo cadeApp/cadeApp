@@ -6,6 +6,7 @@ import {
   ok,
   type ActionResult,
   type PublicationBalance,
+  type PublicationOffer,
   type RpcErrorCode,
 } from '@/domain';
 import { createClient } from '@/server/supabase/server';
@@ -232,6 +233,32 @@ export async function getMyPublicationBalance(): Promise<MyPublicationBalanceRes
         allowed.includes(candidate)
           ? (candidate as RpcErrorCode<'get_my_publication_balance'>)
           : 'INTERNAL_ERROR'
+      );
+    }
+    const parsed = contract.outputSchema.safeParse(data);
+    return parsed.success ? ok(parsed.data) : err('INTERNAL_ERROR');
+  } catch {
+    return err('INTERNAL_ERROR');
+  }
+}
+
+export type PublicationOfferResult = ActionResult<PublicationOffer, RpcErrorCode<'get_publication_offer'>>;
+
+/**
+ * CC-039: planes activos, precio del crédito suelto y descuento de primera compra para el comercio autenticado
+ * (`get_publication_offer`). Como el saldo, un error se devuelve (no se lanza) para que `/merchant/plan` siga mostrando
+ * el resto de la cuenta.
+ */
+export async function getPublicationOffer(): Promise<PublicationOfferResult> {
+  const contract = RPC_CONTRACTS.get_publication_offer;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc('get_publication_offer');
+    if (error) {
+      const candidate = error.message.trim();
+      const allowed: readonly string[] = contract.errorCodes;
+      return err(
+        allowed.includes(candidate) ? (candidate as RpcErrorCode<'get_publication_offer'>) : 'INTERNAL_ERROR'
       );
     }
     const parsed = contract.outputSchema.safeParse(data);

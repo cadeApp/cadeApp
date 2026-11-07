@@ -22,7 +22,8 @@ permissions: {}
 jobs:
   mutation:
     name: e2e-mutation
-    runs-on: ubuntu-latest
+    # ubuntu-latest pasó a 26.04 y Playwright 1.55.1 no instala Chromium ahí (run 42117303547): versión fija.
+    runs-on: ubuntu-24.04
     environment: develop
     timeout-minutes: 30
     permissions:
@@ -31,6 +32,7 @@ jobs:
     concurrency:
       group: cadeapp-develop-e2e
       cancel-in-progress: false
+      queue: max
     env:
       MUTATION_CATALOG_DIR: ${{ github.workspace }}/trusted/e2e/mutations
       MUTATION_TARGET_DIR: ${{ github.workspace }}/target

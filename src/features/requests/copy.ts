@@ -63,6 +63,14 @@ export const requestsCopy = {
       'El primer repartidor aprobado y disponible que acepte quedará asignado al instante.',
     submitButton: 'Publicar solicitud',
     submittingButton: 'Publicando solicitud...',
+    locateAddressButton: 'Ubicar en el mapa',
+    locatingAddress: 'Buscando la dirección...',
+    geocodeFound: 'Revisá que el pin esté en la puerta.',
+    geocodeApproximate: 'Ubicación aproximada: mové el pin a la puerta.',
+    geocodeOutside: 'Esa dirección quedó fuera de Aguilares. Marcá el punto en el mapa.',
+    geocodeNotFound: 'No encontramos esa dirección. Marcá el punto en el mapa.',
+    geocodeUnavailable:
+      'No pudimos ubicar la dirección. Podés marcar el punto en el mapa o seguir con la dirección escrita.',
     mapOutOfAguilares:
       'La ubicación seleccionada se encuentra fuera de los límites de Aguilares. Por favor, verificá el punto en el mapa.',
     distanceEstimate: (meters: number) => `Distancia estimada: ${(meters / 1000).toFixed(1)} km`,
@@ -97,4 +105,14 @@ export const requestsCopy = {
     loadMore: 'Cargar más',
     loadingMore: 'Cargando…',
   },
+} as const;
+
+/** CC-041 (T-415): repartidores conectados ahora, antes de publicar. */
+export const onlineCouriersCopy = {
+  count: (count: number) =>
+    count === 1 ? '1 repartidor conectado ahora' : `${count} repartidores conectados ahora`,
+  // T-417: tarjeta del inicio, junto a las métricas.
+  cardTitle: 'Repartidores conectados',
+  cardNoneHint: 'Podés publicar igual: te avisamos cuando alguien oferte.',
+  unavailable: 'Sin datos',
 } as const;

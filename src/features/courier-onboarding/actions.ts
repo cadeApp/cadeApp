@@ -2,6 +2,7 @@
 
 import { createHmac } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
 import { createAdminClient } from '@/server/supabase/admin';
 import { serverEnv } from '@/server/env';
@@ -11,21 +12,45 @@ import {
   addCourierOptionalDocumentInputSchema,
   replaceCourierDocumentInputSchema,
 } from '@/domain/rpc-contracts';
+import type { RpcOutput } from '@/domain/rpc-contracts';
 import {
   addCourierOptionalDocumentRpc,
+  courierVehicleRpc,
   replaceCourierDocumentRpc,
   type AddCourierOptionalDocumentResult,
+  type CourierVehicleRpcName,
   type ReplaceCourierDocumentResult,
 } from '@/server/rpc/courier';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import type { SupabaseRpcCaller } from '@/server/rpc/offers';
-import {
-  courierOnboardingSchema,
-  courierUpdateVehicleSchema,
-  courierUpdatePhoneSchema,
-} from './schemas';
+import { courierOnboardingSchema, courierUpdatePhoneSchema } from './schemas';
 import { logoutAction } from '@/features/auth/server';
 import { areCurrentLegalVersions } from '@/features/legal';
+
+// CC-043: salida de `finalize_courier_application`; `submittedAt` es null en un histórico enviado sin fecha.
+const finalizeCourierApplicationOutputSchema = z.object({
+  ok: z.literal(true),
+  idempotent: z.boolean(),
+  submittedAt: z.string().nullable(),
+});
+
+/** CC-043: error de `finalize_courier_application` → código de la acción (actor o estado inválido → UNAUTHORIZED_ACTOR). */
+function mapFinalizeCourierApplicationError(error: { code?: string; message?: string }): DomainErrorCode {
+  const message = String(error.message ?? '').trim();
+  if (error.code === 'P0001') {
+    if (message === 'NOT_FOUND' || message === 'UNAUTHORIZED_ACTOR' || message === 'CONSENT_REQUIRED') {
+      return 'UNAUTHORIZED_ACTOR';
+    }
+    if (
+      message === 'VALIDATION_ERROR' ||
+      message === 'DNI_ALREADY_REGISTERED' ||
+      message === 'INVALID_STATE_TRANSITION'
+    ) {
+      return message;
+    }
+  }
+  return 'INTERNAL_ERROR';
+}
 
 export async function logoutCourierAction() {
   return logoutAction();
@@ -289,28 +314,27 @@ export async function courierOnboardingAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 6. Persistencia de dni_hmac y vehículo en couriers via adminClient.
-  // T-334 / D01: va al final porque vehicle_type marca el onboarding como enviado; si consentimientos o
-  // documentos fallan antes, el courier queda con vehicle_type null y el guard lo devuelve al onboarding.
-  const courierUpdatePayload: TablesUpdate<'couriers'> = {
-    dni_hmac: dniHmac,
-    vehicle_type: parsed.data.vehicleType,
-    vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
+  // 6. CC-043: el envío lo registra `finalize_courier_application` bajo el lock de couriers (DNI, vehículo, marca y
+  // fecha del servidor). Va al final: si consentimientos o documentos fallan antes, la postulación sigue sin enviar
+  // y el guard devuelve al repartidor al onboarding. Un reintento idéntico es idempotente.
+  const finalizeArgs = {
+    p_courier_id: user.id,
+    p_dni_hmac: dniHmac,
+    p_vehicle_type: parsed.data.vehicleType,
+    p_vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
   };
+  const { data: finalizeData, error: finalizeError } = await adminClient.rpc(
+    'finalize_courier_application',
+    // p_vehicle_plate es null para bici y a pie; los tipos generados no expresan argumentos nulos.
+    finalizeArgs as never
+  );
 
-  const { data: updatedCouriers, error: courierUpdateError } = await adminClient
-    .from('couriers')
-    .update(courierUpdatePayload as never)
-    .eq('profile_id', user.id)
-    .in('status', ['pending', 'approved'])
-    .select('profile_id');
-
-  if (courierUpdateError) {
-    return err('INTERNAL_ERROR');
+  if (finalizeError) {
+    return err(mapFinalizeCourierApplicationError(finalizeError));
   }
 
-  if (!updatedCouriers || (updatedCouriers as Array<{ profile_id: string }>).length !== 1) {
-    return err('UNAUTHORIZED_ACTOR');
+  if (!finalizeCourierApplicationOutputSchema.safeParse(finalizeData).success) {
+    return err('INTERNAL_ERROR');
   }
 
   // 9. Retorno ok con redirección a estado del onboarding
@@ -371,6 +395,7 @@ export async function replaceCourierDocumentAction(
     kind: parsed.data.kind,
     storagePath: parsed.data.storagePath,
     ...(parsed.data.idempotencyKey ? { idempotencyKey: parsed.data.idempotencyKey } : {}),
+    ...(parsed.data.vehicleId ? { vehicleId: parsed.data.vehicleId } : {}),
   });
 
   if (!rpcResult.ok) {
@@ -431,6 +456,7 @@ export async function addCourierOptionalDocumentAction(
     kind: parsed.data.kind,
     storagePath: parsed.data.storagePath,
     ...(parsed.data.idempotencyKey ? { idempotencyKey: parsed.data.idempotencyKey } : {}),
+    ...(parsed.data.vehicleId ? { vehicleId: parsed.data.vehicleId } : {}),
   });
 
   if (!rpcResult.ok) {
@@ -438,95 +464,59 @@ export async function addCourierOptionalDocumentAction(
   }
 
   revalidatePath('/courier/profile');
+  revalidatePath('/courier/onboarding/vehicle');
 
   return ok(rpcResult.data);
 }
 
-export interface CourierUpdateVehicleResult {
-  readonly redirectTo: string;
-}
-
-export async function updateCourierVehicleAction(
+/**
+ * CC-042 / T-419: vehículos del repartidor. Las RPC validan actor, postulación enviada, bloqueo por ofertas o viaje y
+ * patente; la acción exige la sesión y revalida las pantallas que muestran el vehículo activo.
+ */
+async function runCourierVehicleRpc<K extends CourierVehicleRpcName>(
+  rpcName: K,
   input: unknown
-): Promise<ActionResult<CourierUpdateVehicleResult, DomainErrorCode>> {
-  // 1. Cliente autenticado y verificación de sesión
+): Promise<ActionResult<RpcOutput<K>, DomainErrorCode>> {
   const supabase = await createClient();
-
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser();
-
   if (userError || !user) {
     return err('UNAUTHENTICATED');
   }
 
-  // 2. Verificación de rol del actor (debe ser courier)
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle<{ role: unknown }>();
-
-  if (profileError || !profile) {
-    return err('UNAUTHORIZED_ACTOR');
+  const result = await courierVehicleRpc(supabase, rpcName, input);
+  if (result.ok) {
+    revalidatePath('/courier/profile');
+    revalidatePath('/courier/feed');
+    revalidatePath('/courier/onboarding/vehicle');
   }
+  return result;
+}
 
-  const roleParsed = profileRoleSchema.safeParse(profile.role);
-  if (!roleParsed.success || roleParsed.data !== 'courier') {
-    return err('UNAUTHORIZED_ACTOR');
-  }
+export async function addCourierVehicleAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'add_courier_vehicle'>, DomainErrorCode>> {
+  return runCourierVehicleRpc('add_courier_vehicle', input);
+}
 
-  // 3. Validación de datos de entrada
-  const parsed = courierUpdateVehicleSchema.safeParse(input);
-  if (!parsed.success) {
-    return err('VALIDATION_ERROR');
-  }
+export async function updateCourierVehiclePlateAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'update_courier_vehicle'>, DomainErrorCode>> {
+  return runCourierVehicleRpc('update_courier_vehicle', input);
+}
 
-  // 4. Verificación de existencia del legajo courier
-  const { data: existingCourier, error: courierFetchError } = await supabase
-    .from('couriers')
-    .select('profile_id, status, vehicle_type')
-    .eq('profile_id', user.id)
-    .maybeSingle<{ profile_id: string; status: string; vehicle_type: string | null }>();
+export async function removeCourierVehicleAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'remove_courier_vehicle'>, DomainErrorCode>> {
+  return runCourierVehicleRpc('remove_courier_vehicle', input);
+}
 
-  if (courierFetchError) {
-    return err('INTERNAL_ERROR');
-  }
-  if (!existingCourier) {
-    return err('NOT_FOUND');
-  }
-  // T-334: vehicle_type is the completed-onboarding marker. Query-string edit mode
-  // does not grant the right to set it for a first-time applicant.
-  if (existingCourier.vehicle_type === null || !['pending', 'approved'].includes(existingCourier.status)) {
-    return err('INVALID_STATE_TRANSITION');
-  }
-
-  // 6. Actualización de vehículo en couriers
-  const courierUpdatePayload: TablesUpdate<'couriers'> = {
-    vehicle_type: parsed.data.vehicleType,
-    vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
-  };
-
-  const { data: updatedCourier, error: courierUpdateError } = await supabase
-    .from('couriers')
-    .update(courierUpdatePayload as never)
-    .eq('profile_id', user.id)
-    .not('vehicle_type', 'is', null)
-    .in('status', ['pending', 'approved'])
-    .select('profile_id')
-    .maybeSingle<{ profile_id: string }>();
-
-  if (courierUpdateError) {
-    return err('INTERNAL_ERROR');
-  }
-  if (!updatedCourier || updatedCourier.profile_id !== user.id) {
-    return err('NOT_FOUND');
-  }
-
-  return ok({
-    redirectTo: '/courier/profile',
-  });
+export async function setActiveCourierVehicleAction(
+  input: unknown
+): Promise<ActionResult<RpcOutput<'set_active_courier_vehicle'>, DomainErrorCode>> {
+  return runCourierVehicleRpc('set_active_courier_vehicle', input);
 }
 
 export interface CourierUpdatePhoneResult {

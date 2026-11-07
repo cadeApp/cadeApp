@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(24);
+select plan(25);
 
 create function pg_temp.merchant_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000016a1'::uuid $$;
 create function pg_temp.merchant_b() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000016a2'::uuid $$;
@@ -78,15 +78,27 @@ where id in (
   pg_temp.courier_doc1(), pg_temp.courier_doc0(), pg_temp.courier_other()
 );
 
+-- CC-043: DNI + vehículo los escribe la finalización real. Doc2 envía su postulación con los cuatro documentos
+-- obligatorios y finalize_courier_application (como service_role, el mismo camino que la app); después se aprueba.
+insert into public.courier_documents (courier_id, kind, storage_path, status)
+select pg_temp.courier_doc2(), kind::public.courier_document_kind,
+  'courier/' || pg_temp.courier_doc2()::text || '/' || kind || '_1730000000000.jpg', 'submitted'
+from unnest(array['dni_front', 'dni_back', 'selfie', 'avatar']) as kind;
+set local role service_role;
+select public.finalize_courier_application(pg_temp.courier_doc2(), pg_temp.secret_hmac(), 'moto', 'ABC 123');
+set local role postgres;
 update public.couriers
 set status = 'approved',
     available = true,
-    vehicle_type = 'moto',
-    vehicle_plate = 'PLACA16',
     license_status = 'verified',
-    insurance_status = 'verified',
-    dni_hmac = pg_temp.secret_hmac()
+    insurance_status = 'verified'
 where profile_id = pg_temp.courier_doc2();
+select ok(
+  (select application_submitted and submitted_at is not null and dni_hmac = pg_temp.secret_hmac()
+     and vehicle_type = 'moto' and vehicle_plate = 'ABC 123'
+   from public.couriers where profile_id = pg_temp.courier_doc2()),
+  'fixture: doc2 envió su postulación por finalize_courier_application'
+);
 
 update public.couriers
 set status = 'approved',
@@ -235,7 +247,7 @@ select is(
 
 select ok(
   public.get_request_offer_couriers(pg_temp.request_a())::text
-    !~ ('3865000002|3865000001|3865000000|PLACA16|approved|' || pg_temp.secret_hmac()),
+    !~ ('3865000002|3865000001|3865000000|ABC 123|approved|' || pg_temp.secret_hmac()),
   'phone, plate, approval status and dni_hmac never appear in the projection'
 );
 

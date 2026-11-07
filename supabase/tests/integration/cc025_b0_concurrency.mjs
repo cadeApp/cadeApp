@@ -60,6 +60,16 @@ function runSql(sql) {
   return res.stdout.trim();
 }
 
+// Migraciones posteriores (CC-042) redefinen lo que crea el archivo que se muta: tras restaurarlo se reaplica lo vigente.
+function snapshotCurrentDefinitions() {
+  return runSql(`select string_agg(def, E'\n') from (
+    select pg_get_functiondef(p.oid) || ';' as def from pg_proc p
+    where p.pronamespace = 'public'::regnamespace and p.proname = any(array['submit_courier_onboarding_documents'])
+    union all
+    select 'drop index if exists public.courier_documents_unique_current; ' || pg_get_indexdef('public.courier_documents_unique_current'::regclass) || ';'
+  ) s;`);
+}
+
 async function waitForBlockedSession(queryMarker, timeoutMs = 15_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -420,6 +430,7 @@ async function testConsentRevocationWhileWaitingForLock() {
 async function runMutationCheck() {
   console.log('[CC-025-B0] Test 5: Control de mutación RED->GREEN (--mutation-check) (H02)...');
   const originalSql = fs.readFileSync(migrationPath, 'utf8');
+  const currentSql = snapshotCurrentDefinitions();
 
   // Mutación: eliminar "for update" de la sentencia de lock sobre couriers
   const mutatedSql = originalSql.replace(
@@ -525,6 +536,7 @@ async function runMutationCheck() {
 
     // 3. Restaurar migración original (GREEN)
     runSql(originalSql);
+    runSql(currentSql);
     console.log('  -> Restauración GREEN: RPC reinstalada con lock for update');
 
     // 4. Verificar GREEN con la misma interleaving: S2 debe bloquearse y fallar con VALIDATION_ERROR (paths distintos) y triunfar con reused_count=4 (paths iguales)
@@ -580,6 +592,7 @@ async function runMutationCheck() {
         where (is_current = true);
     `);
     runSql(originalSql);
+    runSql(currentSql);
   }
 }
 

@@ -10,6 +10,7 @@ import { Badge } from '@/ui/badge';
 import { EmptyState } from '@/ui/empty-state';
 import { buttonVariants } from '@/ui/button';
 import { cn } from '@/ui/cn';
+import { summarizeDropOutcome, toDropOutcomeStatus } from '@/features/trips';
 import type { MerchantRequestSummary } from '../types';
 
 type FilterTab = 'all' | 'delivered' | 'cancelled' | 'expired';
@@ -31,10 +32,25 @@ function getDateGroupLabel(dateIso: string): string {
   });
 }
 
-function getStatusBadgeConfig(status: MerchantRequestSummary['status']) {
-  switch (status) {
-    case 'delivered':
+function getStatusBadgeConfig(req: MerchantRequestSummary) {
+  switch (req.status) {
+    case 'delivered': {
+      // T-393: CC-022 §6 cierra en delivered aunque alguna entrega no se haya hecho.
+      const summary = summarizeDropOutcome(
+        req.drops?.map((d) => ({ status: toDropOutcomeStatus(d.status) })),
+        req.status
+      );
+      if (summary.outcome === 'partial') {
+        return {
+          variant: 'partial' as const,
+          label: `Entrega parcial · ${summary.delivered} de ${summary.total}`,
+        };
+      }
+      if (summary.outcome === 'none_delivered') {
+        return { variant: 'cancelled' as const, label: 'No entregada' };
+      }
       return { variant: 'delivered' as const, label: 'Entregada' };
+    }
     case 'cancelled':
       return { variant: 'cancelled' as const, label: 'Cancelada' };
     case 'expired':
@@ -180,7 +196,7 @@ export function MerchantHistoryView({
               </h2>
               <div className="space-y-2.5">
                 {grouped[dateLabel]?.map((req) => {
-                  const badge = getStatusBadgeConfig(req.status);
+                  const badge = getStatusBadgeConfig(req);
                   const hasAcceptedOffer =
                     Boolean(req.acceptedOfferId) &&
                     typeof req.acceptedAmountArs === 'number' &&

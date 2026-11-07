@@ -17,6 +17,9 @@ import { PUSH_COPY } from './push/copy';
 
 // T-382 (PR459-H05): la baja pendiente es de la cuenta logueada; la sesión del navegador se controla por test.
 const session = vi.hoisted(() => ({ userId: 'user-a' as string | null }));
+// T-414: el alta de promociones al activar los avisos es una server action de la feature de novedades.
+const promotions = vi.hoisted(() => ({ setOptIn: vi.fn() }));
+vi.mock('@/features/announcements', () => ({ setPromotionsOptInAction: promotions.setOptIn }));
 const USER_A = 'user-a';
 const USER_B = 'user-b';
 
@@ -659,6 +662,60 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       await waitFor(() => {
         expect(screen.getByText(/¡Avisos activados con éxito!/i)).toBeTruthy();
       });
+    });
+
+    it('T-414: el permiso suma el punto de novedades y promociones, y al activar registra la aceptación', async () => {
+      promotions.setOptIn.mockResolvedValue({ ok: true, data: { enabled: true } });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })));
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready: Promise.resolve({
+            pushManager: {
+              getSubscription: vi.fn().mockResolvedValue(null),
+              subscribe: vi.fn().mockResolvedValue({
+                endpoint: 'https://push.example.com/sub/promo',
+                toJSON: () => ({ endpoint: 'https://push.example.com/sub/promo', keys: { p256dh: 'p', auth: 'a' } }),
+              }),
+            },
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(React.createElement(PushPermissionPrompt, { onSuccess: vi.fn() }));
+      expect(screen.getByText(PUSH_COPY.prompt.benefitNewsTitle)).toBeTruthy();
+      expect(screen.getByText(PUSH_COPY.prompt.benefitNewsDesc)).toBeTruthy();
+      expect(screen.queryByText(/Solo alertas directas sobre tus pedidos activos/)).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: /Activar avisos/i }));
+      await waitFor(() => expect(screen.getByText(/¡Avisos activados con éxito!/i)).toBeTruthy());
+      expect(promotions.setOptIn).toHaveBeenCalledWith(true);
+    });
+
+    it('T-414: si registrar la aceptación falla, los avisos quedan activos igual', async () => {
+      promotions.setOptIn.mockRejectedValue(new Error('offline'));
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })));
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready: Promise.resolve({
+            pushManager: {
+              getSubscription: vi.fn().mockResolvedValue(null),
+              subscribe: vi.fn().mockResolvedValue({
+                endpoint: 'https://push.example.com/sub/promo-fail',
+                toJSON: () => ({ endpoint: 'https://push.example.com/sub/promo-fail', keys: { p256dh: 'p', auth: 'a' } }),
+              }),
+            },
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(React.createElement(PushPermissionPrompt, { onSuccess: vi.fn() }));
+      fireEvent.click(screen.getByRole('button', { name: /Activar avisos/i }));
+      await waitFor(() => expect(screen.getByText(/¡Avisos activados con éxito!/i)).toBeTruthy());
+      expect(promotions.setOptIn).toHaveBeenCalledWith(true);
     });
 
     it('DoD: si el permiso está denegado, T02 muestra explicación sin bloquear ni romper', () => {
