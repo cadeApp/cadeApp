@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { AlertTriangle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { z } from 'zod';
@@ -82,9 +83,17 @@ export interface PlatformSettingsFormProps {
 export function PlatformSettingsForm({ settings }: PlatformSettingsFormProps) {
   return (
     <div className="space-y-4">
-      <Card className="border border-border bg-muted/70 p-4 shadow-none">
-        <p className="text-sm font-semibold text-foreground">{COPY.warningTitle}</p>
-        <p className="text-sm text-muted-foreground">{COPY.warning}</p>
+      {/* T-406: tono de advertencia de los tokens (`badge-warning`: contraste AA verificado en ui-system). */}
+      <Card
+        role="note"
+        data-testid="platform-settings-warning"
+        className="badge-warning flex gap-3 border p-4 shadow-none"
+      >
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-semibold">{COPY.warningTitle}</p>
+          <p className="text-sm">{COPY.warning}</p>
+        </div>
       </Card>
 
       <ValueSettingRow

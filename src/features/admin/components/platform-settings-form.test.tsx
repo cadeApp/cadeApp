@@ -61,6 +61,16 @@ describe('T-123: PlatformSettingsForm (A04)', () => {
     expect(pilotSwitch().getAttribute('aria-checked')).toBe('true');
   });
 
+  it('T-406: el aviso «los cambios aplican al instante» usa el tono de advertencia con ícono', () => {
+    render(<PlatformSettingsForm settings={settings} />);
+    const notice = screen.getByRole('note');
+    expect(notice.textContent).toMatch(/aplican al instante/i);
+    expect(notice.className).toContain('badge-warning');
+    expect(notice.className).not.toMatch(/bg-muted|text-muted-foreground/);
+    expect(notice.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(notice.querySelector('.text-muted-foreground')).toBeNull();
+  });
+
   it('refleja el piloto apagado cuando el servidor lo informa', () => {
     render(<PlatformSettingsForm settings={{ ...settings, pilotActive: false }} />);
     expect(pilotSwitch().getAttribute('aria-checked')).toBe('false');
