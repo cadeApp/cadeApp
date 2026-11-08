@@ -281,15 +281,21 @@ select set_config('app.courier_application_finalize', 'on', true);
 select throws_ok($$ update public.couriers set application_submitted = true where profile_id = pg_temp.c(10) $$,
   'P0001', 'VALIDATION_ERROR', 'repartidor con la marca fijada a mano tampoco (no es el dueño)');
 select set_config('app.courier_application_finalize', 'off', true);
+-- CC-047: el admin ya no tiene policy de UPDATE sobre couriers, así que la fila no le llega al trigger: el UPDATE
+-- directo no da error pero no cambia nada (se verifica abajo como service_role).
 select pg_temp.act_as(pg_temp.admin(), 'aal2');
-select throws_ok($$ update public.couriers set application_submitted = true where profile_id = pg_temp.c(10) $$,
-  'P0001', 'VALIDATION_ERROR', 'admin aal2 no marca un envío');
-select throws_ok($$ update public.couriers set submitted_at = null where profile_id = pg_temp.c(1) $$,
-  'P0001', 'VALIDATION_ERROR', 'admin no borra una fecha');
+select lives_ok($$ update public.couriers set application_submitted = true where profile_id = pg_temp.c(10) $$,
+  'admin aal2: el UPDATE directo de la marca no alcanza la fila');
+select lives_ok($$ update public.couriers set submitted_at = null where profile_id = pg_temp.c(1) $$,
+  'admin aal2: el UPDATE directo de la fecha no alcanza la fila');
 select pg_temp.act_as(pg_temp.admin(), 'aal1');
-select throws_ok($$ update public.couriers set application_submitted = true where profile_id = pg_temp.c(10) $$,
-  'P0001', 'VALIDATION_ERROR', 'admin aal1 no marca un envío');
+select lives_ok($$ update public.couriers set application_submitted = true where profile_id = pg_temp.c(10) $$,
+  'admin aal1: el UPDATE directo de la marca no alcanza la fila');
 select pg_temp.as_service();
+select ok(
+  (select not application_submitted from public.couriers where profile_id = pg_temp.c(10))
+  and (select submitted_at is not null from public.couriers where profile_id = pg_temp.c(1)),
+  'admin aal1 ni aal2 marcan un envío ni borran una fecha por UPDATE directo');
 select throws_ok($$ update public.couriers set application_submitted = true where profile_id = pg_temp.c(10) $$,
   'P0001', 'VALIDATION_ERROR', 'service_role no marca un envío sin la RPC');
 select throws_ok($$ update public.couriers set application_submitted = false where profile_id = pg_temp.c(1) $$,

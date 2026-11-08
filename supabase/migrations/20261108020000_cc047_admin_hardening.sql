@@ -31,7 +31,6 @@ drop policy if exists contacts_write_admin on public.delivery_request_contacts;
 drop policy if exists drops_write_admin on public.delivery_request_drops;
 drop policy if exists drop_contacts_write_admin on public.delivery_request_drop_contacts;
 drop policy if exists platform_settings_write_admin on public.platform_settings;
-drop policy if exists rate_limits_admin on public.rate_limits;
 
 drop policy if exists zones_write_admin on public.zones;
 create policy zones_select_admin on public.zones
@@ -40,6 +39,13 @@ create policy zones_select_admin on public.zones
 
 drop policy if exists push_subscriptions_admin on public.push_subscriptions;
 create policy push_subscriptions_select_admin on public.push_subscriptions
+  for select to authenticated
+  using (app_private.is_admin());
+
+-- rate_limits se escribe solo por RPC security definer. Queda una lectura admin aal2 para cumplir el invariante de
+-- rls_enabled.sql (toda tabla pública con al menos una policy).
+drop policy if exists rate_limits_admin on public.rate_limits;
+create policy rate_limits_select_admin on public.rate_limits
   for select to authenticated
   using (app_private.is_admin());
 

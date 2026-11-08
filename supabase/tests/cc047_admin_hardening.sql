@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(66);
+select plan(67);
 
 create function pg_temp.id(n integer) returns uuid language sql immutable as $$
   select ('00000000-0000-4000-8000-0000000047' || lpad(n::text, 2, '0'))::uuid
@@ -260,7 +260,7 @@ select is(pg_temp.count_as(pg_temp.admin(), 'aal2',
 select is(pg_temp.run(pg_temp.admin(), 'aal2', format('select public.accept_offer(%L::uuid)', pg_temp.offer()))->>'message',
   'UNAUTHORIZED_ACTOR', 'SEC-10: accept_offer como admin aal2 da UNAUTHORIZED_ACTOR');
 
--- 59-64. D1: RPC administrativas auditadas.
+-- 59-65. D1: RPC administrativas auditadas.
 select is(pg_temp.run(pg_temp.admin(), 'aal2', format(
   'select public.admin_correct_courier_display_name(%L::uuid, %L)', pg_temp.courier(), 'Nombre Corregido'))->>'code',
   '00000', 'D1: admin_correct_courier_display_name con aal2 funciona');
@@ -285,14 +285,17 @@ select is(
   ],
   array['VALIDATION_ERROR', 'VALIDATION_ERROR', 'VALIDATION_ERROR', 'NOT_FOUND', 'NOT_FOUND'],
   'D1: nombre vacío, con espacios o largo da VALIDATION_ERROR; perfil inexistente o no repartidor da NOT_FOUND');
+select is(
+  pg_temp.run(pg_temp.admin(), 'aal2', format('select public.admin_revoke_courier_consent(%L::uuid)', pg_temp.courier()))->>'code',
+  '00000', 'D1: admin_revoke_courier_consent con aal2 funciona');
+-- Sentencia aparte: dentro de un mismo AND, Postgres puede evaluar la subconsulta antes que la llamada.
 select ok(
-  (pg_temp.run(pg_temp.admin(), 'aal2', format('select public.admin_revoke_courier_consent(%L::uuid)', pg_temp.courier()))->>'code') = '00000'
-  and (select consent_status = 'reconsent_required' from public.profiles where id = pg_temp.courier())
+  (select consent_status = 'reconsent_required' from public.profiles where id = pg_temp.courier())
   and exists (select 1 from public.audit_log where action = 'admin_revoke_courier_consent'
               and target_id = pg_temp.courier()::text),
-  'D1: admin_revoke_courier_consent pone reconsent_required y queda auditado');
+  'D1: el consentimiento pasa a reconsent_required y queda auditado');
 
--- 65-66. D3: autoservicio de la cuenta admin sin columnas privilegiadas.
+-- 66-67. D3: autoservicio de la cuenta admin sin columnas privilegiadas.
 select ok(
   pg_temp.write_blocked('aal1', format('update public.profiles set role = %L where id = %L', 'merchant', pg_temp.admin()),
     format('select role = %L from public.profiles where id = %L', 'admin', pg_temp.admin()))
