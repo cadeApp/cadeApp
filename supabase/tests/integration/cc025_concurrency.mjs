@@ -185,7 +185,11 @@ async function runScenario1(adminId, courierId, docId) {
     // 1. Admin adquiere lock de couriers
     const lockMarker = `ADMIN_LOCKED_${crypto.randomUUID()}`;
     adminSession.send(`
+      -- CC-047: el admin ya no tiene policy de UPDATE sobre couriers, y FOR UPDATE la exige. El lock se toma en la
+      -- misma transacción con el rol dueño, como lo toma admin_verify_document (security definer).
+      set local role postgres;
       select 1 from public.couriers where profile_id = '${courierId}' for update;
+      set local role authenticated;
       select '${lockMarker}';
     `);
     await adminSession.waitFor(lockMarker);
@@ -518,7 +522,10 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
       // Paso A: Admin toma el primer lock de su jerarquía (public.couriers FOR UPDATE)
       const adminLockedMarker = `MUT_ADMIN_LOCKED_${crypto.randomUUID()}`;
       adminSession.send(`
+        -- CC-047: lock con el rol dueño en la transacción del admin (ver escenario 1).
+        set local role postgres;
         select 1 from public.couriers where profile_id = '${courierId}' for update;
+        set local role authenticated;
         select '${adminLockedMarker}';
       `);
       await adminSession.waitFor(adminLockedMarker);
