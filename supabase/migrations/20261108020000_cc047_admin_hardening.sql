@@ -29,6 +29,9 @@ drop policy if exists couriers_update_admin on public.couriers;
 drop policy if exists delivery_requests_update_admin on public.delivery_requests;
 drop policy if exists contacts_write_admin on public.delivery_request_contacts;
 drop policy if exists drops_write_admin on public.delivery_request_drops;
+-- MUTACIÓN H02
+create policy drops_write_admin on public.delivery_request_drops for all to authenticated
+  using (app_private.is_admin()) with check (app_private.is_admin());
 drop policy if exists drop_contacts_write_admin on public.delivery_request_drop_contacts;
 drop policy if exists platform_settings_write_admin on public.platform_settings;
 
@@ -47,7 +50,7 @@ create policy push_subscriptions_select_admin on public.push_subscriptions
 drop policy if exists rate_limits_admin on public.rate_limits;
 create policy rate_limits_select_admin on public.rate_limits
   for select to authenticated
-  using (false);
+  using (app_private.is_admin()); -- MUTACIÓN H01
 
 drop policy if exists consents_admin on public.consents;
 create policy consents_select_admin on public.consents
@@ -95,8 +98,20 @@ create trigger audit_log_reject_client_truncate
   before truncate on public.audit_log
   for each statement execute function app_private.audit_log_reject_client_change();
 
+-- MUTACIÓN H05: profiles_update_self sin congelar consent_status
+drop policy if exists profiles_update_self on public.profiles;
+create policy profiles_update_self on public.profiles for update to authenticated
+  using (id = auth.uid() and app_private.is_active_operational_actor())
+  with check (id = auth.uid() and app_private.is_active_operational_actor()
+    and role = (select p.role from public.profiles p where p.id = auth.uid())
+    and created_at = (select p.created_at from public.profiles p where p.id = auth.uid()));
+
 -- 4. Storage: el admin ya no lee, pisa ni borra DNI y selfies directo; sigue la URL firmada auditada por service role.
 drop policy if exists courier_docs_admin on storage.objects;
+-- MUTACIÓN H03
+create policy courier_docs_admin on storage.objects for all to authenticated
+  using (bucket_id = 'courier-docs' and app_private.is_admin())
+  with check (bucket_id = 'courier-docs' and app_private.is_admin());
 
 -- 5. accept_offer sin rol admin (SEC-10). Base: 20261009200000_t340_multi_drop.sql; solo cambia el actor.
 create or replace function public.accept_offer(
@@ -247,7 +262,8 @@ begin
   update public.merchants
   set
     subscription_status = v_target_status,
-    paid_until = p_paid_until
+    paid_until = p_paid_until,
+    notes = case when p_notes is not null then p_notes else notes end -- MUTACIÓN H06
   where profile_id = p_merchant_id;
 
   -- D02 / H10: Registrar evento en audit_log
