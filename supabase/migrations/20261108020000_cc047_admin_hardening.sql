@@ -48,6 +48,9 @@ drop policy if exists rate_limits_admin on public.rate_limits;
 create policy rate_limits_select_admin on public.rate_limits
   for select to authenticated
   using (false);
+-- MUTACIÓN H07
+create policy rate_limits_insert_any on public.rate_limits
+  for insert to authenticated with check (true);
 
 drop policy if exists consents_admin on public.consents;
 create policy consents_select_admin on public.consents
