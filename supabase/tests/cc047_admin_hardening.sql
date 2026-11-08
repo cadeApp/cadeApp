@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(92);
+select plan(99);
 
 create function pg_temp.id(n integer) returns uuid language sql immutable as $$
   select ('00000000-0000-4000-8000-0000000047' || lpad(n::text, 2, '0'))::uuid
@@ -132,6 +132,32 @@ select is(
   (select count from public.rate_limits
    where subject = pg_temp.courier()::text and action = 'submit_offer' and window_start = date_trunc('minute', now())),
   1, 'D01: submit_offer registra su contador en rate_limits');
+
+-- H07: rate_limits no tiene ninguna policy de escritura (cualquier nombre o predicado), y un INSERT directo con un
+-- actor real se rechaza y no persiste.
+select is(
+  (select count(*)::bigint
+   from pg_policies
+   where schemaname = 'public'
+     and tablename = 'rate_limits'
+     and cmd <> 'SELECT'),
+  0::bigint,
+  'H07: rate_limits no tiene ninguna policy directa de INSERT/UPDATE/DELETE/ALL'
+);
+select is(
+  pg_temp.run(a.actor, a.aal, format(
+    'insert into public.rate_limits (subject, action, window_start, count) values (%L, %L, date_trunc(%L, now()), 47)',
+    'cc047-direct-' || a.label, 'cc047-direct', 'minute'))->>'code',
+  '42501', 'H07: ' || a.label || ' no inserta directo en rate_limits')
+from (values
+  ('admin-aal1', pg_temp.admin(), 'aal1'),
+  ('admin-aal2', pg_temp.admin(), 'aal2'),
+  ('courier-aal1', pg_temp.courier(), 'aal1')
+) a(label, actor, aal);
+select is(
+  (select count(*) from public.rate_limits where subject = 'cc047-direct-' || a.label),
+  0::bigint, 'H07: no quedó fila de ' || a.label)
+from (values ('admin-aal1'), ('admin-aal2'), ('courier-aal1')) a(label);
 
 -- SEC-01: el admin no escribe directo, ni con aal1 ni con aal2; el valor no cambia.
 select ok(pg_temp.write_blocked(a.aal, t.stmt, t.unchanged), 'SEC-01 ' || a.aal || ': ' || t.label)
