@@ -22,3 +22,12 @@ El CC enumeró sus policies principales, pero no toda la superficie impactada: s
 4. Suite de consulta de candidatos sin mutación de notas; evidencia manual por ambiente.
 
 Esta PR es contractual: no se deduce éxito de los futuros tests a partir de que el texto esté corregido.
+
+## Ronda 2 — qué aprendimos (sin agregar AG nuevo)
+
+- **PR657-R01 (P08, regresión):** al intentar incorporar suites faltantes, se usó brace expansion en «Archivos permitidos». `tools/verify-fichas.test.ts` no expande llaves: solo acepta nombres literales o prefijos terminados en `**`. Para 10 rutas explícitas el agente podría salir de alcance sin advertencia; también había un marcador de timestamp desde la ficha original que **la ronda 1 omitió**. Es un nuevo caso de [pr-56/AG-37] (enumerar la clase entera), [pr-62/AG-60] (control que falla en silencio) y [pr-63/AG-68] (demostrar cobertura real de la aserción).
+- **PR657-H05 (P05):** la cláusula de excepciones D3=B no se propagó a todo el DoD y checklist de T-408. Eliminar admin WRITE y preservar grants compartidos no son proposiciones contrarias; «no tiene ninguna policy» sí contradice self policies. El checklist además ignoraba la concurrencia de las dos nuevas RPC, aunque DoD la cubría. Leer checklist y DoD en paralelo después de una reconciliación de CC.
+
+No numeramos una regla AG nueva: ambos casos quedan cubiertos por los patrones existentes y el máximo global de las ramas remotas no se pudo auditar en el entorno sin clon. **Las mejoras de revisión** (no una exigencia nueva a la PR) son: probar nombres de archivo reales contra `permite` y buscar frases absolutas que contradicen excepciones D1/D3.
+
+**Advertencia:** este CC es documental; las correcciones H01-H04 son estructurales por inspección, no pgTAP verde. No confundir «listado de pruebas» con «prueba ejecutada».

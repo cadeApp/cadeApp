@@ -103,3 +103,109 @@ No usar Docker ni Supabase local; la prueba SQL queda para el job oficial de db-
 ## Formato y límites
 
 El documento `hallazgos.jsonl` contiene 4 entradas JSONL, ninguna marcada `arreglado-verificado`. Al disponer de clon, ejecutar `node docs/revision-pr/analizar.mjs verificacion` y el harness anterior. El control de CI no se considera verde por la edición de estos docs.
+
+---
+## Ronda 2 — SHA `ec341a04939b9cc9ae24b574c440a19d6690e591` (2026-11-07)
+
+### Qué se ejecutó realmente
+
+- GitHub: verificación de HEAD, base y comparaciones de commits. Dos archivos modificados desde la ronda 1; sin cambios a la carpeta de revisión.
+- Lectura completa de `docs/contracts/CC-047.md` y `docs/tasks/T-408.md` en el SHA indicado y de fuentes SQL de `develop`.
+- **Comprobación documental en memoria** de H01–H04 y D3: todas positivas. Mutaciones independientes: sustituir invoker por definer (H01), `FOR UPDATE` por `FOR SHARE` (H02), quitar `rpc_admin.sql` (H03), ordenar por `created_at` (H04), quitar autoservicio (D3): las cinco vuelven su control de texto a falso. **No se ejecutó SQL ni pgTAP**.
+- Reproducción del algoritmo real de `tools/verify-fichas.test.ts:44-47` con rutas concretas: **10/10 suites no admitidas por entradas con llaves**; una ruta real de migración tampoco coincide con `<timestamp>`. La edición solo en memoria de las rutas las vuelve permitidas; no se hizo cambio en la ficha.
+- Contradicción H05 reproducida por comparador de frases: CC conserva grants, T-408 los pide revocar, checklist omite D1; las sustituciones editoriales en memoria eliminan las tres contradicciones. No es prueba de RLS.
+- `node --check /tmp/pr657-r2-doc-check.cjs`: **Syntax OK**, ejecutado sobre harness local. El harness del repositorio remoto no se pudo ejecutar porque no había clon Git.
+- `git diff --check`: **el autor reportó limpio**, no verificado por esta revisión.
+- `git merge-tree`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:db`, E2E, pruebas SQL mutadas: **NO EJECUTADOS**.
+
+### Harness completo reproducible — solo texto, no seguridad RLS
+
+Copiar este bloque completo a `/tmp/pr657-r2-doc-check.cjs` y ejecutarlo desde un clon del SHA revisado:
+
+~~~bash
+node --check /tmp/pr657-r2-doc-check.cjs
+node /tmp/pr657-r2-doc-check.cjs "$PWD"
+# Tras aplicar la corrección a la ficha y CC:
+node /tmp/pr657-r2-doc-check.cjs "$PWD" --expect-clear
+~~~
+
+~~~javascript
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.argv[2] || process.cwd();
+const expectClear = process.argv.includes('--expect-clear');
+const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+const cc = read('docs/contracts/CC-047.md');
+const task = read('docs/tasks/T-408.md');
+const required = [
+ 'cc007_consent_enforcement','cc023_private_columns',
+ 'cc032_request_cancellation_history','cc036_offers_rpc_only',
+ 'rls_coordinates','rpc_distance','rpc_accept','t339_fixed_price',
+ 't369_publication_credits','structure'
+].map(name => 'supabase/tests/'+name+'.sql');
+const sec=(s,from,to)=>s.split(from)[1]?.split(to)[0]||'';
+function uncovered(t) {
+ const part=sec(t,'## Archivos permitidos','## Fuera de alcance');
+ const entries=(part.match(/`([^`]+)`/g)||[]).map(s=>s.slice(1,-1));
+ const paths=[...required,'supabase/migrations/20261108020000_cc047_admin_hardening.sql'];
+ return paths.filter(p=>!entries.some(e=>e.endsWith('**')?p.startsWith(e.slice(0,-2)):e===p));
+}
+function check(c,t) {
+ const audit=sec(c,'3. **`audit_log`','4. **Storage.');
+ const rpc=sec(c,'7. **Dos RPC','## Seguridad y permisos');
+ const notes=sec(c,'6. **Nota interna','7. **Dos RPC');
+ return {
+  H01:/security invoker/i.test(audit)&&/current_user/.test(audit)&&/before truncate/.test(audit),
+  H02:/admin_correct_courier_display_name/.test(rpc)&&/admin_revoke_courier_consent/.test(rpc)&&/for update/i.test(rpc)&&/audit_log/.test(rpc),
+  H03:c.includes('supabase/tests/rpc_admin.sql')&&t.includes('supabase/tests/rpc_admin.sql'),
+  H04:/distinct on \(a\.target_id\)/i.test(notes)&&/order by a\.target_id, a\.id desc/i.test(notes)&&/Sin borrado autom[aá]tico/.test(notes)&&!/update\s+public\.merchants\s+set\s+notes/i.test(notes),
+  D3:c.includes('Autoservicio de la cuenta admin (D3=B)'),
+  R01:uncovered(t).length===0,
+  H05:!/pierde su policy y su grant de escritura directa/.test(t)&&!/no tiene ninguna\s+policy de escritura/.test(c)&&!/Idempotencia y concurrencia:\*\* no aplica salvo/.test(t)
+ };
+}
+const baseline=check(cc,task);
+const mutations=[
+ ['H01',cc.replace('**`security invoker`**','**`security definer`**'),task],
+ ['H02',cc.replace(/for update/gi,'for share'),task],
+ ['H03',cc.replaceAll('supabase/tests/rpc_admin.sql','omitida'),task.replaceAll('supabase/tests/rpc_admin.sql','omitida')],
+ ['H04',cc.replace('order by a.target_id, a.id desc','order by a.target_id, a.created_at desc'),task],
+ ['D3',cc.replace('Autoservicio de la cuenta admin (D3=B)','Autoservicio no definido'),task]
+];
+let failed=0;
+for (const [key,c,t] of mutations) {
+ const outcome=check(c,t)[key];
+ if(!baseline[key]||outcome) failed++;
+ console.log(key+' mutation '+baseline[key]+' -> '+outcome+' (expected true -> false)');
+}
+const fixedTask=task
+ .replace('`supabase/tests/{cc007_consent_enforcement,cc023_private_columns,cc032_request_cancellation_history,cc036_offers_rpc_only,rls_coordinates,rpc_distance}.sql`',required.slice(0,6).map(x=>'`'+x+'`').join(', '))
+ .replace('`supabase/tests/{rpc_accept,t339_fixed_price,t369_publication_credits,structure}.sql`',required.slice(6).map(x=>'`'+x+'`').join(', '))
+ .replace('`supabase/migrations/<timestamp>_cc047_admin_hardening.sql`','`supabase/migrations/20261108020000_cc047_admin_hardening.sql`')
+ .replace('pierde su policy y su grant de escritura directa','pierde su policy de escritura administrativa; los grants compartidos se conservan')
+ .replace('**Idempotencia y concurrencia:** no aplica salvo `accept_offer`.','**Idempotencia y concurrencia:** incluye accept_offer y las dos RPC D1 con FOR UPDATE y CC-031 B/C.');
+const fixedCC=cc.replace(/La barrera es que el admin no tiene ninguna\s+policy de escritura:/,'El admin no tiene policy de escritura privilegiada, pero conserva policies self:');
+const repaired=check(fixedCC,fixedTask);
+console.log('Permisos ausentes: '+JSON.stringify(uncovered(task)));
+console.log('R01 simulated repair: '+baseline.R01+' -> '+repaired.R01);
+console.log('H05 simulated repair: '+baseline.H05+' -> '+repaired.H05);
+console.log('NOTA: solo controles de texto; no PostgreSQL ni SQL runtime');
+if(failed || !repaired.R01 || !repaired.H05)process.exitCode=2;
+if(expectClear && (!baseline.R01 || !baseline.H05))process.exitCode=1;
+~~~
+
+**Resultados sobre el texto remoto del SHA revisado** (comprobación independiente en memoria): H01/H02/H03/H04/D3: `true`; mutaciones: `false`. R01: `false`, faltan diez suites y una ruta real de migración; reparación simulada: `true`. H05: `false`; reparación de contradicciones simulada: `true`. Estos valores no equivalen a tests funcionales.
+
+### Para la siguiente ronda
+
+~~~bash
+git fetch origin
+git diff origin/develop -- docs/tasks/T-408.md
+git diff origin/develop...origin/cc/CC-047-admin-hardening --stat
+git diff --check origin/develop...origin/cc/CC-047-admin-hardening
+git merge-tree --write-tree origin/develop origin/cc/CC-047-admin-hardening
+node docs/revision-pr/analizar.mjs verificacion
+~~~
+
+No levantar bases locales ni ejecutar credenciales de Supabase. Las mutaciones reales de SQL/RLS que se enumeran en `ronda-1.md` solo se verifican al implementar T-408 y revisar logs de los jobs oficiales.
