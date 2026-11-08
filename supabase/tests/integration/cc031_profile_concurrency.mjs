@@ -253,7 +253,7 @@ async function scenarioB(courierId, adminId) {
       begin;
       set local role authenticated;
       select set_config('request.jwt.claims', '{"sub":"${adminId}","role":"authenticated","aal":"aal2"}', true);
-      update public.profiles set display_name = 'Admin Corrected' where id = '${courierId}';
+      select public.admin_correct_courier_display_name('${courierId}', 'Admin Corrected');
     `);
 
     // S2 (courier): Begin TX, edita teléfono (se bloquea en el row lock de S1)
@@ -301,7 +301,7 @@ async function scenarioC(courierId, adminId) {
       begin;
       set local role authenticated;
       select set_config('request.jwt.claims', '{"sub":"${adminId}","role":"authenticated","aal":"aal2"}', true);
-      update public.profiles set consent_status = 'reconsent_required' where id = '${courierId}';
+      select public.admin_revoke_courier_consent('${courierId}');
     `);
 
     // S2 (courier): Begin TX, intenta actualizar teléfono (se bloquea en el row lock de S1)

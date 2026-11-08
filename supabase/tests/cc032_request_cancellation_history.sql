@@ -64,7 +64,8 @@ declare v_result jsonb;
 begin
   perform set_config('request.jwt.claims',
     case when p_actor = 0 then '{"role":"authenticated"}'
-    else jsonb_build_object('sub', pg_temp.actor(p_actor), 'role', 'authenticated')::text end, true);
+    else (jsonb_build_object('sub', pg_temp.actor(p_actor), 'role', 'authenticated')
+      || case when p_actor = 6 then '{"aal": "aal2"}'::jsonb else '{}'::jsonb end)::text end, true); -- CC-047: el admin (6) actúa con MFA
   set local role authenticated;
   execute p_sql into v_result;
   set local role postgres;

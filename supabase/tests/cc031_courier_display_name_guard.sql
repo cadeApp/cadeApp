@@ -102,8 +102,8 @@ select is(pg_temp.cc031_run(3,
 select is((select display_name from public.profiles where id = pg_temp.cc031_id(3)),
   'Merchant RPC', 'CC-028 name persists');
 select is(pg_temp.cc031_run(4,
-  'update public.profiles set display_name = ''Admin corrected'' where id = pg_temp.cc031_id(1)')->>'code',
-  '00000', 'existing admin policy may correct courier identity');
+  'select public.admin_correct_courier_display_name(pg_temp.cc031_id(1), ''Admin corrected'')')->>'code',
+  '00000', 'CC-047: admin corrects courier identity through the audited RPC');
 select is((select display_name from public.profiles where id = pg_temp.cc031_id(1)),
   'Admin corrected', 'admin correction persists');
 select is(pg_temp.cc031_run(1,
@@ -171,8 +171,8 @@ select is((select display_name || ':' || phone from public.profiles where id = p
 
 -- 2. Corrección administrativa de nombre y posterior actualización de teléfono por courier:
 select is(pg_temp.cc031_run(4,
-  'update public.profiles set display_name = ''Race corrected'' where id = pg_temp.cc031_id(1)')->>'code',
-  '00000', 'serialized: admin corrects name');
+  'select public.admin_correct_courier_display_name(pg_temp.cc031_id(1), ''Race corrected'')')->>'code',
+  '00000', 'serialized: admin corrects name through the audited RPC');
 select is(pg_temp.cc031_run(1,
   'update public.profiles set phone = ''3865000091'' where id = pg_temp.cc031_id(1)')->>'code',
   '00000', 'serialized: courier updates phone after admin correction');
@@ -181,8 +181,8 @@ select is((select display_name || ':' || phone from public.profiles where id = p
 
 -- 3. Revocación de consentimiento y posterior intento de edición de teléfono:
 select is(pg_temp.cc031_run(4,
-  'update public.profiles set consent_status = ''reconsent_required'' where id = pg_temp.cc031_id(1)')->>'code',
-  '00000', 'serialized: consent revoked to reconsent_required');
+  'select public.admin_revoke_courier_consent(pg_temp.cc031_id(1))')->>'code',
+  '00000', 'serialized: consent revoked to reconsent_required through the audited RPC');
 select is(pg_temp.cc031_run(1,
   'update public.profiles set phone = ''3865000092'' where id = pg_temp.cc031_id(1)'),
   '{"code":"00000","rows":0}'::jsonb, 'serialized: phone update blocked after consent revocation');
