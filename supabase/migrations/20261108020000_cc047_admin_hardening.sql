@@ -42,12 +42,12 @@ create policy push_subscriptions_select_admin on public.push_subscriptions
   for select to authenticated
   using (app_private.is_admin());
 
--- rate_limits se escribe solo por RPC security definer. Queda una lectura admin aal2 para cumplir el invariante de
--- rls_enabled.sql (toda tabla pública con al menos una policy).
+-- rate_limits se escribe y se lee solo por RPC security definer. La policy deniega toda lectura por PostgREST
+-- (D01=B de la revisión de T-408) y cumple el invariante de rls_enabled.sql (toda tabla pública con una policy).
 drop policy if exists rate_limits_admin on public.rate_limits;
 create policy rate_limits_select_admin on public.rate_limits
   for select to authenticated
-  using (app_private.is_admin());
+  using (false);
 
 drop policy if exists consents_admin on public.consents;
 create policy consents_select_admin on public.consents

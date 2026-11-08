@@ -14,6 +14,8 @@
  *     repartidor intenta editar teléfono en S2 esperando en lock. Tras el commit del admin,
  *     el filtro RLS (app_private.is_active_operational_actor) evalúa la fila bajo el snapshot
  *     committed y no realiza escrituras (0 filas actualizadas), preservando el estado legal.
+ *   - Escenarios D y E (CC-047 / D1): dos llamadas del admin a la misma RPC sobre el mismo repartidor. S2 espera el
+ *     lock de S1 y su auditoría registra como `before` el valor que dejó S1, no el anterior a su commit.
  *   - Controles de mutación RED->GREEN:
  *     1. Concurrencia: deshabilitar la guarda permite a S2 sobrescribir display_name (RED confirmado);
  *        al restaurar el trigger, S2 vuelve a ser rechazado (GREEN restaurado).
@@ -181,6 +183,67 @@ async function withSessions(fn) {
     s1.close();
     s2.close();
   }
+}
+
+/**
+ * CC-047 / D1: dos correcciones administrativas del mismo repartidor a la vez. S2 tiene que leer el valor que dejó
+ * S1 (por el `for update` antes de leer) y auditarlo como `before`. Sin ese lock, S2 leería el valor anterior al
+ * commit de S1 y la auditoría quedaría con un `before` que ya no era real.
+ */
+async function adminAdminRace({ label, reset, s1Sql, s2Sql, s2Marker, action, beforeKey, expectedBefore, finalSql, expectedFinal }) {
+  console.log(`${TAG} ${label}...`);
+  runSql(reset);
+  await withSessions(async (s1, s2) => {
+    await s1.run(`${label}_S1`, `begin;\n${s1Sql}`);
+    const pendingS2 = s2.send(`${label}_S2`, `begin;\n${s2Sql}\ncommit;`);
+    await s2.assertBlocked(pendingS2, s2Marker);
+    await s1.run(`${label}_S1_COMMIT`, 'commit;');
+    const out = await s2.wait(pendingS2);
+    assert.doesNotMatch(out, /(^|\n)ERROR:/, `${label}: S2 no debe fallar. Salida:\n${out}`);
+  });
+  const lastBefore = runSql(`
+    select before->>'${beforeKey}' from public.audit_log
+    where action = '${action}' and target_id = '${reset.match(/where id = '([^']+)'/)[1]}'
+    order by id desc limit 1;
+  `);
+  assert.equal(lastBefore, expectedBefore, `${label}: la auditoría de S2 debe registrar before.${beforeKey} = ${expectedBefore}`);
+  assert.equal(runSql(finalSql), expectedFinal, `${label}: estado final`);
+  console.log(`${TAG} ${label} GREEN: before.${beforeKey} = ${lastBefore}.`);
+}
+
+function adminClaims(adminId) {
+  return `set local role authenticated;
+      select set_config('request.jwt.claims', '{"sub":"${adminId}","role":"authenticated","aal":"aal2"}', true);`;
+}
+
+async function scenarioD(courierId, adminId) {
+  await adminAdminRace({
+    label: 'Escenario D (admin/admin nombre)',
+    reset: `update public.profiles set display_name = 'Original Name', consent_status = 'active', role = 'courier' where id = '${courierId}';`,
+    s1Sql: `${adminClaims(adminId)}\n      select public.admin_correct_courier_display_name('${courierId}', 'CC047 Uno');`,
+    s2Sql: `${adminClaims(adminId)}\n      select public.admin_correct_courier_display_name('${courierId}', 'CC047 Dos');`,
+    s2Marker: 'CC047 Dos',
+    action: 'admin_correct_courier_display_name',
+    beforeKey: 'display_name',
+    expectedBefore: 'CC047 Uno',
+    finalSql: `select display_name from public.profiles where id = '${courierId}';`,
+    expectedFinal: 'CC047 Dos',
+  });
+}
+
+async function scenarioE(courierId, adminId) {
+  await adminAdminRace({
+    label: 'Escenario E (admin/admin consentimiento)',
+    reset: `update public.profiles set consent_status = 'active', role = 'courier' where id = '${courierId}';`,
+    s1Sql: `${adminClaims(adminId)}\n      select public.admin_revoke_courier_consent('${courierId}');`,
+    s2Sql: `${adminClaims(adminId)}\n      select public.admin_revoke_courier_consent('${courierId}') as cc047_revoke_dos;`,
+    s2Marker: 'cc047_revoke_dos',
+    action: 'admin_revoke_courier_consent',
+    beforeKey: 'consent_status',
+    expectedBefore: 'reconsent_required',
+    finalSql: `select consent_status from public.profiles where id = '${courierId}';`,
+    expectedFinal: 'reconsent_required',
+  });
 }
 
 /** Escenario A: Dos sesiones de courier; S1 escribe teléfono con lock abierto, S2 intenta display_name. */
@@ -434,6 +497,8 @@ async function main() {
       await scenarioA(courierId, { expectGuard: true });
       await scenarioB(courierId, adminId);
       await scenarioC(courierId, adminId);
+      await scenarioD(courierId, adminId);
+      await scenarioE(courierId, adminId);
     }
 
     // 2. Control de mutación RED->GREEN de concurrencia
