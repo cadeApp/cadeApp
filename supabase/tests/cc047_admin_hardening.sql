@@ -113,7 +113,7 @@ insert into storage.objects (id, bucket_id, name, owner)
 values (gen_random_uuid(), 'courier-docs', 'courier/' || pg_temp.courier() || '/cc047.png', pg_temp.courier());
 
 -- 1-24. SEC-01: el admin no escribe directo, ni con aal1 ni con aal2; el valor no cambia.
-select ok(pg_temp.write_blocked(t.aal, t.stmt, t.unchanged), 'SEC-01 ' || t.aal || ': ' || t.label)
+select ok(pg_temp.write_blocked(a.aal, t.stmt, t.unchanged), 'SEC-01 ' || a.aal || ': ' || t.label)
 from (values ('aal1'), ('aal2')) a(aal)
 cross join lateral (values
   ('profiles.role',
