@@ -209,3 +209,117 @@ node docs/revision-pr/analizar.mjs verificacion
 ~~~
 
 No levantar bases locales ni ejecutar credenciales de Supabase. Las mutaciones reales de SQL/RLS que se enumeran en `ronda-1.md` solo se verifican al implementar T-408 y revisar logs de los jobs oficiales.
+
+---
+
+## Ronda 3 — SHA `09df17bc0be7bbdf4ef97a12f7bf32f849537c7d` (2026-11-07)
+
+**Origen del resultado:** comparación y lectura GitHub del commit indicado. La lógica independiente se ejecutó en JavaScript sobre ambas cadenas leídas de GitHub, sin base ni Docker. El script completo está abajo y fue validado sintácticamente con Node 22 (`node --check`). No se ejecutó `git merge-tree` ni `node docs/revision-pr/analizar.mjs verificacion` en un clon local, porque no había checkout Git.
+
+### Resultado reproducido
+
+- Antes de corregir R01 (`ec341a04`): **11/11 rutas rechazadas**.
+- Después (`09df17bc`): **0/11 rechazadas**.
+- **Mutación RED independiente:** reemplazar la entrada literal `supabase/tests/rpc_distance.sql` por `supabase/tests/{rpc_distance}.sql` en memoria: falla exactamente una ruta.
+- Validación de coherencia H05: checklist de grants, DoD de grants, concurrencia con dos RPC y auditoría, ausencia de backfill y CC con privilegios por columna: **5/5 condiciones verdaderas**. Cinco mutaciones independientes produjeron la condición falsa correspondiente. Una primera mutación de concurrencia no quitaba la palabra «auditoría» y no fallaba: se corrigió el mutante y se repitió antes de cerrar.
+- No hay colisión de `20261108020000_cc047_admin_hardening.sql` entre las **51 migraciones** de `develop` (última `20261106120000_cc042_courier_vehicles.sql`).
+- Autor reportó `git diff --check` sin errores. **No reproducido** localmente por falta de clon.
+- **CI #42436346316 para SHA del producto**: `typecheck`, `lint`, `build`, `audit`, `unit`, `bundle-budget`: success. En el log completo del job `unit`: **199 files passed / 3755 tests passed**; `tools/verify-fichas.test.ts` **7 tests**. `db-tests` estaba in_progress cuando se consultó; resultado no adjudicado. No hubo ejecución de E2E/pgTAP mutado por parte del revisor.
+- La descripción de la PR se corrigió directamente para reflejar D1–D3; esto no mueve el commit.
+
+### Harness autónomo (se ejecuta sobre checkout del SHA; no modifica archivos)
+
+Copiar el bloque a `/tmp/pr657-r3-check.cjs` y ejecutar:
+
+```bash
+node --check /tmp/pr657-r3-check.cjs
+node /tmp/pr657-r3-check.cjs "$PWD"
+# Sobre el SHA 09df17bc debe producir BASE con 6 true,
+# MISSING 0, seis mutaciones RED_DOCUMENTAL y RESULT PASS.
+```
+
+```javascript
+'use strict';
+// Verificación independiente del contrato documental, no sustituye pgTAP.
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.argv[2];
+if (!root) { console.error('Uso: node check_ronda3.cjs ROOT'); process.exit(2); }
+const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+const cc = read('docs/contracts/CC-047.md');
+const task = read('docs/tasks/T-408.md');
+const paths = [
+ 'cc007_consent_enforcement','cc023_private_columns',
+ 'cc032_request_cancellation_history','cc036_offers_rpc_only',
+ 'rls_coordinates','rpc_distance','rpc_accept','t339_fixed_price',
+ 't369_publication_credits','structure'
+].map(x => 'supabase/tests/' + x + '.sql')
+ .concat('supabase/migrations/20261108020000_cc047_admin_hardening.sql');
+const sec = (s, start, end) => s.split(start)[1]?.split(end)[0] || '';
+function permitted(t, p) {
+ const allowed = sec(t, '## Archivos permitidos', '## Fuera de alcance');
+ const entries = [...allowed.matchAll(/`([^`]+)`/g)].map(m => m[1]);
+ return entries.some(e => e.endsWith('**') ? p.startsWith(e.slice(0, -2)) : e === p);
+}
+function checks(c,t) {
+ const cl = sec(t,'## Checklist de esquema/RPC','## Archivos permitidos');
+ const dod = sec(t,'## DoD','## Regla de pruebas');
+ const access = sec(c,'- **Acceso directo frente a RPC:**','## Concurrencia e idempotencia');
+ const gcl = cl.split('- [ ] **RLS y permisos:**')[1]?.split('- [ ] **Idempotencia y concurrencia:**')[0] || '';
+ const gdod = dod.split('- [ ] **SEC-01, matriz de escrituras directas del admin:**')[1]?.split('- [ ] **SEC-01, pruebas:**')[0] || '';
+ const concurrent = cl.split('- [ ] **Idempotencia y concurrencia:**')[1]?.split('- [ ] **Privacidad y exposición:**')[0] || '';
+ const backfill = cl.split('- [ ] **Migración y backfill:**')[1]?.split('- [ ] **pgTAP:**')[0] || '';
+ return {
+  R01: paths.every(p=>permitted(t,p)),
+  H05_check_grants: /policies de escritura \*\*administrativa\*\*/.test(gcl) &&
+    /conserva los grants de tabla compartidos/.test(gcl) && /Excepción: `audit_log`/.test(gcl),
+  H05_dod_grants: /policies de escritura \*\*administrativa\*\*/.test(gdod) &&
+    /conserva los grants de tabla compartidos/.test(gdod) && /Excepción: `audit_log`/.test(gdod),
+  H05_concurrency: ['accept_offer','admin_correct_courier_display_name',
+    'admin_revoke_courier_consent','for update','CC-031','auditoría']
+    .every(v=>concurrent.toLowerCase().includes(v.toLowerCase())),
+  H05_backfill: /sin backfill/.test(backfill) &&
+    /no modifica `merchants.notes`/.test(backfill) && /Lautaro073 corre a mano/.test(backfill),
+  H05_CC: /policies de escritura \*\*privilegiada administrativa\*\*/.test(access) &&
+    /profiles_update_self/.test(access) && /\*\*por columna privilegiada\*\*/.test(access)
+ };
+}
+const base=checks(cc,task);
+const missing=paths.filter(p=>!permitted(task,p));
+console.log('BASE ' + JSON.stringify(base));
+console.log('MISSING ' + missing.length + ' ' + JSON.stringify(missing));
+const mutants=[
+ ['R01',cc,task.replace('`supabase/tests/rpc_distance.sql`','`supabase/tests/{rpc_distance}.sql`'),'R01'],
+ ['H05-check',cc,task.replace('conserva los grants de tabla compartidos que necesitan',
+   'revoca los grants compartidos de tabla que necesitan'),'H05_check_grants'],
+ ['H05-DoD',cc,task.replace('conserva los grants de tabla compartidos necesarios',
+   'revoca los grants compartidos de tabla necesarios'),'H05_dod_grants'],
+ ['H05-concurrency',cc,task.replace('y la\n      auditoría en la misma transacción',
+   'sin registro en la misma transacción'),'H05_concurrency'],
+ ['H05-backfill',cc,task.replace('**Migración y backfill:** sin backfill',
+   '**Migración y backfill:** backfill automático'),'H05_backfill'],
+ ['H05-CC',cc.replace('**por columna privilegiada**','**por tabla entera**'),task,'H05_CC']
+];
+let failed=0;
+for (const [name,c,t,key] of mutants) {
+ const observed=checks(c,t)[key], red=base[key] && !observed;
+ console.log('MUTATION ' + name + ': ' + base[key] + ' -> ' + observed +
+   ' ' + (red?'RED_DOCUMENTAL':'NO_DETECTADA'));
+ if(!red)failed++;
+}
+if(!Object.values(base).every(Boolean))failed++;
+console.log('RESULT ' + (failed?'FAIL':'PASS') + ' (solo documentación, no SQL runtime)');
+if(failed)process.exitCode=1;
+```
+
+### Otros comandos de verificación del repo (no ejecutados por el revisor)
+
+```bash
+git fetch origin
+git rev-parse HEAD
+git diff --check origin/develop...origin/cc/CC-047-admin-hardening
+git merge-tree --write-tree origin/develop origin/cc/CC-047-admin-hardening
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+**No usar un resultado de texto como evidencia de seguridad runtime.** La consulta D2 de la ronda 1 sigue siendo el paso manual de Lautaro073 al promover T-408, no un comando ejecutado durante la revisión.

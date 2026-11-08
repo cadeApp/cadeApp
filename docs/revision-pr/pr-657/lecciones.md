@@ -31,3 +31,13 @@ Esta PR es contractual: no se deduce éxito de los futuros tests a partir de que
 No numeramos una regla AG nueva: ambos casos quedan cubiertos por los patrones existentes y el máximo global de las ramas remotas no se pudo auditar en el entorno sin clon. **Las mejoras de revisión** (no una exigencia nueva a la PR) son: probar nombres de archivo reales contra `permite` y buscar frases absolutas que contradicen excepciones D1/D3.
 
 **Advertencia:** este CC es documental; las correcciones H01-H04 son estructurales por inspección, no pgTAP verde. No confundir «listado de pruebas» con «prueba ejecutada».
+
+## Ronda 3 — cierre de R01 y H05
+
+- **PR657-R01 / P08:** se confirmó que el permiso literal del repositorio no interpreta brace expansion ni `<timestamp>`. La mutación independiente en memoria de una ruta individual volvió a crear un caso rechazado. **Regla de proceso:** convertir cada entrada de «Archivos permitidos» en un nombre concreto antes de validarla; no fiarse de que `verify-fichas.test.ts` cubra la lista entera.
+- **PR657-H05 / P05:** el CC, checklist y DoD ahora dicen lo mismo respecto de grants compartidos, protección de columnas, locks y D2. **Regla de proceso:** luego de conciliar una decisión, ejecutar el control tanto sobre checklist como sobre DoD y el contrato, no solo buscar la presencia de un término correcto.
+- **Lección del revisor:** una primera mutación que reemplazaba «y la auditoría» con «sin auditoría» no ponía rojo el detector, porque conservaba la palabra. La mutación que quita el concepto completamente sí lo hizo. Esto confirma pr-63/AG-68: el detector debe reaccionar a la violación real, no al cambio cosmético. Se corrigió el instrumento antes de cerrarlo.
+
+No se introduce un nuevo AG: R01 y H05 refuerzan patrones existentes (pr-56/AG-37; pr-62/AG-60; pr-63/AG-68). El proyecto contiene numeración AG duplicada entre ramas; no se asigna un ID sin comparar todo el remoto.
+
+**Advertencia:** el estado `arreglado-verificado` de R01/H05 se limita al **contrato documental y al test de rutas**. Las pruebas futuras de seguridad de T-408 no están realizadas ni certificadas por esta revisión.
