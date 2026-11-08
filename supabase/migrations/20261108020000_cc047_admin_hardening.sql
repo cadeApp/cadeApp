@@ -14,8 +14,8 @@ as $$
   select exists (
     select 1 from public.profiles
     where id = auth.uid() and role = 'admin'
-  )
-  and coalesce(auth.jwt()->>'aal', '') = 'aal2';
+  ) -- MUTACIÓN M1: sin aal2
+  ;
 $$;
 
 revoke all on function app_private.is_admin() from public, anon, authenticated;
@@ -24,6 +24,9 @@ grant execute on function app_private.is_admin() to authenticated;
 -- 2. Sin escrituras directas privilegiadas del admin. Los grants de tabla a authenticated no cambian: los usan las
 --    policies de autoservicio (D3=B).
 drop policy if exists profiles_update_admin on public.profiles;
+-- MUTACIÓN M2: se restaura la policy de UPDATE admin
+create policy profiles_update_admin on public.profiles for update to authenticated
+  using (app_private.is_admin()) with check (app_private.is_admin());
 drop policy if exists merchants_update_admin on public.merchants;
 drop policy if exists couriers_update_admin on public.couriers;
 drop policy if exists delivery_requests_update_admin on public.delivery_requests;
@@ -62,6 +65,8 @@ create policy audit_log_select_admin on public.audit_log
 
 revoke insert, update, delete, truncate on public.audit_log from anon, authenticated;
 revoke all on sequence public.audit_log_id_seq from anon, authenticated;
+-- MUTACIÓN M3: TRUNCATE vuelve a authenticated
+grant truncate on public.audit_log to authenticated;
 
 -- security invoker: en un security definer, current_user sería el dueño y la condición no se cumpliría nunca.
 -- Rechaza a los clientes aunque vuelvan por error un grant o una policy; no afecta a service role, a las RPC
@@ -69,7 +74,7 @@ revoke all on sequence public.audit_log_id_seq from anon, authenticated;
 create or replace function app_private.audit_log_reject_client_change()
 returns trigger
 language plpgsql
-security invoker
+security definer -- MUTACIÓN M4
 set search_path = public, pg_temp
 as $$
 begin
@@ -247,7 +252,8 @@ begin
   update public.merchants
   set
     subscription_status = v_target_status,
-    paid_until = p_paid_until
+    paid_until = p_paid_until,
+    notes = case when p_notes is not null then p_notes else notes end -- MUTACIÓN M6
   where profile_id = p_merchant_id;
 
   -- D02 / H10: Registrar evento en audit_log
@@ -286,7 +292,8 @@ as $$
 declare
   v_before text;
 begin
-  perform app_private.assert_admin_aal2();
+  -- MUTACIÓN M5: sin assert_admin_aal2
+  
 
   if p_courier_id is null
     or p_display_name is null
