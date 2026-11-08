@@ -1,51 +1,48 @@
-# PR #658 — T-408 · Endurecimiento administrativo CC-047
+# PR #658 — T-408 · CC-047 · Endurecimiento administrativo
 
 | Dato | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/658 |
-| Tarea | T-408 · Fase 4 · CC-047 mergeado en #657 |
+| Tarea | T-408 · Fase 4; contrato `docs/contracts/CC-047.md` mergeado en #657 |
 | Autor | @Lautaro073 |
 | Rama | `feat/T-408-admin-hardening` → `develop` |
 | Base de contraste | `fd86f9b2a25b39607e2719e76ad1821f84f44eef` |
-| SHA funcional revisado | `3a396ee1258b39c6c6e111f157399fccdb8ae42f` |
-| Head inicial de la ronda | `1f0cbc4d3678aa158f92f7822558ae46e0499751` (solo bitácora) |
-| Diff observado | 18 archivos, +834/-24 antes del commit de revisión |
-| Estado R1 | **CON BLOQUEANTES (6), sin aprobación ni merge** |
+| SHA de código R1 | `3a396ee1258b39c6c6e111f157399fccdb8ae42f` |
+| SHA de código R2 | `511940aaa6df0bde2075d7b6bd07bf0a47e5f50c` |
+| SHA bitácora R2 | `e8a002a808a22fc95c310489f70db32f64afbf53` (no cambia código) |
+| Estado | **R2: CON BLOQUEANTES (1 nuevo de cobertura), sin aprobación ni merge** |
 
 ## Rondas
 
-| Ronda | SHA de código | Resultado | Informe |
+| Ronda | SHA revisado | Estado | Informe |
 |---|---|---|---|
-| 1 | `3a396ee1` | 6 hallazgos abiertos · decisiones D01=B y D02=A resueltas | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `3a396ee1` | 6 hallazgos abiertos; D01=B, D02=A decididas | [R1](revisiones/ronda-1.md) |
+| 2 | `511940aa` | H01–H06 resueltos, H07 nuevo abierto | [R2](revisiones/ronda-2.md) |
 
 ## Hallazgos
 
-| ID | Severidad | Síntesis | Estado |
+| ID | Severidad | Resumen | Estado después de R2 |
 |---|---|---|---|
-| PR658-H01 | medio | Denegar SELECT de `rate_limits` según decisión D01=B | abierto |
-| PR658-H02 | alto | Control de catálogo de policies de escritura admin | abierto |
-| PR658-H03 | alto | SEC-03: INSERT/UPDATE/DELETE en Storage sin prueba directa | abierto |
-| PR658-H04 | alto | D1: concurrencia no detecta supresión de `FOR UPDATE` | abierto |
-| PR658-H05 | medio | D3: cobertura incompleta por actor, AAL y columna | abierto |
-| PR658-H06 | medio | SEC-11: escenarios insuficientes y control de no-backfill | abierto |
+| PR658-H01 | medio | rate_limits SELECT admin → USING(false) | **arreglado-verificado** (inspección estática propia + CI) |
+| PR658-H02 | alto | Test de catálogo de policies no-SELECT con is_admin | **arreglado-verificado** |
+| PR658-H03 | alto | Storage INSERT/UPDATE/DELETE | **arreglado-verificado** |
+| PR658-H04 | alto | Concurrencia D1 admin/admin y audit.before | **arreglado-verificado** |
+| PR658-H05 | medio | D3 aal1/aal2 + positivos | **arreglado-verificado** |
+| PR658-H06 | medio | Tres historias de notas + consulta candidatos | **arreglado-verificado** (ausencia de backfill: inspección) |
+| PR658-H07 | **medio** | Exclusividad de RPC en rate_limits: INSERT cliente y policy de escritura genérica escapan tests | **abierto, bloqueante de cobertura** |
 
-## Decisiones P1 recibidas
+## Evidencia validada
 
-- **D01=B:** reemplazar `rate_limits_select_admin` por `FOR SELECT TO authenticated USING (false)`; medir cero filas con `aal1` y `aal2` y una RPC de rate limit real.
-- **D02=A:** aceptar la ampliación de la ficha a `cc043` y concurrencias `cc025`/`cc033`, porque restaura los contratos probados sin debilitar las aserciones.
-- Los casos `cc047` 13–16 no son sensores de la policy: los triggers `trg_lock_draft_drops` y `trg_lock_draft_drop_contacts` de T-340 bloquean escrituras de quien no es comercio dueño en borrador. Usar control de catálogo, no fabricar RED funcional.
-- Una sentencia de limpieza de notas en la migración ocurre antes del fixture pgTAP: tres escenarios de RPC y **inspección de SQL de migración** por separado, sin afirmar mutación DB RED inexistente.
+- [GREEN 42443782479](https://github.com/cadeApp/cadeApp/actions/runs/42443782479), SHA `511940aa`: pgTAP **Files=44 Tests=3676 Result: PASS**, cc047 **92/92**, escenarios D/E GREEN; unit **199 archivos/3755 tests**, typecheck, lint, build, audit, bundle PASS y drift de `database.types.ts` superado.
+- PR de mutaciones del autor [#660](https://github.com/cadeApp/cadeApp/pull/660) (pgTAP 11/92 rojos y rpc_admin 1/111), [#661](https://github.com/cadeApp/cadeApp/pull/661) (D RED por before) y [#662](https://github.com/cadeApp/cadeApp/pull/662) (E RED por before): cerradas sin mergear; ver informe R2.
+- Inspección independiente con batería propia de seis controles estáticos: base 6/6 GREEN, seis alteraciones independientes 6/6 detectadas en RED **estático**, y mutación teórica H07 que escapa a la cobertura por inspección. No es una ejecución propia de PostgreSQL.
+- El archivo de [comandos y evidencia](evidencia/comandos.md) conserva R1 íntegra y agrega R2. [Hallazgos estructurados](hallazgos.jsonl) · [Lecciones](lecciones.md).
 
-## Evidencia y estado operativo
+## Decisiones y acciones pendientes
 
-- CI RED sin migración: [42438514865](https://github.com/cadeApp/cadeApp/actions/runs/42438514865) — 48/66 fallos.
-- CI GREEN del SHA revisado: [42439999763](https://github.com/cadeApp/cadeApp/actions/runs/42439999763) — `db-tests` 44 archivos / 3651 tests PASS; Vitest 199 archivos / 3755 tests PASS.
-- Mutaciones **del autor, no del revisor**: [42440751262](https://github.com/cadeApp/cadeApp/actions/runs/42440751262) — `cc047` 18/67 fallos y `rpc_admin` 1/111 fallo.
-- Cuatro controles **estáticos independientes**: original GREEN; mutaciones propias detectadas en RED. No prueban RLS en PostgreSQL. Harness completo en [evidencia/comandos.md](evidencia/comandos.md).
-- `e2e-preview`: BLOCKED / REQUIRES DEVELOP MIGRATION previsto en runbook; E2E remoto pendiente en staging tras migración. `develop` no dispone de E2E post-merge automático según runbook.
+- D01=B y D02=A quedaron resueltas en R1; no se reabren.
+- El autor corrige **solo H07 en pgTAP**, demuestra mutación RED y GREEN y vuelve a pedir ronda 3. No tocar código productivo salvo que se descubra un defecto adicional probado.
+- **Humano, cada ambiente:** Lautaro073 debe ejecutar y resolver la consulta de candidatos de `merchants.notes` de CC-047 `6, documentando resultado sin texto sensible, antes de promover.
+- **Tras merge:** aplicar migración a Develop, validar tipos y E2E del panel admin con `aal2` en staging antes de producción. El E2E post-merge automático en Develop no está implementado según `docs/runbooks/e2e-preview.md:153`. No autorizar merge desde esta revisión.
 
-## Próximos pasos
-
-El autor debe realizar solo los seis arreglos acotados, preservar la bitácora y aportar mutaciones RED→GREEN legítimas. La revisión independiente realizará ronda 2 sobre el nuevo SHA. Antes de promover cada ambiente, Lautaro073 revisa manualmente los candidatos de `merchants.notes` con la consulta de CC-047; no se exponen notas en logs ni se promueve con candidatos pendientes.
-
-Datos: [hallazgos.jsonl](hallazgos.jsonl) · [lecciones.md](lecciones.md).
+> R2 no modifica el archivo [ronda 1](revisiones/ronda-1.md), que sigue siendo histórico del estado R1.

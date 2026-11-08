@@ -23,3 +23,15 @@ D3 exige actor, nivel de MFA y columna separados. Consolidarlos en una sola aser
 - No convertir el `e2e-preview` bloqueado por migración, según runbook, en falso error de código. Registrar el E2E de staging pendiente.
 
 **No cambiar AGENTS.md solo por esta PR.** La ronda 2 deberá contrastar los controles nuevos con mutaciones propias que intenten escapar de cada control.
+
+## Ronda 2 — confirmaciones y nueva lección sin número AG
+
+**H01–H06:** el autor implementó lo pedido y la CI demostró respuestas específicas a mutaciones. La revisión independiente leyó el código y la ejecución de CI, y corrió su propia batería estática contra el mismo SHA. No atribuir los mutantes #660–#662 a la revisión.
+
+**H07 — complemento a pr-68/AG-75 + pr-56/AG-37.** La propia R1 del revisor pidió una policy `rate_limits_select_admin USING(false)` y un catálogo que detectara `is_admin()` sobre DML. Eso deja una clase fuera: policies de escritura genéricas (`FOR INSERT WITH CHECK(true)`), incluso si el objetivo `rate_limits` es «solo RPC». La forma sostenible es agregar un control estructural por tabla que cubra **todas las operaciones incompatibles con su contrato**, independientemente de nombre, predicado o rol. Además, probar INSERT real como `authenticated` cuando el DoD nombra la exclusividad de RPC.
+
+> **Refuerzo de regla listo para adoptar cuando se repita en otra PR:** «Para tablas internas manejadas solo por SECURITY DEFINER, los tests deben exigir cero policies de DML directo en `pg_policies` y ensayar al menos una escritura cliente (INSERT como actor con grant aplicable). Una aserción que solo busca el helper admin no garantiza ausencia de policies permisivas alternativas.»
+
+**Límite de evidencia:** no afirmar CI GREEN de una mutación que nunca se ejecutó en PostgreSQL. La mutación H07 fue comprobada solo mediante lectura y simulación estática del instrumento. La siguiente ronda debe corroborar con PR de mutación aislada.
+
+**Cuidado con numeración:** no añadir `AG-xx` nuevo sin inspeccionar los máximos de todas las ramas remotas; este refuerzo conserva las referencias con su carpeta. Ronda 2 no modifica AGENTS.md.

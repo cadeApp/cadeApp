@@ -188,3 +188,143 @@ No crear tests falsos ni adulterar aserciones para pasar en verde. Las mutacione
 
 - Pre-promoción de **cada** ambiente: Lautaro073 consulta de candidatos `CC-047 `6`, registro sin texto de notas, resolución de cada candidato; cero casos pendientes antes de promover.
 - `migrate-develop` tras merge aplica esquema y verifica drift. `e2e-preview` de PR no aplica migración remota por seguridad. El runbook `docs/runbooks/e2e-preview.md:153` indica que no hay E2E post-merge automático en Develop; validar E2E de staging antes de promover a producción.
+
+
+---
+
+# Ronda 2 — evidencia reproducible y mutaciones INDEPENDIENTES
+
+## Procedencia de los SHAs
+
+- Código correcto `511940aaa6df0bde2075d7b6bd07bf0a47e5f50c`; su padre es el commit de revisión R1 `5f61c7fa`.
+- Head de bitácora `e8a002a808a22fc95c310489f70db32f64afbf53`, hijo de `511940aa`, sólo modifica `docs/tasks/log/T-408.md`.
+- `develop`: `fd86f9b2a25b39607e2719e76ad1821f84f44eef`. API de PR: mergeable; no se pudo ejecutar `git merge-tree` local.
+- Diff específico R1→R2: sólo 3 archivos de código (`migracion`, `cc047_admin_hardening.sql`, `integration/cc031_profile_concurrency.mjs`) y bitácora. Carpeta de revisión intacta desde el commit R1; autor no escribió aquí.
+
+## CI oficial (se inspeccionó EL LOG, no solo el badge)
+
+- [Run 42443782479](https://github.com/cadeApp/cadeApp/actions/runs/42443782479) `head_sha=511940aa...`, `event=pull_request`, `conclusion=success`.
+- Job `db-tests` 128618332778: `cc047_admin_hardening.sql ... ok`, `Files=44, Tests=3676, Result: PASS`; escenas `D: before.display_name = CC047 Uno` y `E: before.consent_status = reconsent_required`; types drift `git diff --exit-code -- src/types/database.types.ts` sin diffs.
+- Job `unit` 128618332649: `Test Files 199 passed (199)` y `Tests 3755 passed (3755)`. Lint, typecheck, audit, build y bundle completaron success.
+- Rojos de `cc026`, `cc030` y mutaciones internas de `cc031` en el job GREEN son controles RED deliberados con GREEN restaurado, no fallas finales.
+
+## Mutaciones DEL AUTOR, revisadas por SHA/diff/log
+
+| PR / Run | SHA mutado | Cambio exclusivo | Evidencia |
+|---|---|---|---|
+| [#660](https://github.com/cadeApp/cadeApp/pull/660) · [42443811683 intento 2](https://github.com/cadeApp/cadeApp/actions/runs/42443811683) | `2cdf82d` | Migración: vuelve `drops_write_admin`, lee rate_limits con `is_admin`, vuelve `courier_docs_admin`, debilita `profiles_update_self`, vuelve a escribir `merchants.notes` | `cc047 Failed 11/92` y `rpc_admin Failed 1/111`. Mutaciones agrupadas; cada índice identifica el oracle, no implica independencia |
+| [#661](https://github.com/cadeApp/cadeApp/pull/661) · [42443817780](https://github.com/cadeApp/cadeApp/actions/runs/42443817780) | `bc1bfb0` | Solo elimina `FOR UPDATE` de nombre | `cc047 pgTAP PASS`; D RED por `before.display_name` distinto de Uno |
+| [#662](https://github.com/cadeApp/cadeApp/pull/662) · [42443823780 intento 2](https://github.com/cadeApp/cadeApp/actions/runs/42443823780) | `bd8bada` | Solo elimina `FOR UPDATE` de consentimiento | `cc047 pgTAP PASS`; D GREEN y E RED por `before.consent_status` incorrecto |
+
+Las tres PR están cerradas, sin merge. No se modificaron tests en esas mutaciones: el diff contra `511940aa` contiene solo la migración. No se considera batería de mutaciones del revisor.
+
+## Batería del REVISOR: seis controles estáticos + seis mutaciones adversariales
+
+El código siguiente es el harness completo (Node, solo lectura de tres archivos; todas las mutaciones alteran strings en memoria). La lógica fue ejecutada sobre los contenidos del SHA `511940aa` recuperados por GitHub. En este entorno sin clon local no se pudo correr exactamente el comando `node` contra esos archivos; las mismas condiciones y mutaciones se ejecutaron en el runtime JS del conector. Esto **no** ejecuta PostgreSQL ni reemplaza las mutaciones aisladas del autor.
+
+```bash
+cat > /tmp/cc047-review-r2.mjs <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const read = path => fs.readFileSync(path, 'utf8');
+const base = {
+  migration: read('supabase/migrations/20261108020000_cc047_admin_hardening.sql'),
+  sql: read('supabase/tests/cc047_admin_hardening.sql'),
+  js: read('supabase/tests/integration/cc031_profile_concurrency.mjs'),
+};
+const checks = {
+  H01: x => /create policy rate_limits_select_admin on public.rate_limits\s+for select to authenticated\s+using\s*\(false\)/i.test(x.migration)
+      && /pg_temp\.count_as\(pg_temp\.admin\(\), 'aal2', \$q\$select 1 from public\.rate_limits/.test(x.sql)
+      && /select public\.submit_offer/.test(x.sql),
+  H02: x => /from pg_policies\s+where schemaname = 'public' and cmd <> 'SELECT'/.test(x.sql)
+      && /coalesce\(qual, ''\)[\s\S]{1,100}app_private\[.\]is_admin/.test(x.sql),
+  H03: x => ['insert into storage.objects', 'update storage.objects', 'delete from storage.objects']
+      .every(s => x.sql.includes(s)) && /admin aal2 no (sube|renombra|borra) objetos/.test(x.sql),
+  H04: x => /adminAdminRace/.test(x.js) && /assert\.equal\(lastBefore, expectedBefore/.test(x.js)
+      && /scenarioD\(courierId, adminId\)/.test(x.js)
+      && /scenarioE\(courierId, adminId\)/.test(x.js)
+      && [...x.migration.matchAll(/\bfor update\s*;/gi)].length >= 2,
+  H05: x => /from \(values \('aal1'\), \('aal2'\)\) a\(aal\)\s+cross join \(values \('role', 'merchant', 'admin'\), \('consent_status'/.test(x.sql)
+      && /D3 aal1: la cuenta admin edita su teléfono/.test(x.sql)
+      && /D3 aal2: la cuenta admin edita su teléfono/.test(x.sql)
+      && /register_push_subscription/.test(x.sql),
+  H06: x => ['SEC-11 igual', 'SEC-11 distinta', 'SEC-11 reescrita']
+      .every(s => x.sql.includes(s))
+      && /last_admin_note/.test(x.sql) && /cc047_candidatos/.test(x.sql)
+      && !/\bupdate\s+public\.merchants\s+set\s+[\s\S]*?\bnotes\s*=/i.test(
+        (x.migration.match(/-- 6\. admin_set_subscription[\s\S]*?-- 7\. Correcciones administrativas/) || [])[0] || ''),
+};
+for (const [name, test] of Object.entries(checks)) {
+  assert.ok(test(base), name + ': baseline debe dar GREEN');
+}
+console.log('R2 BASE GREEN: H01-H06 6/6');
+
+const mutations = [
+  ['H01', x => ({ ...x, sql: x.sql.replace(
+    "pg_temp.count_as(pg_temp.admin(), 'aal2', $q$select 1 from public.rate_limits",
+    "pg_temp.count_as(pg_temp.admin(), 'aal1', $q$select 1 from public.rate_limits") })],
+  ['H02', x => ({ ...x, sql: x.sql.replace(
+    "schemaname = 'public' and cmd <> 'SELECT'",
+    "schemaname = 'public' and cmd = 'SELECT'") })],
+  ['H03', x => ({ ...x, sql: x.sql.replace(
+    'delete from storage.objects where bucket_id',
+    'select 1 from storage.objects where bucket_id') })],
+  ['H04', x => ({ ...x, js: x.js.replace(
+    'assert.equal(lastBefore, expectedBefore',
+    'assert.equal(expectedBefore, expectedBefore') })],
+  ['H05', x => ({ ...x, sql: x.sql.replace(
+    "from (values ('aal1'), ('aal2')) a(aal)\ncross join (values ('role'",
+    "from (values ('aal1')) a(aal)\ncross join (values ('role'") })],
+  ['H06', x => ({ ...x, migration: x.migration.replace(
+    'paid_until = p_paid_until\n  where profile_id',
+    'paid_until = p_paid_until,\n    notes = p_notes\n  where profile_id') })],
+];
+for (const [name, mutate] of mutations) {
+  const changed = mutate(base);
+  assert.notDeepEqual(changed, base, name + ': mutacion no aplicada');
+  assert.equal(checks[name](changed), false, name + ': mutacion escapo del ORACLE ESTATICO');
+  console.log(name + ': RED ESTATICO');
+}
+console.log('6/6 mutaciones independientes detectadas. No es pgTAP.');
+JS
+node --check /tmp/cc047-review-r2.mjs
+node /tmp/cc047-review-r2.mjs
+```
+
+**Salida obtenida al ejecutar la lógica en memoria sobre las tres fuentes de `511940aa`:**
+
+```text
+baseline: H01=true, H02=true, H03=true, H04=true, H05=true, H06=true
+mut1_erase_aal2: H01=false; otros true
+mut2_weaken_catalog: H02=false; otros true
+mut3_drop_storage_delete: H03=false; otros true
+mut4_weaken_js: H04=false; otros true
+mut5_drop_aal2_d3: H05=false; otros true
+mut6_backfill: H06=false; otros true
+```
+
+El harness comprueba **presencia textual de guardas y oráculos**, no prueba que la base implemente RLS; para esa propiedad se cruzó el log `db-tests` y las mutaciones runtime del autor. Tampoco detecta SQL dinámico no textual en backfill; inspección manual completa de la migración sigue siendo necesaria.
+
+## H07: una mutación INDEPENDIENTE que no está cubierta (ANÁLISIS, no se ejecutó CI)
+
+```sql
+create policy rate_limits_insert_any on public.rate_limits
+  for insert to authenticated with check (true);
+```
+
+Control estático ejecutado contra el `SHA 511940aa` (mutación en memoria, sin tocar repo):
+- Baseline: la migración tiene `FOR SELECT ... USING(false)` y **cero** policies no-SELECT sobre `rate_limits`.
+- Mutante: mantiene `USING(false)` para SELECT y crea **una** policy `FOR INSERT` sin `is_admin()`.
+- El test de catálogo actual `pg_policies...cmd <> 'SELECT' AND (qual || with_check) ~* is_admin` no coincide con esta policy.
+- Las dos consultas D01 `count_as(admin,'aal1'|'aal2', subject='cc047')` siguen ejerciendo solo SELECT y no pueden observar ese INSERT permisivo.
+- La suite tiene un `INSERT INTO public.rate_limits` en el fixture **superusuario**, pero ningún `pg_temp.run(... INSERT INTO public.rate_limits ...)` como cliente. `SEC-01` solo prueba DELETE directo.
+- Por inspección, las aserciones actuales **no prueban la propiedad que rompe esta mutación**. No escribir «CI del mutante quedó GREEN»: no se ejecutó una mutación PostgreSQL de este caso.
+
+**Prueba RED/ GREEN pendiente:** pgTAP `count(*) FROM pg_policies WHERE schemaname='public' AND tablename='rate_limits' AND cmd <> 'SELECT'` esperado 0, más intento explícito de INSERT por `authenticated` con estado superusuario; mutar policy y reportar índice rojo exacto. Si la instalación no otorga INSERT a `authenticated`, el catálogo debe dar RED de todos modos y el autor debe anotarlo, sin fabricar permisos artificiales para declarar un bypass explotable.
+
+## No ejecutado y gates
+
+No se corrió PostgreSQL local, Docker, Supabase remoto, `git merge-tree` ni `pnpm` en el entorno del revisor. No se leyó `.env` ni ningún secreto. La verificación dinámica es la ejecución oficial de CI sobre `511940aa`, que se corroboró leyendo los logs.
+
+Acción humana pendiente: en cada ambiente, consulta `CC-047 `6` de candidatos de notas; resolver sin registrar textos. Luego del merge, migración Develop + tipos y E2E admin `aal2` en staging. `e2e-preview` bloqueado por migración hasta entonces, conforme runbook.
