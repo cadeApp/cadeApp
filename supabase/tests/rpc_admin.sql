@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(110);
+select plan(111);
 
 -- IDs fijos válidos (hexadecimal estricto) para pruebas de T-105
 create or replace function pg_temp.admin_id() returns uuid language sql immutable as $$
@@ -441,14 +441,21 @@ select results_eq(
   $$ values ('admin_set_subscription') $$
 );
 
--- 4.11 H12: sin paid_until se borra la vigencia y notes se conserva (semántica escrita en la RPC)
+-- 4.10b CC-047 / SEC-11: la nota queda en audit_log.after.notes, no en merchants.notes
+select results_eq(
+  $$ select after->>'notes' from public.audit_log where action = 'admin_set_subscription' and target_id = pg_temp.merchant_id()::text order by id desc limit 1 $$,
+  $$ values ('Pago al día'::text) $$
+);
+
+-- 4.11 H12: sin paid_until se borra la vigencia. CC-047 / SEC-11: ninguna de las dos llamadas escribe
+-- merchants.notes, que conserva su valor previo (null en esta fixture).
 select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal2');
 select lives_ok(
   $$ select public.admin_set_subscription(pg_temp.merchant_id(), 'expired', null, null) $$
 );
 select results_eq(
   $$ select paid_until is null, notes from public.merchants where profile_id = pg_temp.merchant_id() $$,
-  $$ values (true, 'Pago al día'::text) $$
+  $$ values (true, null::text) $$
 );
 
 -- 5. admin_update_setting

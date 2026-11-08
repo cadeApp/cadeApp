@@ -1518,6 +1518,10 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_correct_courier_display_name: {
+        Args: { p_courier_id: string; p_display_name: string }
+        Returns: Json
+      }
       admin_count_announcement_audience: {
         Args: { p_audience: string }
         Returns: Json
@@ -1625,6 +1629,10 @@ export type Database = {
       }
       admin_resolve_incident: {
         Args: { p_decision: string; p_incident_id: string; p_reason: string }
+        Returns: Json
+      }
+      admin_revoke_courier_consent: {
+        Args: { p_courier_id: string }
         Returns: Json
       }
       admin_set_subscription: {

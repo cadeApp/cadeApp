@@ -146,7 +146,9 @@ async function addAgainstSuspend(suspensionFirst) {
     const addDone = `ADD_${crypto.randomUUID()}`;
     const suspendDone = `SUSPEND_${crypto.randomUUID()}`;
     if (suspensionFirst) {
-      suspend.send(`select 1 from public.couriers where profile_id='${courierId}' for update; select '${suspendDone}:LOCKED';`);
+      // CC-047: FOR UPDATE exige la policy de UPDATE que el admin ya no tiene; el lock se toma en su transacción con
+      // el rol dueño, como lo toma admin_suspend_courier (security definer).
+      suspend.send(`set local role postgres; select 1 from public.couriers where profile_id='${courierId}' for update; set local role authenticated; select '${suspendDone}:LOCKED';`);
       await suspend.waitFor(`${suspendDone}:LOCKED`);
       add.send(`do $body$ begin begin perform public.add_courier_optional_document(jsonb_build_object('kind','insurance','storagePath','${pathA}')); raise notice '${addDone}:OK'; exception when others then raise notice '${addDone}:ERROR:%', SQLERRM; end; end $body$;`);
       await waitBlocked(suspend, add);

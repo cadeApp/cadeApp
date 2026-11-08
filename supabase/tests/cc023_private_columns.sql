@@ -26,7 +26,8 @@ begin
   set local role authenticated;
   perform set_config(
     'request.jwt.claims',
-    jsonb_build_object('sub', actor_id::text, 'role', 'authenticated')::text,
+    (jsonb_build_object('sub', actor_id::text, 'role', 'authenticated')
+        || case when actor_id = pg_temp.admin_a() then '{"aal": "aal2"}'::jsonb else '{}'::jsonb end)::text, -- CC-047: el admin actúa con MFA
     true
   );
 end;

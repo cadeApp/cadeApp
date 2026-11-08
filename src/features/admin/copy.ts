@@ -486,6 +486,8 @@ export const ADMIN_COPY = {
       courier_cancel_match: 'El repartidor canceló',
       admin_create_announcement: 'Envió una novedad',
       admin_reinstate_courier: 'Reactivó un repartidor',
+      admin_correct_courier_display_name: 'Corrigió el nombre de un repartidor',
+      admin_revoke_courier_consent: 'Pidió que el repartidor vuelva a aceptar los términos',
       add_courier_optional_document: 'Cargó un documento opcional',
       replace_courier_document: 'Reemplazó un documento',
       add_courier_vehicle: 'Agregó un vehículo',
