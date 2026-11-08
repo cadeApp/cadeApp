@@ -18,13 +18,14 @@ Qué pasa al mergear (`.github/workflows/migrate.yml` y `deploy.yml`):
 |---|---|---|---|
 | 1 | `migrate` → `migrate-production` | `supabase link` + `supabase db push --yes` contra `cadeapp-prod` | push a `main` hecho por **Lautaro073** (`GITHUB_ACTOR`), aprobación del environment `production`, `SUPABASE_PRODUCTION_PROJECT_REF` distinto del ref de staging |
 | 2 | `deploy` → `deploy-production` | `vercel pull/build/deploy --prod` en el proyecto de producción y `GET $PRODUCTION_APP_URL/api/health` | `migrate` en `success`, mismo actor, aprobación del environment `production` |
-| 3 | `health-cron` → `health-cron-production` | `/api/cron/health` cada 10 minutos | existe la variable `PRODUCTION_APP_URL` |
+| 3 | `health-cron` → `health-cron-production` | `/api/cron/health` de `https://cadeapp.online` cada 10 minutos (URL fija en el workflow, T-392) | siempre, por `schedule`; usa el environment `production` |
 
 Consecuencias:
 - Las migraciones se aplican **antes** que el código. Si `deploy-production` falla, la base queda adelante de la app:
   cada migración tiene que ser compatible con la versión anterior de la app (checklist de esquema de las fichas).
-- Si mergea otra persona, `migrate-production` falla en el primer paso y no toca la base. Se vuelve a correr cuando
-  Lautaro073 lo dispare (re-run del workflow o un commit suyo en `main`).
+- Si mergea otra persona, `migrate-production` falla en el primer paso y no toca la base. Un re-run **no** lo
+  destraba: GitHub conserva el actor original (`GITHUB_ACTOR`) aunque lo relance Lautaro073. Hace falta un push nuevo
+  de Lautaro073 a `main` (por ejemplo, el merge de la siguiente PR de release).
 - `supabase/seed.sql` **no** se aplica en producción: los barrios (`20261003130000_t326_aguilares_zones.sql`), los
   buckets y `platform_settings` vienen en las migraciones.
 
@@ -42,12 +43,15 @@ Consecuencias:
 
 ## 2. Producción configurada (lo hace Lautaro073 desde las consolas)
 
-### 2.1 GitHub — environment `production`
-- [ ] Required reviewer: Lautaro073.
+### 2.1 GitHub — environment `production` y ramas
+- [ ] Required reviewer: Lautaro073. Antes, `health-cron-production` tiene que salir del environment `production`
+      (D1=A de la revisión de T-312): si no, cada corrida programada queda esperando aprobación.
 - [ ] Secrets: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`,
       `CRON_SECRET`.
 - [ ] Variables: `SUPABASE_PRODUCTION_PROJECT_REF` (ref de `cadeapp-prod`), `SUPABASE_PROJECT_REF` (ref de staging,
       que el job usa para comprobar que no son el mismo) y `PRODUCTION_APP_URL` (sin `/` final).
+- [ ] `main`, `staging` y `develop` protegidas (D2=A de la revisión de T-312): PR obligatoria, checks requeridos,
+      sin push directo ni force-push.
 
 ### 2.2 Supabase — proyecto `cadeapp-prod`
 - [ ] Proyecto propio, distinto de `cadeapp-staging`, en la misma región.
@@ -93,7 +97,7 @@ Variables de entorno de **Production**, con los mismos nombres que `.env.example
 - [ ] Simulacro de restauración hecho y con acta firmada (`docs/runbooks/acta-simulacro-restauracion-staging.md`,
       T-310), con fecha de los últimos 90 días.
 - [ ] Alerta de prueba recibida en el canal de Discord de producción.
-- [ ] `health-cron-production` habilitado (existe `PRODUCTION_APP_URL`) y su primera corrida en verde después del
+- [ ] `health-cron-production` (corre siempre, con la URL fija del workflow) con su primera corrida en verde después del
       deploy.
 - [ ] Quién está de guardia las primeras 48 h y cómo se lo contacta.
 
