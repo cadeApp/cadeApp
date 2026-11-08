@@ -297,8 +297,7 @@ begin
 
   select display_name into v_before
   from public.profiles
-  where id = p_courier_id and role = 'courier'
-  for update;
+  where id = p_courier_id and role = 'courier'; -- MUTACIÓN H04: sin for update
 
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
