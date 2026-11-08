@@ -328,3 +328,139 @@ Control estático ejecutado contra el `SHA 511940aa` (mutación en memoria, sin 
 No se corrió PostgreSQL local, Docker, Supabase remoto, `git merge-tree` ni `pnpm` en el entorno del revisor. No se leyó `.env` ni ningún secreto. La verificación dinámica es la ejecución oficial de CI sobre `511940aa`, que se corroboró leyendo los logs.
 
 Acción humana pendiente: en cada ambiente, consulta `CC-047 `6` de candidatos de notas; resolver sin registrar textos. Luego del merge, migración Develop + tipos y E2E admin `aal2` en staging. `e2e-preview` bloqueado por migración hasta entonces, conforme runbook.
+
+
+---
+
+# Ronda 3 — evidencia independiente y CI (2026-11-08)
+
+## SHA y alcance del cambio
+
+- Código `0fd186af738fd3bf993c79f97cd09bf5c34ea4be`.
+- Bitácora-only posterior `5f3512aede017bfcdf651de57b43e8e14119d200`.
+- Diff desde commit R2 `456d6cc4`: **solo** `supabase/tests/cc047_admin_hardening.sql` (+27/-1) y `docs/tasks/log/T-408.md` (+8). Bitácora posterior +13 líneas. Sin edición del autor de `docs/revision-pr/**` ni código productivo.
+- Mutación #663 `35de0dd24ef1337282fc29f82a663fc87a92ba1f`, único commit hijo de `0fd186af`: únicamente agrega una policy de inserción de 3 líneas a la migración; ningún test cambiado. PR aislada cerrada sin mergear.
+
+## GREEN oficial corroborado en logs
+
+[CI 42446531770](https://github.com/cadeApp/cadeApp/actions/runs/42446531770), SHA `0fd186af`, attempt 1, event pull_request, conclusión **success**.
+
+- Job `db-tests` ID `128626513818`: `supabase/tests/cc047_admin_hardening.sql ... ok`, `Files=44, Tests=3683, Result: PASS`, 99 pgTAP en `cc047`. Escenarios D/E de CC031 volvieron a pasar con los valores `before`.
+- Job `unit` ID `128626513450`: Vitest `Test Files 199 passed (199)`, `Tests 3755 passed (3755)`. Jobs `typecheck`, `lint`, `audit`, `build`, `bundle-budget`: **success**.
+- Drift de tipos: CI ejecutó `git diff --exit-code -- src/types/database.types.ts` sin cambios.
+- Las líneas de timeout/error en el bloque H14 de T-340 y los subtests rojos cc026/cc030/cc031 pertenecen a **mutantes deliberados**, seguidos por GREEN restaurado. `db-tests` termina success. Ningún fallo atribuido al código correcto.
+
+## RED del autor, no del revisor
+
+[PR #663](https://github.com/cadeApp/cadeApp/pull/663) CLOSED sin mergear; [CI 42446535180](https://github.com/cadeApp/cadeApp/actions/runs/42446535180), SHA `35de0dd2`, attempt 1. Job `db-tests` ID `128626523669` concluyó failure.
+
+Diff único:
+```diff
+ create policy rate_limits_select_admin on public.rate_limits
+   for select to authenticated
+   using (false);
++-- MUTACIÓN H07
++create policy rate_limits_insert_any on public.rate_limits
++  for insert to authenticated with check (true);
+```
+
+Salida exacta significativa del log del job:
+```text
+# Failed test 6: "H07: rate_limits no tiene ninguna policy directa de INSERT/UPDATE/DELETE/ALL"
+# have: 1
+# want: 0
+# Failed test 7: "H07: admin-aal1 no inserta directo en rate_limits"
+# have: 00000
+# want: 42501
+# Failed test 8: "H07: admin-aal2 no inserta directo en rate_limits"
+# have: 00000
+# want: 42501
+# Failed test 9: "H07: courier-aal1 no inserta directo en rate_limits"
+# have: 00000
+# want: 42501
+# Failed tests 10–12: no quedó fila de admin-aal1 / admin-aal2 / courier-aal1
+# have: 1
+# want: 0
+Failed 7/99 subtests
+Files=44, Tests=3683
+Result: FAIL
+```
+
+Como las pruebas son idénticas entre mutación y original, los índices 7-12 documentan que el rol `authenticated` tiene GRANT INSERT efectivo: cuando la policy RLS abre la escritura, el INSERT pasa y persiste; por lo tanto no es una simple prueba del catálogo sin exposición posible.
+
+## Control ejecutado por el REVISOR, estático, sobre GitHub SHA exactos
+
+Se recuperaron por GitHub los archivos originales/mutados de migración y la prueba SQL en las dos ramas. Se ejecutaron en JS (en memoria, sin DB) **diez comprobaciones estáticas**, todas verdaderas:
+
+1. El plan pgTAP original es 99.
+2. La migración original crea exactamente **una** policy para `public.rate_limits` (`rate_limits_select_admin FOR SELECT USING(false)`).
+3. El catálogo de **creaciones** de la migración original tiene **0** policies no-SELECT para `rate_limits`.
+4. El catálogo equivalente del mutante tiene **1** policy no-SELECT.
+5. La prueba `H07` filtra `pg_policies` por `schemaname='public'`, `tablename='rate_limits'`, `cmd <> 'SELECT'`, independientemente del nombre de policy o `is_admin`.
+6. El pgTAP hace los INSERT como cliente mediante `pg_temp.run(a.actor,a.aal,format(...))` y espera `42501`.
+7. Compara ausencia de filas de los 3 sujetos con `count(*)=0` como superusuario.
+8. El archivo pgTAP completo es **idéntico** en la rama mutante y el SHA correcto.
+9. La diferencia entre las migraciones es **exactamente** el bloque `create policy rate_limits_insert_any ... with check(true)`.
+10. Existen exactamente tres actores: `admin/aal1`, `admin/aal2` y `courier/aal1`.
+
+Resultado del control en memoria:
+```text
+baseline: policies rate_limits = [{name:rate_limits_select_admin, op:SELECT}], nonSelect=0, plan=99
+mutante: policies rate_limits = [{name:rate_limits_select_admin,op:SELECT},{name:rate_limits_insert_any,op:INSERT}], nonSelect=1
+actores: admin-aal1, admin-aal2, courier-aal1
+catalogSQL=true; insertClient=true; persistenceFromSuperuser=true
+mutationExactlyOnePolicy=true; mutantTestsUnchanged=true
+checks=true (10/10)
+```
+
+**Limitación expresa:** este control independiente solo parsea texto de fuente; el veredicto sobre la ejecución real de PostgreSQL se apoya en los logs oficiales del autor, que se revisaron por SHA/ID de job. No se ejecutó Postgres/Supabase por parte del revisor.
+
+## R3: script reproducible de estructura
+
+```bash
+cat > /tmp/cc047-review-r3.mjs <<'JS'
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const migration = fs.readFileSync('supabase/migrations/20261108020000_cc047_admin_hardening.sql', 'utf8');
+const sql = fs.readFileSync('supabase/tests/cc047_admin_hardening.sql', 'utf8');
+const newPolicy = [
+  '-- MUTACIÓN H07',
+  'create policy rate_limits_insert_any on public.rate_limits',
+  '  for insert to authenticated with check (true);'
+].join('\n');
+const mutated = migration.replace('  using (false);\n', '  using (false);\n' + newPolicy + '\n');
+function policies(src) {
+  return [...src.matchAll(/\bcreate\s+policy\s+(\w+)\s+on\s+public\.rate_limits\b([\s\S]*?);/gi)]
+    .map(m => ({
+      name: m[1],
+      op: (m[2].match(/\bfor\s+(select|insert|update|delete|all)\b/i) || [])[1]?.toUpperCase() || 'ALL'
+    }));
+}
+const baselinePolicies = policies(migration);
+const mutantPolicies = policies(mutated);
+assert.match(sql, /select plan\(99\)/);
+assert.equal(baselinePolicies.length, 1);
+assert.equal(baselinePolicies.filter(p => p.op !== 'SELECT').length, 0);
+assert.equal(mutantPolicies.filter(p => p.op !== 'SELECT').length, 1);
+const h07 = sql.slice(sql.indexOf('-- H07:'), sql.indexOf('-- SEC-01: el admin no escribe directo'));
+assert.ok(h07.includes("schemaname = 'public'") && h07.includes("tablename = 'rate_limits'") && h07.includes("cmd <> 'SELECT'"));
+assert.match(h07, /pg_temp\.run\(a\.actor, a\.aal, format\(/);
+assert.match(h07, /'42501'/);
+assert.match(h07, /select count\(\*\) from public\.rate_limits where subject = 'cc047-direct-' \|\| a\.label/);
+for (const label of ['admin-aal1', 'admin-aal2', 'courier-aal1']) assert.ok(h07.includes(label));
+console.log('R3 estructura: BASE nonSelect=0, MUTANTE nonSelect=1, plan=99, 3 actores y rechazos/persistencia presentes');
+JS
+node --check /tmp/cc047-review-r3.mjs
+node /tmp/cc047-review-r3.mjs
+```
+
+El script es portátil a un checkout de la PR. La ejecución real de mutación en PostgreSQL es la #663 citada, no el script JS.
+
+## No revisado localmente / operaciones pendientes
+
+- Sin clon Git accesible: `git merge-tree`, `pnpm typecheck`, `pnpm lint`, `pnpm test` y `pnpm test:db` no ejecutados **localmente por revisor**. El CI de `0fd186af` sí los verificó en sus jobs.
+- SHA de código `0fd186af`: commit status `e2e-preview=error BLOCKED / REQUIRES DEVELOP MIGRATION` ([run 42447133352](https://github.com/cadeApp/cadeApp/actions/runs/42447133352)), tal como dispone `docs/runbooks/e2e-preview.md` para una PR con migración. No es RED de código; no marcar E2E verde.
+- Lautaro073 ejecuta en cada ambiente consulta CC-047 `6 de notas y resuelve candidatos antes de promoción, sin exponer texto. Tras merge se aplica `migrate-develop`, drift y E2E admin `aal2` en staging antes de producción.
+- No ejecutar acciones privilegiadas de Supabase remoto ni manejar credenciales durante esta revisión.
+
+**Estado del cierre:** H07 verificado con los límites anteriores; 0 hallazgos de código abiertos en la R3. No se aprueba ni mergea.

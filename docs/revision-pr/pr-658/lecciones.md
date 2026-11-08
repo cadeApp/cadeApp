@@ -35,3 +35,12 @@ D3 exige actor, nivel de MFA y columna separados. Consolidarlos en una sola aser
 **Límite de evidencia:** no afirmar CI GREEN de una mutación que nunca se ejecutó en PostgreSQL. La mutación H07 fue comprobada solo mediante lectura y simulación estática del instrumento. La siguiente ronda debe corroborar con PR de mutación aislada.
 
 **Cuidado con numeración:** no añadir `AG-xx` nuevo sin inspeccionar los máximos de todas las ramas remotas; este refuerzo conserva las referencias con su carpeta. Ronda 2 no modifica AGENTS.md.
+
+
+## Ronda 3 — H07 cerrado con mutación de una clase realmente distinta
+
+- Se añadió el control por **tabla y operación**, no por nombre ni predicado: `pg_policies.tablename='rate_limits' AND cmd <> 'SELECT'`. Es robusto frente a `INSERT WITH CHECK(true)` aunque la policy no contenga `is_admin()`.
+- El autor mantuvo el test general H02 y agregó tres oráculos funcionales para los actores admin `aal1`, admin `aal2` y courier `aal1`, **rechazo por SQLSTATE y ausencia de filas persistidas**. La mutación aislada #663 confirmó que `authenticated` tenía permiso INSERT (los tres clientes realmente insertaron con policy permisiva). RLS era la barrera y el nuevo control la protege.
+- La ejecución de los mutantes en CI corresponde al **autor**; el revisor contrastó de forma independiente SHA, diff, pruebas, logs y una batería propia estática. No atribuirse ejecución PostgreSQL propia.
+- **Patrón P08 prevenido:** enumerar el universo de operaciones permitidas en cada tabla RPC-only, no inferirlo de una negativa de SELECT ni de que una policy no contenga el nombre del helper administrativo.
+- H01–H07 todos cerrados. **No agregar otra regla AG por una sola PR**; este caso refuerza las referencias AG-37/AG-75 ya documentadas. No confundir «sin bloqueantes de código» con «E2E de staging realizado»: la promoción exige sus gates humanos.
