@@ -17,25 +17,25 @@ import {
 import type { PushSubscriptionState } from '../types';
 
 /** T-382: un mensaje por causa de falla del alta. */
-function subscribeErrorMessage(code: string | undefined): string {
+function subscribeErrorMessage(code: string | undefined, text: PushPromptCopy): string {
   switch (code) {
     case 'push_service_unavailable':
-      return PUSH_COPY.prompt.statusPushServiceUnavailable;
+      return text.statusPushServiceUnavailable;
     case 'permission_blocked':
-      return PUSH_COPY.prompt.statusPermissionBlocked;
+      return text.statusPermissionBlocked;
     case 'unauthorized':
-      return PUSH_COPY.prompt.statusSessionExpired;
+      return text.statusSessionExpired;
     case 'network_error':
-      return PUSH_COPY.prompt.statusNetworkError;
+      return text.statusNetworkError;
     case 'missing_vapid_key':
     case 'missing_keys':
-      return PUSH_COPY.prompt.statusConfigError;
+      return text.statusConfigError;
     case 'unsupported':
-      return PUSH_COPY.prompt.statusUnsupported;
+      return text.statusUnsupported;
     case 'subscription_failed':
-      return PUSH_COPY.prompt.statusGenericError;
+      return text.statusGenericError;
     default:
-      return PUSH_COPY.prompt.statusSubscriptionError;
+      return text.statusSubscriptionError;
   }
 }
 
@@ -152,7 +152,7 @@ export function PushPermissionPrompt({
     const subResult = await subscribeToPush();
     if (!subResult.ok) {
       setStatus('idle');
-      setErrorMessage(subscribeErrorMessage(subResult.error));
+      setErrorMessage(subscribeErrorMessage(subResult.error, text));
       return;
     }
 
