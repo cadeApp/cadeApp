@@ -26,3 +26,11 @@ El contrato añadía un trigger `BEFORE UPDATE` y decía que su `SELECT FOR UPDA
 **Regla propuesta (apoya pr-68/AG-74):** Para cada carrera, enumerar el camino de código real y qué locks están **adquiridos antes de ejecutar cada trigger o RPC**. Incluir fixtures que obliguen al camino adverso (aquí publicación legacy con **0 drops**, no solo multi-drop). Un chequeo «sin deadlock» sobre otra rama no demuestra nada para esta.
 
 No se asigna AG nuevo porque no se ha confirmado el máximo en todas las ramas remotas; se reutiliza pr-68/AG-74. No modificar AGENTS.md por esta sola ronda.
+
+## Ronda 3 — H04: probar que ambos órdenes son alcanzables antes de exigir una carrera
+
+El esquema `delivery_request_contacts(request_id PRIMARY KEY)` permite solo un contacto por solicitud y el puente `publish_request` exige ese contacto completo para una solicitud sin drops. Es imposible a la vez (1) que `publish_request` se complete primero sin contacto y (2) que INSERT agregue un contacto nuevo después como operación válida. Un test superficial podría quedar verde por `unique_violation` o `MISSING_REQUIRED_FIELDS`, en lugar de medir el lock o la guarda.
+
+**Regla apoyada por pr-56/AG-37 y pr-68/AG-74:** para cada escenario concurrente redactar precondiciones físicas (filas presentes/ausentes, PK/FK, estados, permisos), afirmar si ambas operaciones son legítimas en ese estado, y diseñar fixtures distintos cuando hagan falta. Pruebas sintéticas de error sobre estados inválidos son útiles, pero **no equivalen** a una carrera válida con la RPC real. RED mutado debe fallar por la propiedad prometida, no por PK incidental.
+
+No se asigna AG nuevo sin enumerar todas las ramas remotas; se reusa pr-56/AG-37. No tocar AGENTS.md con un solo caso nuevo.

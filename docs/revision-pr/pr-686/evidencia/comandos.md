@@ -185,3 +185,88 @@ La intercalación es análisis de código, no afirmación de haberla ejecutado.
 ### Conflicto con develop
 
 En esta ronda GitHub devolvió `mergeable_state='dirty'`; develop `af023d3` agrega T-431 y también actualiza T-409 en el plan, mientras la rama agrega T-430. Pedir merge de develop a feat sin rebase, conservar las tres filas y verificar `tools/verify-fichas.test.ts` + merge-tree.
+
+## Ronda 3 — evidencia de H04 y de cobertura documental en c777bf3a
+
+**Fuentes inmutables:** GitHub connector `c777bf3a` para contrato/ficha/plan y `af023d3` para base de T-409/T-431, esquema, `request_cycle` y runner. **Ejecutado por el revisor en memoria:** baseline GREEN y **12 mutaciones propias RED**; la primera versión interna de la batería tenía detecciones débiles y se descartó, las 12 de esta versión fueron verificadas y ninguna quedó verde. **Comprobación de sintaxis adicional:** `node --check /mnt/data/pr686-r3-check.cjs` → «Syntax check OK» (script generado en entorno local; no es clon del repo). Por no haber clon local no se ejecutó sobre el árbol de GitHub con `node`. No PostgreSQL/Docker ni tests DB.
+
+**Control por casos:** si `delivery_request_contacts.request_id` ya existe → segundo INSERT no es válido por PK; si no existe → `publish_request` con cero drops no publica por `MISSING_REQUIRED_FIELDS`. Esta contradicción está demostrada por el esquema y código fuente, no es una hipótesis de lock. La mutación necesaria para asegurar que el test cubre la propiedad sería eliminar solo la guarda de INSERT en una migración temporal; la expectativa no debe pasar únicamente por PK, otra policy o mensaje genérico.
+
+### Harness completo para copiar a /tmp y ejecutar desde un clon en c777bf3a
+
+Crear `/tmp/pr686-r3-check.cjs` con el contenido siguiente. Ejecutar desde la **raíz del repo** en SHA `c777bf3a`: `node /tmp/pr686-r3-check.cjs`. Es de solo lectura y no necesita DB. El código del harness fue comprobado sintácticamente; su ejecución en clon no pudo repetirse en esta sesión. Si el contrato se corrige después de la ronda, cambiarán los marcadores; fijar el SHA para esta evidencia.
+
+~~~javascript
+'use strict';
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const read = p => fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
+const base = {
+  cc: read('docs/contracts/CC-048.md'),
+  task: read('docs/tasks/T-430.md'),
+  plan: read('docs/implementation-plan.md'),
+  t409: read('docs/tasks/T-409.md'),
+  t431: read('docs/tasks/T-431.md'),
+  schema: read('supabase/migrations/20260922031435_schema_v1.sql'),
+  cycle: read('supabase/migrations/20261009200000_t340_multi_drop.sql'),
+  runner: read('supabase/tests/integration/t340_concurrency.mjs'),
+};
+const need = (condition, name) => assert.ok(condition, name);
+function validate(x) {
+  const row = id => x.plan.split('\n').find(s => s.startsWith('| ' + id + ' |'))?.split('|').map(s => s.trim()).at(-2);
+  const first = s => s.match(/## DoD\n\n- \[[ x]\] (.*)/)?.[1];
+  for (const [id, key] of [['T-409', 't409'], ['T-430', 'task'], ['T-431', 't431']]) {
+    assert.equal(row(id), first(x[key]), 'DoD versus plan ' + id);
+  }
+  need(x.cc.includes('before insert on public.delivery_request_contacts') &&
+      !x.cc.includes('before insert or update on public.delivery_request_contacts'), 'trigger only INSERT');
+  need(x.cc.includes('for update of r'), 'parent FOR UPDATE in policy USING');
+  need(x.cc.includes('returns boolean') && x.cc.includes('security invoker'), 'optional helper');
+  need(x.cc.includes('select status, merchant_id') && x.cc.includes('sin lock'), 'fallback');
+  need(x.cc.includes('todas con una **solicitud legacy de 0 drops**'), '0 drops fixture');
+  need(x.cc.includes('pg_blocking_pids') && x.cc.includes('40P01'), 'waiting and no deadlock');
+  need(x.task.includes('sin el lock de la solicitud') && x.task.includes('update adverso de H03'), 'H03 RED mutation');
+  need(x.task.includes('`updated_at` fijado') && x.task.includes('1 fila'), 'H07 real UPDATE');
+  need(x.cc.includes('supabase/tests/t340_multi_drop.sql:175'), 'M03 exact test path');
+  need(x.cc.includes('un UPDATE concurrente queda esperando'), 'M04');
+}
+validate(base); console.log('GREEN: control documental sobre archivos de c777bf3a');
+const mutations = [
+  ['trigger UPDATE again', 'cc', s => s.replace('before insert on public.delivery_request_contacts', 'before insert or update on public.delivery_request_contacts')],
+  ['parent lock removed', 'cc', s => s.replaceAll('for update of r', 'for share of r')],
+  ['helper changed', 'cc', s => s.replace('returns boolean', 'returns void')],
+  ['0 drops gone', 'cc', s => s.replace('todas con una **solicitud legacy de 0 drops**', 'todas con varios drops')],
+  ['blocking PID removed', 'cc', s => s.replaceAll('pg_blocking_pids', 'pg_sleep')],
+  ['40P01 removed', 'cc', s => s.replaceAll('40P01', 'ZZZ01')],
+  ['H07 updated_at not controlled', 'task', s => s.replace('`updated_at` fijado', '`updated_at` sin controlar')],
+  ['H03 mutation removed', 'task', s => s.replace('sin el lock de la solicitud', 'con el lock de la solicitud')],
+  ['M03 back to ambiguous path', 'cc', s => s.replaceAll('supabase/tests/t340_multi_drop.sql:175', 't340_multi_drop.sql:175')],
+  ['M04 removed', 'cc', s => s.replace('un UPDATE concurrente queda esperando', 'un UPDATE concurrente ignora el lock')],
+  ['T430 DoD diverged', 'task', s => s.replace('Fuera de `draft`, un update', 'Fuera de `published`, un update')],
+  ['T431 row deleted', 'plan', s => s.split('\n').filter(v => !v.startsWith('| T-431 |')).join('\n')],
+];
+for (const [name, key, change] of mutations) {
+  const changed = change(base[key]);
+  assert.notEqual(changed, base[key], 'mutation without target: ' + name);
+  assert.throws(() => validate({ ...base, [key]: changed }), undefined, 'unexpected GREEN for ' + name);
+  console.log('RED_CONFIRMED: ' + name);
+}
+const proof = {
+  pk: base.schema.includes('request_id uuid primary key'),
+  zeroDrops: base.cycle.includes('if v_drops_count = 0 then'),
+  lockedRead: base.cycle.includes('select * into v_contacts from public.delivery_request_contacts where request_id = p_request_id for update;'),
+  required: base.cycle.includes('if not found or not v_contacts.recipient_consent_declared') && base.cycle.includes("raise exception 'MISSING_REQUIRED_FIELDS'"),
+  bothInsertOrders: base.cc.includes('**insert:** los dos órdenes'),
+  sameCompleteFixture: base.cc.includes('todas con una **solicitud legacy de 0 drops**') && base.cc.includes('y contacto completo'),
+  existingRunnerCreatesContact: base.runner.includes('function createDraftFixture(initialDrops = 1)') && base.runner.includes('insert into public.delivery_request_contacts'),
+};
+for (const [k, v] of Object.entries(proof)) need(v, 'missing H04 evidence: ' + k);
+console.log('H04_CONTRADICTION: no contact => publish_request missing required fields; existing contact => second INSERT violates PK. Cannot test both as valid races with a single legacy fixture.');
+console.log('LIMIT: structural/documentary only, not PostgreSQL executed.');
+
+~~~
+
+**Resumen de la batería que se ejecutó en memoria con el texto exacto recuperado:** baseline GREEN; RED confirmado al: (1) reintroducir trigger BEFORE UPDATE, (2) cambiar FOR UPDATE OF r a FOR SHARE, (3) alterar helper, (4) borrar 0 drops, (5) borrar pg_blocking_pids, (6) borrar 40P01, (7) omitir timestamp controlado H07, (8) quitar mutación de H03, (9) revertir cita M03, (10) eliminar distinción M04, (11) desincronizar primer DoD T-430, (12) borrar T-431 del plan. **Resultado separado:** H04 detectado por la comprobación de precondiciones/PK y comportamiento del puente legacy.
+
+**Alcance prohibido / no visto:** no se corrió ni se afirma `pnpm exec vitest run tools`, `test:db`, `pgTAP`, CI ni prueba concurrencia real. El autor declaró Vitest 123/123 y diff --check limpio; no se adopta como evidencia independiente.
+
