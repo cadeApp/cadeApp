@@ -18,14 +18,14 @@ import { PushPermissionPrompt } from './push-permission-prompt';
 describe('T-431: PushPermissionPrompt según quién lo usa', () => {
   afterEach(cleanup);
 
-  it('sin audience muestra los textos del repartidor', () => {
+  it('sin copy muestra los textos del repartidor', () => {
     render(<PushPermissionPrompt embedded />);
     expect(screen.getByText(PUSH_COPY.prompt.subtitle)).toBeTruthy();
     expect(screen.getByText(PUSH_COPY.prompt.benefitSpeedDesc)).toBeTruthy();
   });
 
-  it('con audience="merchant" muestra los textos del comercio y ninguno del repartidor', () => {
-    render(<PushPermissionPrompt embedded audience="merchant" />);
+  it('con los textos del comercio los muestra y no queda ninguno del repartidor', () => {
+    render(<PushPermissionPrompt embedded copy={PUSH_COPY.merchantPrompt} />);
     expect(screen.getByText(PUSH_COPY.merchantPrompt.subtitle)).toBeTruthy();
     expect(screen.getByText(PUSH_COPY.merchantPrompt.benefitSpeedDesc)).toBeTruthy();
     expect(screen.queryByText(PUSH_COPY.prompt.subtitle)).toBeNull();

@@ -48,7 +48,6 @@ export const PUSH_COPY = {
   // T-431: el comercio usa el mismo componente; solo cambian los textos que le hablan al repartidor.
   merchantPrompt: {
     subtitle: 'Te avisamos cuando un repartidor le haga una oferta a tu pedido.',
-    benefitSpeedTitle: 'Cero demoras',
     benefitSpeedDesc: 'Enterate al segundo de cada oferta y elegí repartidor sin esperar.',
   },
   merchantProfileLink: {
