@@ -7,22 +7,24 @@
 | Autor | @Lautaro073 |
 | Rama | `feat/T-430-sec06-draft-only` → `develop` |
 | Base revisada | `f33acf8a2a03e5c54f7da3fe6926464cc1dcbe10` |
-| Head de código revisado | `0ed66974fc931d5819d707665671924192dcea05` |
-| Tamaño del PR de código | 4 archivos, +305/-1 líneas (documental) |
-| Estado de ronda | **CON BLOQUEANTES (2)**, sin aprobación |
+| SHA de código revisado en ronda 2 | `a91e8e405ab19e5bb6f70759761d118b95c98df9` |
+| Alcance | Cuatro archivos documentales de la tarea y cinco archivos de revisión de ronda 1; la ronda 2 añade un sexto archivo de revisión |
+| Estado de ronda | **CON BLOQUEANTES (ronda 2: H03 + conflicto I01)**, sin aprobación |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `0ed66974` | 2 bloqueantes | [Ronda 1](revisiones/ronda-1.md) |
+| 2 | `a91e8e40` | H01 parcial, H02 cerrada, H03 alto + I01 integración | [Ronda 2](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Hallazgo | Severidad | Estado |
 |---|---|---|---|
-| PR686-H01 | Falta garantía de serialización de contactos legacy ante publicación concurrente | alto | abierto |
-| PR686-H02 | H07 puede pasar sin modificar ninguna fila ni demostrar `set_updated_at` | medio | abierto |
+| PR686-H01 | Falta garantía de serialización de contactos legacy ante publicación concurrente | alto | parcial (H03) |
+| PR686-H02 | H07 puede pasar sin modificar ninguna fila ni demostrar `set_updated_at` | medio | arreglado-verificado (documental, a91e8e40) |
+| PR686-H03 | Inversión de lock entre contacto legacy y publish_request | alto | abierto |
 
 Datos: [hallazgos.jsonl](hallazgos.jsonl). Evidencia y control: [evidencia/comandos.md](evidencia/comandos.md).
 

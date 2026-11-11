@@ -18,3 +18,11 @@ No se asigna un número AG nuevo: no se verificó el máximo de todas las ramas 
 2. Exigir que el nuevo alcance de pruebas concurrentes esté en `Impacto exacto`, DoD y «Archivos permitidos», sin tocar scripts CI salvo autorización.
 3. En la implementación, revisar log del job db-tests del SHA exacto y corroborar RED→GREEN sin fabricar mocks ni modificar expectations.
 
+
+## Ronda 2 — H03: revisar el orden real de tuplas, no el orden de las instrucciones
+
+El contrato añadía un trigger `BEFORE UPDATE` y decía que su `SELECT FOR UPDATE` garantizaba «padre primero». Esto omite que el executor puede haber tomado primero el lock sobre la tupla hija que está actualizando. La publicación legacy en `request_cycle` bloquea padre→hijo; el cambio propuesto puede invertir hijo→padre y generar `40P01`. Este error se originó también en la sugerencia de la propia revisión anterior: registrar y no atribuir exclusivamente al autor.
+
+**Regla propuesta (apoya pr-68/AG-74):** Para cada carrera, enumerar el camino de código real y qué locks están **adquiridos antes de ejecutar cada trigger o RPC**. Incluir fixtures que obliguen al camino adverso (aquí publicación legacy con **0 drops**, no solo multi-drop). Un chequeo «sin deadlock» sobre otra rama no demuestra nada para esta.
+
+No se asigna AG nuevo porque no se ha confirmado el máximo en todas las ramas remotas; se reutiliza pr-68/AG-74. No modificar AGENTS.md por esta sola ronda.
