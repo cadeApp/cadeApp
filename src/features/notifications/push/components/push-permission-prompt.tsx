@@ -45,6 +45,8 @@ export interface PushPermissionPromptProps {
   className?: string;
   /** PR120-H15: dentro de un layout que ya pinta su TopBar (p. ej. CourierLayout). */
   embedded?: boolean;
+  /** T-431: textos para el repartidor (por defecto) o para el comercio. */
+  audience?: 'courier' | 'merchant';
 }
 
 export function PushPermissionPrompt({
@@ -52,7 +54,9 @@ export function PushPermissionPrompt({
   onDismiss,
   className,
   embedded = false,
+  audience = 'courier',
 }: PushPermissionPromptProps) {
+  const text = audience === 'merchant' ? { ...PUSH_COPY.prompt, ...PUSH_COPY.merchantPrompt } : PUSH_COPY.prompt;
   const [status, setStatus] = React.useState<
     'idle' | 'requesting' | 'subscribing' | 'granted' | 'denied'
   >('idle');
@@ -222,7 +226,7 @@ export function PushPermissionPrompt({
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
             {PUSH_COPY.prompt.title}
           </h1>
-          <p className="mt-3 text-base text-muted-foreground">{PUSH_COPY.prompt.subtitle}</p>
+          <p className="mt-3 text-base text-muted-foreground">{text.subtitle}</p>
         </div>
 
         {/* Stack de Beneficios */}
@@ -233,9 +237,9 @@ export function PushPermissionPrompt({
             </div>
             <div className="text-left">
               <p className="text-sm font-semibold text-foreground">
-                {PUSH_COPY.prompt.benefitSpeedTitle}
+                {text.benefitSpeedTitle}
               </p>
-              <p className="text-sm text-muted-foreground">{PUSH_COPY.prompt.benefitSpeedDesc}</p>
+              <p className="text-sm text-muted-foreground">{text.benefitSpeedDesc}</p>
             </div>
           </div>
 

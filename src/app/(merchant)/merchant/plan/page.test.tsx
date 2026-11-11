@@ -100,6 +100,12 @@ describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp conf
     expect(screen.queryByText(/abono mensual fijo/i)).toBeNull();
   });
 
+  it('T-431: la Cuenta enlaza a la configuración de avisos del comercio', async () => {
+    await renderPage();
+    const link = screen.getByRole('link', { name: /Notificaciones y avisos/ });
+    expect(link.getAttribute('href')).toBe('/merchant/plan/notifications');
+  });
+
   it('usa el teléfono de soporte configurado y un mensaje codificado sin datos de usuario', async () => {
     process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER = '+54 9 3865 123456';
     await renderPage();

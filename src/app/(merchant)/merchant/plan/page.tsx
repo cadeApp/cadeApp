@@ -5,7 +5,7 @@ import { Card } from '@/ui/card';
 import { Button, buttonVariants } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
 import { cn } from '@/ui/cn';
-import { Store, MapPin, Phone, MessageCircle, Info, LogOut } from 'lucide-react';
+import { Store, MapPin, Phone, MessageCircle, Info, LogOut, Bell } from 'lucide-react';
 import {
   PublicationBalanceSection,
   PublicationOfferSection,
@@ -15,6 +15,7 @@ import {
   getPublicationOffer,
 } from '@/features/merchants/server';
 import { logoutAction } from '@/features/auth/server';
+import { PUSH_COPY } from '@/features/notifications';
 
 export default async function MerchantPlanPage() {
   const [profile, balance, offer] = await Promise.all([
@@ -197,6 +198,23 @@ export default async function MerchantPlanPage() {
           </div>
         </Card>
       </div>
+
+      {/* T-431: mismo acceso a los avisos que el perfil del repartidor */}
+      <Link
+        href="/merchant/plan/notifications"
+        className="flex w-full items-center justify-between rounded-xl border border-border/40 bg-card p-4 text-foreground shadow-xs hover:bg-muted/40"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Bell className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-semibold">{PUSH_COPY.merchantProfileLink.title}</p>
+            <p className="text-sm text-muted-foreground">{PUSH_COPY.merchantProfileLink.description}</p>
+          </div>
+        </div>
+        <span className="text-sm font-medium text-primary">{PUSH_COPY.merchantProfileLink.action}</span>
+      </Link>
 
       {/* Sección 3: Términos publicados del piloto y cierre de sesión */}
       <Card className="p-4 text-sm text-muted-foreground">
