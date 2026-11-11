@@ -3,28 +3,36 @@
 | Campo | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/688 |
-| Base | develop @ af023d3099e9e2ea15e3b78bf0cf5937e699058a |
-| Head de código revisado | f7e2dc359491a56b4d4a54b2a703c788a7f32653 |
-| Rama | feat/T-431-merchant-push-whatsapp |
+| Rama | `feat/T-431-merchant-push-whatsapp` → `develop` |
 | Autor | Lautaro073 |
-| Estado ronda 1 | **CON BLOQUEANTES (2)** |
-| Alcance | 21 archivos; ficha ampliada por decisión explícita del dueño |
+| Base de la PR | `af023d3099e9e2ea15e3b78bf0cf5937e699058a` |
+| Último SHA de código revisado | `93a08afce1d1f36f78eab6f9828ff969539c0183` |
+| Alcance total | 26 archivos; ronda 2 modifica solo cinco autorizados |
+| Resultado actual | **SIN BLOQUEANTES DE CÓDIGO detectados por inspección**; ver limitaciones de ejecución y CI en la ronda 2 |
 
 ## Rondas
 
-| Ronda | Código | Hallazgos | Informe |
+| Ronda | SHA examinado | Resultado | Informe |
 |---|---|---|---|
-| 1 | f7e2dc35 | H03 y H04 bloqueantes; H01/H02 arreglados sin ejecución independiente; D01=A implementada | [Informe](revisiones/ronda-1.md) |
+| 1 | `f7e2dc35` | 2 bloqueantes H03/H04; H01/H02 sin verificación propia | [Ronda 1](revisiones/ronda-1.md) |
+| 2 | `93a08afc` | H03/H04 corregidos por inspección; ninguna regresión nueva identificada; pendientes de ejecución independiente | [Ronda 2](revisiones/ronda-2.md) |
 
-## Estado
+## Estado de hallazgos
 
-- H01: **arreglado-sin-verificar**, test de integración de ambas páginas presente.
-- H02: **arreglado-sin-verificar**, evidencia del autor en [red.md](evidencia/red.md), no reproducida independientemente.
-- H03: **abierto (alto)**, se perdió el error boundary al extraer el cargador compartido.
-- H04: **abierto (medio)**, el helper de mensajes de suscripción no respeta la prop copy.
-- H05: **abierto (bajo/proceso)**, el agente creó red.md dentro de una carpeta reservada a la revisión independiente.
-- D01=A: conforme por inspección, la navegación Cuenta funciona en sus subrutas.
+| ID | Estado | Referencia |
+|---|---|---|
+| H01 | arreglado-sin-verificar | Las dos páginas usan el componente real con copy correcto |
+| H02 | arreglado-sin-verificar | RED R1–R3 son autorreportados; R3 conserva placeholder, sin repro propia |
+| H03 | arreglado-sin-verificar | Wrapper restaura PushPromptErrorBoundary, tests de excepción en ambos roles y mutación M1 declarada |
+| H04 | arreglado-sin-verificar | switch completo parametrizado con text, tabla de nueve códigos y mutación M2 declarada |
+| H05 | aceptado (proceso) | El archivo red.md histórico del autor se conserva sin adjudicar verificación; en ronda 2 no tocó la carpeta |
 
-El cuerpo de la PR todavía describe audience y los conteos antiguos, por lo que debe actualizarse.
+**D01=A:** se mantiene: Cuenta queda activa en las subpáginas del plan, sin falsos positivos de prefijo.
 
-Los archivos [hallazgos.jsonl](hallazgos.jsonl), [evidencia/comandos.md](evidencia/comandos.md) y [lecciones.md](lecciones.md) acompañan el informe. No mergear hasta la siguiente ronda.
+## Checks y límites
+
+El autor declara 202 archivos/3775 tests verdes, typecheck y lint. Al revisar el SHA exacto: CI typecheck, lint, build, audit y bundle-budget aparecen en éxito; unit y db-tests seguían en ejecución en la consulta. El checker advisory de formato reportó avisos preexistentes. El approval-policy falla mientras el cuerpo no contenga el formato de informe exigido; es un control de proceso, no un defecto funcional. La revisión no ejecutó localmente Vitest por falta de clon y resolución DNS.
+
+**No sustituir evidencia del autor por verificación independiente:** los estados `arreglado-sin-verificar` se mantienen deliberadamente hasta reproducción de las pruebas o una validación CI exact-head suficiente.
+
+[Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md)
