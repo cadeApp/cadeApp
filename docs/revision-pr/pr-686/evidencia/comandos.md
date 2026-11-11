@@ -270,3 +270,96 @@ console.log('LIMIT: structural/documentary only, not PostgreSQL executed.');
 
 **Alcance prohibido / no visto:** no se corrió ni se afirma `pnpm exec vitest run tools`, `test:db`, `pgTAP`, CI ni prueba concurrencia real. El autor declaró Vitest 123/123 y diff --check limpio; no se adopta como evidencia independiente.
 
+
+## Ronda 4 — contraste independiente sobre cbcace19 (2026-11-11)
+
+**Fuentes:** conector GitHub, archivos de `cbcace19dbe99d972a5873725abe1a9e5430f615`; para las fuentes en develop, `af023d3099e9e2ea15e3b78bf0cf5937e699058a`. La PR fue comparada contra su base (9 commits ahead / 0 behind) y contra el commit de la revisión 3 (`32569dc0..cbcace19`, solo CC-048, T-430 y su bitácora modificados).
+
+**Control ejecutado por revisión con el contenido de GitHub:** GREEN para el baseline y **15 de 15 mutaciones textuales RED**. Los mutantes alteran: trigger UPDATE, lock padre, precedencia de USING, permiso helper, fixture INSERT con contacto, publicación-primero RPC, guarda estática, etiquetado sintético, invariante RED de contacto publicado, `pg_blocking_pids`, `40P01`, `updated_at`, fallback sin lock y DoD de T-430 y T-431. Cada mutación produjo una aserción RED. Se rehicieron dos detectores originalmente demasiado débiles (buscar solo el primer `for update of r` y `sin contacto`) para comprobar la expresión y el fixture exactos antes de afirmar 15/15. No se guardan los resultados débiles como pruebas.
+
+**No ejecutado en este entorno:** el script de Node copiado a `/tmp` sobre un clon, pruebas de PostgreSQL, pgTAP, `pnpm exec vitest run tools`, `git diff --check` ni CI. El resultado de Vitest 123/123 y diff check limpio es declaración del autor. La consulta de GitHub Actions del SHA de código informó `CI queued` / sin conclusión al momento del review.
+
+### Harness reproducible, solo lectura
+
+Desde la raíz de un clon exactamente en `cbcace19`, copiar a `/tmp/pr686-r4-check.cjs` y ejecutar `node /tmp/pr686-r4-check.cjs`. En un checkout posterior, algunas aserciones podrán fallar por la evolución legítima de la documentación. El programa replica el control documental aplicado por el revisor en memoria; **no** constituye SQL/CI.
+
+~~~javascript
+'use strict';
+// Uso: desde la raíz del repo en el SHA de ronda 4:
+// node /tmp/pr686-r4-check.cjs
+// Solo lectura. Sin conexión a DB/servicios.
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const read = p => fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
+const f = {
+  cc: read('docs/contracts/CC-048.md'),
+  task: read('docs/tasks/T-430.md'),
+  plan: read('docs/implementation-plan.md'),
+  t409: read('docs/tasks/T-409.md'),
+  t431: read('docs/tasks/T-431.md'),
+  schema: read('supabase/migrations/20260922031435_schema_v1.sql'),
+  cycle: read('supabase/migrations/20261009200000_t340_multi_drop.sql'),
+  runner: read('supabase/tests/integration/t340_concurrency.mjs')
+};
+function check(s) {
+  const has = (bool, msg) => assert.ok(bool, msg);
+  const planRow = id => s.plan.split('\n').find(v => v.startsWith('| ' + id + ' |'))?.split('|').map(v => v.trim()).at(-2);
+  const firstDod = str => str.match(/## DoD\n\n- \[[ x]\] (.*)/)?.[1];
+  for (const [id, key] of [['T-409','t409'],['T-430','task'],['T-431','t431']]) {
+    assert.equal(planRow(id), firstDod(s[key]), 'DoD vs plan ' + id);
+  }
+  has(s.cc.includes('before insert on public.delivery_request_contacts') &&
+      !s.cc.includes('before insert or update on public.delivery_request_contacts'), 'trigger INSERT only');
+  has(s.cc.includes("r.status = 'draft' for update of r))"), 'FOR UPDATE OF r in policy');
+  has(s.cc.includes('El `using` del update lo reemplaza el punto 6'), 'M05 precedence');
+  has(s.cc.includes('sin función nueva en la opción principal'), 'optional invoker helper');
+  has(s.cc.includes('has_function_privilege') && s.cc.includes('sin `execute` para `anon`'), 'helper grants');
+  has(s.cc.includes('select status, merchant_id') && s.cc.includes('sin lock'), 'fallback error classifier');
+  has(s.cc.includes('**update adverso') && s.cc.includes('**update primero'), 'H03 two orders');
+  has(s.cc.includes('**insert primero (H04 de la ronda 3):** fixture propio, `draft` con 0 drops, **sin contacto**'), 'H04 distinct fixture');
+  has(s.cc.includes('no existe como carrera real con `publish_request`'), 'H04 invalid race excluded');
+  has(s.cc.includes('**guarda estática:**') && s.cc.includes('**carrera de transición sintética'), 'H04 static/synthetic');
+  has(s.cc.includes('MISSING_REQUIRED_FIELDS') && s.cc.includes('clave primaria'), 'H04 rationale');
+  has(s.task.includes('sin el trigger de insert de contactos') &&
+      s.task.includes('INSERT entra y queda una fila de contacto en una solicitud publicada'), 'H04 RED property');
+  has(s.cc.includes('pg_blocking_pids') && s.cc.includes('40P01'), 'concurrency checks');
+  has(s.task.includes('`updated_at` fijado') && s.task.includes('1 fila'), 'H02');
+  has(s.cc.includes('supabase/tests/t340_multi_drop.sql:175'), 'M03');
+  has(s.cc.includes('un UPDATE concurrente queda esperando'), 'M04');
+  has(s.cc.includes('T-430 se frena y se vuelve a este CC'), 'stop on SQL failure');
+  has(s.schema.includes('request_id uuid primary key'), 'legacy one contact');
+  has(s.cycle.includes('if v_drops_count = 0 then') &&
+      s.cycle.includes("raise exception 'MISSING_REQUIRED_FIELDS'"), 'legacy publication source');
+  has(s.runner.includes('function createDraftFixture(initialDrops = 1)') &&
+      s.runner.includes('insert into public.delivery_request_contacts'), 'old fixture not reusable');
+}
+check(f);
+console.log('GREEN: contrato documental en el SHA de la ronda 4');
+const mutations = [
+  ['reintroducir BEFORE UPDATE','cc',s=>s.replace('before insert on public.delivery_request_contacts','before insert or update on public.delivery_request_contacts')],
+  ['remover prelock del USING','cc',s=>s.replace("r.status = 'draft' for update of r))","r.status = 'draft'))")],
+  ['revertir M05: USING sin override','cc',s=>s.replace('El `using` del update lo reemplaza el punto 6','El `using` del update es el del punto 2')],
+  ['suprimir control de permiso helper','cc',s=>s.replace('has_function_privilege','has_table_privilege')],
+  ['insert fixture ya con contacto','cc',s=>s.replace('fixture propio, `draft` con 0 drops, **sin contacto**','fixture propio, `draft` con 0 drops, **con contacto**')],
+  ['fingir publish-first RPC real','cc',s=>s.replace('no existe como carrera real con `publish_request`','existe como carrera real con `publish_request`')],
+  ['omitir guarda estatica','cc',s=>s.replace('**guarda estática:**','**sin prueba estática:**')],
+  ['llamar RPC a carrera sintetica','cc',s=>s.replace('**carrera de transición sintética','**carrera real RPC')],
+  ['mutacion RED sin invariante publicado','task',s=>s.replace('INSERT entra y queda una fila de contacto en una solicitud publicada','INSERT entra y queda una fila de contacto en una solicitud draft')],
+  ['omitir pg_blocking_pids','cc',s=>s.replaceAll('pg_blocking_pids','pg_sleep')],
+  ['omitir 40P01','cc',s=>s.replaceAll('40P01','XXP01')],
+  ['quitar updated_at controlado','task',s=>s.replace('`updated_at` fijado','`updated_at` sin controlar')],
+  ['quitar fallback simple','cc',s=>s.replace('select status, merchant_id','select merchant_id')],
+  ['desincronizar primer DoD T430','task',s=>s.replace('Fuera de `draft`, un update','Fuera de `published`, un update')],
+  ['borrar T431 de plan','plan',s=>s.split('\n').filter(line=>!line.startsWith('| T-431 |')).join('\n')]
+];
+for(const [name,key,mutate] of mutations) {
+ const changed=mutate(f[key]);
+ assert.notEqual(changed,f[key],'mutation no target: '+name);
+ assert.throws(()=>check({...f,[key]:changed}),undefined,'unexpected GREEN: '+name);
+ console.log('RED_CONFIRMED: '+name);
+}
+console.log('15/15 mutaciones RED detectadas; esto NO ejecuta PostgreSQL ni valida la futura migración.');
+
+~~~
+
+**Nota:** ninguna llamada remota con credenciales ni manipulación de Supabase. No se modificaron fixtures de PostgreSQL, flujos del ciclo o schemas del producto. Si T-430 falla en PostgreSQL, detener el desarrollo y volver al CC (tal como exige la ficha).

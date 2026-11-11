@@ -7,9 +7,9 @@
 | Autor | @Lautaro073 |
 | Rama | `feat/T-430-sec06-draft-only` → `develop` |
 | Base actual revisada | `af023d3099e9e2ea15e3b78bf0cf5937e699058a` |
-| SHA de código revisado en ronda 3 | `c777bf3a81b7b21ecc0546a224f702fc0762d570` |
+| SHA de código revisado en ronda 4 | `cbcace19dbe99d972a5873725abe1a9e5430f615` |
 | Alcance | Cuatro archivos documentales de la tarea y cinco archivos de revisión de ronda 1; la ronda 2 añade un sexto archivo de revisión |
-| Estado de ronda | **CON BLOQUEANTES (ronda 3: H04)**, sin aprobación |
+| Estado de ronda | **SIN BLOQUEANTES DOCUMENTALES (ronda 4)**; sin aprobación ni merge |
 
 ## Rondas
 
@@ -18,6 +18,7 @@
 | 1 | `0ed66974` | 2 bloqueantes | [Ronda 1](revisiones/ronda-1.md) |
 | 2 | `a91e8e40` | H01 parcial, H02 cerrada, H03 alto + I01 integración | [Ronda 2](revisiones/ronda-2.md) |
 | 3 | `c777bf3a` | H03 diseño corregido/no runtime; I01 resuelto; H04 nuevo | [Ronda 3](revisiones/ronda-3.md) |
+| 4 | `cbcace19` | Sin bloqueantes documentales; H04 verificado; SQL pendiente de T-430 | [Ronda 4](revisiones/ronda-4.md) |
 
 ## Estado por hallazgo
 
@@ -26,14 +27,14 @@
 | PR686-H01 | Falta garantía de serialización de contactos legacy ante publicación concurrente | alto | parcial (H03) |
 | PR686-H02 | H07 puede pasar sin modificar ninguna fila ni demostrar `set_updated_at` | medio | arreglado-verificado (documental, a91e8e40) |
 | PR686-H03 | Inversión de lock entre contacto legacy y publish_request | alto | arreglado-sin-verificar en PostgreSQL |
-| PR686-H04 | INSERT y publish_request legacy ambos órdenes con único contacto obligatorio | medio | abierto |
+| PR686-H04 | INSERT y publish_request legacy ambos órdenes con único contacto obligatorio | medio | arreglado-verificado documental en cbcace19 |
 
 Datos: [hallazgos.jsonl](hallazgos.jsonl). Evidencia y control: [evidencia/comandos.md](evidencia/comandos.md).
 
 ## Qué queda por hacer
 
-1. Resolver H04: separar fixture legacy para UPDATE (contacto previo) y para INSERT primero (sin contacto), y no exigir «publicación primero + INSERT» como carrera legítima de `publish_request`.
-2. Corregir M05 (prioridad de §Propuesto 6 sobre 2 y mención condicional del helper opcional).
-3. Probar la estrategia real de locks cuando se implemente T-430; la PR actual solo es documental. Pedir ronda 4.
+Sin bloqueantes para el **PR documental**. La implementación T-430 debe demostrar el diseño en PostgreSQL con fixture legacy 0 drops, control `pg_blocking_pids`, `40P01`, grants y mutaciones RED→GREEN; si falla, volver al CC.
 
-**No aprobar ni mergear esta PR antes del cierre de H04.**
+Mejora opcional M06: actualizar el cuerpo de la PR para reflejar que T-409 ya se sincronizó en `develop@af023d3`. No editar código ni requiere nueva ronda.
+
+**Ronda 4: SIN BLOQUEANTES DOCUMENTALES; no es una aprobación ni un merge.**

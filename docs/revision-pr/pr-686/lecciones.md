@@ -34,3 +34,11 @@ El esquema `delivery_request_contacts(request_id PRIMARY KEY)` permite solo un c
 **Regla apoyada por pr-56/AG-37 y pr-68/AG-74:** para cada escenario concurrente redactar precondiciones físicas (filas presentes/ausentes, PK/FK, estados, permisos), afirmar si ambas operaciones son legítimas en ese estado, y diseñar fixtures distintos cuando hagan falta. Pruebas sintéticas de error sobre estados inválidos son útiles, pero **no equivalen** a una carrera válida con la RPC real. RED mutado debe fallar por la propiedad prometida, no por PK incidental.
 
 No se asigna AG nuevo sin enumerar todas las ramas remotas; se reusa pr-56/AG-37. No tocar AGENTS.md con un solo caso nuevo.
+
+## Ronda 4 — cerrar el contrato sin atribuirle GREEN de PostgreSQL
+
+H04 se resolvió dividiendo los fixtures y etiquetando explícitamente la carrera sintética. El contrato de pruebas es coherente: contacto ausente antes de INSERT legítimo, contacto presente para UPDATE y publicación legacy. El control independiente (15 mutaciones documentales) detecta desvíos, **pero no demuestra la semántica multisesión de una migración aún inexistente**.
+
+Mantener la distinción de estados: `arreglado-verificado` con `verificado_metodo` delimitado a *documentación* para H04, y `arreglado-sin-verificar` para la ejecución SQL de H03. La PR documental puede quedar sin bloqueantes sin afirmar que T-430 está implementada o segura en producción.
+
+Para descripciones de PRs con merges desde develop, contrastar su «Qué hace» con `merge-base...HEAD`, porque un conflicto corregido en develop puede quedar como cambio histórico en el cuerpo del PR aunque ya no figure en el diff. M06 no bloquea.
