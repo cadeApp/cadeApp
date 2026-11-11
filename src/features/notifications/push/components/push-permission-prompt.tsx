@@ -17,25 +17,25 @@ import {
 import type { PushSubscriptionState } from '../types';
 
 /** T-382: un mensaje por causa de falla del alta. */
-function subscribeErrorMessage(code: string | undefined): string {
+function subscribeErrorMessage(code: string | undefined, text: PushPromptCopy): string {
   switch (code) {
     case 'push_service_unavailable':
-      return PUSH_COPY.prompt.statusPushServiceUnavailable;
+      return text.statusPushServiceUnavailable;
     case 'permission_blocked':
-      return PUSH_COPY.prompt.statusPermissionBlocked;
+      return text.statusPermissionBlocked;
     case 'unauthorized':
-      return PUSH_COPY.prompt.statusSessionExpired;
+      return text.statusSessionExpired;
     case 'network_error':
-      return PUSH_COPY.prompt.statusNetworkError;
+      return text.statusNetworkError;
     case 'missing_vapid_key':
     case 'missing_keys':
-      return PUSH_COPY.prompt.statusConfigError;
+      return text.statusConfigError;
     case 'unsupported':
-      return PUSH_COPY.prompt.statusUnsupported;
+      return text.statusUnsupported;
     case 'subscription_failed':
-      return PUSH_COPY.prompt.statusGenericError;
+      return text.statusGenericError;
     default:
-      return PUSH_COPY.prompt.statusSubscriptionError;
+      return text.statusSubscriptionError;
   }
 }
 
@@ -45,14 +45,20 @@ export interface PushPermissionPromptProps {
   className?: string;
   /** PR120-H15: dentro de un layout que ya pinta su TopBar (p. ej. CourierLayout). */
   embedded?: boolean;
+  /** T-431: textos propios de quien lo usa (p. ej. el comercio); lo que no se pase sale de `PUSH_COPY.prompt`. */
+  copy?: Partial<PushPromptCopy>;
 }
+
+export type PushPromptCopy = { readonly [K in keyof typeof PUSH_COPY.prompt]: string };
 
 export function PushPermissionPrompt({
   onSuccess,
   onDismiss,
   className,
   embedded = false,
+  copy,
 }: PushPermissionPromptProps) {
+  const text: PushPromptCopy = { ...PUSH_COPY.prompt, ...copy };
   const [status, setStatus] = React.useState<
     'idle' | 'requesting' | 'subscribing' | 'granted' | 'denied'
   >('idle');
@@ -97,13 +103,13 @@ export function PushPermissionPrompt({
       stateRequestRef.current += 1;
       setDeactivating(false);
       setAccountState('inactive');
-      setInfoMessage(PUSH_COPY.prompt.statusDeactivated);
+      setInfoMessage(text.statusDeactivated);
       return;
     }
     const reconciled = await checkAccountState();
     setDeactivating(false);
     if (reconciled !== 'pending_unsubscribe') {
-      setErrorMessage(PUSH_COPY.prompt.statusDeactivateError);
+      setErrorMessage(text.statusDeactivateError);
     }
   };
 
@@ -133,8 +139,8 @@ export function PushPermissionPrompt({
         setStatus('idle');
         setErrorMessage(
           permissionResult.error === 'unsupported'
-            ? PUSH_COPY.prompt.statusUnsupported
-            : PUSH_COPY.prompt.statusGenericError
+            ? text.statusUnsupported
+            : text.statusGenericError
         );
       }
       return;
@@ -146,7 +152,7 @@ export function PushPermissionPrompt({
     const subResult = await subscribeToPush();
     if (!subResult.ok) {
       setStatus('idle');
-      setErrorMessage(subscribeErrorMessage(subResult.error));
+      setErrorMessage(subscribeErrorMessage(subResult.error, text));
       return;
     }
 
@@ -189,7 +195,7 @@ export function PushPermissionPrompt({
         <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between border-b border-border/20 bg-foreground px-4 text-background">
           <button
             type="button"
-            aria-label={PUSH_COPY.prompt.backAriaLabel}
+            aria-label={text.backAriaLabel}
             onClick={handleDismiss}
             className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg text-background transition-colors hover:bg-background/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-95"
           >
@@ -220,9 +226,9 @@ export function PushPermissionPrompt({
         {/* Título y Copy Stitch T02 */}
         <div className="mx-auto max-w-xs text-center">
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-            {PUSH_COPY.prompt.title}
+            {text.title}
           </h1>
-          <p className="mt-3 text-base text-muted-foreground">{PUSH_COPY.prompt.subtitle}</p>
+          <p className="mt-3 text-base text-muted-foreground">{text.subtitle}</p>
         </div>
 
         {/* Stack de Beneficios */}
@@ -233,9 +239,9 @@ export function PushPermissionPrompt({
             </div>
             <div className="text-left">
               <p className="text-sm font-semibold text-foreground">
-                {PUSH_COPY.prompt.benefitSpeedTitle}
+                {text.benefitSpeedTitle}
               </p>
-              <p className="text-sm text-muted-foreground">{PUSH_COPY.prompt.benefitSpeedDesc}</p>
+              <p className="text-sm text-muted-foreground">{text.benefitSpeedDesc}</p>
             </div>
           </div>
 
@@ -245,9 +251,9 @@ export function PushPermissionPrompt({
             </div>
             <div className="text-left">
               <p className="text-sm font-semibold text-foreground">
-                {PUSH_COPY.prompt.benefitNoSpamTitle}
+                {text.benefitNoSpamTitle}
               </p>
-              <p className="text-sm text-muted-foreground">{PUSH_COPY.prompt.benefitNoSpamDesc}</p>
+              <p className="text-sm text-muted-foreground">{text.benefitNoSpamDesc}</p>
             </div>
           </div>
 
@@ -256,8 +262,8 @@ export function PushPermissionPrompt({
               <Megaphone className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="text-left">
-              <p className="text-sm font-semibold text-foreground">{PUSH_COPY.prompt.benefitNewsTitle}</p>
-              <p className="text-sm text-muted-foreground">{PUSH_COPY.prompt.benefitNewsDesc}</p>
+              <p className="text-sm font-semibold text-foreground">{text.benefitNewsTitle}</p>
+              <p className="text-sm text-muted-foreground">{text.benefitNewsDesc}</p>
             </div>
           </div>
         </div>
@@ -265,41 +271,41 @@ export function PushPermissionPrompt({
         {/* Nota informativa no invasiva */}
         <div className="mt-6 flex w-full max-w-sm items-center justify-center gap-2 rounded-xl border border-border/30 bg-muted/40 px-3.5 py-3 text-center">
           <Info className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <p className="text-sm text-muted-foreground">{PUSH_COPY.prompt.fallbackNote}</p>
+          <p className="text-sm text-muted-foreground">{text.fallbackNote}</p>
         </div>
 
         {/* Mensaje de estado dinámico */}
         {status === 'granted' && (
           <div className="text-success mt-4 flex items-center gap-2 text-sm font-semibold">
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-            <span>{PUSH_COPY.prompt.statusSuccess}</span>
+            <span>{text.statusSuccess}</span>
           </div>
         )}
 
         {status === 'denied' && (
           <div className="mt-4 text-center text-sm text-muted-foreground">
-            <span>{PUSH_COPY.prompt.statusDenied}</span>
+            <span>{text.statusDenied}</span>
           </div>
         )}
 
         {isActive && (
           <div className="text-success mt-4 flex items-center gap-2 text-sm font-semibold" role="status">
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-            <span>{PUSH_COPY.prompt.statusActive}</span>
+            <span>{text.statusActive}</span>
           </div>
         )}
 
         {isPendingUnsubscribe && (
           <div className="mt-4 text-center text-sm text-muted-foreground" role="status">
-            <span>{PUSH_COPY.prompt.statusDeactivatePending}</span>
+            <span>{text.statusDeactivatePending}</span>
           </div>
         )}
 
         {accountState === 'unknown' && status !== 'granted' && (
           <div className="mt-4 flex flex-col items-center gap-2 text-center text-sm text-muted-foreground" role="status">
-            <span>{PUSH_COPY.prompt.statusCheckFailed}</span>
+            <span>{text.statusCheckFailed}</span>
             <Button type="button" variant="outline" size="sm" onClick={() => void checkAccountState()}>
-              {PUSH_COPY.prompt.btnRetry}
+              {text.btnRetry}
             </Button>
           </div>
         )}
@@ -325,12 +331,12 @@ export function PushPermissionPrompt({
             variant="outline"
             size="default"
             isPending={deactivating}
-            pendingText={PUSH_COPY.prompt.btnDeactivating}
+            pendingText={text.btnDeactivating}
             onClick={handleDeactivate}
             className="w-full gap-2 font-display text-base font-bold"
           >
             <BellOff className="h-5 w-5" aria-hidden="true" />
-            <span>{PUSH_COPY.prompt.btnRetryDeactivate}</span>
+            <span>{text.btnRetryDeactivate}</span>
           </Button>
         ) : isActive ? (
           <Button
@@ -338,26 +344,26 @@ export function PushPermissionPrompt({
             variant="outline"
             size="default"
             isPending={deactivating}
-            pendingText={PUSH_COPY.prompt.btnDeactivating}
+            pendingText={text.btnDeactivating}
             onClick={handleDeactivate}
             className="w-full gap-2 font-display text-base font-bold"
           >
             <BellOff className="h-5 w-5" aria-hidden="true" />
-            <span>{PUSH_COPY.prompt.btnDeactivate}</span>
+            <span>{text.btnDeactivate}</span>
           </Button>
         ) : (
           <Button
             type="button"
             size="default"
             isPending={isPending}
-            pendingText={PUSH_COPY.prompt.btnActivating}
+            pendingText={text.btnActivating}
             disabled={status === 'granted'}
             onClick={handleActivate}
             className="w-full gap-2 font-display text-base font-bold"
           >
             <Bell className="h-5 w-5" aria-hidden="true" />
             <span>
-              {status === 'granted' ? PUSH_COPY.prompt.btnActivated : PUSH_COPY.prompt.btnActivate}
+              {status === 'granted' ? text.btnActivated : text.btnActivate}
             </span>
           </Button>
         )}
@@ -369,7 +375,7 @@ export function PushPermissionPrompt({
           onClick={handleDismiss}
           className="w-full text-sm font-medium text-muted-foreground hover:text-foreground"
         >
-          {PUSH_COPY.prompt.btnDismiss}
+          {text.btnDismiss}
         </Button>
       </footer>
     </Root>

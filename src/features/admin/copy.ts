@@ -271,6 +271,7 @@ export const ADMIN_COPY = {
       registered: 'Alta',
       actions: 'Acciones',
     },
+    whatsappLabel: (businessName: string) => `Escribir por WhatsApp a ${businessName}`,
     status: {
       pilot: 'Piloto',
       active: 'Activo',

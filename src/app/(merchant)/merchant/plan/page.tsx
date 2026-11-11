@@ -15,6 +15,7 @@ import {
   getPublicationOffer,
 } from '@/features/merchants/server';
 import { logoutAction } from '@/features/auth/server';
+import { NotificationsSettingsLink, PUSH_COPY } from '@/features/notifications';
 
 export default async function MerchantPlanPage() {
   const [profile, balance, offer] = await Promise.all([
@@ -197,6 +198,9 @@ export default async function MerchantPlanPage() {
           </div>
         </Card>
       </div>
+
+      {/* T-431: mismo acceso a los avisos que el perfil del repartidor */}
+      <NotificationsSettingsLink href="/merchant/plan/notifications" {...PUSH_COPY.merchantProfileLink} />
 
       {/* Sección 3: Términos publicados del piloto y cierre de sesión */}
       <Card className="p-4 text-sm text-muted-foreground">

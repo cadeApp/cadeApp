@@ -40,6 +40,10 @@ export type {
 } from './push/push-prompt-entry';
 
 export { PUSH_COPY } from './push/copy';
+export type { PushPromptCopy } from './push/components/push-permission-prompt';
+export { NotificationsSettingsLink } from './push/components/notifications-settings-link';
+export type { NotificationsSettingsLinkProps } from './push/components/notifications-settings-link';
+export { EmbeddedPushPermissionPrompt } from './push/components/embedded-push-permission-prompt';
 
 export {
   requestNotificationPermission,
