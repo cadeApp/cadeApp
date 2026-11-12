@@ -119,6 +119,3 @@ $$;
 revoke all on function app_private.lock_draft_request_for_child_write() from public, anon, authenticated;
 
 drop trigger if exists trg_lock_draft_contacts on public.delivery_request_contacts;
-create trigger trg_lock_draft_contacts
-  before insert on public.delivery_request_contacts
-  for each row execute function app_private.lock_draft_request_for_child_write();
