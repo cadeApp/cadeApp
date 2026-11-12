@@ -511,5 +511,19 @@ select ok((select status = 'suspended' from public.couriers where profile_id = p
 select is(pg_temp.reinstate_audits(pg_temp.c(15)), 1,
   'el rechazado enviado y con DNI (c15) sí se reconsideró, con su audit');
 
+-- Aísla la condición `not v_application_submitted`: misma cuenta sin alta enviada, pero con un DNI cargado (estado
+-- histórico, escrito con la bandera de finalize como su dueño). Solo esa condición la frena.
+select set_config('app.courier_application_finalize', 'on', true);
+update public.couriers set dni_hmac = pg_temp.hmac(150) where profile_id = pg_temp.c(5);
+select set_config('app.courier_application_finalize', 'off', true);
+select ok((select not application_submitted and dni_hmac is not null and status = 'suspended'
+    from public.couriers where profile_id = pg_temp.c(5)),
+  'fixture: suspendido, sin alta enviada y con DNI');
+select pg_temp.act_as(pg_temp.admin(), 'aal2');
+select throws_ok($$ select public.admin_reinstate_courier(pg_temp.c(5), 'Revisión administrativa') $$,
+  'P0001', 'INVALID_STATE_TRANSITION', 'reinstate no reactiva un suspendido sin alta enviada aunque tenga DNI');
+select pg_temp.as_postgres();
+select is(pg_temp.reinstate_audits(pg_temp.c(5)), 0, 'sigue sin audit de reinstate');
+
 select * from finish();
 rollback;
