@@ -35,7 +35,6 @@ create policy contacts_update_merchant on public.delivery_request_contacts
   using (exists (
     select 1 from public.delivery_requests r
     where r.id = delivery_request_contacts.request_id and r.merchant_id = auth.uid() and r.status = 'draft'
-    for update of r
   ))
   with check (exists (
     select 1 from public.delivery_requests r
