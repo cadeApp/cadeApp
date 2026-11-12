@@ -16,3 +16,8 @@ Se enumeró el ciclo `INSERT draft → UPDATE published`, los dos tipos de event
 
 No se proponen cambios inmediatos a `AGENTS.md` a partir de una única PR documental. Contrastar reincidencia tras la ronda 2.
 
+
+
+## Ronda 2 · lección confirmada
+
+Seis arreglos de documento cumplen sus predicados de control y mutaciones en memoria; queda H05 por una **segunda aparición del mismo oráculo incondicional en la ficha**. Es la reincidencia de **pr-56/AG-37**: al cambiar un requisito de «S siempre ve clave» a «S ve clave solo sin allowlist», hay que barrer **todas** sus formulaciones, incluidas las «Notas para quien retome», no solo el bloque principal del CC. En ronda 3, enumerar CC + ficha + fila del plan + bitácora antes de dar H05 por verificado. No se numera una nueva lección AG por tratarse del mismo patrón.

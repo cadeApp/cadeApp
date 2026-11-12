@@ -9,25 +9,26 @@
 | Base revisada | `2cd76f246f9c7644e659e2ec4d0177802e0cde50` |
 | Head revisado | `603fa9a0d6d9d930361b93282a88b6853bef6a5d` |
 | Tamaño | 4 archivos, +281/−0 líneas; exclusivamente documentación |
-| Estado | **Ronda 1 cerrada, PR bloqueada; sin aprobación ni merge** |
+| Estado | **Ronda 2 cerrada: 1 bloqueante residual (H05). Sin aprobación ni merge** |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 · 2026-11-12 | `603fa9a0d6d9d930361b93282a88b6853bef6a5d` | **6 bloqueantes, 1 mejora** | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 2 · 2026-11-12 | `b48fe8be3a80f7e0a4d879602a7a192c7ddb2bd5` | **6 verificados; H05 parcial (1 bloqueante)** | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Síntesis | Severidad | Estado |
 |---|---|---|---|
-| H01 | INSERT obligatorio al courier incompatible con flujo draft→publicación | alto | abierto |
-| H02 | INSERT sin control positivo con marcador | alto | abierto |
-| H03 | Negativos sin ventana causal independiente | alto | abierto |
-| H04 | Árbol de cierre/fuga contradictorio | medio | abierto |
-| H05 | Positivo service_role imposible tras allowlist de publicación | alto | abierto |
-| H06 | Rollback reabre exposición | alto | abierto |
-| H07 | Correlación y limpieza robustas | bajo · mejora | abierto |
+| H01 | INSERT obligatorio al courier incompatible con flujo draft→publicación | alto | arreglado-verificado |
+| H02 | INSERT sin control positivo con marcador | alto | arreglado-verificado |
+| H03 | Negativos sin ventana causal independiente | alto | arreglado-verificado |
+| H04 | Árbol de cierre/fuga contradictorio | medio | arreglado-verificado |
+| H05 | Positivo service_role imposible tras allowlist de publicación | alto | parcial |
+| H06 | Rollback reabre exposición | alto | arreglado-verificado |
+| H07 | Correlación y limpieza robustas | bajo · mejora | arreglado-verificado |
 
 Datos: [hallazgos.jsonl](hallazgos.jsonl) · Reproducción: [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).
 

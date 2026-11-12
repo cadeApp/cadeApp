@@ -75,3 +75,84 @@ pnpm exec vitest run tools
 
 No usar Supabase/Docker local, no invocar workflows manualmente, no emitir credenciales, no push a develop ni force.
 
+
+
+---
+
+# Ronda 2 — 2026-11-12 — verificación documental independiente
+
+**Head fuente:** `b48fe8be3a80f7e0a4d879602a7a192c7ddb2bd5`. Se consultó directamente GitHub para obtener CC-051 y T-435 del SHA, comparación del commit de autor con `2258f70f`, R1 inmutable y árbol de `develop`. No se accedió a Supabase ni a env/secrets. **La prueba de abajo es de documentos; no representa un E2E Realtime ni una mutación SQL.**
+
+## Reproducción del oráculo de la ronda 1
+
+Se ejecutaron en un entorno JavaScript de revisión los seis detectores del script R1 (mismo código de predicados) sobre el contenido original y el actual:
+
+```text
+R1 sobre 603fa9a0: H01 RED, H02 RED, H03 RED, H04-gate RED, H04-negativos RED, H06-rollback RED → 6
+R2 sobre b48fe8be: H01 GREEN, H02 GREEN, H03 GREEN, H04-gate GREEN, H04-negativos GREEN, H06-rollback GREEN → 0
+```
+
+Este resultado muestra que desaparecieron las contradicciones **literales** de R1. Se hizo además inspección semántica y una batería nueva, independiente de la que pudiera haber usado el autor. No es una garantía de corrección del futuro E2E.
+
+## Harness completo nuevo (copiar a /tmp desde el clon, sin tocar el repo)
+
+```bash
+set -eu
+cat >/tmp/pr735-r2-doc-audit.cjs <<'NODE'
+'use strict';
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const cc = fs.readFileSync('docs/contracts/CC-051.md', 'utf8');
+const task = fs.readFileSync('docs/tasks/T-435.md', 'utf8');
+const data = { cc, task };
+const checks = [
+  ['H01', d => d.cc.includes('A **tiene que recibir el UPDATE** a `published`') && d.cc.includes('No se\n     exige que llegue.') && d.task.includes('Si también recibe un INSERT de esa solicitud'),
+    d => ({ ...d, cc: d.cc.replace('A **tiene que recibir el UPDATE** a `published`', 'A podría recibir el UPDATE a `published`') })],
+  ['H02', d => d.cc.includes('S recibe **ese INSERT** con las dos claves y el marcador') && d.task.includes('registrado con `trackEntityForCleanup`') && d.cc.includes('después de los `SUBSCRIBED`'),
+    d => ({ ...d, cc: d.cc.replace('S recibe **ese INSERT** con las dos claves y el marcador', 'S podría recibir ese INSERT') })],
+  ['H03', d => d.cc.includes('**Barrera causal:**') && d.cc.includes('**Ventana negativa acotada:**') && d.cc.includes('conteo de eventos de ese ID y tipo es 0') && d.task.includes('por PostgREST con cada token'),
+    d => ({ ...d, cc: d.cc.replace('**Ventana negativa acotada:**','**Chequeo inmediato:**') })],
+  ['H04', d => d.cc.includes('pasan toda la matriz, el control positivo de origen') && d.cc.includes('solo cuenta si un **actor restringido**') && d.cc.includes('No hay `Object.keys` sobre un payload que no existe'),
+    d => ({ ...d, cc: d.cc.replace('solo cuenta si un **actor restringido**', 'cuenta si cualquier actor') })],
+  ['H05', d => d.cc.includes('**Modo allowlist') && d.cc.includes('S comprueba por SELECT directo') && d.cc.includes('**sin** las excluidas') && !/Si la ausencia de claves se viera también en el suscriptor con service role, el problema es de la prueba/i.test(d.task),
+    d => ({ ...d, task: d.task.replace(/Si la ausencia de claves se viera también en el suscriptor con service role, el problema es de la prueba/i, 'En publicación completa, la ausencia de marcador en S invalida el control; en allowlist la ausencia de claves excluidas en S es esperada') })],
+  ['H06', d => d.cc.includes('**Rollback fail-closed:**') && d.cc.includes('nunca se vuelve automáticamente a publicar la tabla sin lista de columnas') && d.cc.includes('retira **solo** `delivery_requests`') && d.cc.includes('`public.offers` se conserva siempre'),
+    d => ({ ...d, cc: d.cc.replace('nunca se vuelve automáticamente a publicar la tabla sin lista de columnas', 'se vuelve automáticamente a publicar la tabla sin lista de columnas') })],
+  ['H07', d => d.cc.includes('el `finally` vuelve las dos columnas viejas a null') && d.cc.includes('quita **todos** los canales') && d.cc.includes('**nombres** de las claves recibidas') && d.task.includes('trackEntityForCleanup'),
+    d => ({ ...d, cc: d.cc.replace('quita **todos** los canales', 'quita solo el canal courier') })],
+];
+let failure = false;
+for (const [id, check, change] of checks) {
+  const good = check(data);
+  const mutant = check(change(data));
+  console.log(id, good ? 'GREEN' : 'RED', '| mutación adversa/reescritura:', mutant ? 'GREEN' : 'RED');
+  if (id === 'H05') {
+    // En el head b48fe8be el original es RED: queda la nota incondicional.
+    // La reescritura contrafactual del H05 produce GREEN. Tras la corrección
+    // del autor original GREEN, y este test debe adaptarse a una mutación que la rompa.
+    if (process.argv.includes('--assert-closed') && !good) failure = true;
+  } else {
+    if (!good || mutant) failure = true;
+  }
+}
+if (failure) process.exitCode = 1;
+NODE
+node /tmp/pr735-r2-doc-audit.cjs
+```
+
+**Salida realmente comprobada por el revisor sobre texto servido por GitHub en `b48fe8be3a80f7e0a4d879602a7a192c7ddb2bd5` (mismos predicados):**
+
+```text
+H01 GREEN / mutación RED
+H02 GREEN / mutación RED
+H03 GREEN / mutación RED
+H04 GREEN / mutación RED
+H05 RED / reescritura de nota GREEN
+H06 GREEN / mutación RED
+H07 GREEN / mutación RED
+```
+
+**Límites y cautelas:**
+- Se comprobó por ejecución de JavaScript en el entorno de revisión sobre los documentos obtenidos del SHA, no con un clon/git. La ejecución exacta del heredoc en `/tmp` queda documentada para quien tenga el clon; **no se afirma haberla hecho aquí**. Los detectores semánticos parciales se cruzaron con inspección humana; ningún resultado implica que un payload real esté filtrado.
+- La reescritura del H05 es una **reparación contrafactual en memoria**, no una mutación adversa: por eso aparece RED → GREEN. **No se cambió T-435** por el revisor: quien ajuste esa frase no debe firmarse su propia verificación.
+- La ronda 3 debe correr el harness original sin modificar, e inventar nuevas mutaciones adversas para el arreglo del H05 (por ejemplo, reintroducir el veto absoluto en allowlist): el autor nunca edita `docs/revision-pr/**`.
