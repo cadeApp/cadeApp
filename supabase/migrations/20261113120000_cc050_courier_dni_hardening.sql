@@ -153,7 +153,7 @@ begin
       and c.application_submitted = false
       and exists (select 1 from public.courier_documents d where d.courier_id = c.profile_id)
       and (
-        (v_courier_id is not null and c.profile_id = v_courier_id)
+        (c.profile_id = v_lookup::uuid)
         or (v_phone_digits is not null and regexp_replace(coalesce(p.phone, ''), '\D', '', 'g') = v_phone_digits)
       )
     order by p.created_at desc, c.profile_id desc
