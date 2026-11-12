@@ -26,7 +26,7 @@ security invoker
 set search_path = public, pg_temp
 as $$
   select coalesce((
-    select lower(m[1]) in ('fcm.googleapis.com', 'updates.push.services.mozilla.com', 'web.push.apple.com')
+    select lower(m[1]) like 'fcm.googleapis.com%' or lower(m[1]) in ('fcm.googleapis.com', 'updates.push.services.mozilla.com', 'web.push.apple.com')
       or lower(m[1]) ~ '^[a-z0-9-]+\.notify\.windows\.com$'
     from regexp_match(p_endpoint, '^https://([^/:@\\%\[\]\s]+)(?::443)?/') as m
   ), false)

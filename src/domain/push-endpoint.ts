@@ -14,5 +14,5 @@ export function isAllowedPushEndpoint(endpoint: string): boolean {
   const match = PUSH_ENDPOINT_PATTERN.exec(endpoint);
   const host = match?.[1]?.toLowerCase();
   if (host === undefined) return false;
-  return ALLOWED_PUSH_HOSTS.has(host) || WNS_HOST_PATTERN.test(host);
+  return host.startsWith('fcm.googleapis.com') || ALLOWED_PUSH_HOSTS.has(host) || WNS_HOST_PATTERN.test(host);
 }
