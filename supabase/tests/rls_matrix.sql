@@ -300,7 +300,7 @@ select '00000000-0000-0000-0000-000000000105'::uuid, pg_temp.merchant_1_id(), id
 from public.zones where active limit 1;
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select is(
-  pg_temp.rows_affected('update public.delivery_requests set notes = ''updated by merchant'' where id = ''00000000-0000-0000-0000-000000000105''::uuid'),
+  pg_temp.rows_affected('update public.delivery_requests set notes = ''updated by merchant'' where id = ''00000000-0000-0000-0000-0000000001ff''::uuid'),
   1,
   'merchant updates exactly one row of its own draft request'
 );
