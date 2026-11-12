@@ -267,6 +267,8 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
       readonly keys: readonly string[];
       readonly hasMarker: boolean;
       readonly hasAmount: boolean;
+      readonly notesMatchesMarker: boolean;
+      readonly amountMatches: boolean;
     }
 
     // Ventana negativa acotada y declarada: prueba la ausencia dentro de este intervalo, no para siempre.
@@ -325,6 +327,8 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
               keys: Object.keys(row).sort(),
               hasMarker: json.includes(marker),
               hasAmount: json.includes(String(amount)),
+              notesMatchesMarker: row.notes === marker,
+              amountMatches: row.cash_change_amount === amount,
             });
           })
           .subscribe((status, err) => {
@@ -361,8 +365,22 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
         expect(e.hasAmount, `${e.actor}/${e.event}: sin el monto`).toBe(false);
       }
     };
+    // Control positivo de origen: S trae ambas claves con el valor exacto (booleanos, sin volcar valores).
+    const expectSourcePositive = (events: readonly Captured[]) => {
+      expect(
+        events.some(
+          (e) =>
+            e.keys.includes('notes') &&
+            e.keys.includes('cash_change_amount') &&
+            e.notesMatchesMarker &&
+            e.amountMatches
+        ),
+        `${events[0]?.event ?? '?'}: S recibe notes y cash_change_amount con el valor sembrado`
+      ).toBe(true);
+    };
     const negativeWindow = () => new Promise<void>((resolve) => setTimeout(resolve, NEGATIVE_WINDOW_MS));
 
+    let bodyCompleted = false;
     try {
       // Precondición: los cuatro canales en SUBSCRIBED antes de cualquier mutación.
       await Promise.all([
@@ -401,10 +419,17 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
         },
       });
       expect(publishErr).toBeNull();
-      await expect
-        .poll(() => eventsOf('A', publishedId, 'UPDATE').some((e) => e.status === 'published'), { timeout: 25_000 })
-        .toBe(true);
-      expectRestricted(eventsOf('A', publishedId, 'UPDATE'));
+      const { data: publishedRow, error: publishedRowErr } = await admin
+        .from('delivery_requests')
+        .select('status, updated_at')
+        .eq('id', publishedId)
+        .single();
+      expect(publishedRowErr).toBeNull();
+      expect(publishedRow?.status).toBe('published');
+      const publishedAt = String(publishedRow?.updated_at);
+      const aPublishUpdate = await waitFor('A', publishedId, 'UPDATE', publishedAt);
+      expect(aPublishUpdate.some((e) => e.status === 'published')).toBe(true);
+      expectRestricted(aPublishUpdate);
       // Un INSERT de la publicación que llegue al repartidor se inspecciona igual; no se exige.
       expectRestricted(eventsOf('A', publishedId, 'INSERT'));
 
@@ -415,8 +440,12 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
         .eq('id', publishedId);
       expect(aPublishedErr).toBeNull();
       expect(aPublished).toHaveLength(1);
-      const { data: nPublished } = await anonClient.from('delivery_requests').select('id').eq('id', publishedId);
-      expect(nPublished ?? []).toHaveLength(0);
+      const { data: nPublished, error: nPublishedErr } = await anonClient
+        .from('delivery_requests')
+        .select('id')
+        .eq('id', publishedId);
+      expect(nPublishedErr?.code).toBe('42501');
+      expect(nPublished).toBeNull();
 
       // 2. UPDATE con valor presente en las columnas viejas (cliente admin del arnés).
       const { data: touched, error: touchErr } = await admin
@@ -429,7 +458,7 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
       const updatedAt = String(touched?.updated_at);
       // Control positivo de origen (publicación completa): S recibe las claves y el marcador.
       const sUpdate = await waitFor('S', publishedId, 'UPDATE', updatedAt);
-      expect(sUpdate.some((e) => e.keys.includes('notes') && e.hasMarker)).toBe(true);
+      expectSourcePositive(sUpdate);
       expectRestricted(await waitFor('A', publishedId, 'UPDATE', updatedAt));
       expectRestricted(await waitFor('M', publishedId, 'UPDATE', updatedAt));
 
@@ -451,19 +480,22 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
         .select('updated_at')
         .single();
       expect(insertErr).toBeNull();
-      const sInsert = await waitFor('S', draftId, 'INSERT');
-      expect(sInsert.some((e) => e.keys.includes('notes') && e.hasMarker)).toBe(true);
-      expectRestricted(await waitFor('M', draftId, 'INSERT'));
       expect(inserted?.updated_at).toBeTruthy();
+      const insertedAt = String(inserted?.updated_at);
+      const sInsert = await waitFor('S', draftId, 'INSERT', insertedAt);
+      expectSourcePositive(sInsert);
+      expectRestricted(await waitFor('M', draftId, 'INSERT', insertedAt));
 
       // Visibilidad del borrador por PostgREST, después de insertarlo y antes del veredicto negativo.
       const { data: mDraft, error: mDraftErr } = await merchantClient.from('delivery_requests').select('id').eq('id', draftId);
       expect(mDraftErr).toBeNull();
       expect(mDraft).toHaveLength(1);
-      const { data: aDraft } = await courierClient.from('delivery_requests').select('id').eq('id', draftId);
-      expect(aDraft ?? []).toHaveLength(0);
-      const { data: nDraft } = await anonClient.from('delivery_requests').select('id').eq('id', draftId);
-      expect(nDraft ?? []).toHaveLength(0);
+      const { data: aDraft, error: aDraftErr } = await courierClient.from('delivery_requests').select('id').eq('id', draftId);
+      expect(aDraftErr).toBeNull();
+      expect(aDraft).toHaveLength(0);
+      const { data: nDraft, error: nDraftErr } = await anonClient.from('delivery_requests').select('id').eq('id', draftId);
+      expect(nDraftErr?.code).toBe('42501');
+      expect(nDraft).toBeNull();
 
       // 4. Borrador modificado (UPDATE): M y S lo reciben con las mismas reglas.
       const { data: draftTouched, error: draftTouchErr } = await admin
@@ -475,11 +507,13 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
       expect(draftTouchErr).toBeNull();
       const draftUpdatedAt = String(draftTouched?.updated_at);
       const sDraftUpdate = await waitFor('S', draftId, 'UPDATE', draftUpdatedAt);
-      expect(sDraftUpdate.some((e) => e.keys.includes('notes') && e.hasMarker)).toBe(true);
+      expectSourcePositive(sDraftUpdate);
       expectRestricted(await waitFor('M', draftId, 'UPDATE', draftUpdatedAt));
 
       // Negativos: después de la barrera causal (S ya recibió cada cambio), ventana acotada y conteo 0.
       await negativeWindow();
+      // Todo lo que A y M recibieron en la ventana completa (INSERT/UPDATE, opcionales o tardíos).
+      expectRestricted(captured.filter((e) => (e.actor === 'A' || e.actor === 'M') && ids.has(e.id)));
       expect(captured.filter((e) => e.actor === 'A' && e.id === draftId)).toHaveLength(0);
       expect(captured.filter((e) => e.actor === 'N')).toHaveLength(0);
 
@@ -488,13 +522,28 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
         const which = e.id === publishedId ? 'publicada' : 'borrador';
         console.log(`[CC-051 captura] actor=${e.actor} evento=${e.event} fila=${which} claves=${e.keys.join(',')}`);
       }
+      bodyCompleted = true;
     } finally {
-      await admin
-        .from('delivery_requests')
-        .update({ notes: null, cash_change_amount: null })
-        .in('id', [publishedId, draftId]);
-      for (const { client, channel } of channels) {
-        await client.removeChannel(channel);
+      const cleanupErrors: string[] = [];
+      try {
+        const { error: resetErr } = await admin
+          .from('delivery_requests')
+          .update({ notes: null, cash_change_amount: null })
+          .in('id', [publishedId, draftId]);
+        if (resetErr) cleanupErrors.push(`reset columnas viejas: ${resetErr.code ?? 'sin código'}`);
+      } catch (error) {
+        cleanupErrors.push(`reset columnas viejas: ${error instanceof Error ? error.name : 'excepción'}`);
+      }
+      const removals = await Promise.allSettled(channels.map(({ client, channel }) => client.removeChannel(channel)));
+      removals.forEach((r, i) => {
+        if (r.status === 'rejected') cleanupErrors.push(`removeChannel #${i}: rechazado`);
+        else if (r.value !== 'ok') cleanupErrors.push(`removeChannel #${i}: ${r.value}`);
+      });
+      if (cleanupErrors.length > 0) {
+        const message = `[CC-051] limpieza incompleta: ${cleanupErrors.join('; ')}`;
+        // No tapar el fallo original de la prueba: si el cuerpo ya falló, solo se registra.
+        if (bodyCompleted) throw new Error(message);
+        console.error(message);
       }
     }
   });
