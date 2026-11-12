@@ -7,9 +7,9 @@
 | Autor | @Lautaro073 (agy) |
 | Rama | `feat/T-435-sec12-realtime-capture` → `develop` |
 | Base revisada | `2cd76f246f9c7644e659e2ec4d0177802e0cde50` |
-| Head revisado | `603fa9a0d6d9d930361b93282a88b6853bef6a5d` |
-| Tamaño | 4 archivos, +281/−0 líneas; exclusivamente documentación |
-| Estado | **Ronda 2 cerrada: 1 bloqueante residual (H05). Sin aprobación ni merge** |
+| Head revisado | `ab697f5dded24c2c966d2bf77837f6bae14776ea` |
+| Tamaño | PR documental: CC-051, ficha T-435, plan §8 y bitácora; más histórico del revisor |
+| Estado | **Ronda 3 cerrada: SIN BLOQUEANTES (7/7 verificados documentalmente), CI del SHA revisado en verde. Sin aprobación ni merge** |
 
 ## Rondas
 
@@ -17,6 +17,7 @@
 |---|---|---|---|
 | 1 · 2026-11-12 | `603fa9a0d6d9d930361b93282a88b6853bef6a5d` | **6 bloqueantes, 1 mejora** | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
 | 2 · 2026-11-12 | `b48fe8be3a80f7e0a4d879602a7a192c7ddb2bd5` | **6 verificados; H05 parcial (1 bloqueante)** | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
+| 3 · 2026-11-12 | `ab697f5dded24c2c966d2bf77837f6bae14776ea` | **SIN BLOQUEANTES; 7/7 verificados** | [revisiones/ronda-3.md](revisiones/ronda-3.md) |
 
 ## Estado por hallazgo
 
@@ -26,7 +27,7 @@
 | H02 | INSERT sin control positivo con marcador | alto | arreglado-verificado |
 | H03 | Negativos sin ventana causal independiente | alto | arreglado-verificado |
 | H04 | Árbol de cierre/fuga contradictorio | medio | arreglado-verificado |
-| H05 | Positivo service_role imposible tras allowlist de publicación | alto | parcial |
+| H05 | Positivo service_role imposible tras allowlist de publicación | alto | arreglado-verificado |
 | H06 | Rollback reabre exposición | alto | arreglado-verificado |
 | H07 | Correlación y limpieza robustas | bajo · mejora | arreglado-verificado |
 
@@ -42,9 +43,10 @@ Datos: [hallazgos.jsonl](hallazgos.jsonl) · Reproducción: [evidencia/comandos.
 
 ## Qué sigue
 
-El autor corrige solo CC-051, T-435, fila T-435 del plan y bitácora en la rama; no debe tocar `docs/revision-pr/**`. Tras su push corresponde ronda 2 independiente sobre el nuevo SHA. **No implementar todavía E2E ni migración en esta PR documental**.
+**La revisión independiente de esta PR documental quedó cerrada sin bloqueantes.** Lautaro073 conserva la decisión humana de mergear; **el revisor no aprobó ni mergeó**. La implementación de `e2e/specs/courier-private-columns.spec.ts` y cualquier alternativa de publicación/migración ocurrirá en **otra PR después del merge de CC-051** bajo `e2e-preview` autorizado, según D1/D2-A/D3-A. Ninguna captura nueva fue ejecutada aquí.
+
+La revisión agregó un commit en esta rama: ejecutar `git pull` antes de cualquier acción, sin rebase/force/amend. **No exigir un nuevo CI green únicamente por el commit documental de revisión o la bitácora:** el run CI [43256758218](https://github.com/cadeApp/cadeApp/actions/runs/43256758218) del SHA **`ab697f5dded24c2c966d2bf77837f6bae14776ea`** finalizó success y fue leído por dentro (unit 209 archivos/3961 tests; db pgTAP 47 archivos/3958 tests PASS; typecheck, lint, build y demás jobs green). El chequeo global `format:check` es advisory y avisó sobre 355 archivos ajenos al diff de corrección.
 
 ## Alcance y limitaciones
 
-Se comprobó mediante el conector GitHub el diff, la cabeza del PR, las fuentes de SQL y los antecedentes. GitHub informa base igual a `develop` y PR mergeable; **no se ejecutó `git merge-tree` ni `pnpm` local** por no disponer de clon de la repo en este entorno. CI del SHA revisado figuraba cancelado; mientras haya bloqueantes no se toma su color como certificación. **No se ejecutó E2E en Develop, no se corrió SQL ni se mutó esquema.** El detector estático y sus mutantes en memoria están detallados en evidencia.
-
+Revisión semántica y de mutaciones **documentales** usando contenido GitHub del SHA revisado. GitHub indica mergeable=true y develop en `2cd76f24`; no se ejecutó `git merge-tree` en clon local, ni `node docs/revision-pr/analizar.mjs verificacion` (no hay clon disponible en contenedor). La integridad de los 7 registros JSONL se validó en memoria. No se ejecutó `pnpm` local ni E2E en Develop, ni Docker, ni SQL remoto, ni se consultaron secretos. Los `123/123` tools anotados en la bitácora son dato declarado por el autor, no ejecución independiente. El CI del SHA del autor prueba la integración existente, **no** la captura que recién se implementará en una PR posterior.

@@ -156,3 +156,102 @@ H07 GREEN / mutación RED
 - Se comprobó por ejecución de JavaScript en el entorno de revisión sobre los documentos obtenidos del SHA, no con un clon/git. La ejecución exacta del heredoc en `/tmp` queda documentada para quien tenga el clon; **no se afirma haberla hecho aquí**. Los detectores semánticos parciales se cruzaron con inspección humana; ningún resultado implica que un payload real esté filtrado.
 - La reescritura del H05 es una **reparación contrafactual en memoria**, no una mutación adversa: por eso aparece RED → GREEN. **No se cambió T-435** por el revisor: quien ajuste esa frase no debe firmarse su propia verificación.
 - La ronda 3 debe correr el harness original sin modificar, e inventar nuevas mutaciones adversas para el arreglo del H05 (por ejemplo, reintroducir el veto absoluto en allowlist): el autor nunca edita `docs/revision-pr/**`.
+
+
+---
+
+# Ronda 3 — 2026-11-12: control independiente de la nota H05
+
+**Head fuente:** `ab697f5dded24c2c966d2bf77837f6bae14776ea` · base `develop@2cd76f24`. **No se alteró ni ejecutó el E2E de Realtime**. Los tests de abajo verifican únicamente obligaciones escritas en documentos. El control original dio GREEN y cada uno de **7 mutantes propios** dio RED en una ejecución JavaScript sobre contenido servido por GitHub. No son mutaciones de SQL, RLS, Supabase ni código de producción.
+
+## Harness completo para ejecutar en un clon del SHA revisado
+
+Copiar exactamente todo el bloque en un terminal en la raíz del clon. Solo se crea un auxiliar en `/tmp`; no se modifican archivos de la rama.
+
+```bash
+set -eu
+cat >/tmp/pr735-r3-doc-audit.cjs <<'NODE'
+'use strict';
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const task = fs.readFileSync('docs/tasks/T-435.md', 'utf8');
+const cc = fs.readFileSync('docs/contracts/CC-051.md', 'utf8');
+const log = fs.readFileSync('docs/tasks/log/T-435.md', 'utf8');
+const plan = fs.readFileSync('docs/implementation-plan.md', 'utf8');
+const note = task.split('## Notas para quien retome')[1];
+assert(note, 'debe existir sección Notas para quien retome');
+const check = {
+  full_mode: p => /^\s*-\s+\*\*Publicación completa:\*\* si S no recibe por Realtime las claves privadas y el marcador, falla el control positivo\s+y la captura no vale\./m.test(p),
+  allow_absence: p => /^\s*-\s+\*\*Modo allowlist de CC-023 §5:\*\* es \*\*esperado\*\* que S tampoco reciba esas claves por Realtime\./m.test(p),
+  allow_select: p => p.includes('S comprueba el marcador en origen con un SELECT'),
+  allow_event: p => p.includes('un evento público del mismo ID sin las columnas excluidas'),
+  allow_pgtap: p => p.includes('pgTAP de `attnames`, la PK y `offers`'),
+  draft_timing: p => p.includes('se comprueba **después** de insertarlo y antes del veredicto') && p.includes('Es aparte de la precondición de `SUBSCRIBED`'),
+  old_absent: p => !p.includes('Si la ausencia de claves se viera también en el suscriptor con service role'),
+};
+function replaceOnce(s, before, after) {
+  const start = s.indexOf(before);
+  assert(start >= 0, 'mutación sin objetivo: ' + before);
+  return s.slice(0, start) + after + s.slice(start + before.length);
+}
+const mutants = {
+  full_mode: replaceOnce(note, 'falla el control positivo', 'pasa el control positivo'),
+  allow_absence: replaceOnce(note, 'es **esperado** que S tampoco reciba esas claves por Realtime', 'S sí debe recibir las claves privadas por Realtime'),
+  allow_select: replaceOnce(note, 'S comprueba el marcador en origen con un SELECT', 'S no comprueba el marcador en origen'),
+  allow_event: replaceOnce(note, 'un evento público del mismo ID sin las columnas excluidas', 'cualquier evento público sin correlación'),
+  allow_pgtap: replaceOnce(note, 'pgTAP de `attnames`, la PK y `offers`', 'no requiere inspección de publicación'),
+  draft_timing: replaceOnce(note, 'se comprueba **después** de insertarlo y antes del veredicto', 'se comprueba antes del INSERT'),
+  old_absent: note + '\n- Si la ausencia de claves se viera también en el suscriptor con service role, el problema es de la prueba: la captura no vale.\n',
+};
+let n = 0;
+for (const [name, predicate] of Object.entries(check)) {
+  assert(predicate(note), name + ' debe dar GREEN con texto fuente');
+  assert(!predicate(mutants[name]), name + ' debe dar RED con la mutación');
+  console.log(name, 'control GREEN / mutación RED'); ++n;
+}
+const context = {
+  cc_modes: cc.includes('**Modo publicación completa (hoy):**') && cc.includes('**Modo allowlist (solo si se aplicó la alternativa de CC-023 §5):**'),
+  cc_allow: cc.includes('S comprueba por SELECT directo (service role)') && cc.includes('S recibe el evento Realtime del ID con las columnas públicas y **sin** las excluidas') && cc.includes('`public.offers` sigue en la publicación'),
+  r1_h01: cc.includes('A **tiene que recibir el UPDATE** a `published`') && cc.includes('No se\n     exige que llegue.'),
+  r1_h02: cc.includes('S recibe **ese INSERT** con las dos claves y el marcador') && cc.includes('registrado con `trackEntityForCleanup`'),
+  r1_h03: cc.includes('**Barrera causal:**') && cc.includes('**Ventana negativa acotada:**'),
+  r1_h04: cc.includes('pasan toda la matriz, el control positivo de origen') && cc.includes('solo cuenta si un **actor restringido**'),
+  r1_h06: cc.includes('**Rollback fail-closed:**') && cc.includes('retira **solo** `delivery_requests`'),
+  r1_h07: cc.includes('quita **todos** los canales') && cc.includes('**nombres** de las claves recibidas'),
+  log_consistent: log.includes('## 2026-11-12 — Ronda 2 de revisión') && log.includes('En modo allowlist es esperado que no las reciba'),
+  plan_task: plan.includes('| T-435 |') && plan.includes('sin CHECK de null'),
+};
+for (const [name, value] of Object.entries(context)) {
+  assert(value, 'contradicción en el contexto: ' + name);
+  console.log('contexto', name, 'GREEN');
+}
+console.log('R3 PASS: ' + n + '/' + n + ' H05 GREEN; ' + n + '/' + n +
+  ' mutantes RED; ' + Object.keys(context).length + '/' + Object.keys(context).length + ' invariantes transversales GREEN');
+NODE
+node /tmp/pr735-r3-doc-audit.cjs
+```
+
+**Resultado real de la revisión independiente sobre el contenido obtenido directamente de GitHub en `ab697f5dded24c2c966d2bf77837f6bae14776ea`:**
+
+```text
+H05 full_mode: control original=GREEN, mutación en memoria=RED
+H05 allow_absence: control original=GREEN, mutación en memoria=RED
+H05 allow_select: control original=GREEN, mutación en memoria=RED
+H05 allow_event: control original=GREEN, mutación en memoria=RED
+H05 allow_pgtap: control original=GREEN, mutación en memoria=RED
+H05 draft_timing: control original=GREEN, mutación en memoria=RED
+H05 old_absent: control original=GREEN, mutación en memoria=RED
+CONTEXTO: 10/10 GREEN
+RESULT: PASS (7 controles GREEN, 7 mutantes RED)
+```
+
+**Alcance honesto:** se ejecutó el código de comprobación equivalente en el entorno JavaScript del revisor con el texto servido por la conexión GitHub, no este `heredoc` como archivo Node sobre clon local (que no existe). Por eso no se declara una ejecución de `node /tmp/pr735-r3-doc-audit.cjs` ni de `pnpm` local. Esta batería fue construida por el revisor, distinta de la del agy, y cada reemplazo comprueba que encontró su objetivo antes de afirmar RED.
+
+## CI del SHA revisado: logs examinados
+
+- [Run 43256758218](https://github.com/cadeApp/cadeApp/actions/runs/43256758218): `event=pull_request`, `head_sha=ab697f5dded24c2c966d2bf77837f6bae14776ea`, `status=completed`, `conclusion=success`, creado 2026-11-12T16:15:57Z, completado 16:26:32Z.
+- unit (job 131316933130): `Test Files 209 passed (209)`, `Tests 3961 passed (3961)`; tests Node de workflows `# tests 86`, `# fail 0`; tests ADR `# tests 6`, `# fail 0`.
+- db-tests (job 131316933788): `Files=47, Tests=3958`; `Result: PASS`. Los `Failed test` intermedios son **controles de mutación esperados** seguidos por `GREEN tras restaurar`, no fallos del job; ver grupos H15 / T369 del log. `git diff --exit-code -- src/types/database.types.ts` se ejecutó en job `success`, sin diferencias.
+- build, lint, typecheck, audit, bundle-budget: jobs `completed/success`. `format:check` en job lint **advisory** reportó 355 archivos de formato, ninguno perteneciente a los docs modificados por este PR. No convertir ese aviso repo-wide en blocker ni editar archivos fuera de T-435.
+- `pnpm exec vitest run tools 123/123` consta en bitácora, no se ejecutó ese comando concreto en esta revisión. `pnpm typecheck/lint/test` no corridos localmente; aquí se validaron sus jobs correspondientes del CI exacto.
+- `git merge-tree` y `node docs/revision-pr/analizar.mjs verificacion` no corridos en clon local; GitHub informó mergeable=true y los JSONL se parsearon/validaron por separado antes del commit.
