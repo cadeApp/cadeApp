@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseRpcCaller } from './admin';
-import { adminListApplicantsRpc, mapAdminListApplicantsError } from './admin-applicants';
+import {
+  adminFindCourierDisputeCandidatesRpc,
+  adminFindCourierDniReservationRpc,
+  adminListApplicantsRpc,
+  mapAdminListApplicantsError,
+} from './admin-applicants';
 
 vi.mock('server-only', () => ({}));
 
@@ -108,5 +113,102 @@ describe('CC-044: adminListApplicantsRpc', () => {
     });
 
     expect(await adminListApplicantsRpc(client, { status: 'pending' })).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+});
+
+describe('CC-050: adminFindCourierDisputeCandidatesRpc', () => {
+  const CANDIDATES = {
+    candidates: [
+      {
+        courierId: '00000000-0000-4000-8000-000000500001',
+        displayName: 'Titular Real',
+        phoneMasked: '•••• 1234',
+        status: 'pending',
+        applicationSubmitted: false,
+        documentsCount: 4,
+      },
+    ],
+  };
+
+  it('manda p_lookup recortado y devuelve el objeto candidates', async () => {
+    const { client, calls } = caller({ data: CANDIDATES, error: null });
+    expect(await adminFindCourierDisputeCandidatesRpc(client, { lookup: ' +54 (381) 555-1234 ' })).toEqual({
+      ok: true,
+      data: CANDIDATES,
+    });
+    expect(calls).toEqual([
+      { fn: 'admin_find_courier_dispute_candidates', args: { p_lookup: '+54 (381) 555-1234' } },
+    ]);
+  });
+
+  it('una búsqueda inválida no llama a la RPC', async () => {
+    const { client, calls } = caller({ data: CANDIDATES, error: null });
+    for (const lookup of ['', 'juan', 'foo3815551234', '%3815551234']) {
+      expect(await adminFindCourierDisputeCandidatesRpc(client, { lookup })).toEqual({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('un array en la raíz es INTERNAL_ERROR', async () => {
+    const { client } = caller({ data: CANDIDATES.candidates, error: null });
+    expect(await adminFindCourierDisputeCandidatesRpc(client, { lookup: '3815551234' })).toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+  });
+
+  it.each(['AAL2_REQUIRED', 'UNAUTHORIZED_ACTOR', 'VALIDATION_ERROR'])('mapea %s', async (message) => {
+    const { client } = caller({ data: null, error: { code: 'P0001', message } });
+    expect(await adminFindCourierDisputeCandidatesRpc(client, { lookup: '3815551234' })).toEqual({
+      ok: false,
+      code: message,
+    });
+  });
+});
+
+describe('CC-050 (PR711-H03): adminFindCourierDniReservationRpc', () => {
+  const HMAC = 'ab'.repeat(32);
+  const RESERVATION = { reservation: { courierId: '00000000-0000-4000-8000-000000500002', status: 'rejected' } };
+
+  it('manda p_dni_hmac y devuelve solo cuenta y estado', async () => {
+    const { client, calls } = caller({ data: RESERVATION, error: null });
+    expect(await adminFindCourierDniReservationRpc(client, { dniHmac: HMAC })).toEqual({ ok: true, data: RESERVATION });
+    expect(calls).toEqual([{ fn: 'admin_find_courier_dni_reservation', args: { p_dni_hmac: HMAC } }]);
+  });
+
+  it('sin reserva devuelve reservation null', async () => {
+    const { client } = caller({ data: { reservation: null }, error: null });
+    expect(await adminFindCourierDniReservationRpc(client, { dniHmac: HMAC })).toEqual({
+      ok: true,
+      data: { reservation: null },
+    });
+  });
+
+  it('un DNI en claro no llama a la RPC', async () => {
+    const { client, calls } = caller({ data: RESERVATION, error: null });
+    expect(await adminFindCourierDniReservationRpc(client, { dniHmac: '38123456' })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('una salida con claves de más es INTERNAL_ERROR', async () => {
+    const { client } = caller({
+      data: { reservation: { ...RESERVATION.reservation, dniHmac: HMAC } },
+      error: null,
+    });
+    expect(await adminFindCourierDniReservationRpc(client, { dniHmac: HMAC })).toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+  });
+
+  it.each(['AAL2_REQUIRED', 'UNAUTHORIZED_ACTOR'])('mapea %s', async (message) => {
+    const { client } = caller({ data: null, error: { code: 'P0001', message } });
+    expect(await adminFindCourierDniReservationRpc(client, { dniHmac: HMAC })).toEqual({ ok: false, code: message });
   });
 });

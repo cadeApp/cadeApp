@@ -10,7 +10,8 @@ export const DOMAIN_ERROR_MESSAGES = {
   UNAUTHORIZED_ACTOR: 'No tenés permisos para realizar esta acción.',
   AAL2_REQUIRED: 'Ingresá tu código de verificación en dos pasos para continuar.',
   INVALID_SIGNUP_ROLE: 'Seleccioná si entrás como comercio o como repartidor.',
-  DNI_ALREADY_REGISTERED: 'Ese DNI ya está registrado en cadeApp.',
+  // CC-050 (SEC-09): neutral; no revela si el DNI existe ni el estado de otra cuenta.
+  DNI_ALREADY_REGISTERED: 'No pudimos completar tu alta con esos datos. Si el DNI es tuyo, contactá al soporte de cadeApp.',
   VEHICLE_SWITCH_BLOCKED: 'Retirá tus ofertas pendientes o terminá el viaje para cambiar de vehículo.',
   DUPLICATE_VEHICLE: 'Ya tenés un vehículo de ese tipo cargado.',
 

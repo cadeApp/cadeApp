@@ -26,8 +26,8 @@ function fake() {
     settings: SETTINGS,
     initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
     initialCouriers: [
-      { courierId: SUSPENDED_ID, status: 'suspended', available: false, vehicleType: 'moto' },
-      { courierId: REJECTED_ID, status: 'rejected', available: false, vehicleType: 'bike' },
+      { courierId: SUSPENDED_ID, status: 'suspended', available: false, vehicleType: 'moto', hasDni: true },
+      { courierId: REJECTED_ID, status: 'rejected', available: false, vehicleType: 'bike', hasDni: true },
       { courierId: APPROVED_ID, status: 'approved', available: true, vehicleType: 'car' },
       { courierId: PENDING_ID, status: 'pending', available: false, vehicleType: 'moto' },
       { courierId: INCOMPLETE_ID, status: 'suspended', available: false, vehicleType: null },
@@ -116,7 +116,7 @@ describe('CC-034 — admin_reinstate_courier', () => {
       settings: SETTINGS,
       initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
       initialCouriers: [
-        { courierId: availableRejectedId, status: 'rejected', available: true, vehicleType: 'bike' },
+        { courierId: availableRejectedId, status: 'rejected', available: true, vehicleType: 'bike', hasDni: true },
       ],
     });
     expect(client.getCourier(availableRejectedId)?.available).toBe(true);
@@ -181,5 +181,40 @@ describe('CC-034 — admin_reinstate_courier', () => {
       code: 'UNAUTHORIZED_ACTOR',
     });
     expect(client.getCourier(SUSPENDED_ID)?.status).toBe('suspended');
+  });
+});
+
+describe('CC-050 (PR711-H07): reinstate solo con el alta enviada y DNI', () => {
+  it('fake: un rechazado con vehículo pero sin alta enviada ni DNI no se reactiva', async () => {
+    const unsentId = '20000000-0000-4000-8000-0000000034c7';
+    const client = createFakeRpcClient({
+      settings: SETTINGS,
+      initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
+      initialCouriers: [
+        {
+          courierId: unsentId,
+          status: 'rejected',
+          available: false,
+          vehicleType: 'bike',
+          applicationSubmitted: false,
+          hasDni: false,
+        },
+        {
+          courierId: REJECTED_ID,
+          status: 'rejected',
+          available: false,
+          vehicleType: 'bike',
+          applicationSubmitted: true,
+          hasDni: true,
+        },
+      ],
+    });
+    expect(await client.admin_reinstate_courier({ courierId: unsentId, reason: 'Revisión administrativa' })).toEqual({
+      ok: false,
+      code: 'INVALID_STATE_TRANSITION',
+    });
+    expect(client.getCourier(unsentId)?.status).toBe('rejected');
+    const submitted = await client.admin_reinstate_courier({ courierId: REJECTED_ID, reason: 'Revisión administrativa' });
+    expect(submitted.ok).toBe(true);
   });
 });

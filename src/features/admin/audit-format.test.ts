@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { auditActionTone, describeAuditChange } from './audit-format';
+import { auditActionLabel, auditActionTone, auditFieldLabel, describeAuditChange } from './audit-format';
 import type { AuditChange } from './types';
 
 const courierDoc = { targetType: 'courier_document', targetRef: 'c0000000' } as const;
@@ -87,5 +87,18 @@ describe('PR617-H03: estados de incidentes en español', () => {
       before: 'En revisión',
       after: 'Cerrado sin sanción',
     });
+  });
+});
+
+describe('CC-050 (D5-A): etiqueta y valores de la liberación de DNI', () => {
+  it('etiqueta la acción y muestra dni_registered como sí → no', () => {
+    expect(auditActionLabel('courier_dni_released')).toBe('Liberó el DNI reservado');
+    expect(auditFieldLabel('dni_registered')).toBe('DNI registrado');
+    expect(
+      describeAuditChange(
+        { targetType: 'courier', targetRef: '12345678' },
+        { field: 'dni_registered', before: true, after: false }
+      )
+    ).toEqual({ before: 'sí', after: 'no' });
   });
 });

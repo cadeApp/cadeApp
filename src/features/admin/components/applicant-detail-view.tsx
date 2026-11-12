@@ -29,6 +29,7 @@ import {
   decideCourierAction,
   rejectCourierAction,
   reinstateCourierAction,
+  releaseCourierDniAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
 } from '../actions';
@@ -37,6 +38,7 @@ import {
   decisionFormSchema,
   rejectApplicantFormSchema,
   rejectDocumentFormSchema,
+  releaseCourierDniSchema,
   type DecisionFormInput,
   type RejectApplicantFormInput,
   type RejectDocumentFormInput,
@@ -77,6 +79,99 @@ const ZOOM_CLASSES: Record<number, string> = {
   2: 'scale-125',
   3: 'scale-150',
 };
+
+// CC-050 (D3-A): mismo motivo que la RPC (3 a 500 caracteres, sin hash ni número de documento).
+const releaseDniFormSchema = releaseCourierDniSchema.pick({ reason: true });
+
+/** CC-050 (D3-A): libera el DNI reservado de un repartidor rechazado o suspendido, con motivo y confirmación. */
+function ReleaseDniAction({ courierId }: { readonly courierId: string }): React.ReactElement {
+  const router = useRouter();
+  const copy = ADMIN_COPY.detail.releaseDni;
+  const [open, setOpen] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [reason, setReason] = React.useState('');
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const close = () => {
+    setOpen(false);
+    setError(null);
+    setReason('');
+  };
+
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    const parsed = releaseDniFormSchema.safeParse({ reason });
+    if (!parsed.success) {
+      setError(reason.trim().length < 3 ? copy.reasonTooShort : copy.reasonInvalid);
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await releaseCourierDniAction({ courierId, reason: parsed.data.reason });
+      if (!res.ok) {
+        setError(getDomainErrorMessage(res.code));
+        return;
+      }
+      notify.success(copy.success);
+      close();
+      router.refresh();
+    } catch {
+      setError(copy.connectionError);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        {copy.button}
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) close();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{copy.dialogTitle}</DialogTitle>
+            <DialogDescription>{copy.dialogDescription}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="release-dni-reason" className="block text-sm font-medium text-foreground">
+                {copy.reasonLabel} <span className="text-destructive">*</span>
+              </label>
+              <Textarea
+                id="release-dni-reason"
+                rows={4}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+              />
+              <p className="text-sm text-muted-foreground">{copy.reasonNote}</p>
+            </div>
+            {error ? (
+              <p className="text-sm font-medium text-destructive" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={close} disabled={submitting}>
+                {ADMIN_COPY.detail.cancelButton}
+              </Button>
+              <Button type="submit" variant="destructive" disabled={submitting}>
+                {submitting ? copy.processing : copy.confirm}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
   const router = useRouter();
@@ -703,7 +798,10 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
         aria-label={ADMIN_COPY.detail.actionsBarLabel}
         className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background py-3"
       >
-        {applicant.status === 'pending' ? (
+        {applicant.status === 'pending' && !applicant.applicationSubmitted ? (
+          // CC-050 (PR711-H01): una cuenta sin enviar (por ejemplo, un reclamante de disputa) no se decide.
+          <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.notSubmittedNote}</p>
+        ) : applicant.status === 'pending' ? (
           <>
             <Button
               variant="outline"
@@ -722,6 +820,9 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           <Button variant="destructive" onClick={() => openDecisionModal('suspended')}>
             {ADMIN_COPY.detail.applicantActions.suspend}
           </Button>
+        ) : !applicant.applicationSubmitted ? (
+          // CC-050 (PR711-H07): un rechazado o suspendido que nunca envió el alta no se reactiva ni se reconsidera.
+          <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.notSubmittedReinstateNote}</p>
         ) : applicant.status === 'suspended' ? (
           <Button variant="default" onClick={() => openDecisionModal('reactivate')}>
             {ADMIN_COPY.detail.applicantActions.reactivate}
@@ -732,6 +833,13 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           </Button>
         )}
       </div>
+
+      {/* CC-050 (D3-A): fuera de la barra de decisión; solo con DNI registrado en un rechazado o suspendido. */}
+      {(applicant.status === 'rejected' || applicant.status === 'suspended') && applicant.hasDni ? (
+        <div className="flex justify-end">
+          <ReleaseDniAction courierId={applicant.id} />
+        </div>
+      ) : null}
 
       {/* Dialog oficial de decisión sobre el postulante */}
       <Dialog

@@ -23,9 +23,11 @@ if (!dbContainer) {
   process.exit(1);
 }
 
+// CC-050 redefine admin_reinstate_courier (guarda de alta enviada y DNI): la mutación y la restauración usan esa
+// migración, que es la vigente. Restaurar la de CC-034 dejaría la RPC sin la guarda para los runners siguientes.
 const migrationPath = path.resolve(
   process.cwd(),
-  'supabase/migrations/20261020113000_cc034_admin_reinstate_courier.sql'
+  'supabase/migrations/20261113120000_cc050_courier_dni_hardening.sql'
 );
 
 function runSql(sql) {
@@ -322,9 +324,11 @@ async function scenario3(adminA, adminB, courierId) {
 async function mutationCheck(adminA, adminB, courierId) {
   console.log(`${TAG} --- Control de mutación: admin_reinstate_courier sin "for update" ---`);
   const originalSql = fs.readFileSync(migrationPath, 'utf8');
-  const lockClause = /\n\s*for update;/;
+  // Solo el lock de admin_reinstate_courier (la migración de CC-050 tiene otros «for update»).
+  const lockClause =
+    /(into v_courier_status, v_vehicle_type, v_dni_hmac, v_application_submitted\s+from public\.couriers\s+where profile_id = p_courier_id)\s+for update;/;
   assert.ok(lockClause.test(originalSql), `${TAG} la migración debe contener el "for update" a mutar`);
-  const mutatedSql = originalSql.replace(lockClause, ';');
+  const mutatedSql = originalSql.replace(lockClause, '$1;');
   assert.notEqual(mutatedSql, originalSql, `${TAG} la mutación debe modificar el SQL`);
   try {
     runSql(mutatedSql);
@@ -364,6 +368,17 @@ async function main() {
     insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
     values ('${courierId}', 'suspended', false, 'moto', 'CC34AAA')
     on conflict (profile_id) do update set status = 'suspended', vehicle_type = 'moto';
+  `);
+  // CC-050: reinstate solo reactiva una postulación enviada y con DNI. Se marca con la bandera de finalize y como su
+  // dueño (postgres), el camino que autoriza el trigger de CC-043.
+  runSql(`
+    begin;
+    select set_config('app.courier_application_finalize', 'on', true);
+    update public.couriers
+    set application_submitted = true, submitted_at = now(),
+      dni_hmac = encode(sha256(convert_to('${courierId}', 'UTF8')), 'hex')
+    where profile_id = '${courierId}';
+    commit;
   `);
 
   if (process.argv.includes('--mutation-check')) {

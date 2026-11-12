@@ -54,7 +54,7 @@ Contra `b5983ed3ba3d59d3deaa477ccb7d56cf2a5c3ffb`, H07–H09 resultaron correcto
 
 ## Resultado de la ronda 4
 
-Sobre `1a0b53d6caeb028f471182ed9055896ceb3cd593`: H10 corregido en `CC-050 `3b` y DoD de T-434. La inspección propia ejecutó **9/9 controles estáticos y 4/4 mutaciones documentales detectadas**, y cotejó 20 referencias de campos en cinco tablas con tipos y DDL. **0 bloqueantes de especificación**, ninguna corrección documental pendiente. Las pruebas pgTAP/RED→GREEN de SEC-09 son obligatorias en la **futura PR de implementación**, no están ejecutadas aquí.
+Sobre `1a0b53d6caeb028f471182ed9055896ceb3cd593`: H10 corregido en `CC-050` §3b y DoD de T-434. La inspección propia ejecutó **9/9 controles estáticos y 4/4 mutaciones documentales detectadas**, y cotejó 19 referencias de campos en cinco tablas con tipos y DDL. **0 bloqueantes de especificación**, ninguna corrección documental pendiente. Las pruebas pgTAP/RED→GREEN de SEC-09 son obligatorias en la **futura PR de implementación**, no están ejecutadas aquí.
 
 **Gate de CI separado:** ejecución oficial «CI» de este SHA `43193576599` **cancelada a los segundos y sin jobs**; no demuestra typecheck, lint, unit ni db-tests. `approval-policy` y Vercel sí figuran exitosos, pero no los sustituyen. Antes de mergear, quien decide debe confirmar cumplimiento de la política de checks del repo; **no se dispara un CI nuevo solo por el commit de revisión**.
 

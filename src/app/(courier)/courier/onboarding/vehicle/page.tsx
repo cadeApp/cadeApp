@@ -1,6 +1,12 @@
 import * as React from 'react';
 import { redirect } from 'next/navigation';
-import { COURIER_VEHICLES_COPY, CourierVehiclesManager, VehicleForm } from '@/features/courier-onboarding';
+import {
+  COURIER_ONBOARDING_COPY,
+  COURIER_VEHICLES_COPY,
+  CourierVehiclesManager,
+  VehicleForm,
+} from '@/features/courier-onboarding';
+import { buildSupportWhatsAppHref } from '@/features/merchants/server';
 import { getMyCourierVehicles } from '@/features/courier-onboarding/server';
 import { createClient } from '@/server/supabase/server';
 import type { VehicleType } from '@/domain/schemas';
@@ -55,6 +61,12 @@ export default async function CanonicalCourierOnboardingVehiclePage(
     );
   }
 
+  // CC-050 (SEC-09): el número de soporte es del servidor; el formulario recibe el enlace ya armado (o null).
+  const supportWhatsAppHref = buildSupportWhatsAppHref(
+    process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER,
+    COURIER_ONBOARDING_COPY.submitErrors.supportMessage
+  );
+
   return (
     <div className="flex flex-col items-center justify-start px-4 py-6">
       <VehicleForm
@@ -62,6 +74,7 @@ export default async function CanonicalCourierOnboardingVehiclePage(
         initialVehicleType={courier?.vehicle_type ?? undefined}
         initialVehiclePlate={courier?.vehicle_plate ?? undefined}
         courierStatus={courier?.status}
+        supportWhatsAppHref={supportWhatsAppHref}
       />
     </div>
   );

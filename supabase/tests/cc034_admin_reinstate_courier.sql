@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(50);
+select plan(51);
 
 -- CC-034 (T-385): admin_reinstate_courier reactiva un suspendido o reconsidera un rechazado.
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -13,6 +13,8 @@ create function pg_temp.courier_rej() returns uuid language sql as $$ select '00
 create function pg_temp.courier_appr() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034c3'::uuid $$;
 create function pg_temp.courier_pend() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034c4'::uuid $$;
 create function pg_temp.courier_incomplete() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034c5'::uuid $$;
+-- CC-050 (PR711-H07): rechazado con vehículo pero sin alta enviada ni DNI.
+create function pg_temp.courier_rej_unsent() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034c6'::uuid $$;
 create function pg_temp.req_1() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034e1'::uuid $$;
 create function pg_temp.req_2() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034e2'::uuid $$;
 create function pg_temp.missing_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034f9'::uuid $$;
@@ -88,7 +90,8 @@ begin
     (pg_temp.courier_rej(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc34.rej@example.test', 'pwd', '{"role":"courier"}'::jsonb),
     (pg_temp.courier_appr(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc34.appr@example.test', 'pwd', '{"role":"courier"}'::jsonb),
     (pg_temp.courier_pend(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc34.pend@example.test', 'pwd', '{"role":"courier"}'::jsonb),
-    (pg_temp.courier_incomplete(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc34.incomplete@example.test', 'pwd', '{"role":"courier"}'::jsonb);
+    (pg_temp.courier_incomplete(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc34.incomplete@example.test', 'pwd', '{"role":"courier"}'::jsonb),
+    (pg_temp.courier_rej_unsent(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'cc34.rejunsent@example.test', 'pwd', '{"role":"courier"}'::jsonb);
 
   update public.profiles set role = 'admin' where id = pg_temp.admin_a();
   update public.profiles set consent_status = 'active'
@@ -108,6 +111,19 @@ begin
   where profile_id = pg_temp.courier_pend();
   update public.couriers set status = 'suspended', available = false, vehicle_type = null
   where profile_id = pg_temp.courier_incomplete();
+  update public.couriers set status = 'rejected', available = false, vehicle_type = 'bike'
+  where profile_id = pg_temp.courier_rej_unsent();
+
+  -- CC-050 (PR711-H07): reinstate solo reactiva postulaciones enviadas y con DNI. Los dos casos positivos quedan
+  -- enviados, con un DNI de prueba, con la bandera de finalize y como su dueño (el camino que autoriza CC-043).
+  perform set_config('app.courier_application_finalize', 'on', true);
+  update public.couriers
+  set application_submitted = true, submitted_at = now(), dni_hmac = repeat('3a', 32)
+  where profile_id = pg_temp.courier_susp();
+  update public.couriers
+  set application_submitted = true, submitted_at = now(), dni_hmac = repeat('3b', 32)
+  where profile_id = pg_temp.courier_rej();
+  perform set_config('app.courier_application_finalize', 'off', true);
 
   insert into public.platform_settings (key, value)
   values ('min_offer_ars', '1000'::jsonb)
@@ -229,6 +245,11 @@ select throws_matching(
   $$ select public.admin_reinstate_courier(pg_temp.courier_incomplete(), 'Revisado') $$,
   'INVALID_STATE_TRANSITION',
   'suspendido con onboarding incompleto: INVALID_STATE_TRANSITION'
+);
+select throws_matching(
+  $$ select public.admin_reinstate_courier(pg_temp.courier_rej_unsent(), 'Revisado') $$,
+  'INVALID_STATE_TRANSITION',
+  'CC-050: rechazado con vehículo pero sin alta enviada ni DNI: INVALID_STATE_TRANSITION'
 );
 
 select pg_temp.reset_actor();

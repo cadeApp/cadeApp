@@ -1,11 +1,11 @@
 'use server';
 
-import { createHmac } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
 import { createAdminClient } from '@/server/supabase/admin';
 import { serverEnv } from '@/server/env';
+import { computeDniHmac } from '@/server/dni-hmac';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
 import {
@@ -58,11 +58,6 @@ export async function logoutCourierAction() {
 
 export interface CourierOnboardingResult {
   readonly redirectTo: string;
-}
-
-function computeDniHmac(dni: string, secret: string): string {
-  const normalizedDni = dni.replace(/\D/g, '');
-  return createHmac('sha256', secret).update(normalizedDni).digest('hex');
 }
 
 export type DocumentValidationResult =
@@ -165,28 +160,9 @@ export async function courierOnboardingAction(
   }
   const dniHmac = computeDniHmac(parsed.data.dni, hmacSecret);
 
-  // 5. Chequeo en couriers via createAdminClient bloqueando si ya existe con status rejected o suspended
+  // 5. CC-050 (SEC-09, D2-A): sin consulta previa por dni_hmac (era un oráculo de DNI sin límite). El DNI ajeno lo frena
+  // el unique en finalize (DNI_ALREADY_REGISTERED) y el propio rechazado o suspendido, finalize (UNAUTHORIZED_ACTOR).
   const adminClient = createAdminClient();
-
-  const { data: existingCourier, error: checkError } = await adminClient
-    .from('couriers')
-    .select('profile_id, status')
-    .eq('dni_hmac', dniHmac)
-    .maybeSingle<{ profile_id: string; status: string }>();
-
-  if (checkError) {
-    return err('INTERNAL_ERROR');
-  }
-
-  if (existingCourier) {
-    if (
-      existingCourier.status === 'rejected' ||
-      existingCourier.status === 'suspended' ||
-      existingCourier.profile_id !== user.id
-    ) {
-      return err('DNI_ALREADY_REGISTERED');
-    }
-  }
 
   // 7. Inserción de consentimientos en consents
   const consentsPayload: TablesInsert<'consents'>[] = [
@@ -312,6 +288,14 @@ export async function courierOnboardingAction(
 
   if (!parsedRpcData || typeof parsedRpcData !== 'object' || !(parsedRpcData as { ok?: boolean }).ok) {
     return err('INTERNAL_ERROR');
+  }
+
+  // 5b. CC-050 (D1-A): cupo de 5 envíos por día. Va con la sesión (auth.uid()) y en otra transacción que finalize, así un
+  // DNI_ALREADY_REGISTERED de finalize no revierte el contador.
+  const { error: consumeError } = await rpcClient.rpc('consume_courier_application_attempt');
+  if (consumeError) {
+    const consumeMessage = String(consumeError.message ?? '').trim();
+    return err(consumeError.code === 'P0001' && consumeMessage === 'RATE_LIMITED' ? 'RATE_LIMITED' : 'INTERNAL_ERROR');
   }
 
   // 6. CC-043: el envío lo registra `finalize_courier_application` bajo el lock de couriers (DNI, vehículo, marca y

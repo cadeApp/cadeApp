@@ -11,12 +11,20 @@ import {
   adminListPublicationPlansRpc,
   adminRegisterPlanPeriodRpc,
   adminReinstateCourierRpc,
+  adminReleaseCourierDniRpc,
   adminUpsertPublicationPlanRpc,
   adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
   adminUpdateSettingRpc,
   adminVerifyDocumentRpc,
 } from '@/server/rpc/admin';
+import {
+  adminFindCourierDisputeCandidatesRpc,
+  adminFindCourierDniReservationRpc,
+} from '@/server/rpc/admin-applicants';
+import { computeDniHmac } from '@/server/dni-hmac';
+import { serverEnv } from '@/server/env';
+import { dniSchema } from '@/features/courier-onboarding';
 import type { AuditLogItem, DocumentContentType, ViewDocumentResult } from './types';
 import { getMerchantPlanMovements } from './queries';
 import { sanitizeAdminRedirect } from './redirect';
@@ -28,6 +36,7 @@ import {
   composeRejectionReason,
   suspendCourierSchema,
   reinstateCourierSchema,
+  releaseCourierDniSchema,
   verifyCourierDocumentSchema,
   type AdminMfaInput,
   type ViewCourierDocumentInput,
@@ -35,6 +44,7 @@ import {
   type RejectCourierInput,
   type SuspendCourierInput,
   type ReinstateCourierInput,
+  type ReleaseCourierDniInput,
   type VerifyCourierDocumentInput,
   setMerchantSubscriptionSchema,
   updatePlatformSettingSchema,
@@ -324,6 +334,83 @@ export async function reinstateCourierAction(
   revalidatePath('/admin/applicants');
   revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
   return ok({ success: true, idempotent: rpcResult.data.idempotent });
+}
+
+/**
+ * CC-050 (PR711-H02): búsqueda de reclamantes por POST. El teléfono o el UUID nunca viajan en la URL.
+ */
+export async function findDisputeCandidatesAction(input: {
+  readonly lookup: string;
+}): Promise<ActionResult<RpcOutput<'admin_find_courier_dispute_candidates'>, DomainErrorCode>> {
+  const parsed = RPC_CONTRACTS.admin_find_courier_dispute_candidates.inputSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  // Cliente de sesión con AAL2, nunca createAdminClient: la RPC vuelve a exigir admin con MFA.
+  return adminFindCourierDisputeCandidatesRpc(authResult.data.supabase, { lookup: parsed.data.lookup });
+}
+
+/**
+ * CC-050 (PR711-H03, D2-B): quién reservó un DNI. El DNI verificado por soporte llega por POST; el HMAC se calcula
+ * acá, después de exigir admin con aal2, y nunca sale del servidor ni se registra.
+ */
+export async function findDniReservationAction(input: {
+  readonly dni: string;
+}): Promise<ActionResult<RpcOutput<'admin_find_courier_dni_reservation'>, DomainErrorCode>> {
+  const parsed = dniSchema.safeParse(input.dni);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const secret = serverEnv.DNI_HMAC_SECRET;
+  if (!secret) {
+    return err('INTERNAL_ERROR');
+  }
+
+  return adminFindCourierDniReservationRpc(authResult.data.supabase, {
+    dniHmac: computeDniHmac(parsed.data, secret),
+  });
+}
+
+/**
+ * CC-050 (D3-A): libera el DNI de un repartidor rechazado o suspendido para que el titular real envíe su alta.
+ */
+export async function releaseCourierDniAction(
+  input: ReleaseCourierDniInput
+): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+  const parsed = releaseCourierDniSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  // Cliente de sesión con AAL2, nunca createAdminClient: la RPC vuelve a exigir admin con MFA.
+  const rpcResult = await adminReleaseCourierDniRpc(authResult.data.supabase, {
+    courierId: parsed.data.courierId,
+    reason: parsed.data.reason,
+  });
+
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
+  return ok({ success: true });
 }
 
 /**

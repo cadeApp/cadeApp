@@ -673,6 +673,65 @@ export const adminReinstateCourierOutputSchema = z
     message: 'previousStatus approved solo en la ruta idempotente',
   });
 
+// CC-050 (SEC-09): cupo diario de envíos de alta del repartidor.
+export const consumeCourierApplicationAttemptInputSchema = z.object({}).strict();
+export const consumeCourierApplicationAttemptOutputSchema = z.null();
+
+// CC-050: motivo de la liberación. Defensa contra pegar el hash o el número de DNI (misma regla que la RPC).
+const releaseReasonSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(500)
+  .refine((reason) => !/[0-9a-fA-F]{64}/.test(reason) && !/[0-9]{7}/.test(reason), {
+    message: 'el motivo no puede incluir el hash ni el número de documento',
+  });
+export const adminReleaseCourierDniInputSchema = z.object({
+  courierId: uuidSchema,
+  reason: releaseReasonSchema,
+});
+export const adminReleaseCourierDniOutputSchema = z.object({
+  courierId: uuidSchema,
+  released: z.literal(true),
+});
+
+// CC-050: búsqueda de reclamantes para disputa. UUID exacto o teléfono completo (caracteres telefónicos, 10 a 13 dígitos).
+const DISPUTE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DISPUTE_PHONE_PATTERN = /^[+()0-9 -]+$/;
+export function isDisputeLookup(value: string): boolean {
+  const lookup = value.trim();
+  if (DISPUTE_UUID_PATTERN.test(lookup)) return true;
+  if (!DISPUTE_PHONE_PATTERN.test(lookup)) return false;
+  const digits = lookup.replace(/\D/g, '').length;
+  return digits >= 10 && digits <= 13;
+}
+export const adminFindCourierDisputeCandidatesInputSchema = z.object({
+  lookup: z.string().refine(isDisputeLookup, { message: 'UUID exacto o teléfono completo' }),
+});
+export const courierDisputeCandidateSchema = z
+  .object({
+    courierId: uuidSchema,
+    displayName: z.string(),
+    phoneMasked: z.string(),
+    status: z.literal('pending'),
+    applicationSubmitted: z.literal(false),
+    documentsCount: z.number().int().min(0),
+  })
+  .strict();
+export const adminFindCourierDisputeCandidatesOutputSchema = z
+  .object({ candidates: z.array(courierDisputeCandidateSchema).max(10) })
+  .strict();
+
+// CC-050 (PR711-H03, D2-B): quién reservó un DNI. El servidor calcula el HMAC; la salida es solo cuenta y estado.
+export const adminFindCourierDniReservationInputSchema = z.object({
+  dniHmac: z.string().regex(/^[0-9a-f]{64}$/),
+});
+export const adminFindCourierDniReservationOutputSchema = z
+  .object({
+    reservation: z.object({ courierId: uuidSchema, status: courierStatusSchema }).strict().nullable(),
+  })
+  .strict();
+
 // 16. admin_verify_document
 export const adminVerifyDocumentInputSchema = z.object({
   documentId: uuidSchema,
@@ -1778,6 +1837,43 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  consume_courier_application_attempt: {
+    inputSchema: consumeCourierApplicationAttemptInputSchema,
+    outputSchema: consumeCourierApplicationAttemptOutputSchema,
+    errorCodes: ['UNAUTHENTICATED', 'RATE_LIMITED'] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_release_courier_dni: {
+    inputSchema: adminReleaseCourierDniInputSchema,
+    outputSchema: adminReleaseCourierDniOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_find_courier_dispute_candidates: {
+    inputSchema: adminFindCourierDisputeCandidatesInputSchema,
+    outputSchema: adminFindCourierDisputeCandidatesOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_find_courier_dni_reservation: {
+    inputSchema: adminFindCourierDniReservationInputSchema,
+    outputSchema: adminFindCourierDniReservationOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_verify_document: {
     inputSchema: adminVerifyDocumentInputSchema,
     outputSchema: adminVerifyDocumentOutputSchema,
@@ -2140,6 +2236,10 @@ export const ALL_RPC_NAMES = [
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_reinstate_courier',
+  'consume_courier_application_attempt',
+  'admin_release_courier_dni',
+  'admin_find_courier_dispute_candidates',
+  'admin_find_courier_dni_reservation',
   'admin_verify_document',
   'replace_courier_document',
   'add_courier_optional_document',

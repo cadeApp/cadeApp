@@ -116,6 +116,10 @@ export function ApplicantsQueue({
           </div>
           <p className="text-sm text-muted-foreground">{ADMIN_COPY.queue.description}</p>
         </div>
+        {/* CC-050 (D4-B): la búsqueda de disputas va aparte; la cola no lista cuentas sin enviar. */}
+        <Link href="/admin/applicants/disputes" className="text-sm font-medium text-primary underline">
+          {ADMIN_COPY.disputes.queueLink}
+        </Link>
       </div>
 
       <Tabs

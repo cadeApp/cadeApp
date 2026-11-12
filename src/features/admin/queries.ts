@@ -88,6 +88,7 @@ interface CourierDetailRow {
   decided_by: string | null;
   deactivated_at: string | null;
   submitted_at: string | null;
+  application_submitted: boolean;
   profiles: ProfileRow | null;
 }
 
@@ -178,6 +179,7 @@ export async function getApplicantDetail(
         decided_by,
         deactivated_at,
         submitted_at,
+        application_submitted,
         profiles!couriers_profile_id_fkey (
           display_name,
           phone,
@@ -284,6 +286,8 @@ export async function getApplicantDetail(
     deactivatedAt: c.deactivated_at,
     createdAt: profile?.created_at ?? new Date().toISOString(),
     submittedAt: c.submitted_at,
+    // CC-050 (PR711-H01): la columna real; submitted_at no alcanza (históricos enviados sin fecha).
+    applicationSubmitted: c.application_submitted === true,
     documents,
     consents,
     history,
@@ -656,6 +660,8 @@ const AUDIT_CHANGE_FIELDS = [
   'kind',
   'docLevel',
   'withdrawnOffersCount',
+  // CC-050 (D5-A): si había DNI registrado; nunca el hash.
+  'dni_registered',
 ] as const;
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -679,6 +685,8 @@ const AUDIT_REASON_ACTIONS: ReadonlySet<string> = new Set([
   'admin_suspend_courier',
   'admin_reinstate_courier',
   'admin_verify_document',
+  // CC-050 (D5-A): motivo de la liberación del DNI, escrito por un admin.
+  'courier_dni_released',
 ]);
 
 const auditUuidSchema = z.string().guid();

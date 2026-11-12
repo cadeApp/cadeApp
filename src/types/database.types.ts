@@ -1540,6 +1540,14 @@ export type Database = {
         Args: { p_courier_id: string; p_decision: string; p_reason?: string }
         Returns: Json
       }
+      admin_find_courier_dispute_candidates: {
+        Args: { p_lookup: string }
+        Returns: Json
+      }
+      admin_find_courier_dni_reservation: {
+        Args: { p_dni_hmac: string }
+        Returns: Json
+      }
       admin_get_merchant_publication_credits: {
         Args: { p_before_id?: number; p_limit?: number; p_merchant_id: string }
         Returns: Json
@@ -1627,6 +1635,10 @@ export type Database = {
         Args: { p_courier_id: string; p_reason: string }
         Returns: Json
       }
+      admin_release_courier_dni: {
+        Args: { p_courier_id: string; p_reason: string }
+        Returns: Json
+      }
       admin_resolve_incident: {
         Args: { p_decision: string; p_incident_id: string; p_reason: string }
         Returns: Json
@@ -1700,6 +1712,7 @@ export type Database = {
         Returns: Json
       }
       complete_orphan_courier_document_purge: { Args: never; Returns: Json }
+      consume_courier_application_attempt: { Args: never; Returns: undefined }
       courier_cancel_match: {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json

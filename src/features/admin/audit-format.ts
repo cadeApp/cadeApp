@@ -23,6 +23,7 @@ export type AuditActionTone = 'positive' | 'negative' | 'neutral' | 'access';
 const ACTION_TONES: Readonly<Record<string, AuditActionTone>> = {
   view_courier_document: 'access',
   admin_reinstate_courier: 'positive',
+  courier_dni_released: 'neutral',
   admin_grant_publication_credits: 'positive',
   mark_delivered: 'positive',
   admin_suspend_courier: 'negative',
@@ -115,6 +116,9 @@ export function formatAuditValue(
     return ADMIN_COPY.audit.noValue;
   }
   if (typeof value === 'boolean') {
+    if (field === 'dni_registered') {
+      return value ? ADMIN_COPY.audit.dniRegisteredYes : ADMIN_COPY.audit.dniRegisteredNo;
+    }
     return value ? ADMIN_COPY.settings.pilotOn : ADMIN_COPY.settings.pilotOff;
   }
   if (typeof value === 'number') {

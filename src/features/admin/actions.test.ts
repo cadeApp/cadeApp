@@ -3,10 +3,14 @@ import { revalidatePath } from 'next/cache';
 import * as serverSupabase from '@/server/supabase/server';
 import * as adminSupabase from '@/server/supabase/admin';
 import * as adminRpc from '@/server/rpc/admin';
+import * as adminApplicantsRpc from '@/server/rpc/admin-applicants';
 import {
   decideCourierAction,
   rejectCourierAction,
   reinstateCourierAction,
+  releaseCourierDniAction,
+  findDisputeCandidatesAction,
+  findDniReservationAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
   viewCourierDocumentAction,
@@ -32,6 +36,7 @@ vi.mock('@/server/supabase/admin', () => ({
 vi.mock('@/server/rpc/admin', () => ({
   adminDecideCourierRpc: vi.fn(),
   adminReinstateCourierRpc: vi.fn(),
+  adminReleaseCourierDniRpc: vi.fn(),
   adminSuspendCourierRpc: vi.fn(),
   adminVerifyDocumentRpc: vi.fn(),
   adminSetSubscriptionRpc: vi.fn(),
@@ -39,6 +44,15 @@ vi.mock('@/server/rpc/admin', () => ({
   adminGrantPublicationCreditsRpc: vi.fn(),
   adminRegisterPlanPeriodRpc: vi.fn(),
   adminUpsertPublicationPlanRpc: vi.fn(),
+}));
+
+vi.mock('@/server/rpc/admin-applicants', () => ({
+  adminFindCourierDisputeCandidatesRpc: vi.fn(),
+  adminFindCourierDniReservationRpc: vi.fn(),
+}));
+
+vi.mock('@/server/env', () => ({
+  serverEnv: { DNI_HMAC_SECRET: 'super-secret-hmac-key-for-test-32bytes' },
 }));
 
 vi.mock('./queries', () => ({
@@ -1301,5 +1315,118 @@ describe('T-405: getMerchantPlanMovementsAction (últimos movimientos del panel)
       ok: false,
       code: 'INTERNAL_ERROR',
     });
+  });
+});
+
+describe('CC-050 (D3-A): releaseCourierDniAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const releaseInput = { courierId: VALID_COURIER_ID, reason: 'Reclamo verificado del titular' };
+
+  it('rechaza entradas inválidas sin autenticar ni llamar a la RPC', async () => {
+    mockSession({ role: 'admin' });
+    const invalidInputs = [
+      { ...releaseInput, courierId: 'no-es-uuid' },
+      { ...releaseInput, reason: '  ab  ' },
+      { ...releaseInput, reason: 'x'.repeat(501) },
+      { ...releaseInput, reason: `hash ${'ab'.repeat(32)}` },
+      { ...releaseInput, reason: 'dni 30123456' },
+    ];
+    for (const input of invalidInputs) {
+      expect(await releaseCourierDniAction(input)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    expect(adminRpc.adminReleaseCourierDniRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ user: null }, 'UNAUTHENTICATED'],
+    [{ role: 'courier' }, 'UNAUTHORIZED_ACTOR'],
+    [{ role: 'admin', aal: 'aal1' as const }, 'AAL2_REQUIRED'],
+  ])('sin admin con AAL2 (%o) devuelve %s y no llama a la RPC', async (session, code) => {
+    mockSession(session);
+    expect(await releaseCourierDniAction(releaseInput)).toEqual({ ok: false, code });
+    expect(adminRpc.adminReleaseCourierDniRpc).not.toHaveBeenCalled();
+  });
+
+  it('llama a la RPC con el cliente de sesión AAL2 y revalida el detalle', async () => {
+    const client = mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminReleaseCourierDniRpc).mockResolvedValue({
+      ok: true,
+      data: { courierId: VALID_COURIER_ID, released: true },
+    });
+
+    expect(await releaseCourierDniAction(releaseInput)).toEqual({ ok: true, data: { success: true } });
+    expect(adminRpc.adminReleaseCourierDniRpc).toHaveBeenCalledWith(client, releaseInput);
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/applicants/${VALID_COURIER_ID}`);
+  });
+
+  it.each(['AAL2_REQUIRED', 'INVALID_STATE_TRANSITION', 'NOT_FOUND', 'UNAUTHORIZED_ACTOR', 'VALIDATION_ERROR'] as const)(
+    'mapea %s de la RPC sin convertirlo en INTERNAL_ERROR',
+    async (code) => {
+      mockSession({ role: 'admin' });
+      vi.mocked(adminRpc.adminReleaseCourierDniRpc).mockResolvedValue({ ok: false, code });
+
+      expect(await releaseCourierDniAction(releaseInput)).toEqual({ ok: false, code });
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('CC-050 (PR711-H02/H03): búsquedas de disputa por POST', () => {
+  // Vector de computeDniHmac para «38123456» con este secreto (mismo de las pruebas del alta).
+  const EXPECTED_HMAC = '593c04e9d598a3bef0bbefa513180b4225b33b31f4682d9d44d81805e15c01e2';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('findDisputeCandidatesAction valida, exige aal2 y delega con el cliente de sesión', async () => {
+    const client = mockSession({ role: 'admin' });
+    const data = { candidates: [] };
+    vi.mocked(adminApplicantsRpc.adminFindCourierDisputeCandidatesRpc).mockResolvedValue({ ok: true, data });
+
+    expect(await findDisputeCandidatesAction({ lookup: '3815551234' })).toEqual({ ok: true, data });
+    expect(adminApplicantsRpc.adminFindCourierDisputeCandidatesRpc).toHaveBeenCalledWith(client, {
+      lookup: '3815551234',
+    });
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('findDisputeCandidatesAction rechaza una búsqueda inválida sin llamar a la RPC', async () => {
+    mockSession({ role: 'admin' });
+    expect(await findDisputeCandidatesAction({ lookup: 'juan' })).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(adminApplicantsRpc.adminFindCourierDisputeCandidatesRpc).not.toHaveBeenCalled();
+  });
+
+  it('findDniReservationAction calcula el HMAC en el servidor y manda solo el hash', async () => {
+    const client = mockSession({ role: 'admin' });
+    const data = { reservation: { courierId: VALID_COURIER_ID, status: 'rejected' as const } };
+    vi.mocked(adminApplicantsRpc.adminFindCourierDniReservationRpc).mockResolvedValue({ ok: true, data });
+
+    expect(await findDniReservationAction({ dni: '38.123.456' })).toEqual({ ok: true, data });
+    expect(adminApplicantsRpc.adminFindCourierDniReservationRpc).toHaveBeenCalledWith(client, {
+      dniHmac: EXPECTED_HMAC,
+    });
+  });
+
+  it.each([
+    [{ user: null }, 'UNAUTHENTICATED'],
+    [{ role: 'courier' }, 'UNAUTHORIZED_ACTOR'],
+    [{ role: 'admin', aal: 'aal1' as const }, 'AAL2_REQUIRED'],
+  ])('findDniReservationAction sin admin con AAL2 (%o) devuelve %s antes de calcular el hash', async (session, code) => {
+    mockSession(session);
+    expect(await findDniReservationAction({ dni: '38123456' })).toEqual({ ok: false, code });
+    expect(adminApplicantsRpc.adminFindCourierDniReservationRpc).not.toHaveBeenCalled();
+  });
+
+  it('findDniReservationAction rechaza un DNI mal formado', async () => {
+    mockSession({ role: 'admin' });
+    for (const dni of ['', '123', 'abc12345', `${'ab'.repeat(32)}`]) {
+      expect(await findDniReservationAction({ dni })).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    expect(adminApplicantsRpc.adminFindCourierDniReservationRpc).not.toHaveBeenCalled();
   });
 });

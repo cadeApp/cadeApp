@@ -80,6 +80,8 @@ export interface ApplicantDetail {
   readonly createdAt: string;
   /** CC-043: primer envío completo de la postulación; `null` en las previas a CC-043 o sin envío. */
   readonly submittedAt?: string | null;
+  /** CC-050 (PR711-H01): postulación enviada; sin envío no se aprueba ni se rechaza. */
+  readonly applicationSubmitted: boolean;
   readonly documents: readonly ApplicantDocumentDetail[];
   /** T-404: consentimientos aceptados, leídos con la RLS del admin. */
   readonly consents?: readonly ApplicantConsent[];

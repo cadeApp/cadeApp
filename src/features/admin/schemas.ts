@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  RPC_CONTRACTS,
   adminGrantPublicationCreditsInputSchema,
   adminRegisterPlanPeriodInputSchema,
   adminSetSubscriptionInputSchema,
@@ -94,6 +95,9 @@ export const reinstateCourierSchema = z.object({
   courierId: z.string().guid(),
   reason: z.string().trim().min(1).max(500),
 });
+
+// CC-050 (D3-A): misma regla que RPC_CONTRACTS.admin_release_courier_dni.
+export const releaseCourierDniSchema = RPC_CONTRACTS.admin_release_courier_dni.inputSchema;
 
 export const verifyCourierDocumentSchema = z
   .object({
@@ -411,6 +415,7 @@ export type ViewCourierDocumentInput = z.infer<typeof viewCourierDocumentSchema>
 export type DecideCourierInput = z.infer<typeof decideCourierSchema>;
 export type SuspendCourierInput = z.infer<typeof suspendCourierSchema>;
 export type ReinstateCourierInput = z.infer<typeof reinstateCourierSchema>;
+export type ReleaseCourierDniInput = z.infer<typeof releaseCourierDniSchema>;
 export type VerifyCourierDocumentInput = z.infer<typeof verifyCourierDocumentSchema>;
 export type RejectDocumentFormInput = z.infer<typeof rejectDocumentFormSchema>;
 export type DecisionFormInput = z.infer<typeof decisionFormSchema>;
