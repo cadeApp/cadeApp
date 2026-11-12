@@ -4,7 +4,7 @@
 drop policy if exists delivery_requests_update_merchant on public.delivery_requests;
 create policy delivery_requests_update_merchant on public.delivery_requests
   for update to authenticated
-  using (merchant_id = auth.uid() and status = 'draft')
+  using (merchant_id = auth.uid())
   with check (
     merchant_id = auth.uid()
     and app_private.is_active_operational_actor()
