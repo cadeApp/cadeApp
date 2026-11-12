@@ -221,7 +221,6 @@ begin
   -- tuvo el DNI liberado por disputa (PR711-H07).
   if v_courier_status not in ('suspended', 'rejected')
      or v_vehicle_type is null
-     or not v_application_submitted
      or v_dni_hmac is null then
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
   end if;
