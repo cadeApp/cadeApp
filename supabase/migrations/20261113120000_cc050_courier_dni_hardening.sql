@@ -128,7 +128,7 @@ begin
   end if;
 
   -- H10: couriers no tiene created_at; la fecha de alta es la de profiles, como en admin_list_applicants.
-  select jsonb_agg(t.item order by t.created_at desc, t.profile_id desc)
+  select jsonb_agg(t.item)
   into v_rows
   from (
     select
@@ -156,7 +156,6 @@ begin
         (v_courier_id is not null and c.profile_id = v_courier_id)
         or (v_phone_digits is not null and regexp_replace(coalesce(p.phone, ''), '\D', '', 'g') = v_phone_digits)
       )
-    order by p.created_at desc, c.profile_id desc
     limit 10
   ) t;
 
