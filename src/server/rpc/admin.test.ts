@@ -12,6 +12,7 @@ import {
   adminUpsertPublicationPlanRpc,
   adminListIncidentsRpc,
   adminReinstateCourierRpc,
+  adminReleaseCourierDniRpc,
   adminResolveIncidentRpc,
   adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
@@ -1164,5 +1165,52 @@ describe('CC-034 · admin_reinstate_courier (T-385)', () => {
     expect(sql).toMatch(/revoke all on function public\.admin_reinstate_courier\(uuid, text\) from public, anon, authenticated;/i);
     expect(sql).toMatch(/grant execute on function public\.admin_reinstate_courier\(uuid, text\) to authenticated;/i);
     expect(sql).toMatch(/security definer\s+set search_path = public, pg_temp/i);
+  });
+});
+
+describe('CC-050 · admin_release_courier_dni (T-434)', () => {
+  const caller = (response: { data: unknown; error: { message: string; code?: string } | null }) => {
+    const rpc = vi.fn().mockResolvedValue(response);
+    return { client: { rpc } as SupabaseRpcCaller, rpc };
+  };
+
+  it('manda p_courier_id y el motivo recortado, y devuelve la salida validada', async () => {
+    const data = { courierId: COURIER_1_ID, released: true };
+    const { client, rpc } = caller({ data, error: null });
+    await expect(
+      adminReleaseCourierDniRpc(client, { courierId: COURIER_1_ID, reason: '  Reclamo verificado  ' })
+    ).resolves.toEqual({ ok: true, data });
+    expect(rpc).toHaveBeenCalledWith('admin_release_courier_dni', {
+      p_courier_id: COURIER_1_ID,
+      p_reason: 'Reclamo verificado',
+    });
+  });
+
+  it('entrada inválida: VALIDATION_ERROR sin llamar a la RPC', async () => {
+    const { client, rpc } = caller({ data: null, error: null });
+    for (const reason of ['ab', 'x'.repeat(501), `h ${'ab'.repeat(32)}`, 'dni 30123456']) {
+      await expect(adminReleaseCourierDniRpc(client, { courierId: COURIER_1_ID, reason })).resolves.toEqual({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it.each(['AAL2_REQUIRED', 'INVALID_STATE_TRANSITION', 'NOT_FOUND', 'UNAUTHORIZED_ACTOR'])(
+    'mapea %s de la RPC',
+    async (message) => {
+      const { client } = caller({ data: null, error: { code: 'P0001', message } });
+      await expect(
+        adminReleaseCourierDniRpc(client, { courierId: COURIER_1_ID, reason: 'Reclamo verificado' })
+      ).resolves.toEqual({ ok: false, code: message });
+    }
+  );
+
+  it('una salida fuera de contrato es INTERNAL_ERROR', async () => {
+    const { client } = caller({ data: { courierId: COURIER_1_ID, released: false }, error: null });
+    await expect(
+      adminReleaseCourierDniRpc(client, { courierId: COURIER_1_ID, reason: 'Reclamo verificado' })
+    ).resolves.toEqual({ ok: false, code: 'INTERNAL_ERROR' });
   });
 });

@@ -528,6 +528,10 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
   admin_reinstate_courier: ['admin'],
+  // CC-050: la RPC solo usa auth.uid(); llamarla en forma directa gasta el cupo propio.
+  consume_courier_application_attempt: ['merchant', 'courier', 'admin'],
+  admin_release_courier_dni: ['admin'],
+  admin_find_courier_dispute_candidates: ['admin'],
   admin_verify_document: ['admin'],
   admin_set_subscription: ['admin'],
   admin_update_setting: ['admin'],
@@ -784,6 +788,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const cancellationReasons: FakeCancellationReasonRecord[] = [];
   let cancellationReasonSeq = 0;
   const rateLimits = new Map<string, number>();
+  // CC-050: envíos de alta por actor y día de Tucumán.
+  const dailyApplicationAttempts = new Map<string, number>();
   const multiDropSnapshots = new Map<
     string,
     {
@@ -3498,9 +3504,62 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (courier.status === 'pending' || courier.vehicleType === null) {
           return err('INVALID_STATE_TRANSITION');
         }
+        // CC-050: una postulación enviada con el DNI liberado no vuelve.
+        if (courier.applicationSubmitted && !courier.hasDni) {
+          return err('INVALID_STATE_TRANSITION');
+        }
         const previousStatus = courier.status;
         courier.status = 'approved';
         return ok({ courierId: input.courierId, previousStatus, status: 'approved', idempotent: false });
+      }),
+
+    consume_courier_application_attempt: (rawInput) =>
+      executeRpc('consume_courier_application_attempt', rawInput, false, () => {
+        // CC-050 (H07): el día es el calendario de Tucumán (UTC-3 fijo, sin horario de verano).
+        const tucumanDay = Math.floor((nowFn().getTime() - 3 * 3_600_000) / 86_400_000);
+        const key = `${actor.userId}:courier_application_submit:${tucumanDay}`;
+        const next = (dailyApplicationAttempts.get(key) ?? 0) + 1;
+        if (next > 5) return err('RATE_LIMITED');
+        dailyApplicationAttempts.set(key, next);
+        return ok(null);
+      }),
+
+    admin_release_courier_dni: (rawInput) =>
+      executeRpc('admin_release_courier_dni', rawInput, true, (input) => {
+        const courier = couriers.get(input.courierId);
+        if (!courier) return err('NOT_FOUND');
+        if ((courier.status !== 'rejected' && courier.status !== 'suspended') || !courier.hasDni) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        courier.hasDni = false;
+        return ok({ courierId: input.courierId, released: true });
+      }),
+
+    admin_find_courier_dispute_candidates: (rawInput) =>
+      executeRpc('admin_find_courier_dispute_candidates', rawInput, true, (input) => {
+        const lookup = input.lookup.trim();
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookup);
+        const phoneDigits = isUuid ? null : lookup.replace(/\D/g, '');
+        const documentsOf = (courierId: string) =>
+          [...documents.values()].filter((doc) => doc.courierId === courierId && doc.isCurrent).length;
+        const candidates = [...couriers.values()]
+          .filter((c) => c.status === 'pending' && !c.applicationSubmitted && documentsOf(c.courierId) > 0)
+          .filter((c) =>
+            isUuid ? c.courierId.toLowerCase() === lookup.toLowerCase() : (c.phone ?? '').replace(/\D/g, '') === phoneDigits
+          )
+          .sort((a, b) =>
+            a.createdAt === b.createdAt ? b.courierId.localeCompare(a.courierId) : b.createdAt.localeCompare(a.createdAt)
+          )
+          .slice(0, 10)
+          .map((c) => ({
+            courierId: c.courierId,
+            displayName: c.displayName,
+            phoneMasked: `•••• ${(c.phone ?? '').replace(/\D/g, '').slice(-4)}`,
+            status: 'pending' as const,
+            applicationSubmitted: false as const,
+            documentsCount: documentsOf(c.courierId),
+          }));
+        return ok({ candidates });
       }),
 
     admin_verify_document: (rawInput) =>

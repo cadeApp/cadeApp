@@ -33,6 +33,8 @@ import { ARGENTINA_PLATE_REGEX } from '../schemas';
 import type { VehicleType } from '@/domain/schemas';
 import Link from 'next/link';
 import { getLegalDocument } from '@/features/legal';
+import { getDomainErrorMessage } from '@/lib/error-messages';
+import type { DomainErrorCode } from '@/domain/errors';
 
 export interface VehicleFormProps {
   courierId: string;
@@ -41,7 +43,65 @@ export interface VehicleFormProps {
   initialVehicleType?: VehicleType;
   initialVehiclePlate?: string | null;
   courierStatus?: string;
+  /** CC-050: WhatsApp de soporte armado en el servidor; `null` si no hay un número válido. */
+  supportWhatsAppHref?: string | null;
   onSuccess?: () => void;
+}
+
+/** CC-050: código del último error del envío; `NETWORK` es una falla de conexión, no un código del dominio. */
+export type VehicleFormErrorCode = DomainErrorCode | 'NETWORK';
+
+function vehicleFormErrorMessage(code: VehicleFormErrorCode): string {
+  switch (code) {
+    case 'DNI_ALREADY_REGISTERED':
+      return getDomainErrorMessage('DNI_ALREADY_REGISTERED');
+    case 'RATE_LIMITED':
+      return COURIER_ONBOARDING_COPY.submitErrors.dailyLimit;
+    case 'UNAUTHORIZED_ACTOR':
+      return COURIER_ONBOARDING_COPY.submitErrors.unauthorized;
+    case 'NETWORK':
+      return COURIER_ONBOARDING_COPY.submitErrors.network;
+    default:
+      return COURIER_ONBOARDING_COPY.submitErrors.generic;
+  }
+}
+
+/**
+ * CC-050 (SEC-09): error del envío del alta. Con DNI_ALREADY_REGISTERED deriva al WhatsApp de soporte si el servidor
+ * armó un enlace; sin enlace no promete uno.
+ */
+export function VehicleFormServerError({
+  code,
+  supportWhatsAppHref,
+}: {
+  readonly code: VehicleFormErrorCode;
+  readonly supportWhatsAppHref: string | null;
+}): React.ReactElement {
+  return (
+    <div
+      className="flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-destructive"
+      role="alert"
+    >
+      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+      <div className="flex flex-col gap-1 text-sm font-medium">
+        <span>{vehicleFormErrorMessage(code)}</span>
+        {code === 'DNI_ALREADY_REGISTERED' ? (
+          supportWhatsAppHref ? (
+            <a
+              href={supportWhatsAppHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4"
+            >
+              {COURIER_ONBOARDING_COPY.submitErrors.supportLink}
+            </a>
+          ) : (
+            <span>{COURIER_ONBOARDING_COPY.submitErrors.supportUnavailable}</span>
+          )
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 const EMPTY_INITIAL_DOCS: Record<string, string> = {};
@@ -75,6 +135,7 @@ export function VehicleForm({
   initialVehicleType,
   initialVehiclePlate = '',
   courierStatus: _courierStatus,
+  supportWhatsAppHref,
   onSuccess,
 }: VehicleFormProps) {
   const router = useRouter();
@@ -119,7 +180,7 @@ export function VehicleForm({
 
   // Estados de envío y error
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [serverError, setServerError] = React.useState<string | null>(null);
+  const [serverError, setServerError] = React.useState<VehicleFormErrorCode | null>(null);
 
   const requiresPlate = vehicleType === 'moto' || vehicleType === 'car';
   const isPlateValid = !requiresPlate || ARGENTINA_PLATE_REGEX.test(vehiclePlate.trim());
@@ -209,15 +270,7 @@ export function VehicleForm({
     try {
       const result = await courierOnboardingAction(payload);
       if (!result.ok) {
-        if (result.code === 'DNI_ALREADY_REGISTERED') {
-          setServerError('Ese DNI ya está registrado en cadeApp o fue rechazado anteriormente.');
-        } else if (result.code === 'UNAUTHORIZED_ACTOR') {
-          setServerError('Tu cuenta no tiene rol de repartidor habilitado.');
-        } else {
-          setServerError(
-            'Ocurrió un error al procesar tu solicitud. Por favor verificá los datos.'
-          );
-        }
+        setServerError(result.code);
         setIsSubmitting(false);
         return;
       }
@@ -234,7 +287,7 @@ export function VehicleForm({
         router.push(result.data.redirectTo || '/courier/onboarding/status');
       }
     } catch {
-      setServerError('Error de conexión al enviar el formulario. Intentá nuevamente.');
+      setServerError('NETWORK');
       setIsSubmitting(false);
     }
   };
@@ -259,13 +312,7 @@ export function VehicleForm({
 
         {/* Error de servidor si existe */}
         {serverError && (
-          <div
-            className="flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-destructive"
-            role="alert"
-          >
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-            <span className="text-sm font-medium">{serverError}</span>
-          </div>
+          <VehicleFormServerError code={serverError} supportWhatsAppHref={supportWhatsAppHref ?? null} />
         )}
 
         {/* Selector de vehículo 2x2 */}

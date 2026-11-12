@@ -8,6 +8,7 @@ export * from './components/applicants-queue';
 export * from './components/applicants-queue-skeleton';
 export * from './components/applicant-detail-view';
 export * from './components/applicant-detail-skeleton';
+export * from './components/dispute-candidates';
 export * from './components/merchants-table';
 export * from './components/platform-settings-form';
 export * from './components/recent-setting-changes';

@@ -11,6 +11,7 @@ import {
   adminListPublicationPlansRpc,
   adminRegisterPlanPeriodRpc,
   adminReinstateCourierRpc,
+  adminReleaseCourierDniRpc,
   adminUpsertPublicationPlanRpc,
   adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
@@ -28,6 +29,7 @@ import {
   composeRejectionReason,
   suspendCourierSchema,
   reinstateCourierSchema,
+  releaseCourierDniSchema,
   verifyCourierDocumentSchema,
   type AdminMfaInput,
   type ViewCourierDocumentInput,
@@ -35,6 +37,7 @@ import {
   type RejectCourierInput,
   type SuspendCourierInput,
   type ReinstateCourierInput,
+  type ReleaseCourierDniInput,
   type VerifyCourierDocumentInput,
   setMerchantSubscriptionSchema,
   updatePlatformSettingSchema,
@@ -324,6 +327,36 @@ export async function reinstateCourierAction(
   revalidatePath('/admin/applicants');
   revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
   return ok({ success: true, idempotent: rpcResult.data.idempotent });
+}
+
+/**
+ * CC-050 (D3-A): libera el DNI de un repartidor rechazado o suspendido para que el titular real envíe su alta.
+ */
+export async function releaseCourierDniAction(
+  input: ReleaseCourierDniInput
+): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+  const parsed = releaseCourierDniSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  // Cliente de sesión con AAL2, nunca createAdminClient: la RPC vuelve a exigir admin con MFA.
+  const rpcResult = await adminReleaseCourierDniRpc(authResult.data.supabase, {
+    courierId: parsed.data.courierId,
+    reason: parsed.data.reason,
+  });
+
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
+  return ok({ success: true });
 }
 
 /**

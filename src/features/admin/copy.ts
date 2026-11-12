@@ -49,6 +49,20 @@ export const ADMIN_COPY = {
     license: 'Licencia de Conducir',
     insurance: 'Seguro de Vehículo',
   },
+  // CC-050 (D4-B): búsqueda de reclamantes de un DNI reservado.
+  disputes: {
+    title: 'Disputas de DNI',
+    description:
+      'Buscá al titular real de un DNI reservado por otra cuenta. Solo aparecen cuentas pendientes que no pudieron enviar el alta y ya subieron documentos.',
+    lookupLabel: 'Teléfono completo o ID de la cuenta',
+    submit: 'Buscar',
+    emptyTitle: 'Sin resultados',
+    empty: 'No hay cuentas pendientes sin enviar con ese dato.',
+    invalidLookup: 'Ingresá un teléfono completo o el ID exacto de la cuenta.',
+    documents: (count: number) => `${count} ${count === 1 ? 'documento' : 'documentos'}`,
+    queueLink: 'Disputas de DNI',
+    backToQueue: 'Volver a postulantes',
+  },
   queue: {
     /** T-376 / CC-033: un repartidor aprobado subió la licencia o el seguro y espera la validación. */
     optionalDocumentInReview: 'Documento opcional en revisión',
@@ -108,6 +122,21 @@ export const ADMIN_COPY = {
     labels: {
       state: 'Estado',
       uploadedAt: 'Subido el',
+    },
+    // CC-050 (D3-A): liberación del DNI reservado.
+    releaseDni: {
+      button: 'Liberar DNI',
+      dialogTitle: 'Liberar DNI',
+      dialogDescription:
+        'El DNI queda libre para que el titular real envíe su alta. Esta cuenta no se puede volver a activar.',
+      reasonLabel: 'Motivo de la liberación',
+      reasonNote: 'No escribas números de documento ni datos personales en el motivo.',
+      reasonTooShort: 'Escribí un motivo de al menos 3 caracteres.',
+      reasonInvalid: 'El motivo no puede tener más de 500 caracteres, números de documento ni el hash.',
+      confirm: 'Liberar DNI',
+      processing: 'Liberando…',
+      success: 'DNI liberado.',
+      connectionError: 'No pudimos liberar el DNI. Revisá tu conexión e intentá de nuevo.',
     },
     applicantActions: {
       reject: 'Rechazar postulación',
@@ -487,6 +516,7 @@ export const ADMIN_COPY = {
       courier_cancel_match: 'El repartidor canceló',
       admin_create_announcement: 'Envió una novedad',
       admin_reinstate_courier: 'Reactivó un repartidor',
+      courier_dni_released: 'Liberó el DNI reservado',
       admin_correct_courier_display_name: 'Corrigió el nombre de un repartidor',
       admin_revoke_courier_consent: 'Pidió que el repartidor vuelva a aceptar los términos',
       add_courier_optional_document: 'Cargó un documento opcional',
@@ -528,6 +558,7 @@ export const ADMIN_COPY = {
       kind: 'Documento',
       docLevel: 'Nivel',
       withdrawnOffersCount: 'Ofertas retiradas',
+      dni_registered: 'DNI registrado',
       audience: 'Público',
       title: 'Título',
       body: 'Texto',
@@ -558,6 +589,9 @@ export const ADMIN_COPY = {
       dismissed: 'Cerrado sin sanción',
     },
     noValue: '—',
+    // CC-050: valores de dni_registered.
+    dniRegisteredYes: 'sí',
+    dniRegisteredNo: 'no',
     reason: 'Motivo',
     noChanges: 'Sin cambios de estado',
     nextButton: 'Siguiente',

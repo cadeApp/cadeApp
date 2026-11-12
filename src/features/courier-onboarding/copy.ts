@@ -106,6 +106,17 @@ export const COURIER_ONBOARDING_COPY = {
     notFound: 'No encontramos el archivo subido. Volvé a seleccionarlo para reintentar.',
     generic: 'No pudimos enviar el documento. Volvé a intentar en unos momentos.',
   },
+  // CC-050 (SEC-09): errores del envío del alta. El de DNI es neutral y sale de ERROR_MESSAGES.
+  submitErrors: {
+    dailyLimit: 'Alcanzaste el máximo de 5 intentos de alta de hoy. Volvé a intentar mañana.',
+    unauthorized: 'Tu cuenta no tiene rol de repartidor habilitado.',
+    generic: 'Ocurrió un error al procesar tu solicitud. Por favor verificá los datos.',
+    network: 'Error de conexión al enviar el formulario. Intentá nuevamente.',
+    supportLink: 'Hablar con cadeApp',
+    supportUnavailable: 'El soporte no está disponible por ahora. Volvé a intentar más tarde.',
+    // Mensaje prearmado del WhatsApp de soporte: sin DNI ni datos personales.
+    supportMessage: 'Hola, no pude completar mi alta como repartidor y necesito ayuda.',
+  },
   // T-387: validación del archivo antes de subirlo (alta y reemplazo).
   documentFileErrors: {
     unsupportedPhoto: 'Ese formato no se admite. Subí una foto JPG, PNG o WebP.',

@@ -26,8 +26,8 @@ function fake() {
     settings: SETTINGS,
     initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
     initialCouriers: [
-      { courierId: SUSPENDED_ID, status: 'suspended', available: false, vehicleType: 'moto' },
-      { courierId: REJECTED_ID, status: 'rejected', available: false, vehicleType: 'bike' },
+      { courierId: SUSPENDED_ID, status: 'suspended', available: false, vehicleType: 'moto', hasDni: true },
+      { courierId: REJECTED_ID, status: 'rejected', available: false, vehicleType: 'bike', hasDni: true },
       { courierId: APPROVED_ID, status: 'approved', available: true, vehicleType: 'car' },
       { courierId: PENDING_ID, status: 'pending', available: false, vehicleType: 'moto' },
       { courierId: INCOMPLETE_ID, status: 'suspended', available: false, vehicleType: null },
@@ -116,7 +116,7 @@ describe('CC-034 — admin_reinstate_courier', () => {
       settings: SETTINGS,
       initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
       initialCouriers: [
-        { courierId: availableRejectedId, status: 'rejected', available: true, vehicleType: 'bike' },
+        { courierId: availableRejectedId, status: 'rejected', available: true, vehicleType: 'bike', hasDni: true },
       ],
     });
     expect(client.getCourier(availableRejectedId)?.available).toBe(true);

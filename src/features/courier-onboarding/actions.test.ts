@@ -1033,6 +1033,8 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       let callIndex = 0;
       const committedDocs: Array<{ kind: string; storage_path: string }> = [];
       const concurrentRpc = vi.fn().mockImplementation(async (_fn: string, args: { p_documents: Array<{ kind: string; storage_path: string }> }) => {
+        // CC-050: el consumo del cupo diario no es parte de la carrera de documentos.
+        if (_fn === 'consume_courier_application_attempt') return { data: null, error: null };
         callIndex++;
         if (callIndex === 1) {
           committedDocs.push(...args.p_documents);
@@ -1075,7 +1077,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
 
       expect(resA).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
       expect(resB).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
-      expect(concurrentRpc).toHaveBeenCalledTimes(2);
+      expect(concurrentRpc.mock.calls.filter(([fn]) => fn === 'submit_courier_onboarding_documents')).toHaveLength(2);
     });
 
     it('l) Fase B / ambigüedad en DB: coexisten múltiples filas is_current=true para el mismo kind -> RPC devuelve INTERNAL_ERROR sin mutar ni llamar a update', async () => {
@@ -1117,6 +1119,8 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       let executionIndex = 0;
       const committedDocs: Array<{ kind: string; storage_path: string }> = [];
       const serializedRpc = vi.fn().mockImplementation(async (_fn: string, args: { p_documents: Array<{ kind: string; storage_path: string }> }) => {
+        // CC-050: el consumo del cupo diario no es parte de la carrera de documentos.
+        if (_fn === 'consume_courier_application_attempt') return { data: null, error: null };
         executionIndex++;
         // Primera petición adquiere couriers FOR UPDATE y registra sus documentos
         if (executionIndex === 1) {

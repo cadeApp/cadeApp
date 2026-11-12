@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseRpcCaller } from './admin';
-import { adminListApplicantsRpc, mapAdminListApplicantsError } from './admin-applicants';
+import {
+  adminFindCourierDisputeCandidatesRpc,
+  adminListApplicantsRpc,
+  mapAdminListApplicantsError,
+} from './admin-applicants';
 
 vi.mock('server-only', () => ({}));
 
@@ -108,5 +112,58 @@ describe('CC-044: adminListApplicantsRpc', () => {
     });
 
     expect(await adminListApplicantsRpc(client, { status: 'pending' })).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+});
+
+describe('CC-050: adminFindCourierDisputeCandidatesRpc', () => {
+  const CANDIDATES = {
+    candidates: [
+      {
+        courierId: '00000000-0000-4000-8000-000000500001',
+        displayName: 'Titular Real',
+        phoneMasked: '•••• 1234',
+        status: 'pending',
+        applicationSubmitted: false,
+        documentsCount: 4,
+      },
+    ],
+  };
+
+  it('manda p_lookup recortado y devuelve el objeto candidates', async () => {
+    const { client, calls } = caller({ data: CANDIDATES, error: null });
+    expect(await adminFindCourierDisputeCandidatesRpc(client, { lookup: ' +54 (381) 555-1234 ' })).toEqual({
+      ok: true,
+      data: CANDIDATES,
+    });
+    expect(calls).toEqual([
+      { fn: 'admin_find_courier_dispute_candidates', args: { p_lookup: '+54 (381) 555-1234' } },
+    ]);
+  });
+
+  it('una búsqueda inválida no llama a la RPC', async () => {
+    const { client, calls } = caller({ data: CANDIDATES, error: null });
+    for (const lookup of ['', 'juan', 'foo3815551234', '%3815551234']) {
+      expect(await adminFindCourierDisputeCandidatesRpc(client, { lookup })).toEqual({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('un array en la raíz es INTERNAL_ERROR', async () => {
+    const { client } = caller({ data: CANDIDATES.candidates, error: null });
+    expect(await adminFindCourierDisputeCandidatesRpc(client, { lookup: '3815551234' })).toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+  });
+
+  it.each(['AAL2_REQUIRED', 'UNAUTHORIZED_ACTOR', 'VALIDATION_ERROR'])('mapea %s', async (message) => {
+    const { client } = caller({ data: null, error: { code: 'P0001', message } });
+    expect(await adminFindCourierDisputeCandidatesRpc(client, { lookup: '3815551234' })).toEqual({
+      ok: false,
+      code: message,
+    });
   });
 });

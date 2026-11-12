@@ -58,3 +58,45 @@ export async function adminListApplicantsRpc(
 
   return ok(parsedOutput.data);
 }
+
+type AdminFindDisputeCandidatesResult = ActionResult<
+  RpcOutput<'admin_find_courier_dispute_candidates'>,
+  RpcErrorCode<'admin_find_courier_dispute_candidates'> | 'INTERNAL_ERROR'
+>;
+
+/**
+ * CC-050 (D4-B): wrapper tipado de `public.admin_find_courier_dispute_candidates(p_lookup)`. Busca reclamantes de un
+ * DNI (pending sin enviar con documentos) por UUID exacto o teléfono completo; aal2 y filtros viven en Postgres.
+ */
+export async function adminFindCourierDisputeCandidatesRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown
+): Promise<AdminFindDisputeCandidatesResult> {
+  const parsedInput = RPC_CONTRACTS.admin_find_courier_dispute_candidates.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const { data, error } = await client.rpc('admin_find_courier_dispute_candidates', {
+    p_lookup: parsedInput.data.lookup.trim(),
+  });
+
+  if (error) {
+    const allowed: readonly string[] = RPC_CONTRACTS.admin_find_courier_dispute_candidates.errorCodes;
+    const message = error.message.trim();
+    if (error.code === 'P0001' && allowed.includes(message)) {
+      return err(message as RpcErrorCode<'admin_find_courier_dispute_candidates'>);
+    }
+    if (error.code === '42501' || error.code === '28000') {
+      return err('UNAUTHORIZED_ACTOR');
+    }
+    return err('INTERNAL_ERROR');
+  }
+
+  const parsedOutput = RPC_CONTRACTS.admin_find_courier_dispute_candidates.outputSchema.safeParse(data);
+  if (!parsedOutput.success) {
+    return err('INTERNAL_ERROR');
+  }
+
+  return ok(parsedOutput.data);
+}

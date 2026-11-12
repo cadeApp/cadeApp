@@ -10,6 +10,7 @@ import {
   type DomainErrorCode,
   type MerchantSubscriptionStatus,
   type PlatformSettingKey,
+  type RpcErrorCode,
   type RpcOutput,
 } from '@/domain';
 import {
@@ -17,7 +18,7 @@ import {
   adminListPublicationPlansRpc,
   type SupabaseRpcCaller,
 } from '@/server/rpc/admin';
-import { adminListApplicantsRpc } from '@/server/rpc/admin-applicants';
+import { adminFindCourierDisputeCandidatesRpc, adminListApplicantsRpc } from '@/server/rpc/admin-applicants';
 import { createClient } from '@/server/supabase/server';
 import { ADMIN_COPY } from './copy';
 import { auditActionLabel } from './audit-format';
@@ -98,6 +99,21 @@ interface CourierDetailRow {
  * PR106-H08: Propagación de fallos de DB a través de excepciones hacia error boundaries.
  * PR106-H12: Utiliza el cliente de sesión autenticada con RLS (createClient), no service_role.
  */
+/** CC-050 (D4-B): resultado de la búsqueda de reclamantes para la página de disputas. */
+export type DisputeCandidatesResult = ActionResult<
+  RpcOutput<'admin_find_courier_dispute_candidates'>,
+  RpcErrorCode<'admin_find_courier_dispute_candidates'> | 'INTERNAL_ERROR'
+>;
+
+/**
+ * CC-050 (D4-B): busca cuentas pending sin enviar con documentos por UUID exacto o teléfono completo. Usa el cliente de
+ * sesión: la RPC exige admin con aal2 y no expone el hash ni los paths.
+ */
+export async function getDisputeCandidates(lookup: string): Promise<DisputeCandidatesResult> {
+  const supabase = await createClient();
+  return adminFindCourierDisputeCandidatesRpc(supabase, { lookup });
+}
+
 export async function getApplicantsQueue(
   tab: AdminApplicantTab = 'pending',
   options?: GetApplicantsQueueOptions
@@ -656,6 +672,8 @@ const AUDIT_CHANGE_FIELDS = [
   'kind',
   'docLevel',
   'withdrawnOffersCount',
+  // CC-050 (D5-A): si había DNI registrado; nunca el hash.
+  'dni_registered',
 ] as const;
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -679,6 +697,8 @@ const AUDIT_REASON_ACTIONS: ReadonlySet<string> = new Set([
   'admin_suspend_courier',
   'admin_reinstate_courier',
   'admin_verify_document',
+  // CC-050 (D5-A): motivo de la liberación del DNI, escrito por un admin.
+  'courier_dni_released',
 ]);
 
 const auditUuidSchema = z.string().guid();

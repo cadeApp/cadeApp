@@ -34,6 +34,7 @@ type AdminRpcName =
   | 'admin_decide_courier'
   | 'admin_suspend_courier'
   | 'admin_reinstate_courier'
+  | 'admin_release_courier_dni'
   | 'admin_verify_document'
   | 'admin_set_subscription'
   | 'admin_update_setting'
@@ -169,6 +170,44 @@ export async function adminReinstateCourierRpc(
 
   const parsedOutput =
     RPC_CONTRACTS.admin_reinstate_courier.outputSchema.safeParse(data);
+  if (!parsedOutput.success) {
+    return err('INTERNAL_ERROR');
+  }
+
+  return ok(parsedOutput.data);
+}
+
+/**
+ * CC-050 (SEC-09): wrapper tipado de `public.admin_release_courier_dni(p_courier_id, p_reason)`. Libera el DNI de un
+ * repartidor rechazado o suspendido; aal2, estado y auditoría viven en Postgres.
+ */
+export async function adminReleaseCourierDniRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<
+  ActionResult<
+    RpcOutput<'admin_release_courier_dni'>,
+    RpcErrorCode<'admin_release_courier_dni'> | 'INTERNAL_ERROR'
+  >
+> {
+  const parsedInput =
+    RPC_CONTRACTS.admin_release_courier_dni.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const { courierId, reason } = parsedInput.data;
+  const { data, error } = await client.rpc('admin_release_courier_dni', {
+    p_courier_id: courierId,
+    p_reason: reason,
+  });
+
+  if (error) {
+    return err(mapAdminRpcError('admin_release_courier_dni', error));
+  }
+
+  const parsedOutput =
+    RPC_CONTRACTS.admin_release_courier_dni.outputSchema.safeParse(data);
   if (!parsedOutput.success) {
     return err('INTERNAL_ERROR');
   }
