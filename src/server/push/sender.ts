@@ -302,10 +302,11 @@ export class WebPushTransport implements PushTransport {
       }
 
       // Plazo absoluto desde que se crea la request: al vencer se aborta el socket aunque siga llegando respuesta.
-      timer = setTimeout(() => {
+      void timer;
+      req.setTimeout(this.timeoutMs, () => {
         finish({ status: 0, error: 'PUSH_TIMEOUT' });
         req.destroy();
-      }, this.timeoutMs);
+      });
       req.on('error', (err) => finish({ status: 500, error: err.message }));
       if (details.body) req.write(details.body);
       req.end();
