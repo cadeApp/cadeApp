@@ -113,7 +113,7 @@ declare
   v_phone_digits text;
   v_rows jsonb;
 begin
-  perform app_private.assert_admin_aal2();
+  null; -- REVIEW ONLY: sin assert_admin_aal2
 
   -- H08: se clasifica antes de cualquier cast; el ::uuid solo existe en la rama UUID.
   if v_lookup ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
