@@ -296,7 +296,7 @@ begin
   end if;
 
   -- D03: solo desde 'pending'. CC-050: y con la postulación enviada (antes del update y del audit).
-  if v_courier_status <> 'pending' or not v_application_submitted then
+  if v_courier_status <> 'pending' then
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
   end if;
 
