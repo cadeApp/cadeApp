@@ -140,6 +140,8 @@ export const ADMIN_COPY = {
     // CC-050 (PR711-H01): una cuenta pendiente que todavía no envió el alta.
     notSubmittedNote:
       'Esta cuenta todavía no envió el alta: no se puede aprobar ni rechazar. Si reclama un DNI, revisá la disputa.',
+    // CC-050 (PR711-H07): rechazado o suspendido sin alta enviada.
+    notSubmittedReinstateNote: 'Esta cuenta nunca envió el alta: no se puede reactivar ni reconsiderar.',
     // CC-050 (D3-A): liberación del DNI reservado.
     releaseDni: {
       button: 'Liberar DNI',

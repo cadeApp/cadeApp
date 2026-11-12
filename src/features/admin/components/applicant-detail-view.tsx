@@ -820,6 +820,9 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           <Button variant="destructive" onClick={() => openDecisionModal('suspended')}>
             {ADMIN_COPY.detail.applicantActions.suspend}
           </Button>
+        ) : !applicant.applicationSubmitted ? (
+          // CC-050 (PR711-H07): un rechazado o suspendido que nunca envió el alta no se reactiva ni se reconsidera.
+          <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.notSubmittedReinstateNote}</p>
         ) : applicant.status === 'suspended' ? (
           <Button variant="default" onClick={() => openDecisionModal('reactivate')}>
             {ADMIN_COPY.detail.applicantActions.reactivate}

@@ -1017,3 +1017,31 @@ describe('CC-050 (PR711-H01): una cuenta sin enviar no se decide', () => {
     expect(screen.getByRole('button', { name: /rechazar postulación/i })).toBeDefined();
   });
 });
+
+describe('CC-050 (PR711-H07): reactivar o reconsiderar solo con el alta enviada', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['suspended', /reactivar repartidor/i],
+    ['rejected', /reconsiderar aprobación/i],
+  ] as const)('%s sin enviar: oculta el botón y explica por qué', (status, buttonName) => {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status, applicationSubmitted: false, hasDni: false }} />);
+    expect(screen.queryByRole('button', { name: buttonName })).toBeNull();
+    expect(screen.getByText(/nunca envió el alta/i)).toBeDefined();
+  });
+
+  it.each([
+    ['suspended', /reactivar repartidor/i],
+    ['rejected', /reconsiderar aprobación/i],
+  ] as const)('%s enviado: muestra el botón', (status, buttonName) => {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status, applicationSubmitted: true }} />);
+    expect(screen.getByRole('button', { name: buttonName })).toBeDefined();
+  });
+
+  it('sin enviar pero con DNI reservado: «Liberar DNI» sigue disponible', () => {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status: 'rejected', applicationSubmitted: false, hasDni: true }} />);
+    expect(screen.getByRole('button', { name: 'Liberar DNI' })).toBeDefined();
+  });
+});

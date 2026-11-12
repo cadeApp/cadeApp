@@ -118,3 +118,109 @@ describe('CC-050 (D4-B, PR711-H02/H03): DisputeCandidates', () => {
     );
   });
 });
+
+describe('CC-050 (PR711-H06): sin resultados obsoletos', () => {
+  const RESERVER_A = '20000000-0000-4000-8000-0000000050a0';
+  const RESERVER_B = '20000000-0000-4000-8000-0000000050b0';
+  type ReservationResult = Awaited<ReturnType<typeof findDniReservationAction>>;
+
+  function deferred<T>() {
+    let resolve: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  const reservationOf = (courierId: string): ReservationResult => ({
+    ok: true,
+    data: { reservation: { courierId, status: 'approved' } },
+  });
+
+  function linkTo(courierId: string) {
+    return screen
+      .queryAllByRole('link')
+      .find((link) => link.getAttribute('href') === `/admin/applicants/${courierId}`);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('editar el DNI borra al instante la cuenta encontrada', async () => {
+    vi.mocked(findDniReservationAction).mockResolvedValue(reservationOf(RESERVER_A));
+    render(<DisputeCandidates />);
+    searchReservation('38123456');
+    await waitFor(() => expect(linkTo(RESERVER_A)).toBeDefined());
+
+    const form = screen.getByRole('form', { name: 'Buscar quién reservó el DNI' });
+    fireEvent.change(within(form).getByLabelText('DNI verificado del titular'), { target: { value: '30111222' } });
+
+    expect(linkTo(RESERVER_A)).toBeUndefined();
+  });
+
+  it('editar el teléfono borra al instante los reclamantes y también la reserva (no se mezclan casos)', async () => {
+    vi.mocked(findDisputeCandidatesAction).mockResolvedValue({ ok: true, data: { candidates: [CANDIDATE] } });
+    vi.mocked(findDniReservationAction).mockResolvedValue(reservationOf(RESERVER_A));
+    render(<DisputeCandidates />);
+    // Se escriben los dos datos del caso y recién después se envían los dos formularios.
+    const claimantForm = screen.getByRole('form', { name: 'Buscar al reclamante' });
+    const reservationForm = screen.getByRole('form', { name: 'Buscar quién reservó el DNI' });
+    fireEvent.change(within(claimantForm).getByLabelText('Teléfono completo o ID de la cuenta'), {
+      target: { value: '3815551234' },
+    });
+    fireEvent.change(within(reservationForm).getByLabelText('DNI verificado del titular'), {
+      target: { value: '38123456' },
+    });
+    fireEvent.submit(claimantForm);
+    fireEvent.submit(reservationForm);
+    await waitFor(() => {
+      expect(linkTo(CANDIDATE.courierId)).toBeDefined();
+      expect(linkTo(RESERVER_A)).toBeDefined();
+    });
+
+    const form = screen.getByRole('form', { name: 'Buscar al reclamante' });
+    fireEvent.change(within(form).getByLabelText('Teléfono completo o ID de la cuenta'), {
+      target: { value: '3815559999' },
+    });
+
+    expect(linkTo(CANDIDATE.courierId)).toBeUndefined();
+    expect(linkTo(RESERVER_A)).toBeUndefined();
+  });
+
+  it('una respuesta que llega después de editar el campo no revive la cuenta anterior', async () => {
+    const pendingA = deferred<ReservationResult>();
+    vi.mocked(findDniReservationAction).mockReturnValueOnce(pendingA.promise);
+    render(<DisputeCandidates />);
+    searchReservation('38123456');
+    await waitFor(() => expect(findDniReservationAction).toHaveBeenCalledTimes(1));
+
+    const form = screen.getByRole('form', { name: 'Buscar quién reservó el DNI' });
+    fireEvent.change(within(form).getByLabelText('DNI verificado del titular'), { target: { value: '30111222' } });
+    pendingA.resolve(reservationOf(RESERVER_A));
+    await pendingA.promise;
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Buscar reserva' })).toBeDefined());
+
+    expect(linkTo(RESERVER_A)).toBeUndefined();
+  });
+
+  it('dos búsquedas que vuelven en orden inverso: solo vale la más reciente', async () => {
+    const first = deferred<ReservationResult>();
+    const second = deferred<ReservationResult>();
+    vi.mocked(findDniReservationAction).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    render(<DisputeCandidates />);
+    const form = screen.getByRole('form', { name: 'Buscar quién reservó el DNI' });
+    fireEvent.change(within(form).getByLabelText('DNI verificado del titular'), { target: { value: '38123456' } });
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(findDniReservationAction).toHaveBeenCalledTimes(2));
+
+    second.resolve(reservationOf(RESERVER_B));
+    await waitFor(() => expect(linkTo(RESERVER_B)).toBeDefined());
+    first.resolve(reservationOf(RESERVER_A));
+    await first.promise;
+    await waitFor(() => expect(linkTo(RESERVER_B)).toBeDefined());
+
+    expect(linkTo(RESERVER_A)).toBeUndefined();
+  });
+});

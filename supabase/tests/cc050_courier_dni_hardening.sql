@@ -488,5 +488,28 @@ select is(
 select is((select dni_hmac from public.couriers where profile_id = pg_temp.c(4)), pg_temp.hmac(4),
   'buscar una reserva nunca la libera');
 
+-- ---------------------------------------------------------------------------
+-- PR711-H07: reinstate no reactiva una cuenta que nunca envió el alta
+-- ---------------------------------------------------------------------------
+create function pg_temp.reinstate_audits(p_courier uuid) returns integer language sql as $$
+  select count(*)::integer from public.audit_log where action = 'admin_reinstate_courier' and target_id = p_courier::text
+$$;
+-- c5 nunca envió el alta y no tiene DNI; se lo deja rechazado con vehículo (estado histórico posible).
+update public.couriers set status = 'rejected', vehicle_type = 'bike' where profile_id = pg_temp.c(5);
+select pg_temp.act_as(pg_temp.admin(), 'aal2');
+select throws_ok($$ select public.admin_reinstate_courier(pg_temp.c(5), 'Revisión administrativa') $$,
+  'P0001', 'INVALID_STATE_TRANSITION', 'reinstate no reconsidera un rechazado sin alta enviada');
+select pg_temp.as_postgres();
+update public.couriers set status = 'suspended' where profile_id = pg_temp.c(5);
+select pg_temp.act_as(pg_temp.admin(), 'aal2');
+select throws_ok($$ select public.admin_reinstate_courier(pg_temp.c(5), 'Revisión administrativa') $$,
+  'P0001', 'INVALID_STATE_TRANSITION', 'reinstate no reactiva un suspendido sin alta enviada');
+select pg_temp.as_postgres();
+select ok((select status = 'suspended' from public.couriers where profile_id = pg_temp.c(5))
+    and pg_temp.reinstate_audits(pg_temp.c(5)) = 0,
+  'la cuenta sin alta sigue igual y sin audit de reinstate');
+select is(pg_temp.reinstate_audits(pg_temp.c(15)), 1,
+  'el rechazado enviado y con DNI (c15) sí se reconsideró, con su audit');
+
 select * from finish();
 rollback;

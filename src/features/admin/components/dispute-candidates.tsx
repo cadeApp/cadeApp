@@ -37,19 +37,36 @@ export function DisputeCandidates(): React.ReactElement {
   const [reservation, setReservation] = React.useState<ReservationState>({ kind: 'idle' });
   const [searchingCandidates, startCandidates] = React.useTransition();
   const [searchingReservation, startReservation] = React.useTransition();
+  // PR711-H06: versión vigente de cada búsqueda. Editar cualquier campo invalida las dos (y las respuestas en vuelo),
+  // así nunca queda a la vista la cuenta de otro caso.
+  const candidatesRequest = React.useRef(0);
+  const reservationRequest = React.useRef(0);
+
+  const invalidateResults = () => {
+    candidatesRequest.current += 1;
+    reservationRequest.current += 1;
+    setCandidates({ kind: 'idle' });
+    setReservation({ kind: 'idle' });
+  };
 
   const onSearchCandidates = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const requestId = ++candidatesRequest.current;
+    const submittedLookup = lookup;
     startCandidates(async () => {
-      const result = await findDisputeCandidatesAction({ lookup });
+      const result = await findDisputeCandidatesAction({ lookup: submittedLookup });
+      if (requestId !== candidatesRequest.current) return;
       setCandidates(result.ok ? { kind: 'ok', data: result.data } : { kind: 'error', code: result.code });
     });
   };
 
   const onSearchReservation = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const requestId = ++reservationRequest.current;
+    const submittedDni = dni;
     startReservation(async () => {
-      const result = await findDniReservationAction({ dni });
+      const result = await findDniReservationAction({ dni: submittedDni });
+      if (requestId !== reservationRequest.current) return;
       setReservation(result.ok ? { kind: 'ok', data: result.data } : { kind: 'error', code: result.code });
     });
   };
@@ -75,7 +92,10 @@ export function DisputeCandidates(): React.ReactElement {
               <Input
                 id="dispute-lookup"
                 value={lookup}
-                onChange={(event) => setLookup(event.target.value)}
+                onChange={(event) => {
+                  invalidateResults();
+                  setLookup(event.target.value);
+                }}
                 autoComplete="off"
               />
             </div>
@@ -97,7 +117,10 @@ export function DisputeCandidates(): React.ReactElement {
               <Input
                 id="dispute-dni"
                 value={dni}
-                onChange={(event) => setDni(event.target.value)}
+                onChange={(event) => {
+                  invalidateResults();
+                  setDni(event.target.value);
+                }}
                 inputMode="numeric"
                 autoComplete="off"
               />

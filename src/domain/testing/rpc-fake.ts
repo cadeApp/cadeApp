@@ -3510,8 +3510,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (courier.status === 'pending' || courier.vehicleType === null) {
           return err('INVALID_STATE_TRANSITION');
         }
-        // CC-050: una postulación enviada con el DNI liberado no vuelve.
-        if (courier.applicationSubmitted && !courier.hasDni) {
+        // CC-050 (PR711-H07): solo vuelve una postulación enviada y con DNI.
+        if (!courier.applicationSubmitted || !courier.hasDni) {
           return err('INVALID_STATE_TRANSITION');
         }
         const previousStatus = courier.status;
