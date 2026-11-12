@@ -219,8 +219,7 @@ begin
   -- La primera decisión sigue siendo admin_decide_courier; sin onboarding completo no se aprueba.
   -- CC-050: una postulación enviada cuyo DNI se liberó por disputa tampoco vuelve.
   if v_courier_status not in ('suspended', 'rejected')
-     or v_vehicle_type is null
-     or (v_application_submitted and v_dni_hmac is null) then
+     or v_vehicle_type is null then
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
   end if;
 
