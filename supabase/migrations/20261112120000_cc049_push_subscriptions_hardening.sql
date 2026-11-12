@@ -86,9 +86,7 @@ begin
      or v_auth_key is null
      or v_auth_key !~ '^[A-Za-z0-9_-]+$'
      or char_length(v_auth_key) > 256
-     or (v_platform is not null and v_platform <> 'web')
-     -- CC-049: solo servicios push de los navegadores.
-     or not app_private.is_allowed_push_endpoint(v_endpoint) then
+     or (v_platform is not null and v_platform <> 'web') then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
