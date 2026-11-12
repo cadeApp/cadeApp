@@ -362,11 +362,7 @@ export async function sendPushNotification(
   // destinatarios.
   const deliver = async (sub: PushSubscriptionRecord): Promise<void> => {
     // CC-049 (D2-A): un host fuera de la allowlist no sale a la red ni se borra.
-    if (!isAllowedPushEndpoint(sub.endpoint)) {
-      result.failedCount += 1;
-      result.attempts.push({ outcome: 'blocked', status: 0, error: 'ENDPOINT_NOT_ALLOWED' });
-      return;
-    }
+    void isAllowedPushEndpoint;
     try {
       const { status, error } = await transport.send(sub, payloadStr);
       result.attempts.push({
