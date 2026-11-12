@@ -4,7 +4,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(107);
+select plan(111);
 
 create function pg_temp.id(n integer) returns uuid language sql immutable as $$
   select ('00000000-0000-4000-8000-0000000048' || lpad(n::text, 2, '0'))::uuid
@@ -256,6 +256,41 @@ select is(
   array['trg_lock_draft_contacts'],
   'CC-048: trg_lock_draft_contacts existe sobre delivery_request_contacts y es solo before insert'
 );
+
+-- 108-111. La policy de insert rechaza sola, sin el trigger (PR689-H01 / D02-A). El probe corre en una
+-- subtransacción que se revierte (deshace el disable trigger); los resultados quedan en variables y las aserciones
+-- van afuera, para no revertir el contador de pgTAP.
+create temporary table cc048_policy_probe (label text primary key, code text) on commit drop;
+do $$
+declare
+  v_insert constant text := 'insert into public.delivery_request_contacts (request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared) values (%L, %L, %L, %L, %L, true)';
+  v_published text;
+  v_matched text;
+  v_foreign text;
+begin
+  begin
+    alter table public.delivery_request_contacts disable trigger trg_lock_draft_contacts;
+    v_published := pg_temp.run(pg_temp.merchant(), format(v_insert, pg_temp.req_published_nc(), 'San Martín 5', 'Belgrano 5', 'Intruso', '3865000005')) ->> 'code';
+    v_matched := pg_temp.run(pg_temp.merchant(), format(v_insert, pg_temp.req_matched_nc(), 'San Martín 6', 'Belgrano 6', 'Intruso', '3865000006')) ->> 'code';
+    v_foreign := pg_temp.run(pg_temp.merchant(), format(v_insert, pg_temp.req_foreign_draft(), 'San Martín 7', 'Belgrano 7', 'Intruso', '3865000007')) ->> 'code';
+    raise exception using errcode = 'U0048', message = 'cc048 policy probe rollback';
+  exception when sqlstate 'U0048' then
+    null;
+  end;
+  insert into cc048_policy_probe values ('published', v_published), ('matched', v_matched), ('foreign', v_foreign);
+end;
+$$;
+
+select is((select code from cc048_policy_probe where label = 'published'), '42501',
+  'CC-048: sin el trigger, contacts_insert_merchant rechaza el primer contacto sobre una solicitud published');
+select is((select code from cc048_policy_probe where label = 'matched'), '42501',
+  'CC-048: sin el trigger, contacts_insert_merchant rechaza el primer contacto sobre una solicitud matched');
+select is((select code from cc048_policy_probe where label = 'foreign'), '42501',
+  'CC-048: sin el trigger, contacts_insert_merchant rechaza el insert sobre un borrador ajeno');
+select is(
+  (select tgenabled::text from pg_trigger
+   where tgrelid = 'public.delivery_request_contacts'::regclass and tgname = 'trg_lock_draft_contacts'),
+  'O', 'CC-048: el rollback del probe deja trg_lock_draft_contacts habilitado');
 
 select * from finish();
 rollback;
