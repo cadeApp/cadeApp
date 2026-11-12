@@ -1245,7 +1245,12 @@ async function run() {
         noDeadlock(sA, sB);
 
         assert.equal(runSql(`select status from public.delivery_requests where id = '${reqId}';`), 'published');
-        assert.equal(runSql(`select notes from public.delivery_requests where id = '${reqId}';`), 'Nota en borrador');
+        // La publicación con entregas mueve notes de la solicitud al contacto de la entrega 1 (t369 request_cycle).
+        assert.equal(
+          runSql(`select c.notes from public.delivery_request_drop_contacts c join public.delivery_request_drops d on d.id = c.drop_id where d.request_id = '${reqId}' and d.position = 1;`),
+          'Nota en borrador',
+          'la publicación usa la nota confirmada por A'
+        );
         console.log('       -> OK (B esperó el update de A y publicó con la nota confirmada)');
       } finally {
         await sA.close();
