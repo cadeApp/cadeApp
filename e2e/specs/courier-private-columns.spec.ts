@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import {
   test,
   expect,
   seedOffersForFirstRequest,
   getRequestInspectionData,
   createAuthenticatedClient,
+  createE2EClient,
+  trackEntityForCleanup,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { createAdminClient } from '@/server/supabase/admin';
@@ -238,5 +242,260 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
     await waitForNoSkeletons(page);
     await expect(page.getByText(notes)).toBeVisible();
     await expect(page.getByText(`necesita cambio de ${amountLabel}`)).toBeVisible();
+  });
+
+  // ---------------------------------------------------------------------------
+  // CC-051 / T-435 (SEC-12): captura real de Realtime en Develop con usuarios sembrados.
+  // Matriz D3-A: publicación real (UPDATE), UPDATE e INSERT con valor presente, borrador modificado y anon.
+  // ---------------------------------------------------------------------------
+  test('CC-051: notes y cash_change_amount no viajan por Realtime a actores restringidos; service role confirma el origen', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier sembrados');
+    }
+
+    type Actor = 'A' | 'M' | 'N' | 'S';
+    interface Captured {
+      readonly actor: Actor;
+      readonly event: 'INSERT' | 'UPDATE' | 'DELETE';
+      readonly id: string;
+      readonly status: unknown;
+      readonly updatedAt: unknown;
+      readonly keys: readonly string[];
+      readonly hasMarker: boolean;
+      readonly hasAmount: boolean;
+    }
+
+    // Ventana negativa acotada y declarada: prueba la ausencia dentro de este intervalo, no para siempre.
+    const NEGATIVE_WINDOW_MS = 5_000;
+    const marker = `SEC12-${stagingContext.testRunId}-${randomUUID()}`;
+    const amount = 43_210;
+    const publishedId = randomUUID();
+    const draftId = randomUUID();
+    trackEntityForCleanup(stagingContext, 'request', publishedId);
+    trackEntityForCleanup(stagingContext, 'request', draftId);
+    const ids = new Set<string>([publishedId, draftId]);
+
+    const admin = createAdminClient();
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const courierClient = await createAuthenticatedClient(courier);
+    const anonClient = createE2EClient();
+
+    const { data: zones, error: zonesErr } = await admin
+      .from('zones')
+      .select('id, name')
+      .eq('active', true)
+      .not('centroid_lat', 'is', null)
+      .limit(10);
+    expect(zonesErr).toBeNull();
+    const stableZones = (zones ?? []).filter((z) => typeof z.name !== 'string' || !z.name.startsWith('E2E Zona '));
+    const pickupZoneId = stableZones[0]?.id;
+    const dropoffZoneId = stableZones[1]?.id ?? pickupZoneId;
+    if (!pickupZoneId || !dropoffZoneId) {
+      throw new Error('[E2E Precondition Error] Faltan zonas activas estables');
+    }
+
+    const captured: Captured[] = [];
+    const channels: Array<{ client: SupabaseClient; channel: RealtimeChannel }> = [];
+
+    async function subscribe(client: SupabaseClient, actor: Actor): Promise<void> {
+      const { data } = await client.auth.getSession();
+      if (data.session) {
+        await client.realtime.setAuth(data.session.access_token);
+      }
+      const channel = client.channel(`cc051-${actor}-${stagingContext.testRunId}`);
+      channels.push({ client, channel });
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Timeout esperando SUBSCRIBED de ${actor}`)), 15_000);
+        channel
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_requests' }, (payload) => {
+            const row = (payload.new ?? {}) as Record<string, unknown>;
+            const id = typeof row.id === 'string' ? row.id : '';
+            if (!ids.has(id)) return;
+            const json = JSON.stringify(row);
+            captured.push({
+              actor,
+              event: payload.eventType as Captured['event'],
+              id,
+              status: row.status,
+              updatedAt: row.updated_at,
+              keys: Object.keys(row).sort(),
+              hasMarker: json.includes(marker),
+              hasAmount: json.includes(String(amount)),
+            });
+          })
+          .subscribe((status, err) => {
+            if (status === 'SUBSCRIBED') {
+              clearTimeout(timer);
+              resolve();
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              clearTimeout(timer);
+              reject(new Error(`Canal de ${actor} falló: ${status} ${err?.message ?? ''}`));
+            }
+          });
+      });
+    }
+
+    const eventsOf = (actor: Actor, id: string, event: Captured['event'], updatedAt?: string) =>
+      captured.filter(
+        (e) =>
+          e.actor === actor &&
+          e.id === id &&
+          e.event === event &&
+          (updatedAt === undefined || Date.parse(String(e.updatedAt)) === Date.parse(updatedAt))
+      );
+    const waitFor = async (actor: Actor, id: string, event: Captured['event'], updatedAt?: string) => {
+      await expect
+        .poll(() => eventsOf(actor, id, event, updatedAt).length, { timeout: 25_000 })
+        .toBeGreaterThan(0);
+      return eventsOf(actor, id, event, updatedAt);
+    };
+    const expectRestricted = (events: readonly Captured[]) => {
+      for (const e of events) {
+        expect(e.keys, `${e.actor}/${e.event}: sin notes`).not.toContain('notes');
+        expect(e.keys, `${e.actor}/${e.event}: sin cash_change_amount`).not.toContain('cash_change_amount');
+        expect(e.hasMarker, `${e.actor}/${e.event}: sin el marcador`).toBe(false);
+        expect(e.hasAmount, `${e.actor}/${e.event}: sin el monto`).toBe(false);
+      }
+    };
+    const negativeWindow = () => new Promise<void>((resolve) => setTimeout(resolve, NEGATIVE_WINDOW_MS));
+
+    try {
+      // Precondición: los cuatro canales en SUBSCRIBED antes de cualquier mutación.
+      await Promise.all([
+        subscribe(courierClient, 'A'),
+        subscribe(merchantClient, 'M'),
+        subscribe(anonClient, 'N'),
+        subscribe(admin as unknown as SupabaseClient, 'S'),
+      ]);
+
+      // 1. Publicación real con la RPC del comercio (INSERT draft + UPDATE a published en request_cycle).
+      const { error: publishErr } = await merchantClient.rpc('create_and_publish_multi_drop', {
+        p_payload: {
+          requestId: publishedId,
+          pickupZoneId,
+          pickupAddress: `Alberdi 150 SEC12 ${stagingContext.testRunId}`,
+          pickupLat: null,
+          pickupLng: null,
+          fixedPriceArs: null,
+          autoAssign: false,
+          drops: [
+            {
+              dropoffZoneId,
+              dropoffAddress: `Mitre 450 SEC12 ${stagingContext.testRunId}`,
+              dropoffLat: null,
+              dropoffLng: null,
+              recipientName: 'Cliente SEC12',
+              recipientPhone: '3865123456',
+              recipientConsentDeclared: true,
+              packageType: 'chico',
+              recipientPaymentMethod: 'transfer',
+              needsChange: false,
+              cashChangeAmount: null,
+              notes: null,
+            },
+          ],
+        },
+      });
+      expect(publishErr).toBeNull();
+      await expect
+        .poll(() => eventsOf('A', publishedId, 'UPDATE').some((e) => e.status === 'published'), { timeout: 25_000 })
+        .toBe(true);
+      expectRestricted(eventsOf('A', publishedId, 'UPDATE'));
+      // Un INSERT de la publicación que llegue al repartidor se inspecciona igual; no se exige.
+      expectRestricted(eventsOf('A', publishedId, 'INSERT'));
+
+      // Evidencia de autorización independiente de Realtime (PostgREST con el mismo token).
+      const { data: aPublished, error: aPublishedErr } = await courierClient
+        .from('delivery_requests')
+        .select('id')
+        .eq('id', publishedId);
+      expect(aPublishedErr).toBeNull();
+      expect(aPublished).toHaveLength(1);
+      const { data: nPublished } = await anonClient.from('delivery_requests').select('id').eq('id', publishedId);
+      expect(nPublished ?? []).toHaveLength(0);
+
+      // 2. UPDATE con valor presente en las columnas viejas (cliente admin del arnés).
+      const { data: touched, error: touchErr } = await admin
+        .from('delivery_requests')
+        .update({ notes: marker, cash_change_amount: amount })
+        .eq('id', publishedId)
+        .select('updated_at')
+        .single();
+      expect(touchErr).toBeNull();
+      const updatedAt = String(touched?.updated_at);
+      // Control positivo de origen (publicación completa): S recibe las claves y el marcador.
+      const sUpdate = await waitFor('S', publishedId, 'UPDATE', updatedAt);
+      expect(sUpdate.some((e) => e.keys.includes('notes') && e.hasMarker)).toBe(true);
+      expectRestricted(await waitFor('A', publishedId, 'UPDATE', updatedAt));
+      expectRestricted(await waitFor('M', publishedId, 'UPDATE', updatedAt));
+
+      // 3. INSERT con valor presente: borrador sintético del comercio, después de los SUBSCRIBED.
+      const { data: inserted, error: insertErr } = await admin
+        .from('delivery_requests')
+        .insert({
+          id: draftId,
+          merchant_id: merchant.id,
+          pickup_zone_id: pickupZoneId,
+          dropoff_zone_id: dropoffZoneId,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          status: 'draft',
+          notes: marker,
+          cash_change_amount: amount,
+        })
+        .select('updated_at')
+        .single();
+      expect(insertErr).toBeNull();
+      const sInsert = await waitFor('S', draftId, 'INSERT');
+      expect(sInsert.some((e) => e.keys.includes('notes') && e.hasMarker)).toBe(true);
+      expectRestricted(await waitFor('M', draftId, 'INSERT'));
+      expect(inserted?.updated_at).toBeTruthy();
+
+      // Visibilidad del borrador por PostgREST, después de insertarlo y antes del veredicto negativo.
+      const { data: mDraft, error: mDraftErr } = await merchantClient.from('delivery_requests').select('id').eq('id', draftId);
+      expect(mDraftErr).toBeNull();
+      expect(mDraft).toHaveLength(1);
+      const { data: aDraft } = await courierClient.from('delivery_requests').select('id').eq('id', draftId);
+      expect(aDraft ?? []).toHaveLength(0);
+      const { data: nDraft } = await anonClient.from('delivery_requests').select('id').eq('id', draftId);
+      expect(nDraft ?? []).toHaveLength(0);
+
+      // 4. Borrador modificado (UPDATE): M y S lo reciben con las mismas reglas.
+      const { data: draftTouched, error: draftTouchErr } = await admin
+        .from('delivery_requests')
+        .update({ cash_change_amount: amount })
+        .eq('id', draftId)
+        .select('updated_at')
+        .single();
+      expect(draftTouchErr).toBeNull();
+      const draftUpdatedAt = String(draftTouched?.updated_at);
+      const sDraftUpdate = await waitFor('S', draftId, 'UPDATE', draftUpdatedAt);
+      expect(sDraftUpdate.some((e) => e.keys.includes('notes') && e.hasMarker)).toBe(true);
+      expectRestricted(await waitFor('M', draftId, 'UPDATE', draftUpdatedAt));
+
+      // Negativos: después de la barrera causal (S ya recibió cada cambio), ventana acotada y conteo 0.
+      await negativeWindow();
+      expect(captured.filter((e) => e.actor === 'A' && e.id === draftId)).toHaveLength(0);
+      expect(captured.filter((e) => e.actor === 'N')).toHaveLength(0);
+
+      // Registro de la captura: nombres de claves por actor y evento, sin valores.
+      for (const e of captured) {
+        const which = e.id === publishedId ? 'publicada' : 'borrador';
+        console.log(`[CC-051 captura] actor=${e.actor} evento=${e.event} fila=${which} claves=${e.keys.join(',')}`);
+      }
+    } finally {
+      await admin
+        .from('delivery_requests')
+        .update({ notes: null, cash_change_amount: null })
+        .in('id', [publishedId, draftId]);
+      for (const { client, channel } of channels) {
+        await client.removeChannel(channel);
+      }
+    }
   });
 });
