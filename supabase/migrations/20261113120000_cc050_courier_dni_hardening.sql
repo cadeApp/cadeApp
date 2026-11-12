@@ -56,7 +56,7 @@ begin
   -- Defensa contra pegar el hash o el número de DNI en el motivo; no garantiza un texto libre sin datos personales.
   if v_reason is null
      or char_length(v_reason) < 3
-     or char_length(v_reason) > 500
+     or char_length(v_reason) > 501
      or v_reason ~ '[0-9a-fA-F]{64}'
      or v_reason ~ '[0-9]{7}' then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
