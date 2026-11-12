@@ -383,12 +383,15 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
     let bodyCompleted = false;
     try {
       // Precondición: los cuatro canales en SUBSCRIBED antes de cualquier mutación.
-      await Promise.all([
+      // allSettled: si una falla, se espera a las demás para que todo canal creado quede registrado antes del finally.
+      const subscriptions = await Promise.allSettled([
         subscribe(courierClient, 'A'),
         subscribe(merchantClient, 'M'),
         subscribe(anonClient, 'N'),
         subscribe(admin as unknown as SupabaseClient, 'S'),
       ]);
+      const failedSubscription = subscriptions.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failedSubscription) throw failedSubscription.reason;
 
       // 1. Publicación real con la RPC del comercio (INSERT draft + UPDATE a published en request_cycle).
       const { error: publishErr } = await merchantClient.rpc('create_and_publish_multi_drop', {
