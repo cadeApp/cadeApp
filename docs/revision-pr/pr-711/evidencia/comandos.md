@@ -233,3 +233,88 @@ El detector sobre forma de código es deliberadamente limitado: un arreglo equiv
 1. H06: búsqueda A, edición posterior B y respuesta tardía A (no link viejo), resultados dobles no mezclados, pruebas RTL sin sleeps; mutar reset y versionado por separado, mostrar RED/ GREEN.
 2. H07: pgTAP `rejected/suspended+vehículo+not submitted+null HMAC` → `INVALID_STATE_TRANSITION`, 0 UPDATE/ audit; positive submitted+DNI. Mutar solo nueva guarda y demostrar fallo de la nueva prueba. Regresión de `cc034` y fake sin eliminar sus positivos originales.
 3. Ejecutar checks de TypeScript/ESLint/Vitest completos y jobs CI cuando cambie código; **no repetir CI sólo porque el revisor commitea docs**.
+
+## Ronda 3 — 419ab906 (código 330c3178)
+
+**Pruebas del autor verificadas por logs remotos, no por ejecución local:** GitHub Actions run https://github.com/cadeApp/cadeApp/actions/runs/43222179409 tiene head_sha 330c317870f484a9a1cbf6d0e94e54b2800a57a7 y 7 jobs success. Job db-tests 131196178449: cc034_admin_reinstate_courier.sql ... ok (plan 51), cc050_courier_dni_hardening.sql ... ok (99), Files=47, Tests=3958, Result: PASS; tres escenarios CC-034 GREEN, prueba de mutación sin FOR UPDATE con auditoría duplicada RED y restauración GREEN; git diff --exit-code -- src/types/database.types.ts sin diff. Job unit 131196178294: 209 files / 3961 tests PASS. Los jobs lint, typecheck, build, audit y bundle-budget aprobaron.
+
+**RED del autor que se contrastó:** PR #733, 9f172a6c, no detectó la eliminación de la guarda porque la fixture sin envío tampoco tenía DNI; PR #734, 3bef33be, run https://github.com/cadeApp/cadeApp/actions/runs/43222239668, db-tests falla aserción 98 ("reinstate no reactiva un suspendido sin alta enviada aunque tenga DNI") y 99 (sin audit). Ambos mutantes cerrados sin mergear. Las cuatro mutaciones TS de H06/H07 son resultados documentados en bitácora; no se ejecutaron desde este entorno.
+
+**Alcance:** src/features/admin/copy.ts ya estaba permitido en la ficha de develop y CC-050. supabase/tests/integration/cc034_concurrency.mjs no figuraba en los permitidos de T-434; en este cierre se agrega de modo acotado a la ficha, CC-050 y fila T-434 del plan de esta rama. No se cambió código ni configuración de CI, y develop no se modifica fuera de un futuro merge. Otros archivos ampliados de rondas anteriores siguen declarados.
+
+### Arnés del revisor — completo para /tmp
+
+Se ejecutaron en memoria comprobaciones equivalentes sobre contenidos del SHA leído desde GitHub. **Sólo comprobación estática de invariantes, no Vitest ni pgTAP**. La primera versión del detector M11 usaba "alguna fixture positiva", y no detectó que se eliminó una de dos; corregido a exigir ambas fixtures 3a y 3b, queda en RED al mutar. Resultado final 11/11 mutaciones estructurales detectadas.
+
+No ejecutar desde docs/revision-pr/; copiar a /tmp en un checkout limpio del SHA:
+
+~~~bash
+cat >/tmp/pr711-r3-static.mjs <<'NODE'
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const root=process.argv[2];
+assert.ok(root && fs.existsSync(path.join(root,'src')), 'Uso: node /tmp/pr711-r3-static.mjs /raiz/checkout');
+const paths={
+ ui:'src/features/admin/components/dispute-candidates.tsx',
+ tests:'src/features/admin/components/dispute-candidates.test.tsx',
+ sql:'supabase/migrations/20261113120000_cc050_courier_dni_hardening.sql',
+ sqltest:'supabase/tests/cc050_courier_dni_hardening.sql',
+ cc034:'supabase/tests/cc034_admin_reinstate_courier.sql',
+ fake:'src/domain/testing/rpc-fake.ts',
+ detail:'src/features/admin/components/applicant-detail-view.tsx',
+ copy:'src/features/admin/copy.ts',
+ concurrency:'supabase/tests/integration/cc034_concurrency.mjs'
+};
+const src=Object.fromEntries(Object.entries(paths).map(([k,p])=>[k,fs.readFileSync(path.join(root,p),'utf8')]));
+function check(s){
+ const f=s.sql.slice(s.sql.indexOf('create or replace function public.admin_reinstate_courier'),s.sql.indexOf('create or replace function public.admin_decide_courier'));
+ const reset=s.ui.slice(s.ui.indexOf('const invalidateResults = () =>'),s.ui.indexOf('const onSearchCandidates ='));
+ const cand=s.ui.slice(s.ui.indexOf('const onSearchCandidates ='),s.ui.indexOf('const onSearchReservation ='));
+ const res=s.ui.slice(s.ui.indexOf('const onSearchReservation ='),s.ui.indexOf('return ('));
+ const bothFixtures=(s.cc034.match(/set application_submitted = true, submitted_at = now\(\), dni_hmac = repeat\('3[ab]', 32\)/g)||[]).length===2;
+ return {
+  H06_RESET:reset.includes('candidatesRequest.current += 1')&&reset.includes('reservationRequest.current += 1')&&reset.includes("setCandidates({ kind: 'idle' })")&&reset.includes("setReservation({ kind: 'idle' })")&&(s.ui.match(/invalidateResults\(\);/g)||[]).length===2,
+  H06_CANDIDATES:cand.includes('if (requestId !== candidatesRequest.current) return;')&&cand.includes('const submittedLookup = lookup'),
+  H06_RESERVATION:res.includes('if (requestId !== reservationRequest.current) return;')&&res.includes('const submittedDni = dni'),
+  H06_TESTS:s.tests.includes('function deferred<T>()')&&s.tests.includes('dos búsquedas que vuelven en orden inverso'),
+  H07_SQL:f.includes('for update')&&f.includes('or not v_application_submitted')&&f.includes('or v_dni_hmac is null')&&f.indexOf('or not v_application_submitted')<f.indexOf('update public.couriers'),
+  H07_FAKE:s.fake.includes('!courier.applicationSubmitted || !courier.hasDni'),
+  H07_UI:s.detail.includes('notSubmittedReinstateNote')&&s.detail.includes('!applicant.applicationSubmitted ? ('),
+  H07_ISOLATED:s.sqltest.includes('fixture: suspendido, sin alta enviada y con DNI')&&s.sqltest.includes('reinstate no reactiva un suspendido sin alta enviada aunque tenga DNI'),
+  H07_CC034:s.cc034.includes('select plan(51)')&&s.cc034.includes('courier_rej_unsent()')&&bothFixtures,
+  H07_COPY:s.copy.includes('notSubmittedReinstateNote'),
+  CC034_RUNNER:s.concurrency.includes('20261113120000_cc050_courier_dni_hardening.sql')&&!s.concurrency.includes('20261020113000_cc034_admin_reinstate_courier.sql')&&s.concurrency.includes('into v_courier_status, v_vehicle_type, v_dni_hmac, v_application_submitted')&&s.concurrency.includes('runSql(originalSql)')
+ };
+}
+const original=check(src);
+for(const [key,passed] of Object.entries(original)){
+ console.log(key+': '+(passed?'PASS':'RED'));
+ assert.equal(passed,true,'Falla baseline '+key);
+}
+const mutants=[
+ ['M01-reset','H06_RESET',s=>({...s,ui:s.ui.replace("setReservation({ kind: 'idle' });",'// mutant')})],
+ ['M02-onChange','H06_RESET',s=>({...s,ui:s.ui.replace('invalidateResults();','// mutant')})],
+ ['M03-candidates-await','H06_CANDIDATES',s=>({...s,ui:s.ui.replace('if (requestId !== candidatesRequest.current) return;','// mutant')})],
+ ['M04-reservation-await','H06_RESERVATION',s=>({...s,ui:s.ui.replace('if (requestId !== reservationRequest.current) return;','// mutant')})],
+ ['M05-reinstate-unsent','H07_SQL',s=>({...s,sql:s.sql.replace('or not v_application_submitted\n','')})],
+ ['M06-reinstate-no-lock','H07_SQL',s=>({...s,sql:s.sql.replace(/(into v_courier_status, v_vehicle_type, v_dni_hmac, v_application_submitted[\s\S]{0,110})for update;/,'$1')})],
+ ['M07-fake-unsent','H07_FAKE',s=>({...s,fake:s.fake.replace('!courier.applicationSubmitted || !courier.hasDni','!courier.hasDni')})],
+ ['M08-ui-unsent','H07_UI',s=>({...s,detail:s.detail.replace('notSubmittedReinstateNote','notSubmittedNote')})],
+ ['M09-fixture-isolation','H07_ISOLATED',s=>({...s,sqltest:s.sqltest.replace('fixture: suspendido, sin alta enviada y con DNI','fixture: suspendido, sin alta enviada y sin DNI')})],
+ ['M10-old-restore','CC034_RUNNER',s=>({...s,concurrency:s.concurrency.replace('20261113120000_cc050_courier_dni_hardening.sql','20261020113000_cc034_admin_reinstate_courier.sql')})],
+ ['M11-one-positive','H07_CC034',s=>({...s,cc034:s.cc034.replace("set application_submitted = true, submitted_at = now(), dni_hmac = repeat('3a', 32)","set submitted_at = now(), dni_hmac = repeat('3a', 32)")})]
+];
+for(const [name,key,mutate] of mutants){
+ const after=mutate(src);
+ assert.notDeepEqual(after,src,'Mutante sin objetivo '+name);
+ assert.equal(check(after)[key],false,'No detectado '+name);
+ console.log(name+' -> RED');
+}
+console.log('11/11 mutaciones estructurales detectadas (NO equivalen a pruebas funcionales).');
+
+NODE
+node /tmp/pr711-r3-static.mjs "$PWD"
+~~~
+
+Limitaciones: sin clon del repo ni pnpm aquí, no se ejecutó este arnés literalmente desde /tmp; sí se ejecutaron sus predicados principales y mutantes equivalentes sobre los contenidos recuperados de GitHub. No se ejecutaron Docker, Supabase, git merge-tree ni E2E sobre Develop. La API de GitHub indica mergeable=true; no sustituye a un merge-tree independiente. No requerir GREEN sólo por commit documental de revisión. E2E Develop es posterior a merge y migrate-develop.

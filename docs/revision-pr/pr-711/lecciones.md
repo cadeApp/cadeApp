@@ -26,3 +26,13 @@
 10. **Disciplina de autoría conservada:** el autor no alteró los cinco archivos del revisor desde R1. Guardar la ronda nueva aparte y preservar el R1 y H04 retirado.
 
 Sin numerar nuevas reglas AG: desde este entorno no se enumeraron todas las ramas remotas como exige el protocolo. Proponer regla nueva sólo tras contrastar evidencia de otras PR.
+
+## Ronda 3 — aprendizaje del control y del alcance
+
+11. **Mutante no detectado ≠ código correcto:** #733 dejó verde la suite porque la fixture sin envío carecía además de DNI y la segunda condición frenaba reinstate. La nueva fixture con HMAC, sin envío, hizo fallar #98 y #99 en #734. Patrones P04/P08.
+12. **Restaurar la última definición vigente:** el runner de concurrencia CC-034 no puede re-aplicar la versión antigua al terminar una mutación porque elimina la guarda posterior de CC-050. Debe mutar/restaurar la misma migración vigente y probar RED→GREEN con el lock.
+13. **Alcance exacto:** `src/features/admin/copy.ts` estaba ya permitido, `supabase/tests/integration/cc034_concurrency.mjs` no. La segunda se documentó en ficha, CC y plan de esta rama. No adjudicar al autor una decisión de producto que no tomó.
+14. **Endurecer mutantes del propio revisor:** el primer detector aceptaba si una de las dos fixtures positivas de CC-034 estaba enviada, y no detectó el cambio en la otra (10/11). Se corrigió exigiendo ambas (11/11). Son inspecciones estáticas, no tests funcionales.
+15. **Control de causalidad:** invalidar ambos paneles al editar y rechazar una respuesta asincrónica fuera de versión; no equivale sólo a cambiar GET por POST. Patrones P06/P08.
+
+No se asigna AG nueva hasta enumerar todas las ramas remotas.
