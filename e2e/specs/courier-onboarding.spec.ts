@@ -455,12 +455,12 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     // 5. La UI productiva despliega el error específico de DNI duplicado
     const duplicateDniAlert = page.getByRole('alert').filter({
-      hasText: /ya está registrado|rechazado anteriormente/i,
+      // CC-050 (SEC-09): mensaje neutral; no revela si el DNI existe ni el estado de la otra cuenta.
+      hasText: /No pudimos completar tu alta con esos datos/i,
     });
     await expect(duplicateDniAlert).toBeVisible({ timeout: 10000 });
-    await expect(duplicateDniAlert).toContainText(
-      /ya está registrado|rechazado anteriormente/i
-    );
+    await expect(duplicateDniAlert).toContainText(/No pudimos completar tu alta con esos datos/i);
+    await expect(duplicateDniAlert).not.toContainText(/ya está registrado|rechazado anteriormente/i);
 
     // Invariante de navegación: el postulante no avanza a status
     expect(page.url()).not.toContain('/courier/onboarding/status');
@@ -786,12 +786,12 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     // Debe aparecer el alert accesible notificando DNI duplicado
     const duplicateDniAlert = page.getByRole('alert').filter({
-      hasText: /ya está registrado|rechazado anteriormente/i,
+      // CC-050 (SEC-09): mensaje neutral; no revela si el DNI existe ni el estado de la otra cuenta.
+      hasText: /No pudimos completar tu alta con esos datos/i,
     });
     await expect(duplicateDniAlert).toBeVisible({ timeout: 10000 });
-    await expect(duplicateDniAlert).toContainText(
-      /ya está registrado|rechazado anteriormente/i
-    );
+    await expect(duplicateDniAlert).toContainText(/No pudimos completar tu alta con esos datos/i);
+    await expect(duplicateDniAlert).not.toContainText(/ya está registrado|rechazado anteriormente/i);
 
     // Invariante de navegación: el usuario no avanza al visor de estado
     expect(page.url()).not.toContain('/courier/onboarding/status');

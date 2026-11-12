@@ -14,13 +14,13 @@
     },
     {
       "id": "t302-dni-dedup-other-courier",
-      "invariant": "T-302 / PR254-H05: el onboarding rechaza un DNI ya registrado por otro repartidor con DNI_ALREADY_REGISTERED.",
+      "invariant": "T-302 / PR254-H05 / CC-050: el onboarding rechaza un DNI ya registrado por otro repartidor con DNI_ALREADY_REGISTERED (de finalize) y muestra el mensaje neutral.",
       "patch": "t302-dni-dedup-other-courier.patch",
       "spec": "e2e/specs/courier-onboarding.spec.ts",
       "grep": "DoD: Falla si se quita la deduplicación de DNI en onboarding",
       "expectedFailure": [
         "toBeVisible",
-        "ya está registrado|rechazado anteriormente"
+        "No pudimos completar tu alta con esos datos"
       ]
     },
     {
