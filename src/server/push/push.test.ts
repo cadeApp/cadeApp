@@ -331,7 +331,7 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
     );
 
     // CC-049 (PR698-H02): un 3xx no se sigue ni cuenta como envío.
-    it.each([302, 429, 500, 503])(
+    it.each([300, 302, 399, 429, 500, 503])(
       'trata HTTP %i como falla sin baja, NO elimina la suscripción válida y registra el status',
       async (status) => {
         const transport: PushTransport = {

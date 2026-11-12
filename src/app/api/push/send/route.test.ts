@@ -135,7 +135,9 @@ describe('POST /api/push/send', () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
     const json = await res.json();
+    expect(json.result.sentCount).toBe(1);
     expect(json.result.failedCount).toBe(1);
+    expect(JSON.stringify(json)).not.toContain('push.example.com');
     const blocked = json.result.attempts[1];
     expect(blocked).toEqual({ outcome: 'blocked', status: 0, error: 'ENDPOINT_NOT_ALLOWED' });
     expect(Object.hasOwn(blocked, 'endpoint')).toBe(false);
