@@ -353,7 +353,9 @@ begin
   select profile_id, status
   into v_courier_id, v_status
   from public.couriers
-  where dni_hmac = p_dni_hmac;
+  where dni_hmac is not null
+  order by profile_id desc
+  limit 1;
 
   -- Sin el hash en ningún campo: solo si hubo coincidencia y, si la hubo, la cuenta.
   insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
