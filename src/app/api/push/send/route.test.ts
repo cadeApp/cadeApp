@@ -5,7 +5,8 @@ import { POST } from './route';
 import { sendPushNotification } from '@/server/push/sender';
 
 // T-433 (SEC-08): la ruta se autoriza con PUSH_SEND_SECRET, distinta de CRON_SECRET.
-const CRON_SECRET = 'test-cron-secret-0123456789abcdef';
+// Mismo largo que PUSH_SEND_SECRET (34): el rechazo del bypass tiene que venir de comparar el contenido (PR708-H01).
+const CRON_SECRET = 'test-cron-secret-0123456789abcdefX';
 const PUSH_SEND_SECRET = 'test-push-send-secret-0123456789ab';
 const mockEnv: { CRON_SECRET: string; PUSH_SEND_SECRET: string | undefined } = { CRON_SECRET, PUSH_SEND_SECRET };
 
@@ -38,6 +39,22 @@ describe('POST /api/push/send', () => {
     const req = new NextRequest('http://localhost:3000/api/push/send', {
       method: 'POST',
       headers: { authorization: `Bearer ${CRON_SECRET}` },
+      body: validBody(),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    expect(sendPushNotification).not.toHaveBeenCalled();
+  });
+
+  it('SEC-08 (PR708-H01): un secreto incorrecto del mismo largo no autoriza', async () => {
+    const invalid = `${PUSH_SEND_SECRET.slice(0, -1)}X`;
+    expect(invalid).not.toBe(PUSH_SEND_SECRET);
+    expect(Buffer.byteLength(invalid)).toBe(Buffer.byteLength(PUSH_SEND_SECRET));
+    expect(Buffer.byteLength(CRON_SECRET)).toBe(Buffer.byteLength(PUSH_SEND_SECRET));
+    const req = new NextRequest('http://localhost:3000/api/push/send', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${invalid}` },
       body: validBody(),
     });
 
