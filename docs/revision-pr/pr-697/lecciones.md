@@ -21,3 +21,15 @@ Pedir `sin endpoint` es un cambio de contrato del registro de intentos: `PushAtt
 ## Recomendación de proceso
 
 La PR de CC debe incluir **mutaciones que prueben qué mide cada control**, no solo una lista de tests futuros. Cuando aún no existe implementación, describir el experimento y marcarlo como **no ejecutado** es correcto; registrar un rojo hipotético como observado no lo es.
+
+---
+
+## Ronda 2 — H02 / H05
+
+No se asigna un AG nuevo porque no se verificó el máximo de todas las ramas remotas.
+
+**H02 (pr-63/AG-68, AG-70):** la condición temporal importa. Probar reaplicación después de introducir fixtures no protege la **primera aplicación**; una migración que borre datos solo en el primer despliegue puede dejar el test en verde. El control de conservación debe crear el dato **antes** de la migración real, aplicarla, medir después y mutar en ese mismo instante.
+
+**H05 (P15):** un contrato de “fixture compartido” entre pgTAP SQL y Vitest TypeScript necesita un mecanismo de transporte explícito. Dentro de los archivos permitidos, una tabla canónica de URLs y expectativas en el CC, reflejada con valores fijos en ambas suites, es verificable; una referencia genérica a “casos compartidos” no lo es.
+
+**Alcance:** son lecciones de diseño de pruebas, no evidencia de tests reales de T-432, cuya implementación todavía va en otra PR.

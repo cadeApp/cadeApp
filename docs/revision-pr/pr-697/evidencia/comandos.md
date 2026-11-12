@@ -104,3 +104,69 @@ git ls-remote origin feat/T-432-sec07-push-hardening
 ## Limitaciones de esta ronda
 
 No hubo clon local ni dependencias para `pnpm`, y no se ejecutó `git merge-tree`. GitHub informó `mergeable:true`. La rama no había recibido cambios ajenos a `b9f0bb12` al tomar la foto. Los 123 tests que figuran en la PR son **declaración del autor**, no una verificación propia. No se inspeccionaron logs de CI; no se deben rellenar `verificado_en_sha` de hallazgos abiertos.
+
+---
+
+# Evidencia — Ronda 2 · SHA 3406672d
+
+## Inspección del SHA (GitHub)
+
+- Comparación `c09c982d..3406672d`: cambiaron **solo** `docs/contracts/CC-049.md`, `docs/implementation-plan.md`, `docs/tasks/T-432.md` y `docs/tasks/log/T-432.md`. El autor no modificó la carpeta de revisión.
+- Primer DoD de T-432 y fila del plan: coincidencia exacta por comparación de strings (**TRUE**).
+- `src/server/push/transport.test.ts` y `supabase/tests/integration/cc035_concurrency.mjs`: presentes en “Archivos permitidos”.
+- Checks estáticos independientes de contrato: H01 ✅ · H03 ✅ · H04 ✅ · H02 primera aplicación ❌ · M01 tabla literal URL→boolean ❌ · nota histórica precisa ❌.
+- Bitácora: atribuye al autor 123/123 de `pnpm exec vitest run tools`; **no reproducido aquí**.
+- Git clone por HTTPS falló: `Could not resolve host: github.com`. No se corrió `git merge-tree`, Vitest, typecheck, lint, pgTAP, Supabase ni Docker local o remoto.
+
+## H02 — arnés independiente ejecutado (Node v22.16.0)
+
+Ejecuté `node /tmp/pr697_r2_h02_probe.mjs`. El contenido completo para copiar es:
+
+```js
+import assert from 'node:assert/strict';
+// Modelo del orden temporal, NO prueba de PostgreSQL ni migración real.
+const rows = [ {id:'legitimo',allowed:true}, {id:'historico',allowed:false} ];
+let firstRun = true;
+function applyMigration(items) {
+  // Mutación adversaria: elimina históricos SOLO durante la primera aplicación.
+  if (firstRun) { firstRun=false; return items.filter(r=>r.allowed); }
+  return items;
+}
+const lostOnFirstApply = applyMigration([...rows]);
+assert.equal(lostOnFirstApply.some(r=>r.id==='historico'), false);
+// El DoD actual comienza después de aplicar la migración.
+const seededAfterMigration = [...lostOnFirstApply, {id:'historico-2',allowed:false}];
+const afterReapply = applyMigration(seededAfterMigration);
+assert.deepEqual(afterReapply, seededAfterMigration);
+console.log('PR697-H02: el test de reaplicación queda GREEN aunque la primera aplicación borró la fila histórica.');
+// Un control correcto empieza ANTES de la primera aplicación.
+firstRun=true;
+const afterFirstMigrationWithSeed = applyMigration([...rows]);
+assert.equal(afterFirstMigrationWithSeed.some(r=>r.id==='historico'), false);
+console.log('PR697-H02: control de primera aplicación detectaría el borrado (RED).');
+```
+
+**Salida observada:**
+
+```text
+PR697-H02: el test de reaplicación queda GREEN aunque la primera aplicación borró la fila histórica.
+PR697-H02: control de primera aplicación detectaría el borrado (RED).
+```
+
+El término RED describe lo que una **prueba correcta aún no implementada** detectaría, NO una línea roja real de pgTAP. Es una prueba de la falta de cobertura temporal. Nunca se ha corrido una migración CC-049.
+
+## H05 — chequeo estático sugerido (no ejecutado sin clon)
+
+Una tabla canónica de fixture real debería contener al menos 17 filas `ID | URL literal | true/false` en `CC-049.md§Impacto exacto`. Un chequeo local debe comprobar IDs únicos, URLs distintas y valores booleanos explícitos. **Quitar una fila o invertir su expected** tiene que alterar el control de sincronía entre SQL y TS; no basta buscar la palabra “tabla”. La implementación de ese control pertenece a la PR posterior; no presentar tests hipotéticos como corridos.
+
+## Para verificar después del arreglo documental
+
+```bash
+git pull origin feat/T-432-sec07-push-hardening
+git diff --check
+pnpm exec vitest run tools
+node docs/revision-pr/analizar.mjs verificacion
+git ls-remote origin feat/T-432-sec07-push-hardening
+```
+
+Registrar únicamente los resultados reales; no tocar `docs/revision-pr/**` ni tratar el verde declarado por agy como verificación independiente.
