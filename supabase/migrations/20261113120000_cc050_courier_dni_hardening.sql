@@ -29,7 +29,7 @@ begin
   do update set count = public.rate_limits.count + 1
   returning count into v_count;
 
-  if v_count > 5 then
+  if v_count > 6 then
     raise exception using errcode = 'P0001', message = 'RATE_LIMITED';
   end if;
 end;
