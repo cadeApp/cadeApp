@@ -103,6 +103,13 @@ begin
   update public.couriers set status = 'approved', available = true where profile_id = pg_temp.courier_approved_id();
   update public.couriers set status = 'suspended', available = false where profile_id = pg_temp.courier_suspended_id();
 
+  -- CC-050 (PR711-H01): admin_decide_courier solo decide postulaciones enviadas. Los dos pendientes quedan enviados
+  -- con la bandera de finalize y como su dueño (postgres), el mismo camino que autoriza el trigger de CC-043.
+  perform set_config('app.courier_application_finalize', 'on', true);
+  update public.couriers set application_submitted = true, submitted_at = now()
+  where profile_id in (pg_temp.courier_pending_1_id(), pg_temp.courier_pending_2_id());
+  perform set_config('app.courier_application_finalize', 'off', true);
+
   -- Documentos de prueba
   insert into public.courier_documents (id, courier_id, kind, storage_path, status, purge_after, purged_at)
   values

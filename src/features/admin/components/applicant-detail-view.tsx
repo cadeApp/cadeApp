@@ -798,7 +798,10 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
         aria-label={ADMIN_COPY.detail.actionsBarLabel}
         className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background py-3"
       >
-        {applicant.status === 'pending' ? (
+        {applicant.status === 'pending' && !applicant.applicationSubmitted ? (
+          // CC-050 (PR711-H01): una cuenta sin enviar (por ejemplo, un reclamante de disputa) no se decide.
+          <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.notSubmittedNote}</p>
+        ) : applicant.status === 'pending' ? (
           <>
             <Button
               variant="outline"

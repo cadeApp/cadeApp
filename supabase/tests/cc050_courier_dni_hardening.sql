@@ -419,5 +419,74 @@ select pg_temp.try_clear_own_dni();
 select is((select dni_hmac from public.couriers where profile_id = pg_temp.c(50)), pg_temp.hmac(50),
   'el update directo de dni_hmac como repartidor no tiene efecto');
 
+-- ---------------------------------------------------------------------------
+-- PR711-H01 (D1-A): admin_decide_courier no decide postulaciones sin enviar
+-- ---------------------------------------------------------------------------
+create function pg_temp.decide_audits(p_courier uuid) returns integer language sql as $$
+  select count(*)::integer from public.audit_log where action = 'admin_decide_courier' and target_id = p_courier::text
+$$;
+select pg_temp.act_as(pg_temp.admin(), 'aal2');
+select throws_ok($$ select public.admin_decide_courier(pg_temp.c(5), 'approved', null) $$,
+  'P0001', 'INVALID_STATE_TRANSITION', 'no se aprueba un pendiente sin enviar (c5, con documentos)');
+select throws_ok($$ select public.admin_decide_courier(pg_temp.c(5), 'rejected', 'motivo') $$,
+  'P0001', 'INVALID_STATE_TRANSITION', 'no se rechaza un pendiente sin enviar');
+select pg_temp.as_postgres();
+select ok((select status = 'pending' and not application_submitted from public.couriers where profile_id = pg_temp.c(5))
+    and pg_temp.decide_audits(pg_temp.c(5)) = 0,
+  'el pendiente sin enviar sigue pending y sin audit de decisión');
+select pg_temp.act_as(pg_temp.admin(), 'aal2');
+select is((public.admin_decide_courier(pg_temp.c(18), 'approved', null))->>'status', 'approved',
+  'un pendiente enviado se sigue aprobando');
+select pg_temp.as_postgres();
+select is(pg_temp.decide_audits(pg_temp.c(18)), 1, 'la aprobación del enviado se audita');
+
+-- ---------------------------------------------------------------------------
+-- PR711-H03 (D2-B): quién reservó un DNI
+-- ---------------------------------------------------------------------------
+create function pg_temp.reservation_audits() returns integer language sql as $$
+  select count(*)::integer from public.audit_log where action = 'courier_dni_reservation_searched'
+$$;
+select has_function('public', 'admin_find_courier_dni_reservation', array['text'],
+  'existe admin_find_courier_dni_reservation');
+select ok(not has_function_privilege('anon', 'public.admin_find_courier_dni_reservation(text)', 'execute')
+    and has_function_privilege('authenticated', 'public.admin_find_courier_dni_reservation(text)', 'execute')
+    and (select prosecdef and proconfig @> array['search_path=public, pg_temp'] from pg_proc
+      where oid = 'public.admin_find_courier_dni_reservation(text)'::regprocedure),
+  'reserva: execute solo para authenticated, security definer y search_path fijo');
+
+select pg_temp.act_as(pg_temp.c(4), 'aal2');
+select throws_ok($$ select public.admin_find_courier_dni_reservation(pg_temp.hmac(4)) $$,
+  'P0001', 'UNAUTHORIZED_ACTOR', 'un repartidor no busca reservas');
+select pg_temp.act_as(pg_temp.admin(), 'aal1');
+select throws_ok($$ select public.admin_find_courier_dni_reservation(pg_temp.hmac(4)) $$,
+  'P0001', 'AAL2_REQUIRED', 'un admin sin aal2 no busca reservas');
+select pg_temp.act_as_anon();
+select throws_ok($$ select public.admin_find_courier_dni_reservation(pg_temp.hmac(4)) $$,
+  '42501', null, 'anon no ejecuta la búsqueda de reservas');
+select pg_temp.as_postgres();
+select is(pg_temp.reservation_audits(), 0, 'los rechazos no auditan búsquedas');
+
+select pg_temp.act_as(pg_temp.admin(), 'aal2');
+select throws_ok($$ select public.admin_find_courier_dni_reservation('no-es-un-hash') $$,
+  'P0001', 'VALIDATION_ERROR', 'un hash con otra forma → VALIDATION_ERROR');
+select is(public.admin_find_courier_dni_reservation(pg_temp.hmac(4)),
+  jsonb_build_object('reservation', jsonb_build_object('courierId', pg_temp.c(4), 'status', 'pending')),
+  'encuentra la cuenta que reservó el DNI con su estado, sin más claves');
+select is(public.admin_find_courier_dni_reservation(pg_temp.hmac(99)), '{"reservation": null}'::jsonb,
+  'sin reserva devuelve {"reservation": null}');
+select pg_temp.as_postgres();
+select is(pg_temp.reservation_audits(), 2, 'cada búsqueda se audita, con y sin coincidencia');
+select ok(not exists (
+    select 1 from public.audit_log
+    where action = 'courier_dni_reservation_searched'
+      and (target_id ~ '[0-9a-f]{64}' or coalesce(before::text, '') ~ '[0-9a-f]{64}'
+        or coalesce(after::text, '') ~ '[0-9a-f]{64}')
+  ), 'las búsquedas de reserva no guardan el hash en ningún campo');
+select is(
+  (select array_agg(after->>'found' order by id) from public.audit_log where action = 'courier_dni_reservation_searched'),
+  array['true', 'false'], 'el audit dice solo si hubo coincidencia');
+select is((select dni_hmac from public.couriers where profile_id = pg_temp.c(4)), pg_temp.hmac(4),
+  'buscar una reserva nunca la libera');
+
 select * from finish();
 rollback;

@@ -1716,6 +1716,14 @@ describe('T-404: detalle con consentimientos e historial real (getApplicantDetai
     expect(detail?.history).toEqual([{ kind: 'registered', id: 'registered', at: '2026-11-01T10:00:00+00:00' }]);
   });
 
+  it('CC-050 (PR711-H01): applicationSubmitted sale de la columna application_submitted, no de submitted_at', async () => {
+    mockDetail(courierRow({ submitted_at: null, application_submitted: true }), []);
+    expect((await getApplicantDetail(COURIER))?.applicationSubmitted).toBe(true);
+
+    mockDetail(courierRow({ submitted_at: '2026-11-01T11:00:00+00:00', application_submitted: false }), []);
+    expect((await getApplicantDetail(COURIER))?.applicationSubmitted).toBe(false);
+  });
+
   /** N filas como las devuelve la consulta (`created_at DESC`, nunca más de su `limit(50)`). */
   function auditPage(count: number) {
     return Array.from({ length: count }, (_, index) => ({

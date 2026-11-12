@@ -248,3 +248,69 @@ describe('CC-050 — fake', () => {
     });
   });
 });
+
+describe('CC-050 — ronda 1 de #711', () => {
+  const HMAC_A = 'ab'.repeat(32);
+
+  it('PR711-H01: el fake no decide una postulación sin enviar; sí una enviada', async () => {
+    const client = fake();
+    for (const decision of ['approved', 'rejected'] as const) {
+      expect(await client.admin_decide_courier({ courierId: CLAIMANT_ID, decision, reason: 'motivo' })).toEqual({
+        ok: false,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+    }
+    expect(client.getCourier(CLAIMANT_ID)?.status).toBe('pending');
+    const submitted = await client.admin_decide_courier({ courierId: PENDING_SUBMITTED_ID, decision: 'approved' });
+    expect(submitted.ok).toBe(true);
+  });
+
+  it('PR711-H03: contrato de la reserva: hash de 64 hex y salida solo con cuenta y estado', () => {
+    const contract = RPC_CONTRACTS.admin_find_courier_dni_reservation;
+    expect(contract.errorCodes).toEqual(['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'AAL2_REQUIRED', 'VALIDATION_ERROR']);
+    expect(contract.inputSchema.safeParse({ dniHmac: HMAC_A }).success).toBe(true);
+    expect(contract.inputSchema.safeParse({ dniHmac: '38123456' }).success).toBe(false);
+    expect(contract.outputSchema.safeParse({ reservation: null }).success).toBe(true);
+    expect(contract.outputSchema.safeParse({ reservation: { courierId: REJECTED_ID, status: 'rejected' } }).success).toBe(
+      true
+    );
+    expect(
+      contract.outputSchema.safeParse({ reservation: { courierId: REJECTED_ID, status: 'rejected', dniHmac: HMAC_A } })
+        .success
+    ).toBe(false);
+  });
+
+  it('PR711-H03: el fake encuentra la reserva por hash y sin coincidencia devuelve null', async () => {
+    const client = createFakeRpcClient({
+      settings: SETTINGS,
+      initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
+      initialCouriers: [{ courierId: REJECTED_ID, status: 'rejected', available: false, dniHmac: HMAC_A }],
+    });
+    expect(await client.admin_find_courier_dni_reservation({ dniHmac: HMAC_A })).toEqual({
+      ok: true,
+      data: { reservation: { courierId: REJECTED_ID, status: 'rejected' } },
+    });
+    expect(await client.admin_find_courier_dni_reservation({ dniHmac: 'cd'.repeat(32) })).toEqual({
+      ok: true,
+      data: { reservation: null },
+    });
+    client.setActor({ aal: 'aal1' });
+    expect(await client.admin_find_courier_dni_reservation({ dniHmac: HMAC_A })).toEqual({
+      ok: false,
+      code: 'AAL2_REQUIRED',
+    });
+  });
+
+  it('PR711-H05: un reclamante con solo documentos históricos es elegible, con documentsCount 0', async () => {
+    const client = createFakeRpcClient({
+      settings: SETTINGS,
+      initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
+      initialCouriers: [
+        { courierId: CLAIMANT_ID, status: 'pending', available: false, vehicleType: null, applicationSubmitted: false, phone: '3815550000' },
+      ],
+      initialDocuments: docsFor(CLAIMANT_ID, '50d00003').map((doc) => ({ ...doc, isCurrent: false })),
+    });
+    const result = await client.admin_find_courier_dispute_candidates({ lookup: '3815550000' });
+    expect(result.ok && result.data.candidates.map((c) => [c.courierId, c.documentsCount])).toEqual([[CLAIMANT_ID, 0]]);
+  });
+});

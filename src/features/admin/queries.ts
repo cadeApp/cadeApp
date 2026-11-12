@@ -10,7 +10,6 @@ import {
   type DomainErrorCode,
   type MerchantSubscriptionStatus,
   type PlatformSettingKey,
-  type RpcErrorCode,
   type RpcOutput,
 } from '@/domain';
 import {
@@ -18,7 +17,7 @@ import {
   adminListPublicationPlansRpc,
   type SupabaseRpcCaller,
 } from '@/server/rpc/admin';
-import { adminFindCourierDisputeCandidatesRpc, adminListApplicantsRpc } from '@/server/rpc/admin-applicants';
+import { adminListApplicantsRpc } from '@/server/rpc/admin-applicants';
 import { createClient } from '@/server/supabase/server';
 import { ADMIN_COPY } from './copy';
 import { auditActionLabel } from './audit-format';
@@ -89,6 +88,7 @@ interface CourierDetailRow {
   decided_by: string | null;
   deactivated_at: string | null;
   submitted_at: string | null;
+  application_submitted: boolean;
   profiles: ProfileRow | null;
 }
 
@@ -99,21 +99,6 @@ interface CourierDetailRow {
  * PR106-H08: Propagación de fallos de DB a través de excepciones hacia error boundaries.
  * PR106-H12: Utiliza el cliente de sesión autenticada con RLS (createClient), no service_role.
  */
-/** CC-050 (D4-B): resultado de la búsqueda de reclamantes para la página de disputas. */
-export type DisputeCandidatesResult = ActionResult<
-  RpcOutput<'admin_find_courier_dispute_candidates'>,
-  RpcErrorCode<'admin_find_courier_dispute_candidates'> | 'INTERNAL_ERROR'
->;
-
-/**
- * CC-050 (D4-B): busca cuentas pending sin enviar con documentos por UUID exacto o teléfono completo. Usa el cliente de
- * sesión: la RPC exige admin con aal2 y no expone el hash ni los paths.
- */
-export async function getDisputeCandidates(lookup: string): Promise<DisputeCandidatesResult> {
-  const supabase = await createClient();
-  return adminFindCourierDisputeCandidatesRpc(supabase, { lookup });
-}
-
 export async function getApplicantsQueue(
   tab: AdminApplicantTab = 'pending',
   options?: GetApplicantsQueueOptions
@@ -194,6 +179,7 @@ export async function getApplicantDetail(
         decided_by,
         deactivated_at,
         submitted_at,
+        application_submitted,
         profiles!couriers_profile_id_fkey (
           display_name,
           phone,
@@ -300,6 +286,8 @@ export async function getApplicantDetail(
     deactivatedAt: c.deactivated_at,
     createdAt: profile?.created_at ?? new Date().toISOString(),
     submittedAt: c.submitted_at,
+    // CC-050 (PR711-H01): la columna real; submitted_at no alcanza (históricos enviados sin fecha).
+    applicationSubmitted: c.application_submitted === true,
     documents,
     consents,
     history,

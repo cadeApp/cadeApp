@@ -722,6 +722,16 @@ export const adminFindCourierDisputeCandidatesOutputSchema = z
   .object({ candidates: z.array(courierDisputeCandidateSchema).max(10) })
   .strict();
 
+// CC-050 (PR711-H03, D2-B): quién reservó un DNI. El servidor calcula el HMAC; la salida es solo cuenta y estado.
+export const adminFindCourierDniReservationInputSchema = z.object({
+  dniHmac: z.string().regex(/^[0-9a-f]{64}$/),
+});
+export const adminFindCourierDniReservationOutputSchema = z
+  .object({
+    reservation: z.object({ courierId: uuidSchema, status: courierStatusSchema }).strict().nullable(),
+  })
+  .strict();
+
 // 16. admin_verify_document
 export const adminVerifyDocumentInputSchema = z.object({
   documentId: uuidSchema,
@@ -1854,6 +1864,16 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  admin_find_courier_dni_reservation: {
+    inputSchema: adminFindCourierDniReservationInputSchema,
+    outputSchema: adminFindCourierDniReservationOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_verify_document: {
     inputSchema: adminVerifyDocumentInputSchema,
     outputSchema: adminVerifyDocumentOutputSchema,
@@ -2219,6 +2239,7 @@ export const ALL_RPC_NAMES = [
   'consume_courier_application_attempt',
   'admin_release_courier_dni',
   'admin_find_courier_dispute_candidates',
+  'admin_find_courier_dni_reservation',
   'admin_verify_document',
   'replace_courier_document',
   'add_courier_optional_document',

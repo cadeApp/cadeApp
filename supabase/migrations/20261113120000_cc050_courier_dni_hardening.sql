@@ -254,3 +254,127 @@ $$;
 
 revoke all on function public.admin_reinstate_courier(uuid, text) from public, anon, authenticated;
 grant execute on function public.admin_reinstate_courier(uuid, text) to authenticated;
+
+-- 5. admin_decide_courier (rpc_admin_v1) con la guarda de CC-050 (PR711-H01, D1-A): solo decide postulaciones
+-- enviadas. Una cuenta pending sin enviar (por ejemplo, un reclamante de disputa) no se aprueba ni se rechaza.
+create or replace function public.admin_decide_courier(
+  p_courier_id uuid,
+  p_decision text,
+  p_reason text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor_id uuid := auth.uid();
+  v_courier_status public.courier_status;
+  v_application_submitted boolean;
+  v_decided_at timestamptz := now();
+  v_target_status public.courier_status;
+begin
+  -- H14: autenticación, rol admin y MFA (aal2) en un solo lugar
+  perform app_private.assert_admin_aal2();
+
+  if p_decision not in ('approved', 'rejected') then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  if p_decision = 'rejected' and (p_reason is null or trim(p_reason) = '') then
+    raise exception using errcode = 'P0001', message = 'REASON_REQUIRED';
+  end if;
+
+  select status, application_submitted
+  into v_courier_status, v_application_submitted
+  from public.couriers
+  where profile_id = p_courier_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'NOT_FOUND';
+  end if;
+
+  -- D03: solo desde 'pending'. CC-050: y con la postulación enviada (antes del update y del audit).
+  if v_courier_status <> 'pending' or not v_application_submitted then
+    raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
+  end if;
+
+  v_target_status := p_decision::public.courier_status;
+
+  update public.couriers
+  set
+    status = v_target_status,
+    decided_at = v_decided_at,
+    decided_by = v_actor_id
+  where profile_id = p_courier_id;
+
+  -- D02 / H10: Registrar evento en audit_log
+  insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
+  values (
+    v_actor_id,
+    'admin_decide_courier',
+    'courier',
+    p_courier_id::text,
+    jsonb_build_object('status', v_courier_status),
+    jsonb_build_object('status', v_target_status, 'reason', p_reason)
+  );
+
+  return jsonb_build_object(
+    'courierId', p_courier_id,
+    'status', v_target_status,
+    'decidedAt', to_char(v_decided_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+  );
+end;
+$$;
+
+revoke all on function public.admin_decide_courier(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.admin_decide_courier(uuid, text, text) to authenticated;
+
+-- 6. Quién reservó un DNI (PR711-H03, D2-B). El servidor calcula el HMAC del DNI verificado por soporte; la RPC
+-- devuelve solo cuenta y estado. Cada búsqueda se audita sin el hash ni el DNI. Nunca libera nada.
+create or replace function public.admin_find_courier_dni_reservation(p_dni_hmac text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor_id uuid := auth.uid();
+  v_courier_id uuid;
+  v_status public.courier_status;
+begin
+  perform app_private.assert_admin_aal2();
+
+  if p_dni_hmac is null or p_dni_hmac !~ '^[0-9a-f]{64}$' then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  select profile_id, status
+  into v_courier_id, v_status
+  from public.couriers
+  where dni_hmac = p_dni_hmac;
+
+  -- Sin el hash en ningún campo: solo si hubo coincidencia y, si la hubo, la cuenta.
+  insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
+  values (
+    v_actor_id,
+    'courier_dni_reservation_searched',
+    'courier',
+    coalesce(v_courier_id::text, 'none'),
+    null,
+    jsonb_build_object('found', v_courier_id is not null)
+  );
+
+  if v_courier_id is null then
+    return jsonb_build_object('reservation', null);
+  end if;
+
+  return jsonb_build_object(
+    'reservation', jsonb_build_object('courierId', v_courier_id, 'status', v_status)
+  );
+end;
+$$;
+
+revoke all on function public.admin_find_courier_dni_reservation(text) from public, anon, authenticated;
+grant execute on function public.admin_find_courier_dni_reservation(text) to authenticated;

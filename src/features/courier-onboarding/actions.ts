@@ -1,11 +1,11 @@
 'use server';
 
-import { createHmac } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
 import { createAdminClient } from '@/server/supabase/admin';
 import { serverEnv } from '@/server/env';
+import { computeDniHmac } from '@/server/dni-hmac';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
 import {
@@ -58,11 +58,6 @@ export async function logoutCourierAction() {
 
 export interface CourierOnboardingResult {
   readonly redirectTo: string;
-}
-
-function computeDniHmac(dni: string, secret: string): string {
-  const normalizedDni = dni.replace(/\D/g, '');
-  return createHmac('sha256', secret).update(normalizedDni).digest('hex');
 }
 
 export type DocumentValidationResult =

@@ -214,6 +214,8 @@ export interface FakeSeedCourier {
   readonly applicationSubmitted?: boolean;
   readonly submittedAt?: string | null;
   readonly hasDni?: boolean;
+  /** CC-050: hash del DNI (solo lo lee admin_find_courier_dni_reservation). */
+  readonly dniHmac?: string | null;
 }
 
 export interface FakeCourierRecord {
@@ -230,6 +232,7 @@ export interface FakeCourierRecord {
   applicationSubmitted: boolean;
   submittedAt: string | null;
   hasDni: boolean;
+  dniHmac: string | null;
 }
 
 // CC-042: vehículo del repartidor (archivedAt = borrado lógico).
@@ -532,6 +535,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   consume_courier_application_attempt: ['merchant', 'courier', 'admin'],
   admin_release_courier_dni: ['admin'],
   admin_find_courier_dispute_candidates: ['admin'],
+  admin_find_courier_dni_reservation: ['admin'],
   admin_verify_document: ['admin'],
   admin_set_subscription: ['admin'],
   admin_update_setting: ['admin'],
@@ -1371,7 +1375,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         prev?.applicationSubmitted ??
         (c.vehicleType === undefined ? (prev?.vehicleType ?? 'moto') : c.vehicleType) !== null,
       submittedAt: c.submittedAt === undefined ? (prev?.submittedAt ?? null) : c.submittedAt,
-      hasDni: c.hasDni ?? prev?.hasDni ?? false,
+      hasDni: c.hasDni ?? prev?.hasDni ?? (c.dniHmac ? true : false),
+      dniHmac: c.dniHmac === undefined ? (prev?.dniHmac ?? null) : c.dniHmac,
     });
   }
 
@@ -3427,7 +3432,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
         const courier = couriers.get(input.courierId);
         if (!courier) return err('NOT_FOUND');
-        if (courier.status !== 'pending') return err('INVALID_STATE_TRANSITION');
+        // CC-050 (PR711-H01): solo decide postulaciones enviadas.
+        if (courier.status !== 'pending' || !courier.applicationSubmitted) return err('INVALID_STATE_TRANSITION');
         courier.status = input.decision;
         return ok({
           courierId: input.courierId,
@@ -3532,6 +3538,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('INVALID_STATE_TRANSITION');
         }
         courier.hasDni = false;
+        courier.dniHmac = null;
         return ok({ courierId: input.courierId, released: true });
       }),
 
@@ -3540,10 +3547,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const lookup = input.lookup.trim();
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookup);
         const phoneDigits = isUuid ? null : lookup.replace(/\D/g, '');
+        // Como la SQL: elegible con cualquier documento (vigente o histórico); el contador solo cuenta vigentes.
         const documentsOf = (courierId: string) =>
           [...documents.values()].filter((doc) => doc.courierId === courierId && doc.isCurrent).length;
+        const hasAnyDocument = (courierId: string) =>
+          [...documents.values()].some((doc) => doc.courierId === courierId);
         const candidates = [...couriers.values()]
-          .filter((c) => c.status === 'pending' && !c.applicationSubmitted && documentsOf(c.courierId) > 0)
+          .filter((c) => c.status === 'pending' && !c.applicationSubmitted && hasAnyDocument(c.courierId))
           .filter((c) =>
             isUuid ? c.courierId.toLowerCase() === lookup.toLowerCase() : (c.phone ?? '').replace(/\D/g, '') === phoneDigits
           )
@@ -3560,6 +3570,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             documentsCount: documentsOf(c.courierId),
           }));
         return ok({ candidates });
+      }),
+
+    admin_find_courier_dni_reservation: (rawInput) =>
+      executeRpc('admin_find_courier_dni_reservation', rawInput, true, (input) => {
+        const owner = [...couriers.values()].find((c) => c.dniHmac === input.dniHmac);
+        return ok({ reservation: owner ? { courierId: owner.courierId, status: owner.status } : null });
       }),
 
     admin_verify_document: (rawInput) =>

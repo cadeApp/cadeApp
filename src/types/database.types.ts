@@ -1544,6 +1544,10 @@ export type Database = {
         Args: { p_lookup: string }
         Returns: Json
       }
+      admin_find_courier_dni_reservation: {
+        Args: { p_dni_hmac: string }
+        Returns: Json
+      }
       admin_get_merchant_publication_credits: {
         Args: { p_before_id?: number; p_limit?: number; p_merchant_id: string }
         Returns: Json

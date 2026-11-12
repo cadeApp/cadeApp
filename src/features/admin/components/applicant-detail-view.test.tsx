@@ -38,6 +38,7 @@ const mockApplicant: ApplicantDetail = {
   fullName: 'Juan Repartidor',
   status: 'pending',
   hasDni: true,
+  applicationSubmitted: true,
   phone: '3865123456',
   vehicleType: 'moto',
   vehiclePlate: 'ABC 123',
@@ -995,5 +996,24 @@ describe('CC-050 (D3-A): Liberar DNI en el detalle del postulante', () => {
 
     await waitFor(() => expect(within(dialog).getAllByRole('alert').length).toBeGreaterThan(0));
     expect(releaseCourierDniAction).not.toHaveBeenCalled();
+  });
+});
+
+describe('CC-050 (PR711-H01): una cuenta sin enviar no se decide', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('pendiente sin enviar: no muestra Aprobar ni Rechazar y explica por qué', () => {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status: 'pending', applicationSubmitted: false }} />);
+    expect(screen.queryByRole('button', { name: /aprobar repartidor/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /rechazar postulación/i })).toBeNull();
+    expect(screen.getByText(/todavía no envió el alta/i)).toBeDefined();
+  });
+
+  it('pendiente enviado: sigue mostrando Aprobar y Rechazar', () => {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status: 'pending', applicationSubmitted: true }} />);
+    expect(screen.getByRole('button', { name: /aprobar repartidor/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /rechazar postulación/i })).toBeDefined();
   });
 });

@@ -100,3 +100,45 @@ export async function adminFindCourierDisputeCandidatesRpc(
 
   return ok(parsedOutput.data);
 }
+
+type AdminFindDniReservationResult = ActionResult<
+  RpcOutput<'admin_find_courier_dni_reservation'>,
+  RpcErrorCode<'admin_find_courier_dni_reservation'> | 'INTERNAL_ERROR'
+>;
+
+/**
+ * CC-050 (PR711-H03): wrapper tipado de `public.admin_find_courier_dni_reservation(p_dni_hmac)`. Recibe el hash ya
+ * calculado en el servidor; devuelve solo cuenta y estado de quien reservó el DNI. Nunca registra el hash.
+ */
+export async function adminFindCourierDniReservationRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown
+): Promise<AdminFindDniReservationResult> {
+  const parsedInput = RPC_CONTRACTS.admin_find_courier_dni_reservation.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const { data, error } = await client.rpc('admin_find_courier_dni_reservation', {
+    p_dni_hmac: parsedInput.data.dniHmac,
+  });
+
+  if (error) {
+    const allowed: readonly string[] = RPC_CONTRACTS.admin_find_courier_dni_reservation.errorCodes;
+    const message = error.message.trim();
+    if (error.code === 'P0001' && allowed.includes(message)) {
+      return err(message as RpcErrorCode<'admin_find_courier_dni_reservation'>);
+    }
+    if (error.code === '42501' || error.code === '28000') {
+      return err('UNAUTHORIZED_ACTOR');
+    }
+    return err('INTERNAL_ERROR');
+  }
+
+  const parsedOutput = RPC_CONTRACTS.admin_find_courier_dni_reservation.outputSchema.safeParse(data);
+  if (!parsedOutput.success) {
+    return err('INTERNAL_ERROR');
+  }
+
+  return ok(parsedOutput.data);
+}
