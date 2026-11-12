@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(69);
+select plan(74);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -50,6 +50,19 @@ as $$
 begin
   set local role postgres;
   perform set_config('request.jwt.claims', '', true);
+end;
+$$;
+
+-- CC-048: filas que cambia un DML con el rol vigente (lives_ok solo no distingue 1 fila de 0).
+create function pg_temp.rows_affected(p_sql text)
+returns integer
+language plpgsql
+as $$
+declare v_rows integer;
+begin
+  execute p_sql;
+  get diagnostics v_rows = row_count;
+  return v_rows;
 end;
 $$;
 
@@ -279,12 +292,43 @@ select is(
   'admin sees all 3 delivery_requests'
 );
 
--- 18. H07 (PR54): merchant puede hacer update y dispara set_updated_at sin error de permisos
+-- 18. H07 (PR54): merchant puede hacer update de su borrador y dispara set_updated_at sin error de permisos.
+-- CC-048: el update directo solo vale en draft; updated_at parte de un valor controlado y anterior.
+select pg_temp.reset_actor();
+insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, status, updated_at)
+select '00000000-0000-0000-0000-000000000105'::uuid, pg_temp.merchant_1_id(), id, id, 'chico', 'cash', 'draft', '2020-01-01 00:00:00+00'::timestamptz
+from public.zones where active limit 1;
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
-select lives_ok(
-  'update public.delivery_requests set notes = ''updated by merchant'' where id = pg_temp.req_m1_pub_id()',
-  'merchant can update its own request and trigger set_updated_at executes without privilege error'
+select is(
+  pg_temp.rows_affected('update public.delivery_requests set notes = ''updated by merchant'' where id = ''00000000-0000-0000-0000-000000000105''::uuid'),
+  1,
+  'merchant updates exactly one row of its own draft request'
 );
+select pg_temp.reset_actor(); -- notes no tiene grant de select para authenticated (CC-023)
+select is(
+  (select notes from public.delivery_requests where id = '00000000-0000-0000-0000-000000000105'::uuid),
+  'updated by merchant',
+  'the draft update persists the new value'
+);
+select ok(
+  (select updated_at > '2020-01-01 00:00:00+00'::timestamptz from public.delivery_requests where id = '00000000-0000-0000-0000-000000000105'::uuid),
+  'set_updated_at refreshes updated_at without privilege error'
+);
+
+-- 18b. CC-048 (SEC-06): fuera de draft el update directo del comercio no cambia la fila.
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select is(
+  pg_temp.rows_affected('update public.delivery_requests set notes = ''updated by merchant'' where id = pg_temp.req_m1_pub_id()'),
+  0,
+  'merchant cannot update its published request directly (0 rows)'
+);
+select pg_temp.reset_actor();
+select is(
+  (select notes from public.delivery_requests where id = pg_temp.req_m1_pub_id()),
+  null::text,
+  'the published request keeps its original notes'
+);
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 
 -- 19. H05: profiles update legítimo permitido
 select lives_ok(
@@ -524,7 +568,12 @@ insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_z
 select '00000000-0000-0000-0000-000000000104'::uuid, pg_temp.merchant_1_id(), id, id, 'chico', 'cash'
 from public.zones where active limit 1;
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
-delete from public.delivery_requests where id = '00000000-0000-0000-0000-000000000104'::uuid;
+-- CC-048: DELETE revoked, so the direct delete raises 42501 instead of silently deleting 0 rows.
+select throws_ok(
+  'delete from public.delivery_requests where id = ''00000000-0000-0000-0000-000000000104''::uuid',
+  '42501'::char(5), null::text,
+  'CC-048: merchant has no DELETE on delivery_requests'
+);
 select is(
   (select count(*) from public.delivery_requests where id = '00000000-0000-0000-0000-000000000104'::uuid),
   1::bigint,

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(48);
+select plan(50);
 
 -- Actores para pruebas T-339
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000033a1'::uuid $$;
@@ -36,6 +36,17 @@ returns void language plpgsql as $$
 begin
   set local role postgres;
   perform set_config('request.jwt.claims', '', true);
+end;
+$$;
+
+-- CC-048: filas que cambia un DML con el rol vigente (un update filtrado por el using no da error).
+create function pg_temp.rows_affected(p_sql text)
+returns integer language plpgsql as $$
+declare v_rows integer;
+begin
+  execute p_sql;
+  get diagnostics v_rows = row_count;
+  return v_rows;
 end;
 $$;
 
@@ -197,27 +208,28 @@ select lives_ok(
   'publish_request sin precio sigue funcionando igual que antes'
 );
 
--- 11, 12: Inmutabilidad de fixed_price_ars y auto_assign por RLS fuera de draft
-select throws_ok(
-  $$
-  update public.delivery_requests
-  set fixed_price_ars = 2000
-  where id = pg_temp.req_fixed_auto();
-  $$,
-  '42501',
-  null,
-  'RLS delivery_requests_update_merchant rechaza modificar fixed_price_ars una vez publicada la solicitud'
+-- 11, 12: Inmutabilidad de fixed_price_ars y auto_assign por RLS fuera de draft.
+-- CC-048: el using draft-only deja la fila publicada fuera del update (0 filas, sin error); antes rechazaba el with check.
+select is(
+  pg_temp.rows_affected(format('update public.delivery_requests set fixed_price_ars = 2000 where id = %L', pg_temp.req_fixed_auto())),
+  0,
+  'RLS delivery_requests_update_merchant no deja modificar fixed_price_ars una vez publicada la solicitud (0 filas)'
+);
+select is(
+  (select fixed_price_ars from public.delivery_requests where id = pg_temp.req_fixed_auto()),
+  1500,
+  'fixed_price_ars conserva el valor publicado'
 );
 
-select throws_ok(
-  $$
-  update public.delivery_requests
-  set auto_assign = false
-  where id = pg_temp.req_fixed_auto();
-  $$,
-  '42501',
-  null,
-  'RLS delivery_requests_update_merchant rechaza modificar auto_assign una vez publicada la solicitud'
+select is(
+  pg_temp.rows_affected(format('update public.delivery_requests set auto_assign = false where id = %L', pg_temp.req_fixed_auto())),
+  0,
+  'RLS delivery_requests_update_merchant no deja modificar auto_assign una vez publicada la solicitud (0 filas)'
+);
+select is(
+  (select auto_assign from public.delivery_requests where id = pg_temp.req_fixed_auto()),
+  true,
+  'auto_assign conserva el valor publicado'
 );
 
 -- 13, 14: Incompatibilidad de flujos

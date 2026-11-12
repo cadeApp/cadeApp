@@ -225,8 +225,11 @@ async function run() {
     });
     requestIds.push(acceptance.requestId);
     await withSessions(async (first, second) => {
-      await first.run('ACCEPT_LOCK', `${authenticatedSessionSql(merchantId)}
+      await first.run('ACCEPT_LOCK', `
+        begin;
+        -- CC-048: el lock lo toma el owner (FOR UPDATE como authenticated exige la policy de UPDATE, solo draft).
         select id from public.delivery_requests where id = '${acceptance.requestId}' for update;
+        ${authenticatedSessionSql(merchantId).replace('begin;', '')}
       `);
       const skippedResult = await second.reconcile(
         'ACCEPT_RECONCILE',
@@ -251,8 +254,11 @@ async function run() {
     });
     requestIds.push(republish.requestId);
     await withSessions(async (first, second) => {
-      await first.run('REPUBLISH_LOCK', `${authenticatedSessionSql(merchantId)}
+      await first.run('REPUBLISH_LOCK', `
+        begin;
+        -- CC-048: el lock lo toma el owner (FOR UPDATE como authenticated exige la policy de UPDATE, solo draft).
         select id from public.delivery_requests where id = '${republish.requestId}' for update;
+        ${authenticatedSessionSql(merchantId).replace('begin;', '')}
       `);
       const skippedResult = await second.reconcile(
         'REPUBLISH_RECONCILE',
