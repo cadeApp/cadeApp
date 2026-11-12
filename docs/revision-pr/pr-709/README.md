@@ -1,4 +1,4 @@
-# PR #709 — T-434 · CC-050 · SEC-09 (rondas independientes 1 y 2)
+# PR #709 — T-434 · CC-050 · SEC-09 (rondas independientes 1, 2 y 3)
 
 | Campo | Valor |
 |---|---|
@@ -9,7 +9,7 @@
 | Head **revisado** | `68ed5ba928b1a62d3470949aafda44bae7539f59` |
 | Base comprobada | `develop@dba3314f17f2068b6ff0c7596476d81c2c92e1c1` |
 | Alcance del diff | 4 archivos, +427 líneas, exclusivamente documentales |
-| Estado | **R2: CON BLOQUEANTES (2 nuevos: H07–H08), 1 mejora H09**. H01–H06 corregidos documentalmente; no aprobar/mergear. |
+| Estado | **R3: CON BLOQUEANTES (1 nuevo: H10)**. H01–H09 verificados documentalmente; no aprobar ni mergear. |
 
 ## Rondas
 
@@ -17,6 +17,7 @@
 |---|---|---|---|
 | 1 | `68ed5ba9` | 4 bloqueantes (H01–H04), 2 mejoras (H05–H06) | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
 | 2 | `1c84e997` | H01–H06: corregidos documentalmente; **2 bloqueantes nuevos H07–H08**, mejora H09 | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
+| 3 | `b5983ed3` | H07–H09 verificados documentalmente; **H10 bloqueante nuevo** | [revisiones/ronda-3.md](revisiones/ronda-3.md) |
 
 ## Estado por hallazgo
 
@@ -29,9 +30,11 @@
 | PR709-H05 | RATE_LIMITED usa aviso genérico o semánticamente incorrecto | bajo · mejora | arreglado-verificado (documental) |
 | PR709-H06 | Dependencias/autoría de decisiones redactadas como si ya estuvieran mergeadas/expresamente aprobadas | bajo · mejora | arreglado-verificado (documental) |
 
-| PR709-H07 | TimeZone manipulable cambia window_start y permite cupos múltiples | alto · bloqueante | abierto |
-| PR709-H08 | Envelope jsonb/candidates y cast UUID sobre input telefónico no especificados | medio · bloqueante | abierto |
-| PR709-H09 | PR body y matriz de invariantes desactualizados | bajo · mejora | abierto |
+| PR709-H07 | TimeZone manipulable cambia window_start y permite cupos múltiples | alto · bloqueante | arreglado-verificado (documental) |
+| PR709-H08 | Envelope jsonb/candidates y cast UUID sobre input telefónico no especificados | medio · bloqueante | arreglado-verificado (documental) |
+| PR709-H09 | PR body y matriz de invariantes desactualizados | bajo · mejora | arreglado-verificado (documental) |
+
+| PR709-H10 | ORDER BY sobre columna inexistente `c.created_at` | alto · bloqueante | abierto |
 
 ## Decisiones recibidas ANTES del cierre
 
@@ -44,6 +47,10 @@
 ## Resultado de la ronda 2
 
 Se revisó **`1c84e9976cc5bf5655985b4f959fcf12569647b1`**. H01–H06 tienen verificación independiente **solo sobre la especificación**, con 6/6 aserciones y 6/6 mutantes en memoria. H07 requiere fijar TimeZone en la RPC; H08 fija objeto `{ candidates: [...] }` y ramificación UUID/teléfono. H09 sincroniza el cuerpo de PR y el texto «dos RPC». La PR de implementación aún no existe, por lo que no hay RED→GREEN funcional. No se corrieron scripts de `docs/revision-pr/**`.
+
+## Resultado ronda 3
+
+Contra `b5983ed3ba3d59d3deaa477ccb7d56cf2a5c3ffb`, H07–H09 resultaron correctos a nivel **documental** (3/3 controles, 3/3 mutantes detectados). **H10 nuevo bloqueante:** `couriers` carece de `created_at`; exigir `JOIN public.profiles p ON p.id=c.profile_id` y `ORDER BY p.created_at DESC,c.profile_id DESC`, con pgTAP del orden. Informe en [ronda-3.md](revisiones/ronda-3.md). Ninguna decisión nueva de producto.
 
 ## Evidencia y próxima ronda
 

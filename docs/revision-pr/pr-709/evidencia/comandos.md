@@ -204,3 +204,55 @@ node /tmp/pr709-r2-doc-assertions.mjs "$PWD"
 5. No fabricar RED/GREEN, no simular éxito por mocks que eviten RPC real, no usar test skipping, no correr Docker local ni tocar credenciales.
 
 **CI:** no se revisó como criterio de aprobación debido a dos bloqueantes. `tools 123/123` lo dice el autor, no hay reproducción del revisor. Los comandos Git `merge-tree` y `node docs/revision-pr/analizar.mjs verificacion` no se ejecutaron; el segundo está expresamente excluido por la regla de no correr scripts desde `docs/revision-pr/**`.
+---
+
+## R3 — head b5983ed3, 2026-11-12
+
+**Verificación real con conector GitHub y JS en memoria:** head exacto y base; diff R2→R3 solo 3 docs; H07–H09 3/3 comprobaciones documentales verdaderas y 3/3 mutaciones sensibles. H10 1/1 comprobación de campo inexistente respaldada por DDL/tipos/CC-044 y 1/1 mutación del alias en texto detectada. **No** se ejecutaron pgTAP, CI, Vitest, Docker ni scripts de `docs/revision-pr/**`. `tools 123/123` lo afirma el autor.
+
+### Script completo portable de los controles R3
+
+Instrumento en `/tmp`, no en `docs/revision-pr/**`. El JS original del revisor se ejecutó sobre textos recuperados por GitHub; este equivalente Node **no se ejecutó en el contenedor actual**. Reproducir solo contra el clone de `b5983ed3`:
+
+```bash
+cat > /tmp/pr709-r3-static.mjs <<'NODE'
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const root=process.argv[2]||process.cwd();
+const get=p=>readFileSync(path.join(root,p),'utf8');
+const d={
+ cc:get('docs/contracts/CC-050.md'),
+ task:get('docs/tasks/T-434.md'),
+ log:get('docs/tasks/log/T-434.md'),
+ ddl:get('supabase/migrations/20260922031435_schema_v1.sql'),
+ types:get('src/types/database.types.ts'),
+ cc044:get('supabase/migrations/20261104200100_cc044_admin_list_applicants.sql')
+};
+const checks={
+ H07:x=>x.cc.includes("date_trunc('day', now(), 'America/Argentina/Tucuman')")&&x.cc.includes('`pg_get_functiondef`')&&x.cc.includes('`America/Los_Angeles`')&&x.task.includes('`date_trunc` sin la zona fija'),
+ H08:x=>x.cc.includes("jsonb_build_object('candidates', coalesce(v_rows, '[]'::jsonb))")&&x.cc.includes('`if v_lookup ~*')&&x.cc.includes('`elsif v_lookup ~')&&x.cc.includes('`else` → `VALIDATION_ERROR`')&&x.task.includes('foo3812345678'),
+ H09:x=>x.cc.includes('Sin las tres RPC nuevas')&&x.log.includes('PR709-H09:'),
+ H10:x=>{
+  const ct=x.types.split('      couriers: {')[1]?.split('      delivery_request_contacts: {')[0]||'';
+  const cd=x.ddl.split('create table public.couriers (')[1]?.split(');')[0]||'';
+  const pd=x.ddl.split('create table public.profiles (')[1]?.split(');')[0]||'';
+  return x.cc.includes('order by c.created_at desc')&&!ct.includes('created_at:')&&!cd.includes('created_at')&&pd.includes('created_at')&&x.cc044.includes('p.created_at');
+ }
+};
+for(const [name,fn] of Object.entries(checks))assert.equal(fn(d),true,name+' baseline');
+console.log('BASELINE: 4/4 (H07–H09 correctas en docs, H10 error de campo confirmado)');
+const mutants={
+ H07:x=>({...x,cc:x.cc.replace("date_trunc('day', now(), 'America/Argentina/Tucuman')","date_trunc('day', now())")}),
+ H08:x=>({...x,cc:x.cc.replace("jsonb_build_object('candidates', coalesce(v_rows, '[]'::jsonb))","coalesce(v_rows,'[]'::jsonb)")}),
+ H09:x=>({...x,cc:x.cc.replace('Sin las tres RPC nuevas','Sin las dos RPC nuevas')}),
+ H10:x=>({...x,cc:x.cc.replace('order by c.created_at desc','order by p.created_at desc, c.profile_id desc')})
+};
+for(const [name,fn] of Object.entries(mutants))
+ assert.equal(checks[name](fn(d)),false,name+' mutación no detectada');
+console.log('MUTACIONES EN MEMORIA: 4/4 detectadas. NO son tests SQL RED/GREEN.');
+NODE
+node /tmp/pr709-r3-static.mjs "$PWD"
+```
+
+**Prueba RED futura** de `cc050_courier_dni_hardening.sql`: varias filas con fechas conocidas + empate; verificar array de IDs en orden `p.created_at DESC,c.profile_id DESC`, no solo contar filas. Mutación de alias `c.created_at` y mutación de quitar `ORDER BY` deben poner el test en rojo, y restaurar el orden correcto debe dejarlo verde. Solo para la PR de implementación.
