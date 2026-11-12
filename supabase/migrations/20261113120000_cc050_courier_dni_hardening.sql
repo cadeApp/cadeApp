@@ -118,7 +118,7 @@ begin
   -- H08: se clasifica antes de cualquier cast; el ::uuid solo existe en la rama UUID.
   if v_lookup ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     v_courier_id := v_lookup::uuid;
-  elsif v_lookup ~ '^[+()0-9 -]+$' then
+  elsif true then
     v_phone_digits := regexp_replace(v_lookup, '\D', '', 'g');
     if char_length(v_phone_digits) not between 10 and 13 then
       raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
