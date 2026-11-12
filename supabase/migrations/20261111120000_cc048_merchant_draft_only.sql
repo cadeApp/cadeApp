@@ -122,3 +122,6 @@ drop trigger if exists trg_lock_draft_contacts on public.delivery_request_contac
 create trigger trg_lock_draft_contacts
   before insert on public.delivery_request_contacts
   for each row execute function app_private.lock_draft_request_for_child_write();
+
+-- REVIEW ONLY: mutación sin set_updated_at.
+drop trigger if exists delivery_requests_set_updated_at on public.delivery_requests;
