@@ -13,3 +13,13 @@ El Route Handler protege correctamente una clave con `Buffer.length` + `crypto.t
 **Alcance de la constatación:** predicado aislado reproducido con Node; no se ejecutó Vitest contra el repo desde este entorno. En siguiente ronda ejecutar el arnés con el SHA publicado, y recién entonces marcar evidencia de mutación como verificada.
 
 **Relación con antecedentes:** `pr-56/AG-37` (enumeración de clase) y `pr-62/AG-58` (control que solo prueba un sustituto del invariante). No implica que el código de producción tenga hoy ese bypass.
+
+---
+
+## Ronda 2 — confirmación y límite del control
+
+El arreglo de H01 conserva el handler productivo sin modificaciones y añade exactamente los dos elementos que faltaban: un bypass de `CRON_SECRET` con **longitud idéntica** y un token incorrecto que altera el **último byte**. El CI ejecuta la suite real del SHA `0d5616b8` con 10/10 tests, dentro de 3872/3872.
+
+La batería **propia** de la revisión probó un mutante nuevo: comparación de todos los bytes excepto el último. Este caso es más preciso que eliminar toda comparación, porque diferencia igualdad completa de igualdad de prefijo. Dejó 200 el token inválido cuyo último byte cambia, frente a 401 del predicado correcto. **Fue una ejecución aislada con Node; no se atribuye a Vitest.**
+
+Se conserva la lección existente sin nuevo número AG. Tampoco se inventa verificación de los resultados de mutación que solo obran en la bitácora del autor. El control de tamaño y el control de contenido deben comprobarse por separado.

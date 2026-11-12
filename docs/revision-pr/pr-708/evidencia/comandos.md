@@ -124,3 +124,92 @@ node docs/revision-pr/analizar.mjs verificacion
 git diff --name-only
 # stagear SOLO docs/revision-pr/pr-708/ y respetar que los hallazgos son exclusivos del revisor
 ```
+
+---
+
+# Ronda 2 — verificación independiente del arreglo H01
+
+**SHA del código revisado:** `0d5616b8e7efa85325a2ddeda31a773f4cb838a0`. **Solo inspección de repositorio a través de GitHub y ejecución local del predicado aislado con Node**. No se ejecutó Vitest. Ningún script bajo `docs/revision-pr/**` fue ejecutado.
+
+## Diferencia exacta R1 → R2
+
+```bash
+git fetch origin
+git diff --name-only 9fa2b836cec7450826b7a880907cadf51d935c28 0d5616b8e7efa85325a2ddeda31a773f4cb838a0
+# Observado por la API compare de GitHub:
+# docs/tasks/log/T-433.md
+# src/app/api/push/send/route.test.ts
+git diff 9fa2b836cec7450826b7a880907cadf51d935c28 0d5616b8e7efa85325a2ddeda31a773f4cb838a0 -- src/app/api/push/send/route.ts
+# Vacío
+```
+
+## Arnés PROPIO del revisor, separado de la mutación del autor
+
+El script completo siguiente se creó en `/tmp/pr708-r2-independent.cjs`, **fuera del repo**. Reproduce el predicado literal de `route.ts` y los literales exactos del test en `0d5616b8`. También mide un mutante **nuevo**: ignorar únicamente el último byte de la comparación (`prefix`). No usa secretos reales, base de datos ni servicios remotos.
+
+```bash
+cat > /tmp/pr708-r2-independent.cjs <<'NODE'
+const crypto = require('node:crypto');
+const assert = require('node:assert/strict');
+const cron = 'test-cron-secret-0123456789abcdefX';
+const push = 'test-push-send-secret-0123456789ab';
+const wrong = push.slice(0,-1) + 'X';
+assert.equal(Buffer.byteLength(cron),34);
+assert.equal(Buffer.byteLength(push),34);
+assert.equal(Buffer.byteLength(wrong),34);
+assert.notEqual(cron,push);
+assert.notEqual(wrong,push);
+function allowed(header, mutate) {
+  const actual = Buffer.from(header);
+  const expected = Buffer.from('Bearer '+push);
+  return actual.length === expected.length && (mutate==='bypass'
+    ? true
+    : mutate==='prefix'
+      ? crypto.timingSafeEqual(actual.subarray(0,expected.length-1),expected.subarray(0,expected.length-1))
+      : crypto.timingSafeEqual(actual,expected));
+}
+for (const [kind, header] of [['cron','Bearer '+cron],['wrong-last-byte','Bearer '+wrong],['correct','Bearer '+push]]) {
+  const orig=allowed(header,'original') ? 200 : 401;
+  const bypass=allowed(header,'bypass') ? 200 : 401;
+  const prefix=allowed(header,'prefix') ? 200 : 401;
+  console.log(kind, 'original='+orig, 'mutant-bypass='+bypass, 'mutant-prefix='+prefix);
+}
+assert.equal(allowed('Bearer '+cron,'original'),false);
+assert.equal(allowed('Bearer '+wrong,'original'),false);
+assert.equal(allowed('Bearer '+push,'original'),true);
+assert.equal(allowed('Bearer '+cron,'bypass'),true);
+assert.equal(allowed('Bearer '+wrong,'bypass'),true);
+assert.equal(allowed('Bearer '+wrong,'prefix'),true);
+console.log('INDEPENDENT PREDICATE CHECK OK, without Route Handler/Vitest');
+NODE
+node /tmp/pr708-r2-independent.cjs
+```
+
+**Salida real del revisor:**
+
+```text
+cron original=401 mutant-bypass=200 mutant-prefix=401
+wrong-last-byte original=401 mutant-bypass=200 mutant-prefix=200
+correct original=200 mutant-bypass=200 mutant-prefix=200
+INDEPENDENT PREDICATE CHECK OK, without Route Handler/Vitest
+```
+
+Esto predice que el test nuevo se pone rojo con el mutante de solo prefijo, pero **esa predicción no se ejecutó con Vitest**; no disfrazarla como resultado del Route Handler.
+
+## Evidencia del autor, no ejecutada por el revisor
+
+- Control: `Test Files 1 passed (1)`; `Tests 10 passed (10)`.
+- Mutación `!crypto.timingSafeEqual(...) → false`: `Test Files 1 failed (1)`; `Tests 2 failed | 8 passed (10)`, casos bypass y secreto erróneo mismo largo.
+- Restore buffer: `Tests 10 passed (10)`; route.ts sin cambios (comprobado también por diff entre commits).
+- Tests generales declarados: 3872; tools declarados: 123.
+
+## GitHub CI del SHA (consulta independiente)
+
+- Run https://github.com/cadeApp/cadeApp/actions/runs/43182730559, commit `0d5616b8`.
+- `unit` con `route.test.ts (10 tests)`, `Test Files 204 passed (204)`, `Tests 3872 passed (3872)`.
+- `typecheck`, `lint`, `build`, `audit`, `bundle-budget`: SUCCESS.
+- `db-tests`: en ejecución al consultar; **no se certifica PASS**.
+- Vercel /api/push/send (build): 104 kB first load JS.
+- Se valida `hallazgos.jsonl` como JSONL con Node; el comando del proyecto `node docs/revision-pr/analizar.mjs verificacion` queda para un entorno con clon; no se ejecutó desde el repositorio aquí.
+
+**Criterio de H01:** el código publicado y su suite positiva/negativa están corregidos y el test real corre verde en CI del SHA; el mutante real de Vitest está respaldado por la bitácora del autor, mientras el revisor añadió un control independiente sobre el predicado exacto.
