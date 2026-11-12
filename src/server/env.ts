@@ -2,28 +2,41 @@ import 'server-only';
 import { z } from 'zod';
 import { requiredError } from '@/lib/zod-messages';
 
-export const serverEnvSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  SUPABASE_SERVICE_ROLE_KEY: z
-    .string(requiredError('SUPABASE_SERVICE_ROLE_KEY es obligatoria'))
-    .min(1, 'SUPABASE_SERVICE_ROLE_KEY no puede estar vacía'),
-  DNI_HMAC_SECRET: z
-    .string(requiredError('DNI_HMAC_SECRET es obligatoria'))
-    .min(16, 'DNI_HMAC_SECRET debe tener al menos 16 caracteres para seguridad criptográfica'),
-  CRON_SECRET: z
-    .string(requiredError('CRON_SECRET es obligatoria'))
-    .min(1, 'CRON_SECRET no puede estar vacía'),
-  DISCORD_ERROR_WEBHOOK_URL: z
-    .string()
-    .url('DISCORD_ERROR_WEBHOOK_URL debe ser una URL válida de Discord')
-    .optional()
-    .or(z.literal('')),
-  VAPID_PRIVATE_KEY: z.string().optional().default(''),
-  VAPID_SUBJECT: z.string().optional().default(''),
-  RPC_ADAPTER: z.enum(['real', 'fake']).optional().default('real'),
-  // CC-030: purga de huérfanos de courier-docs. Arranca en dry-run; 'enforce' lo habilita una persona por ambiente.
-  COURIER_DOCS_ORPHAN_PURGE_MODE: z.enum(['off', 'dry-run', 'enforce']).optional().default('dry-run'),
-});
+export const serverEnvSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    SUPABASE_SERVICE_ROLE_KEY: z
+      .string(requiredError('SUPABASE_SERVICE_ROLE_KEY es obligatoria'))
+      .min(1, 'SUPABASE_SERVICE_ROLE_KEY no puede estar vacía'),
+    DNI_HMAC_SECRET: z
+      .string(requiredError('DNI_HMAC_SECRET es obligatoria'))
+      .min(16, 'DNI_HMAC_SECRET debe tener al menos 16 caracteres para seguridad criptográfica'),
+    CRON_SECRET: z
+      .string(requiredError('CRON_SECRET es obligatoria'))
+      .min(32, 'CRON_SECRET debe tener al menos 32 caracteres'),
+    // T-433 (SEC-08): secreto propio de /api/push/send. Opcional: sin él la ruta rechaza todo.
+    PUSH_SEND_SECRET: z
+      .string()
+      .min(32, 'PUSH_SEND_SECRET debe tener al menos 32 caracteres')
+      .optional(),
+    DISCORD_ERROR_WEBHOOK_URL: z
+      .string()
+      .url('DISCORD_ERROR_WEBHOOK_URL debe ser una URL válida de Discord')
+      .optional()
+      .or(z.literal('')),
+    VAPID_PRIVATE_KEY: z.string().optional().default(''),
+    VAPID_SUBJECT: z.string().optional().default(''),
+    RPC_ADAPTER: z.enum(['real', 'fake']).optional().default('real'),
+    // CC-030: purga de huérfanos de courier-docs. Arranca en dry-run; 'enforce' lo habilita una persona por ambiente.
+    COURIER_DOCS_ORPHAN_PURGE_MODE: z
+      .enum(['off', 'dry-run', 'enforce'])
+      .optional()
+      .default('dry-run'),
+  })
+  .refine((env) => env.PUSH_SEND_SECRET === undefined || env.PUSH_SEND_SECRET !== env.CRON_SECRET, {
+    message: 'PUSH_SEND_SECRET tiene que ser distinta de CRON_SECRET',
+    path: ['PUSH_SEND_SECRET'],
+  });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 

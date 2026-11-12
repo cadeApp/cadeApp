@@ -13,7 +13,12 @@ const sendPushRouteSchema = z.object({
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
-  const expectedAuth = `Bearer ${serverEnv.CRON_SECRET}`;
+  // T-433 (SEC-08): secreto propio, nunca CRON_SECRET; sin configurar, la ruta queda cerrada.
+  const pushSendSecret = serverEnv.PUSH_SEND_SECRET;
+  if (!pushSendSecret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const expectedAuth = `Bearer ${pushSendSecret}`;
 
   if (!authHeader) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
