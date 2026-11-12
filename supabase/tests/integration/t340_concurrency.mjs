@@ -861,6 +861,398 @@ async function run() {
     }
 
     console.log('[H14] TODOS LOS ESCENARIOS DE MARCAS CONCURRENTES COMPLETADOS EXITOSAMENTE (3/3).');
+
+    // =========================================================================
+    // SECCIÓN 3: CC-048 (T-430) — Escrituras directas del comercio frente a publish_request
+    // =========================================================================
+    const asMerchant = `
+          set role authenticated;
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);`;
+
+    // Solicitud legacy de 0 drops con los campos obligatorios listos; con o sin contacto completo.
+    function createLegacyFixture(withContact) {
+      const reqId = crypto.randomUUID();
+      createdRequests.push(reqId);
+      runSql(`
+        delete from public.rate_limits where subject = '${merchantId}';
+
+        insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status, drops_count)
+        values ('${reqId}', '${merchantId}', '${zoneId}', '${zoneId}', 'chico', 'transfer', false, 'draft', 0);
+      `);
+      if (withContact) {
+        runSql(`
+          insert into public.delivery_request_contacts (request_id, pickup_address, pickup_lat, pickup_lng, dropoff_address, dropoff_lat, dropoff_lng, recipient_name, recipient_phone, recipient_consent_declared)
+          values ('${reqId}', 'Calle San Martín 123, Aguilares', -27.4330, -65.6150, 'Dirección legacy', -27.4250, -65.6080, 'Destinatario legacy', '+543865000099', true);
+        `);
+      }
+      return reqId;
+    }
+
+    function noDeadlock(...sessions) {
+      for (const s of sessions) {
+        assert.ok(!s.output.includes('deadlock detected'), `[CC-048][${s.label}] no debe aparecer 40P01 (deadlock):\n${s.output}`);
+      }
+    }
+
+    console.log('[CC-048] Escenario 8A: update adverso de contacto (H03) con solicitud legacy de 0 drops...');
+    {
+      const reqId = createLegacyFixture(true);
+      const sB = new PsqlSession('B_LOCK_PUBLISH');
+      const sA = new PsqlSession('A_UPDATE_CONTACT');
+      await sB.initPid();
+      await sA.initPid();
+      try {
+        // B toma el lock de la solicitud como owner antes de publicar.
+        sB.send(`
+          begin;
+          select id from public.delivery_requests where id = '${reqId}' for update;
+          \\echo B_LOCKED
+        `);
+        await sB.waitFor('B_LOCKED');
+
+        sA.send(`
+          begin;
+          ${asMerchant}
+          update public.delivery_request_contacts set dropoff_address = 'Dirección adversa' where request_id = '${reqId}';
+          commit;
+          \\echo A_DONE
+        `);
+        await waitForBlockedLock(sB.pid, sA.pid);
+
+        sB.send(`
+          ${asMerchant}
+          select public.publish_request('${reqId}');
+          commit;
+          \\echo B_DONE
+        `);
+        await sB.waitFor('B_DONE');
+        await sA.waitFor('A_DONE');
+        noDeadlock(sA, sB);
+
+        assert.ok(sA.output.includes('UPDATE 0'), `[CC-048] el UPDATE de A debe cambiar 0 filas:\n${sA.output}`);
+        assert.equal(runSql(`select status from public.delivery_requests where id = '${reqId}';`), 'published');
+        assert.equal(
+          runSql(`select dropoff_address from public.delivery_request_contacts where request_id = '${reqId}';`),
+          'Dirección legacy',
+          'el contacto conserva el valor publicado'
+        );
+        assert.equal(
+          runSql(`select c.dropoff_address from public.delivery_request_drop_contacts c join public.delivery_request_drops d on d.id = c.drop_id where d.request_id = '${reqId}';`),
+          'Dirección legacy',
+          'la publicación copia el contacto confirmado a la entrega'
+        );
+        console.log('       -> OK (A esperó el lock de la solicitud, B publicó, A cambió 0 filas, sin 40P01)');
+      } finally {
+        await sA.close();
+        await sB.close();
+      }
+    }
+
+    console.log('[CC-048] Escenario 8B: update de contacto primero con solicitud legacy de 0 drops...');
+    {
+      const reqId = createLegacyFixture(true);
+      const sA = new PsqlSession('A_UPDATE_CONTACT_FIRST');
+      const sB = new PsqlSession('B_PUBLISH_AFTER');
+      await sA.initPid();
+      await sB.initPid();
+      try {
+        sA.send(`
+          begin;
+          ${asMerchant}
+          update public.delivery_request_contacts set dropoff_address = 'Dirección corregida' where request_id = '${reqId}';
+          \\echo A_UPDATED
+        `);
+        await sA.waitFor('A_UPDATED');
+        assert.ok(sA.output.includes('UPDATE 1'), `[CC-048] en draft el UPDATE de A debe cambiar 1 fila:\n${sA.output}`);
+
+        sB.send(`
+          begin;
+          ${asMerchant}
+          select public.publish_request('${reqId}');
+          commit;
+          \\echo B_DONE
+        `);
+        await waitForBlockedLock(sA.pid, sB.pid);
+
+        sA.send(`
+          commit;
+          \\echo A_COMMITTED
+        `);
+        await sA.waitFor('A_COMMITTED');
+        await sB.waitFor('B_DONE');
+        noDeadlock(sA, sB);
+
+        assert.equal(runSql(`select status from public.delivery_requests where id = '${reqId}';`), 'published');
+        assert.equal(
+          runSql(`select c.dropoff_address from public.delivery_request_drop_contacts c join public.delivery_request_drops d on d.id = c.drop_id where d.request_id = '${reqId}';`),
+          'Dirección corregida',
+          'la publicación usa el contacto actualizado'
+        );
+        console.log('       -> OK (B esperó el update de A y publicó el contacto actualizado)');
+      } finally {
+        await sA.close();
+        await sB.close();
+      }
+    }
+
+    console.log('[CC-048] Escenario 8C: update de contacto frente a publish_request con entregas (sin lock del contacto)...');
+    {
+      const { reqId } = createDraftFixture(1);
+      const sB = new PsqlSession('B_PUBLISH_MULTI');
+      const sA = new PsqlSession('A_UPDATE_PICKUP');
+      await sB.initPid();
+      await sA.initPid();
+      try {
+        sB.send(`
+          begin;
+          ${asMerchant}
+          select public.publish_request('${reqId}');
+          \\echo B_PUBLISHED
+        `);
+        await sB.waitFor('B_PUBLISHED');
+
+        sA.send(`
+          begin;
+          ${asMerchant}
+          update public.delivery_request_contacts set pickup_address = 'Retiro cambiado' where request_id = '${reqId}';
+          commit;
+          \\echo A_DONE
+        `);
+        await waitForBlockedLock(sB.pid, sA.pid);
+
+        sB.send(`
+          commit;
+          \\echo B_COMMITTED
+        `);
+        await sB.waitFor('B_COMMITTED');
+        await sA.waitFor('A_DONE');
+        noDeadlock(sA, sB);
+
+        assert.ok(sA.output.includes('UPDATE 0'), `[CC-048] el UPDATE de A debe cambiar 0 filas:\n${sA.output}`);
+        assert.equal(runSql(`select status from public.delivery_requests where id = '${reqId}';`), 'published');
+        assert.equal(
+          runSql(`select pickup_address from public.delivery_request_contacts where request_id = '${reqId}';`),
+          'Calle San Martín 123, Aguilares',
+          'el retiro conserva el valor publicado'
+        );
+        console.log('       -> OK (A esperó la publicación y cambió 0 filas)');
+      } finally {
+        await sA.close();
+        await sB.close();
+      }
+    }
+
+    console.log('[CC-048] Escenario 9A: insert de contacto primero con solicitud legacy de 0 drops sin contacto...');
+    {
+      const reqId = createLegacyFixture(false);
+      const sA = new PsqlSession('A_INSERT_CONTACT_FIRST');
+      const sB = new PsqlSession('B_PUBLISH_AFTER_INSERT');
+      await sA.initPid();
+      await sB.initPid();
+      try {
+        sA.send(`
+          begin;
+          ${asMerchant}
+          insert into public.delivery_request_contacts (request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared)
+          values ('${reqId}', 'Calle San Martín 123, Aguilares', 'Dirección insertada', 'Destinatario insertado', '+543865000098', true);
+          \\echo A_INSERTED
+        `);
+        await sA.waitFor('A_INSERTED');
+
+        sB.send(`
+          begin;
+          ${asMerchant}
+          select public.publish_request('${reqId}');
+          commit;
+          \\echo B_DONE
+        `);
+        await waitForBlockedLock(sA.pid, sB.pid);
+
+        sA.send(`
+          commit;
+          \\echo A_COMMITTED
+        `);
+        await sA.waitFor('A_COMMITTED');
+        await sB.waitFor('B_DONE');
+        noDeadlock(sA, sB);
+
+        assert.equal(runSql(`select status from public.delivery_requests where id = '${reqId}';`), 'published');
+        assert.equal(
+          runSql(`select c.dropoff_address from public.delivery_request_drop_contacts c join public.delivery_request_drops d on d.id = c.drop_id where d.request_id = '${reqId}';`),
+          'Dirección insertada',
+          'la publicación usa el contacto insertado'
+        );
+        console.log('       -> OK (B esperó el insert de A y publicó con el contacto insertado)');
+      } finally {
+        await sA.close();
+        await sB.close();
+      }
+    }
+
+    console.log('[CC-048] Escenario 9B: guarda estática del insert sobre una solicitud publicada sin contacto...');
+    {
+      const reqId = createLegacyFixture(false);
+      runSql(`update public.delivery_requests set status = 'published', published_at = now(), expires_at = now() + interval '30 minutes' where id = '${reqId}';`);
+      const sA = new PsqlSession('A_INSERT_PUBLISHED');
+      try {
+        sA.send(`
+          begin;
+          ${asMerchant}
+          insert into public.delivery_request_contacts (request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared)
+          values ('${reqId}', 'Calle San Martín 123, Aguilares', 'Dirección intrusa', 'Intruso', '+543865000097', true);
+          \\echo A_DONE
+        `);
+        await sA.waitFor('INVALID_STATE_TRANSITION');
+        assert.ok(!sA.output.includes('A_DONE'), 'el insert no debe completarse');
+        assert.equal(runSql(`select count(*)::int from public.delivery_request_contacts where request_id = '${reqId}';`), '0');
+        console.log('       -> OK (INVALID_STATE_TRANSITION, sin fila de contacto)');
+      } finally {
+        await sA.close();
+      }
+    }
+
+    console.log('[CC-048] Escenario 9C: carrera sintética (no es la RPC real): el owner publica, el insert espera...');
+    {
+      const reqId = createLegacyFixture(false);
+      const sB = new PsqlSession('B_OWNER_TRANSITION');
+      const sA = new PsqlSession('A_INSERT_WAITS');
+      await sB.initPid();
+      await sA.initPid();
+      try {
+        sB.send(`
+          begin;
+          select id from public.delivery_requests where id = '${reqId}' for update;
+          update public.delivery_requests set status = 'published', published_at = now(), expires_at = now() + interval '30 minutes' where id = '${reqId}';
+          \\echo B_TRANSITIONED
+        `);
+        await sB.waitFor('B_TRANSITIONED');
+
+        sA.send(`
+          begin;
+          ${asMerchant}
+          insert into public.delivery_request_contacts (request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared)
+          values ('${reqId}', 'Calle San Martín 123, Aguilares', 'Dirección tardía', 'Tardío', '+543865000096', true);
+          commit;
+          \\echo A_DONE
+        `);
+        // La espera se registra sin cortar: si falta el trigger, primero se ve la fila prohibida.
+        let waited = true;
+        try {
+          await waitForBlockedLock(sB.pid, sA.pid);
+        } catch {
+          waited = false;
+        }
+
+        sB.send(`
+          commit;
+          \\echo B_COMMITTED
+        `);
+        await sB.waitFor('B_COMMITTED');
+        await sA.waitFor(/INVALID_STATE_TRANSITION|A_DONE|ERROR/);
+        await new Promise((r) => setTimeout(r, 200));
+        noDeadlock(sA, sB);
+
+        assert.equal(
+          runSql(`select count(*)::int from public.delivery_request_contacts where request_id = '${reqId}';`),
+          '0',
+          'no puede quedar un contacto insertado por el comercio en una solicitud publicada'
+        );
+        assert.ok(sA.output.includes('INVALID_STATE_TRANSITION'), `[CC-048] A debe fallar con INVALID_STATE_TRANSITION:\n${sA.output}`);
+        assert.ok(waited, '[CC-048] A debe haber esperado el lock de la solicitud (pg_blocking_pids)');
+        console.log('       -> OK (A esperó la transición del owner y falló con INVALID_STATE_TRANSITION, sin fila)');
+      } finally {
+        await sA.close();
+        await sB.close();
+      }
+    }
+
+    console.log('[CC-048] Escenario 10A: update directo de delivery_requests frente a publish_request (publicación primero)...');
+    {
+      const { reqId } = createDraftFixture(1);
+      const sB = new PsqlSession('B_PUBLISH_REQ');
+      const sA = new PsqlSession('A_UPDATE_REQ');
+      await sB.initPid();
+      await sA.initPid();
+      try {
+        sB.send(`
+          begin;
+          ${asMerchant}
+          select public.publish_request('${reqId}');
+          \\echo B_PUBLISHED
+        `);
+        await sB.waitFor('B_PUBLISHED');
+
+        sA.send(`
+          begin;
+          ${asMerchant}
+          update public.delivery_requests set notes = 'Nota tardía' where id = '${reqId}';
+          commit;
+          \\echo A_DONE
+        `);
+        await waitForBlockedLock(sB.pid, sA.pid);
+
+        sB.send(`
+          commit;
+          \\echo B_COMMITTED
+        `);
+        await sB.waitFor('B_COMMITTED');
+        await sA.waitFor('A_DONE');
+        noDeadlock(sA, sB);
+
+        assert.ok(sA.output.includes('UPDATE 0'), `[CC-048] el UPDATE de A debe cambiar 0 filas:\n${sA.output}`);
+        assert.equal(runSql(`select status from public.delivery_requests where id = '${reqId}';`), 'published');
+        assert.equal(runSql(`select coalesce(notes, '<null>') from public.delivery_requests where id = '${reqId}';`), '<null>');
+        console.log('       -> OK (A esperó la publicación y cambió 0 filas)');
+      } finally {
+        await sA.close();
+        await sB.close();
+      }
+    }
+
+    console.log('[CC-048] Escenario 10B: update directo de delivery_requests primero, después publish_request...');
+    {
+      const { reqId } = createDraftFixture(1);
+      const sA = new PsqlSession('A_UPDATE_REQ_FIRST');
+      const sB = new PsqlSession('B_PUBLISH_REQ_AFTER');
+      await sA.initPid();
+      await sB.initPid();
+      try {
+        sA.send(`
+          begin;
+          ${asMerchant}
+          update public.delivery_requests set notes = 'Nota en borrador' where id = '${reqId}';
+          \\echo A_UPDATED
+        `);
+        await sA.waitFor('A_UPDATED');
+        assert.ok(sA.output.includes('UPDATE 1'), `[CC-048] en draft el UPDATE de A debe cambiar 1 fila:\n${sA.output}`);
+
+        sB.send(`
+          begin;
+          ${asMerchant}
+          select public.publish_request('${reqId}');
+          commit;
+          \\echo B_DONE
+        `);
+        await waitForBlockedLock(sA.pid, sB.pid);
+
+        sA.send(`
+          commit;
+          \\echo A_COMMITTED
+        `);
+        await sA.waitFor('A_COMMITTED');
+        await sB.waitFor('B_DONE');
+        noDeadlock(sA, sB);
+
+        assert.equal(runSql(`select status from public.delivery_requests where id = '${reqId}';`), 'published');
+        assert.equal(runSql(`select notes from public.delivery_requests where id = '${reqId}';`), 'Nota en borrador');
+        console.log('       -> OK (B esperó el update de A y publicó con la nota confirmada)');
+      } finally {
+        await sA.close();
+        await sB.close();
+      }
+    }
+
+    console.log('[CC-048] TODOS LOS ESCENARIOS DE ESCRITURA DIRECTA COMPLETADOS EXITOSAMENTE (8/8).');
   } finally {
     // Limpieza de fixtures
     if (createdRequests.length > 0) {
