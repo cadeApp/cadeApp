@@ -9,17 +9,19 @@
 | Código GREEN anterior | `6beb2104d83fe01af826df09af2898e9869d2e57` |
 | Resultado R1 | **CON BLOQUEANTES (3)**; 1 mejora a implementar; H04 retirado |
 | Decisiones | D1-A y D2-B: **selecciones automáticas recomendadas bajo autorización permanente**; NO elecciones expresas de Lautaro en esta sesión |
-| Estado | Revisión R1 cerrada en el SHA anterior; falta implementación y una R2 independiente. No aprobar ni mergear. |
+| Estado | R2 cerrada contra 27dd4143 (código 0eef5a0f): H01/H02/H03/H05 corregidos por inspección y CI del autor; H06/H07 BLOQUEANTES. Falta R3 independiente. No aprobar ni mergear. |
 
 ## Rondas
 
 | Ronda | SHA | Informe |
 |---|---|---|
 | 1 | `0d6ee1fc` | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `27dd4143` (código `0eef5a0f`) | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
 
 ## Archivos
 
-- [Informe y prompt de corrección](revisiones/ronda-1.md)
+- [Informe y prompt de corrección R1](revisiones/ronda-1.md)
+- [Informe y prompt de corrección R2](revisiones/ronda-2.md)
 - [Hallazgos estructurados](hallazgos.jsonl)
 - [Evidencia y comandos de inspección](evidencia/comandos.md)
 - [Lecciones](lecciones.md)
@@ -29,3 +31,7 @@
 ## Rectificación de H04
 
 La alteración de `docs/revision-pr/pr-709/` se originó en `f9741d3439b15b96218e64b051bc3bd99f0d9891` (autor Git: Lautaro Emanuel Jimenez, corrección 20→19), incorporado mediante el merge `5baba42f1926f2179b09c41dc6f52286870c758b`. No fue una edición originada por el agy durante la implementación de T-434. **H04 queda retirado, sin registro como hallazgo abierto y sin pedir revert.**
+
+## Estado R2 (2026-11-12)
+
+Resultado: **CON BLOQUEANTES (2)** nuevos: H06 (resultados de disputa obsoletos) y H07 (vía `admin_reinstate_courier` sobre postulaciones no enviadas). H01, H02, H03 y H05 se observan corregidos por inspección del código y CI verde del autor; no se reejecutó Postgres ni Vitest independientemente, por eso quedan `arreglado-sin-verificar` en el JSONL. Ronda R1 inmutable. [Evidencia R2](evidencia/comandos.md#ronda-2--27dd4143--implementación-0eef5a0f).

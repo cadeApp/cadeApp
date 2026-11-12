@@ -15,3 +15,14 @@
 - H05: fake con sólo documentos históricos, contador 0, mutación `isCurrent` detectada.
 - CI `6beb2104` es evidencia del autor sobre versión previa; nunca reportarla como reejecución propia.
 - **No proponer una AG numerada nueva** hasta recorrer todas las ramas remotas como indica el protocolo.
+
+
+## Ronda 2 — errores que no cubrió la ronda anterior
+
+6. **La navegación no es una transacción de verificación de identidad.** H06 muestra una nueva clase: tras mover una búsqueda a estado cliente con Server Action, el resultado puede pertenecer a otra entrada. Tests de POST/estado vacío/seguridad del hash no prueban *identidad temporal* del resultado. Cada respuesta asincrónica debe estar atada a la petición y los datos que la originaron. Relacionado con `P06-enumeracion-incompleta` y `pr-68/AG-74` (invariantes atómicos).
+7. **Enumerar todas las rutas que producen el estado protegido.** H07: arreglamos `admin_decide_courier` pero no examinamos `admin_reinstate_courier` como segundo camino a `approved`, aunque el propio SQL se redeclaraba en la misma migración. La revisión R1 fue incompleta. Recorrer todos los setters de estado, no sólo la ruta recién expuesta por UI. Relacionado con `pr-56/AG-37` y `P06-enumeracion-incompleta`.
+8. **Green de una suite puede probar una propiedad incorrecta.** `cc034_admin_reinstate_courier.sql` tiene un «reconsiderar» positivo que manda a approved un rechazado con `application_submitted=false`. La fixture debe representar el camino real para el éxito y conservar también el negativo. No borrar aserciones para recuperar GREEN. Relacionado con `P05-semantica-invertida-vs-dod`.
+9. **Auditoría de datos sensibles y autorizaciones:** R2 confirma por código y logs que la nueva RPC hace `assert_admin_aal2()`, no devuelve ni audita hash y no libera; las mutaciones del autor tienen aserciones nominadas que fallan. Sin ejecutar prueba propia de DB, el estado estructurado no debe vender esto como verificación independiente.
+10. **Disciplina de autoría conservada:** el autor no alteró los cinco archivos del revisor desde R1. Guardar la ronda nueva aparte y preservar el R1 y H04 retirado.
+
+Sin numerar nuevas reglas AG: desde este entorno no se enumeraron todas las ramas remotas como exige el protocolo. Proponer regla nueva sólo tras contrastar evidencia de otras PR.
