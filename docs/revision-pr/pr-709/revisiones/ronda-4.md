@@ -52,7 +52,7 @@ Conserva:
 | `rate_limits` | `subject`, `action`, `window_start`, `count` |
 | `audit_log` | `actor_id`, `action`, `target_type`, `target_id`, `before`, `after` |
 
-**20/20 referencias** existentes en `database.types.ts`. Además, el `schema_v1.sql` confirma `profiles.created_at` y ausencia de fecha propia en `couriers`, y `cc044_admin_list_applicants.sql` utiliza el mismo join. La prueba exige 11 coincidencias, dos empatadas y UUIDs conocidos, y **secuencia exacta** (no solo longitud 10). **Mutaciones futuras**: reemplazar `p.created_at` por `c.created_at` y eliminar `ORDER BY`; deberán fallar de forma genuina en pgTAP de la PR de implementación.
+**19/19 referencias** existentes en `database.types.ts`. Además, el `schema_v1.sql` confirma `profiles.created_at` y ausencia de fecha propia en `couriers`, y `cc044_admin_list_applicants.sql` utiliza el mismo join. La prueba exige 11 coincidencias, dos empatadas y UUIDs conocidos, y **secuencia exacta** (no solo longitud 10). **Mutaciones futuras**: reemplazar `p.created_at` por `c.created_at` y eliminar `ORDER BY`; deberán fallar de forma genuina en pgTAP de la PR de implementación.
 
 **Resultado H10:** `arreglado-verificado` en `hallazgos.jsonl`, `verificado_en_sha=1a0b53d6caeb028f471182ed9055896ceb3cd593`, método **estático independiente**. Sin falsificar SQL ejecutado.
 
