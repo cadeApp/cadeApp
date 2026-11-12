@@ -1,34 +1,21 @@
 # Revisión independiente — PR #698 / T-432 / CC-049
 
 - **PR:** https://github.com/cadeApp/cadeApp/pull/698 · **Autor:** @Lautaro073
-- **Rama:** `feat/T-432-sec07-push-hardening` → `develop`.
-- **Base auditada:** `28de2b98dd4f1bff6320a4b313748359293025b2`.
-- **Head revisado en ronda 1:** `e77beb59c753b36584d0bf504a3181dcb89515c9` (código en `c26f7673`; último commit solo bitácora).
-- **Estado de ronda 1:** **CON 2 BLOQUEANTES de cobertura; D01-A aceptada; sin decisiones pendientes.** La PR no está aprobada ni mergeada.
-- **Concurrencia:** antes de guardar este informe el autor publicó `71b5f3b2`, que agrega pruebas para H01/H02 y actualiza bitácora. **No se incluyen como verificadas** en la ronda sobre `e77beb59`; requieren ronda 2 sobre el SHA nuevo.
+- **Rama:** `feat/T-432-sec07-push-hardening` → `develop` (base `28de2b98dd4f1bff6320a4b313748359293025b2`).
+- **Ronda 1:** `e77beb59` → dos bloqueantes de cobertura, [informe](revisiones/ronda-1.md).
+- **Ronda 2:** `69fdfd852873bb01bf7cc2411f3cf1a7bea091b8` → **H01/H02 corregidos y verificados con harness independiente aislado + CI unit**. [Informe de ronda 2](revisiones/ronda-2.md).
+- **Estado global:** **SIN BLOQUEANTES DE CÓDIGO DE T-432 PENDIENTES, PERO NO APTO PARA MERGE: build falló en CI del SHA revisado** (`next/font` Montserrat, sin atribución causal a esta PR). `bundle-budget` skipped. Requiere CI GREEN posterior para cerrar el gate.
 
-## Rondas
-
-| Ronda | SHA revisado | Estado | Documento |
-|---|---|---|---|
-| 1 | `e77beb59` | H01 y H02 abiertos en el SHA auditado | [Informe](revisiones/ronda-1.md) |
-
-## Hallazgos
-
-| ID | Severidad | Estado |
+| ID | Hallazgo | Estado |
 |---|---|---|
-| PR698-H01 · JSON de intento bloqueado sin endpoint no probado por route | Alto | Abierto en `e77beb59`; posible arreglo `71b5f3b2` sin verificar |
-| PR698-H02 · 3xx no incluido en matriz de contadores del emisor | Alto | Abierto en `e77beb59`; posible arreglo `71b5f3b2` sin verificar |
-| PR698-A01 · ampliación whitelist `cc040-announcements.test.ts` | Decisión | **Aceptada D01-A por Lautaro073** |
+| PR698-H01 | Intento `blocked` sin `endpoint` en JSON de `/api/push/send` | **Arreglado-verificado** en `69fdfd85` (aislado, con límites declarados) |
+| PR698-H02 | 3xx contado como fallo sin baja en emisor | **Arreglado-verificado** en `69fdfd85` (aislado, con límites declarados) |
+| PR698-A01 / D01-A | Whitelist de `cc040-announcements.test.ts` | **Aceptada**; según bitácora, el agente la tomó automáticamente con autorización permanente declarada; **no fue elección expresa de Lautaro073 en esa sesión**. Fe de erratas respecto de ronda 1. |
 
-## Evidencia
+**CI 69fdfd85:** [run 43172625497](https://github.com/cadeApp/cadeApp/actions/runs/43172625497) — unit **204/3864** PASS; db-tests **46/3858** PASS con preservación; typecheck, lint, audit PASS; **build FAIL** (`next/font`), bundle-budget SKIPPED. No se presume GREEN global.
 
-- Código GREEN `c26f7673`: [CI 43165418123](https://github.com/cadeApp/cadeApp/actions/runs/43165418123) — 204/204 suites, 3860/3860 Vitest; 46/46 archivos y 3858/3858 pgTAP, CC-049 57/57 y preservación E01/E08; typecheck/lint/build/audit/bundle-budget exitosos.
-- Pre-migración RED [43164852008](https://github.com/cadeApp/cadeApp/actions/runs/43164852008): CC-049 19/21 fallidos antes de que el helper ausente cortara la suite.
-- Mutaciones #699–#706: 8 runs fallidos por las propiedades declaradas; PRs cerradas sin merge. **Son evidencia del autor, no una batería propia.**
-- Inspección propia del diff, contrato, ficha desde `develop`, bitácora, tests y logs. El entorno no pudo clonar el repo por DNS; no se corrieron checks ni mutaciones H01/H02 locales, ni `git merge-tree`. La condición de `verificado_en_sha` de ambos queda `null`.
-- No presumir gate E2E preview verde antes de la migración en Develop.
+**Evidencia propia:** un harness Node (script completo en [comandos.md](evidencia/comandos.md)) compiló fragmentos exactos de `POST` y `sendPushNotification` obtenidos de la fuente del SHA. Baseline GREEN, H01 leak RED, H02 cambio `<300`→`<400` RED solo en 300/302/399, restaurado GREEN. Es un ensayo de **funciones aisladas**, no Vitest local ni Next real. Los mutantes Vitest 1/54 y 3/52 son reportados por el autor en bitácora, no repetidos por el revisor.
 
-[Datos estructurados](hallazgos.jsonl) · [Evidencia y comandos](evidencia/comandos.md) · [Lecciones](lecciones.md).
+**Próxima acción:** se disparará automáticamente CI nuevo por el commit de estos documentos. Revisar que `build` y `bundle-budget` terminen GREEN. Si vuelve a fallar `next/font`, reejecutar manualmente el job o investigar fuera del alcance de esta PR con autorización previa. No aprobar/mergear antes. Revisiones/documentación no deben alterar código de producto.
 
-**Siguiente:** ejecutar mutaciones independientes H01/H02 en la rama actual, verificar correcciones en ronda 2; Lautaro073 conserva aprobación/merge.
+[Hallazgos estructurados](hallazgos.jsonl) · [Lecciones](lecciones.md) · [Evidencia y script completo](evidencia/comandos.md).
