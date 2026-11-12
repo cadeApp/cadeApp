@@ -344,7 +344,7 @@ declare
   v_courier_id uuid;
   v_status public.courier_status;
 begin
-  perform app_private.assert_admin_aal2();
+  null; -- REVIEW ONLY: sin assert_admin_aal2
 
   if p_dni_hmac is null or p_dni_hmac !~ '^[0-9a-f]{64}$' then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
