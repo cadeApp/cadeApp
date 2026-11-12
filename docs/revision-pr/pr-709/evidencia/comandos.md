@@ -115,3 +115,92 @@ grep -E 'Test Files|Tests|passed|failed' /tmp/pr709-tools.log | tail -10
 - M10: dos consumos simultáneos conservan conteo sin overflow aceptado. Mutación convertir upsert atómico a `select`/`update` separados, test de concurrencia rojo.
 
 **Condición para certificar:** en la segunda ronda reproducir las salidas de test y CI exact-head, examinar mocks y resultado del caso semántico, no copiar «esperado rojo» de bitácora. Nunca inventar `Tests failed`.
+---
+
+## Ronda 2 — inspección del head 1c84e997 (2026-11-12)
+
+**Origen:** conector GitHub, contenido completo de CC-050, T-434, fila T-434 del plan y log del SHA. `develop` continúa en `dba3314f`. Comparación desde `d74611f`: un commit, cuatro documentos. La carpeta de revisión seguía sin cambios.
+
+**Aserciones independientes ejecutadas directamente sobre los textos recuperados (no usando `docs/revision-pr/**`):** 6/6 PASS para las correcciones H01–H06. **Mutaciones en memoria:** 6/6 controles cambian de verdadero a falso al retirar una cláusula propia. No son tests RED→GREEN de PostgreSQL ni del código que aún no existe. El arnés previo de `evidencia/comandos.md` **no fue ejecutado**.
+
+**Control de seguridad nuevo (H07):** calculado independientemente con `Intl.DateTimeFormat` para el instante `2026-11-12T17:00:00Z`. Inicios de día: UTC=`00:00Z`; Tucumán=`03:00Z`; Los Ángeles=`08:00Z`. La fuente contractual contiene `date_trunc('day', now())` sin tercer parámetro. La documentación de PostgreSQL establece que depende del `TimeZone` de sesión; PostgREST documenta `Prefer: timezone`. No hubo prueba contra instancia ni endpoint real. Fuentes:
+- https://www.postgresql.org/docs/16/functions-datetime.html
+- https://docs.postgrest.org/en/v12/references/api/preferences.html#timezone
+
+**Control de contratos H08:** `CC-050:135` indica `returns jsonb`, `:144` «hasta 10 filas»; `:174` requiere objeto `{ candidates: array }`. `:142` menciona cast `p_lookup::uuid` o teléfono en el mismo paso, sin prohibir evaluar cast en rama telefónica. La ruta real aun NO existe: defecto por ambigüedad documental, no crash observado.
+
+**Control H09:** `CC-050:220` mantiene «dos RPC», mientras `:3-8` lista tres; cuerpo PR viejo solo enumera D1–D3 y conserva «revisión independiente pendiente».
+
+### Harness del revisor R2 (copiar a /tmp; NO ejecutar desde docs/revision-pr)
+
+Se conserva el control completo aquí para reproducción con un clone en `1c84e997`. **La ejecución independiente original se hizo sobre strings entregados por GitHub mediante JS del conector; este fichero Node de /tmp no se ejecutó en la presente sesión.** No modificar ni parchear la copia del repo para conseguir verde.
+
+```bash
+cat > /tmp/pr709-r2-doc-assertions.mjs <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+const root = process.argv[2] || process.cwd();
+const get = p => readFileSync(path.join(root, p), 'utf8');
+const docs = {
+  cc: get('docs/contracts/CC-050.md'),
+  task: get('docs/tasks/T-434.md'),
+  plan: get('docs/implementation-plan.md').split('\n').find(s=>s.startsWith('| T-434 |')) || '',
+  log: get('docs/tasks/log/T-434.md'),
+};
+const checks = {
+  H01(d) {return /### 3b\. Búsqueda/.test(d.cc)&&d.cc.includes('admin_find_courier_dispute_candidates')&&d.cc.includes('phoneMasked')&&d.cc.includes('application_submitted = false')&&d.task.includes('dispute-candidates.tsx')&&d.plan.includes('dispute-candidates');},
+  H02(d) {return d.cc.includes('courier_dni_released')&&d.cc.includes('AUDIT_REASON_ACTIONS')&&d.cc.includes('AUDIT_CHANGE_FIELDS')&&d.task.includes('audit-format.test.ts');},
+  H03(d) {return d.cc.includes('Cinco veces seguidas')&&d.cc.includes('sexto consumo da '+String.fromCharCode(96)+'RATE_LIMITED')&&d.task.includes('exactamente un audit');},
+  H04(d) {return d.cc.includes('buildSupportWhatsAppHref')&&d.cc.includes('supportWhatsAppHref: string | null')&&d.task.includes('/vehicle/page.test.tsx');},
+  H05(d) {return d.cc.includes('Alcanzaste el máximo de 5 intentos')&&d.plan.includes('actions,actions.test,copy');},
+  H06(d) {return d.task.includes('Dependencias existentes en develop')&&d.cc.includes('No fueron una elección expresa')&&d.log.includes('no fueron una elección expresa');},
+};
+for (const [id, check] of Object.entries(checks)) {
+  assert.equal(check(docs), true, id+' baseline no documenta la corrección');
+}
+console.log('BASELINE R2: 6/6 cláusulas verificadas por inspección');
+
+const mutations = {
+  H01: d=>({...d,cc:d.cc.replace('### 3b. Búsqueda','### 3b. NO HAY Búsqueda')}),
+  H02: d=>({...d,cc:d.cc.replace('AUDIT_REASON_ACTIONS','NO_ALLOWLIST')}),
+  H03: d=>({...d,cc:d.cc.replace('Cinco veces seguidas','Algunas veces')}),
+  H04: d=>({...d,cc:d.cc.replace('supportWhatsAppHref: string | null','sin soporte')}),
+  H05: d=>({...d,cc:d.cc.replace('Alcanzaste el máximo de 5 intentos','Error genérico')}),
+  H06: d=>({...d,cc:d.cc.replace('No fueron una elección expresa','Fue una elección expresa')}),
+};
+let caught=0;
+for(const [id, mutate] of Object.entries(mutations)){
+  assert.equal(checks[id](mutate(docs)), false, id+' MUTACIÓN NO DETECTADA');
+  caught++;
+}
+console.log('MUTACIONES EN MEMORIA (documentales): '+caught+'/6 detectadas');
+
+assert.equal(docs.cc.includes("date_trunc('day', now())"),true, 'ya se arregló H07');
+assert.equal(docs.cc.includes("date_trunc('day', now(),"),false, 'la RPC ya fijó TimeZone');
+console.log('H07 en HEAD R2: el SQL aún depende de TimeZone');
+
+const starts = [
+  ['UTC','2026-11-12T00:00:00Z'],
+  ['America/Argentina/Tucuman','2026-11-12T03:00:00Z'],
+  ['America/Los_Angeles','2026-11-12T08:00:00Z']
+];
+assert.equal(new Set(starts.map(([zone,s])=>s)).size,3);
+console.log('MISMO INSTANTE: inicios en UTC: '+starts.map(([z,s])=>z+'='+s).join('; '));
+console.log('IMPORTANTE: no se ejecutó una llamada a Supabase/PostgREST ni tests funcionales RED.');
+NODE
+node /tmp/pr709-r2-doc-assertions.mjs "$PWD"
+```
+
+**Nota del verificador:** las mutaciones anteriores prueban que la inspección textual detecta pérdida de requisitos, NO prueban que un test de producción realmente falla al quitar las guardas. La batería funcional nueva se pide para la PR de implementación.
+
+### Batería RED obligatoria para implementación T-434 (todavía no ejecutada)
+
+1. H07: misma cuenta, mismo instante y cinco consumos, cambiar `set_config('TimeZone','UTC',true)` → `set_config('TimeZone','America/Argentina/Tucuman',true)`. Resultado: 6.º `RATE_LIMITED`, una única fila de ventana, no se reabre cupo. **Mutación:** quitar tercer argumento de `date_trunc` → falla pgTAP.
+2. H08: RPC vacía da `{"candidates":[]}` (objeto, no array raíz); RPC no vacía devuelve objeto con máximo 10; `RPC_CONTRACTS` y wrapper la aceptan. **Mutación:** `jsonb_agg` raíz sin envelope → Vitest/pgTAP rojo.
+3. H08: buscar teléfono `3812345678` y `+54 (9) 3812345678` según normalización pactada sin `invalid input syntax for type uuid`, y rechazar `foo3812345678`/`%3812345678`. **Mutación:** mover `p_lookup::uuid` a la rama telefónica o aceptar input basura -> rojo.
+4. Mantener y verificar los casos ya añadidos en R2: 5 fallos de `finalize` consumen 5, sexto rechaza; AAL2 de búsqueda; liberación auditada y sin hash; WhatsApp inválido sin href; filtro `pending` sin envío.
+5. No fabricar RED/GREEN, no simular éxito por mocks que eviten RPC real, no usar test skipping, no correr Docker local ni tocar credenciales.
+
+**CI:** no se revisó como criterio de aprobación debido a dos bloqueantes. `tools 123/123` lo dice el autor, no hay reproducción del revisor. Los comandos Git `merge-tree` y `node docs/revision-pr/analizar.mjs verificacion` no se ejecutaron; el segundo está expresamente excluido por la regla de no correr scripts desde `docs/revision-pr/**`.
