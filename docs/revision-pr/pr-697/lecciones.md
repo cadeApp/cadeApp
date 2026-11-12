@@ -33,3 +33,11 @@ No se asigna un AG nuevo porque no se verificó el máximo de todas las ramas re
 **H05 (P15):** un contrato de “fixture compartido” entre pgTAP SQL y Vitest TypeScript necesita un mecanismo de transporte explícito. Dentro de los archivos permitidos, una tabla canónica de URLs y expectativas en el CC, reflejada con valores fijos en ambas suites, es verificable; una referencia genérica a “casos compartidos” no lo es.
 
 **Alcance:** son lecciones de diseño de pruebas, no evidencia de tests reales de T-432, cuya implementación todavía va en otra PR.
+
+---
+
+## Ronda 3 — `pr-63/AG-68` desde el lado de las columnas
+
+H02 mejoró sustancialmente: el control ya se ubica en la primera aplicación y no en la segunda. El residuo es de **enumeración de fila**: un test que verifica los seis campos nombrados puede dejar fuera `created_at` y `last_seen_at`, pese a que el esquema guarda ocho. Una migración mutada que solo pisa esos timestamps no altera los seis campos y pasa en verde. La defensa es comparar **la fila completa** y sembrar timestamps sentinela distintos de los defaults y de `now()`; después matar una mutación que solo toca uno de ellos. Es el patrón `P08` aplicado a una proyección incompleta.
+
+H05 quedó bien cerrada con una tabla de 19 pares literales en el CC y réplica con expected fijo en SQL/TS. La lección es que una matriz de pruebas contractual necesita **IDs, ejemplos específicos y oráculo independiente**, y no solo nombres de clases de URL. Cinco mutaciones independientes sobre esos pares dieron rojo en un arnés local Node, sin confundirlo con los tests aún futuros.

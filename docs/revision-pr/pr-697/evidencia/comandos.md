@@ -170,3 +170,190 @@ git ls-remote origin feat/T-432-sec07-push-hardening
 ```
 
 Registrar únicamente los resultados reales; no tocar `docs/revision-pr/**` ni tratar el verde declarado por agy como verificación independiente.
+
+---
+
+# Evidencia independiente — Ronda 3 · SHA `1052fbed`
+
+## Fuentes revisadas
+
+- Contrato y ficha desde GitHub en SHA `1052fbed3150c0589835c50b446791a4eaa3ab4f`.
+- Esquema real: `supabase/migrations/20260922031435_schema_v1.sql:165-174` (ocho columnas).
+- Migración anterior real: `20261111120000_cc048_merchant_draft_only.sql`. El archivo CC-049 todavía **no existe** en este PR documental.
+- Delta desde revisión R2: tres documentos, ninguno fuera de alcance, sin cambios en `docs/revision-pr/pr-697/` por el autor.
+- GitHub CI de `1052fbed`: typecheck/lint/build/audit/unit/bundle-budget `success`; log unit con `Test Files 202 passed (202)`, `Tests 3775 passed (3775)`. `db-tests` en progreso en la consulta, **no anotado verde**.
+
+## Matriz canónica y mutaciones propias — ejecutadas con Node v22.16.0
+
+Extraje del contrato E01–E19, comprobé IDs ordenados, 19 URLs únicas y comparé cada expected contra una implementación independiente de las reglas del contrato. Cinco mutaciones del oráculo son detectadas por la matriz.
+
+Código autónomo, copiable a `/tmp/pr697_r3_matrix.mjs`:
+
+§§§js
+import assert from 'node:assert/strict';
+const rows = [
+  {
+    "id": "E01",
+    "url": "https://fcm.googleapis.com/fcm/send/abc",
+    "expected": true
+  },
+  {
+    "id": "E02",
+    "url": "https://updates.push.services.mozilla.com/wpush/v2/abc",
+    "expected": true
+  },
+  {
+    "id": "E03",
+    "url": "https://web.push.apple.com/QAbc",
+    "expected": true
+  },
+  {
+    "id": "E04",
+    "url": "https://wns2-par02p.notify.windows.com/w/?token=abc",
+    "expected": true
+  },
+  {
+    "id": "E05",
+    "url": "https://FCM.GoogleAPIs.com/fcm/send/abc",
+    "expected": true
+  },
+  {
+    "id": "E06",
+    "url": "https://fcm.googleapis.com:443/fcm/send/abc",
+    "expected": true
+  },
+  {
+    "id": "E07",
+    "url": "http://fcm.googleapis.com/fcm/send/abc",
+    "expected": false
+  },
+  {
+    "id": "E08",
+    "url": "https://push.example.com/abc",
+    "expected": false
+  },
+  {
+    "id": "E09",
+    "url": "https://fcm.googleapis.com.evil.example/abc",
+    "expected": false
+  },
+  {
+    "id": "E10",
+    "url": "https://fcm.googleapis.com@evil.example/abc",
+    "expected": false
+  },
+  {
+    "id": "E11",
+    "url": "https://fcm.googleapis.com:8443/fcm/send/abc",
+    "expected": false
+  },
+  {
+    "id": "E12",
+    "url": "https://fcm.googleapis.com\\evil.example/abc",
+    "expected": false
+  },
+  {
+    "id": "E13",
+    "url": "https://fcm.googleapis.com./fcm/send/abc",
+    "expected": false
+  },
+  {
+    "id": "E14",
+    "url": "https://fcm%2egoogleapis.com/fcm/send/abc",
+    "expected": false
+  },
+  {
+    "id": "E15",
+    "url": "https://[2001:db8::1]/fcm/send/abc",
+    "expected": false
+  },
+  {
+    "id": "E16",
+    "url": "https://fcm.googleapis.com",
+    "expected": false
+  },
+  {
+    "id": "E17",
+    "url": "https://notify.windows.com/w/?token=abc",
+    "expected": false
+  },
+  {
+    "id": "E18",
+    "url": "https://a.b.notify.windows.com/w/?token=abc",
+    "expected": false
+  },
+  {
+    "id": "E19",
+    "url": "https://evilnotify.windows.com/w/?token=abc",
+    "expected": false
+  }
+];
+assert.equal(rows.length, 19);
+assert.deepEqual(rows.map(r=>r.id),Array.from({length:19},(_,i)=>'E'+String(i+1).padStart(2,'0')));
+assert.equal(new Set(rows.map(r=>r.url)).size, 19);
+function allowed(u){
+ if(!u.startsWith('https://'))return false;
+ const rest=u.slice(8),slash=rest.indexOf('/');if(slash<0)return false;
+ const a=rest.slice(0,slash);if(/[\\%@\[\]\s]/.test(a))return false;
+ const m=a.match(/^([^:]+)(?::(\d+))?$/);if(!m||(m[2]&&m[2]!=='443'))return false;
+ const h=m[1].toLowerCase();
+ return ['fcm.googleapis.com','updates.push.services.mozilla.com','web.push.apple.com'].includes(h)||/^[a-z0-9-]+\.notify\.windows\.com$/.test(h);
+}
+assert.deepEqual(rows.filter(r=>allowed(r.url)!==r.expected),[]);
+console.log('GREEN: 19/19 casos literales; IDs ordenados, URLs únicas y expectativas compatibles con el contrato.');
+const mutants=[
+ ['E09',u=>allowed(u)||u.includes('fcm.googleapis.com.evil.example')],
+ ['E19',u=>allowed(u)||u.includes('evilnotify.windows.com')],
+ ['E14',u=>allowed(u.replace('%2e','.'))],
+ ['E11',u=>allowed(u.replace(':8443',':443'))],
+ ['E12',u=>allowed(u.replace('\\evil.example','/evil.example'))]
+];
+for(const [id,fn] of mutants){let bad=rows.filter(r=>fn(r.url)!==r.expected).map(r=>r.id);assert.ok(bad.includes(id));const labels={E09:'substr en lugar de host entero',E19:'WNS sin punto de separación',E14:'aceptar escape %2e en hostname',E11:'aceptar puerto indebido',E12:'normalizar barra invertida antes del filtro'};console.log('RED de mutación '+id+': '+labels[id]+': '+bad.join(', '));}
+§§§
+
+Salida observada de la ejecución local del mismo conjunto de casos:
+
+§§§text
+GREEN: 19/19 casos literales; IDs ordenados, URLs únicas y expectativas compatibles con el contrato.
+RED de mutación E09: substr en lugar de host entero: E09
+RED de mutación E19: WNS sin punto de separación: E19
+RED de mutación E14: aceptar escape %2e en hostname: E14
+RED de mutación E11: aceptar puerto indebido: E11
+RED de mutación E12: normalizar barra invertida antes del filtro: E12
+§§§
+
+Este arnés valida **la especificación** de 19 URLs contra un clasificador local, **no** que las futuras implementaciones PostgreSQL o TypeScript estén verdes. Los cinco rojos son **mutaciones propias del revisor**, no salidas de CI del proyecto.
+
+## H02 — Contraejemplo de campos omitidos (Node, ejecutado)
+
+Código completo para `/tmp/pr697_r3_h02.mjs`:
+
+§§§js
+import assert from 'node:assert/strict';
+const oldRow={id:'00000000-0000-4000-8000-000000000001',user_id:'00000000-0000-4000-8000-000000000002',endpoint:'https://push.example.com/abc',p256dh:'P256dhTestKey',auth:'AuthTestKey',platform:'web',created_at:'2025-01-01T00:00:00.000Z',last_seen_at:'2025-02-01T00:00:00.000Z'};
+const keys=['id','user_id','endpoint','p256dh','auth','platform'];
+const before=keys.map(k=>oldRow[k]);
+const mutatedSeen={...oldRow,last_seen_at:'2026-11-12T05:00:00.000Z'};
+assert.deepEqual(keys.map(k=>mutatedSeen[k]),before);
+console.log('GREEN falso: seis valores comparados iguales pese a sobrescribir last_seen_at');
+assert.notDeepEqual(mutatedSeen,oldRow);
+console.log('RED correcto: comparación de fila completa detecta last_seen_at alterado');
+const mutatedCreated={...oldRow,created_at:'2026-11-12T05:00:00.000Z'};
+assert.deepEqual(keys.map(k=>mutatedCreated[k]),before);
+assert.notDeepEqual(mutatedCreated,oldRow);
+console.log('GREEN falso: created_at omitido; comparación integral lo detectaría');
+§§§
+
+Salida observada:
+
+§§§text
+GREEN falso: seis valores comparados iguales pese a sobrescribir last_seen_at
+RED correcto: comparación de fila completa detecta last_seen_at alterado
+GREEN falso: created_at omitido; comparación integral lo detectaría
+§§§
+
+Interpretable como: la prueba futura de primera aplicación puede resultar verde con una mutación que altera solo una columna temporal. **No se ejecutó ningún SQL ni pgTAP**. Los dos timestamps deben precargarse deliberadamente con valores diferentes a `now()`.
+
+## Límites
+
+Sin clon Git local ni `git merge-tree`, ni dependencias PNPM; no se levantó Supabase o Docker; no se ejecutaron E2E ni tests SQL del futuro CC-049. La corrida real del job unit se consultó por el SHA revisado, pero no se presenta como ejecución de una implementación todavía ausente. Al revisor solo le consta lo que inspeccionó/ejecutó en esta ronda.
