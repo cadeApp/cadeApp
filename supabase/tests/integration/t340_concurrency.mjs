@@ -1090,28 +1090,7 @@ async function run() {
       }
     }
 
-    console.log('[CC-048] Escenario 9B: guarda estática del insert sobre una solicitud publicada sin contacto...');
-    {
-      const reqId = createLegacyFixture(false);
-      runSql(`update public.delivery_requests set status = 'published', published_at = now(), expires_at = now() + interval '30 minutes' where id = '${reqId}';`);
-      const sA = new PsqlSession('A_INSERT_PUBLISHED');
-      try {
-        sA.send(`
-          begin;
-          ${asMerchant}
-          insert into public.delivery_request_contacts (request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared)
-          values ('${reqId}', 'Calle San Martín 123, Aguilares', 'Dirección intrusa', 'Intruso', '+543865000097', true);
-          \\echo A_DONE
-        `);
-        await sA.waitFor('INVALID_STATE_TRANSITION');
-        assert.ok(!sA.output.includes('A_DONE'), 'el insert no debe completarse');
-        assert.equal(runSql(`select count(*)::int from public.delivery_request_contacts where request_id = '${reqId}';`), '0');
-        console.log('       -> OK (INVALID_STATE_TRANSITION, sin fila de contacto)');
-      } finally {
-        await sA.close();
-      }
-    }
-
+    // REVIEW ONLY: 9B quitado en esta rama de mutación para llegar a 9C (el RED de 9B está en el run 43141826067).
     console.log('[CC-048] Escenario 9C: carrera sintética (no es la RPC real): el owner publica, el insert espera...');
     {
       const reqId = createLegacyFixture(false);
