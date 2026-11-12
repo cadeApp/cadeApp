@@ -265,7 +265,7 @@ node /tmp/pr709-r3-static.mjs "$PWD"
 - GitHub head exacto `1a0b53d6caeb028f471182ed9055896ceb3cd593`, base `dba3314f17f2068b6ff0c7596476d81c2c92e1c1`.
 - `compare_commits(7ad637db,1a0b53d6)`: un commit, tres archivos documentales (`CC-050.md` +8/-3; `T-434.md` +3/-1; `log/T-434.md` +15). Ficha y plan conservan archivos permitidos. Sin edición de la carpeta del revisor por parte del agy.
 - Fuente de H10: `CC-050 `3b`, `T-434 DoD`, DDL `schema_v1`, `database.types.ts` y SQL de `CC-044` desde develop. **9/9 comprobaciones independientes verdes y 4/4 mutaciones de strings en memoria detectadas**. El control realiza cruces de alias, permisos previstos, campos declarados, DoD de secuencia, fechas, UUIDs y count.
-- **20/20 campos contrastados contra `database.types.ts`** en `profiles`, `couriers`, `courier_documents`, `rate_limits` y `audit_log`. Esquema DDL confirma `profiles.created_at`, no `couriers.created_at`. `CC-044` usa `p.created_at`.
+- **19/19 campos contrastados contra `database.types.ts`** en `profiles`, `couriers`, `courier_documents`, `rate_limits` y `audit_log`. Esquema DDL confirma `profiles.created_at`, no `couriers.created_at`. `CC-044` usa `p.created_at`.
 - **CI real leído:** run [43193576599](https://github.com/cadeApp/cadeApp/actions/runs/43193576599) de ese SHA `cancelled`, sin jobs; combinado: `approval-policy` y Vercel `success`. No CI GREEN. Autor declara `pnpm exec vitest run tools` 123/123, no reproducido por el revisor.
 - **No ejecutado:** clone local, typecheck, lint, unit, test:db, pgTAP, Docker, Supabase, `git merge-tree` o scripts de `docs/revision-pr/**`. Las mutaciones son **documentales en memoria**, no RED→GREEN SQL de la implementación que aún no existe.
 
@@ -322,7 +322,7 @@ assert.equal(mut.noOrder.includes(order),false);
 assert.equal(mut.noJoin.includes(join),false);
 assert.equal(mut.weakTest.includes('secuencia exacta sigue `p.created_at desc, c.profile_id desc`'),false);
 console.log('MUTACIONES DOC EN MEMORIA: 4/4 detectadas (sin escribir archivos)');
-console.log('COLUMNAS: 20/20 por 5 tablas; no se ejecutó SQL ni CI');
+console.log('COLUMNAS: 19/19 por 5 tablas; no se ejecutó SQL ni CI');
 NODE
 node /tmp/pr709-r4-static.mjs "$PWD"
 ```
