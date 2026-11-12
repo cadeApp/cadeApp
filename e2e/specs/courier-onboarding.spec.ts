@@ -14,6 +14,7 @@ import {
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { waitForFormHydration } from '../helpers/hydration';
 import { createAdminClient } from '@/server/supabase/admin';
+import { finalizeSeededCourierApplication } from '@/server/e2e/staging-seed';
 import { evaluateRouteGuard } from '@/features/auth/guards';
 import { ADMIN_COPY } from '@/features/admin/copy';
 import { COURIER_ONBOARDING_COPY, COURIER_VEHICLES_COPY } from '@/features/courier-onboarding/copy';
@@ -299,6 +300,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     // Preparar repartidor postulante en estado pending con precondición limpia (H03)
     const courier = await usePendingOnboardingCourier(stagingContext, 0);
+    // CC-050 (T-434): admin_decide_courier solo decide postulaciones enviadas; el postulante envía su alta como la app.
+    await finalizeSeededCourierApplication(createAdminClient(), courier.id, 'bike', null);
     const dbAdmin = createAdminClient();
 
     // 3. Intento de aprobación por admin con AAL1: el backend rechaza incondicionalmente
@@ -807,6 +810,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     // 1. Crear admin y courier postulante en estado pending con reset limpio (H03)
     const admin = await seedAdminUser(stagingContext);
     const courier = await usePendingOnboardingCourier(stagingContext, 0);
+    // CC-050 (T-434): admin_decide_courier solo decide postulaciones enviadas; el postulante envía su alta como la app.
+    await finalizeSeededCourierApplication(createAdminClient(), courier.id, 'bike', null);
     const dbAdmin = createAdminClient();
 
     // 2. Enrolar y verificar factor TOTP para la cuenta del admin conservando secret (H04)
@@ -909,6 +914,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
   }) => {
     const admin = await seedAdminUser(stagingContext);
     const courier = await usePendingOnboardingCourier(stagingContext, 0);
+    // CC-050 (T-434): admin_decide_courier solo decide postulaciones enviadas; el postulante envía su alta como la app.
+    await finalizeSeededCourierApplication(createAdminClient(), courier.id, 'bike', null);
     const { secret } = await enrollAdminTotpFactor(admin);
 
     await page.goto(`/login?redirectTo=${encodeURIComponent(`/admin/applicants/${courier.id}`)}`);
