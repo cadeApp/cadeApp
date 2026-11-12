@@ -11,3 +11,11 @@ No se asigna número AG nuevo en esta ronda: todavía no hay resultado de mutaci
 ## Precaución para la siguiente ronda
 
 Quien implementa D02-A **no edita esta carpeta** ni marca hallazgos como `arreglado-verificado`. La revisión independiente inspeccionará el SHA nuevo, reproducirá la prueba que aísla la policy y cotejará exactamente las mutaciones RED/GREEN de CI.
+
+## Ronda 2 — control por capas verificado
+
+- **Hecho verificable:** la mutación #696 retiró solo `r.status = 'draft'` de `contacts_insert_merchant WITH CHECK` y los tests 108/109 fallaron por **INSERT permitido** (`00000`), aunque la migración mantuvo el trigger. El test temporalmente lo deshabilita y luego deshace ese cambio con una subtransacción; queda protegido también el contador pgTAP. Con la migración correcta, la suite completa de CC-048 quedó 111/111 GREEN en CI.
+- **Lección recurrente P08 / referencia `pr-68/AG-75`:** verificar el invariante compuesto no demuestra cada capa de defensa. Cuando hay RLS y trigger para la misma operación, exigir una prueba de policy aislada y su **mutación específica**; mutar el trigger es un control complementario, no sustituto.
+- **Lección de protocolo:** un RED solo cuenta si deriva de la pérdida de la propiedad esperada. La mutación #696 cambia una sola línea del SQL, no toca test/fixtures y devuelve `00000` en published/matched; la prueba está protegida contra un falso RED por error de PK o sintaxis. En la rama real, el SQL no fue modificado por el fix.
+- **Trazabilidad:** la revisión no ejecutó PostgreSQL local, sino que auditó el log real de CI y ejecutó un control estático propio; esto debe decirse explícitamente. El nuevo `verificado_en_sha` apunta a código `e9aa8848`, no a `3912c5fc`, que solo cambia bitácora.
+- **Nueva AG:** no se numera una regla nueva por esta sola ronda; las reglas existentes ya cubren responsabilidad del revisor y control RED→GREEN. Si reaparece el mismo defecto de aislamiento entre capas en otro PR, considerar automatizar esta exigencia en la checklist SQL/RLS.

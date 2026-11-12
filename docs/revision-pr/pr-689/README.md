@@ -1,32 +1,41 @@
 # PR #689 — T-430 / CC-048 · SEC-06
 
-| Campo | Valor |
+| Campo | Dato |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/689 |
-| Autor | Lautaro073 |
+| Tarea | T-430, CC-048, SEC-06 |
+| Autor | @Lautaro073 |
 | Rama | `feat/T-430-sec06-draft-only` → `develop` |
-| Base revisada | `c823fae1b9ff79b6e456c51a77b3543c9b6f17f8` |
-| Head revisado (ronda 1) | `7ce8a7f15b28f8624d025efb5f17949c982b858e` |
-| Implementación verificada en CI | `93d4fa338dba1b3cafdf9b79b5c5c4ac3616380d` |
-| Estado | **Ronda 1 cerrada: SIN BLOQUEANTES comprobados, 1 MEJORA de pruebas pendiente (D02-A)** |
-| Decisiones | D01-A ratificada; D02-A solicitada para la siguiente entrega |
-| Aprobación/merge | No se aprueba ni se mergea desde la revisión |
+| Base revisada | `develop@c823fae1b9ff79b6e456c51a77b3543c9b6f17f8` |
+| Ronda 1 (head) | `7ce8a7f15b28f8624d025efb5f17949c982b858e` |
+| Ronda 2 (head) | `3912c5fc4a8bfca3b8d7373b2749fa6985425e25` |
+| Código con cambio de ronda 2 | `e9aa88484647791f7a79b220718d2177f6f10cd7` |
+| **Estado de revisión** | **Ronda 2 CERRADA: SIN BLOQUEANTES, SIN HALLAZGOS ABIERTOS** |
+| Acción de GitHub | No aprobada ni mergeada por la revisión |
 
-## Entregables
+## Historial de rondas
 
-- [Ronda 1 — informe completo](revisiones/ronda-1.md).
-- [Hallazgos estructurados](hallazgos.jsonl): `PR689-A01` aceptado y `PR689-H01` abierto.
-- [Evidencia y comandos](evidencia/comandos.md): trazabilidad CI, mutaciones estáticas propias y harness completo.
-- [Lecciones](lecciones.md).
+| Ronda | Estado y evidencia | Informe |
+|---|---|---|
+| 1 | D01-A ratificada; PR689-H01 detectado y D02-A solicitada | [Ronda 1](revisiones/ronda-1.md) |
+| 2 | PR689-H01 **arreglado-verificado**, GREEN/RED cotejados; sin regresiones detectadas | [Ronda 2](revisiones/ronda-2.md) |
 
-## Resumen ejecutivo
+## Hallazgos
 
-La migración limita el UPDATE de `delivery_requests` al propietario en estado `draft`, restringe INSERT/UPDATE de `delivery_request_contacts`, revoca permisos de cliente peligrosos y serializa el INSERT de contacto con la solicitud padre. La evidencia del autor del run 43141703429 contiene 45 archivos y 3797 aserciones pgTAP en PASS y 8/8 escenarios CC-048; el revisor cotejó el contenido de los logs, pero **no ejecutó PostgreSQL local** (restricción del proyecto).
+| ID | Estado | Evidencia |
+|---|---|---|
+| `PR689-A01` | **aceptado por D01-A**, no arreglo | Ampliación autorizada de `t339_fixed_price.sql` y `integration/cc026_reconcile_expired_requests.mjs` |
+| `PR689-H01` | **arreglado-verificado en `e9aa8848`** | Política de INSERT aislada del trigger; test 108-111; GREEN [43150132171](https://github.com/cadeApp/cadeApp/actions/runs/43150132171), RED mutación aislada #696 [43150138719](https://github.com/cadeApp/cadeApp/actions/runs/43150138719) |
 
-Se acepta la ampliación de dos archivos de prueba (`t339_fixed_price.sql` y `integration/cc026_reconcile_expired_requests.mjs`) porque los efectos del contrato están justificados y las aserciones conservan su intención; decisión explícita D01-A de Lautaro073 el 2026-11-12.
+La prueba real corre en CI; la revisión independiente inspeccionó código y logs de PostgreSQL y ejecutó un control estático adicional con mutaciones en memoria, **no ejecutó PostgreSQL local ni lanzó workflows**. El run GREEN reporta **45 archivos / 3801 pruebas pgTAP PASS**, incluyendo `cc048` **111/111** y los ocho escenarios CC-048 de integración. El RED suprime **únicamente** `and r.status = 'draft'` del `WITH CHECK` de la policy de INSERT y falla precisamente en los tests **108 y 109** (`00000` real contra `42501` esperado). La PR de mutación #696 fue cerrada sin merge.
 
-`PR689-H01`: faltan pruebas que aíslen la condición `status = 'draft'` del `WITH CHECK` de `contacts_insert_merchant` de la protección redundante del trigger. No es un bypass demostrado con el SQL correcto; es una ceguera potencial de la batería ante una futura regresión. D02-A exige una prueba pgTAP en subtransacción con trigger temporalmente deshabilitado y mutación RED específica de la policy. **Permanece abierto hasta que lo verifique la revisión independiente sobre otro SHA.**
+La rama revisada tiene un commit de bitácora `3912c5fc` después del código `e9aa8848`, sin cambios adicionales de implementación. El gate `e2e-preview` exige aplicar primero la migración en Develop y se encontraba `BLOCKED / REQUIRES DEVELOP MIGRATION`; no se afirma que E2E haya ejecutado o esté verde. No se exige GREEN adicional por bitácora o documentos de revisión.
 
-El gate `e2e-preview` marcó `BLOCKED / REQUIRES DEVELOP MIGRATION` para el SHA de código por la migración nueva; no hay E2E verde ni se interpreta como fallo funcional de E2E. No se exige revalidar todo CI solo porque el commit de esta carpeta cambia documentación.
+## Fuentes y reproducción
 
-La autoría de la carpeta `docs/revision-pr/pr-689/` es exclusivamente de la revisión; agy documenta avances solo en `docs/tasks/log/T-430.md`.
+- [Hallazgos estructurados](hallazgos.jsonl)
+- [Evidencia de CI y comandos](evidencia/comandos.md)
+- [Harness propio de Ronda 2](evidencia/probe-ronda-2.mjs) — control estático, no DB
+- [Lecciones](lecciones.md)
+
+**Cierre técnico de la revisión ≠ aprobación, merge ni verificación E2E.** Si el código cambia posteriormente, debe revisarse el nuevo SHA.

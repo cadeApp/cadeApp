@@ -149,3 +149,60 @@ git ls-remote origin refs/heads/feat/T-430-sec06-draft-only
 ```
 
 El test DB corre **solo en CI**, sin ejecutar `pnpm test:db` local. No disparar workflows manualmente. No hacer rebase, amend ni force-push.
+
+## D. Ronda 2 — cierre independiente de PR689-H01 (2026-11-12)
+
+**Heads y diffs (conector GitHub):**
+
+- PR #689 head `3912c5fc4a8bfca3b8d7373b2749fa6985425e25`, base `develop@c823fae1`, mergeable=true, abierta y sin merge. `3912c5fc` solo edita `docs/tasks/log/T-430.md`.
+- Diff `47cd4655...3912c5fc`: `supabase/tests/cc048_merchant_draft_only.sql` +36/-1 (`plan(107)` → `plan(111)`, tests 108-111) y `docs/tasks/log/T-430.md` +17; dos commits, sin behind.
+- El blob exacto del test es `5c00a3ef27c9c8706a0e41e46bacfb99969c89d7` en `e9aa8848` y `3912c5fc`. El primer SHA es el `verificado_en_sha`.
+- Mutación #696 [PR](https://github.com/cadeApp/cadeApp/pull/696) `review/T-430-insert-with-check`: **cerrada sin merge**. Commit `7d93e30c` sobre padre `e9aa8848` (sin otros cambios de implementación/test); único patch:
+
+```diff
+--- a/supabase/migrations/20261111120000_cc048_merchant_draft_only.sql
++++ b/supabase/migrations/20261111120000_cc048_merchant_draft_only.sql
+@@ contacts_insert_merchant WITH CHECK
+- where r.id = delivery_request_contacts.request_id and r.merchant_id = auth.uid() and r.status = 'draft'
++ where r.id = delivery_request_contacts.request_id and r.merchant_id = auth.uid()
+```
+
+**GREEN SQL en CI** [run 43150132171](https://github.com/cadeApp/cadeApp/actions/runs/43150132171), evento `pull_request`, head `e9aa8848`, conclusión `success`, db-tests job **130957189954** `success`. Extractos del log, cotejados independientemente:
+
+```text
+.../supabase/tests/cc048_merchant_draft_only.sql ............ ok
+All tests successful.
+Files=45, Tests=3801
+Result: PASS
+[CC-048] TODOS LOS ESCENARIOS DE ESCRITURA DIRECTA COMPLETADOS EXITOSAMENTE (8/8).
+```
+
+Los otros seis jobs de este run `unit`, `audit`, `build`, `lint`, `typecheck`, `bundle-budget` tienen `conclusion=success`. `db-tests` contiene regresiones controladas de otros escenarios y transient `Rate exceeded` al descargar imágenes; se recuperó y terminó success. **No afirmar que esas líneas fueran fallas de la implementación.**
+
+**RED SQL en CI** [run 43150138719](https://github.com/cadeApp/cadeApp/actions/runs/43150138719), head `7d93e30c`, evento `pull_request`, conclusión `failure`, solo job `db-tests` **130957112735** `failure`. Extracto del log:
+
+```text
+# Failed test 108: "CC-048: sin el trigger, contacts_insert_merchant rechaza el primer contacto sobre una solicitud published"
+#         have: 00000
+#         want: 42501
+# Failed test 109: "CC-048: sin el trigger, contacts_insert_merchant rechaza el primer contacto sobre una solicitud matched"
+#         have: 00000
+#         want: 42501
+# Looks like you failed 2 tests of 111
+Failed 2/111 subtests
+Failed tests: 108-109
+Files=45, Tests=3801
+Result: FAIL
+```
+
+**Control propio independiente (sin DB):** se ejecutó sobre el texto del test del SHA, en memoria, un validador que comprueba plan, fixture, `ALTER TABLE ... DISABLE TRIGGER`, `RAISE EXCEPTION/EXCEPTION WHEN SQLSTATE 'U0048'`, resultados insertados fuera del rollback, actor autenticado `pg_temp.merchant()`, cuatro `is()` fuera, (42501) por estado/propiedad y `tgenabled='O'`; baseline GREEN, **8/8 mutaciones estructurales RED** en la ejecución de análisis. Para que el control sea repetible desde checkout Git, se incorporó el harness completo [probe-ronda-2.mjs](probe-ronda-2.mjs), extendido con una novena mutación que altera una prueba anterior y exige su conservación exacta. La novena mutación es **reproducible con ese script**, no se adjudica a la ejecución en memoria.
+
+```bash
+# Desde un checkout de la rama de PR #689, tras git fetch/pull:
+node docs/revision-pr/pr-689/evidencia/probe-ronda-2.mjs
+node docs/revision-pr/analizar.mjs verificacion
+git diff --check 47cd46552319f5865b3d901c11189671b389f77e..3912c5fc4a8bfca3b8d7373b2749fa6985425e25
+git diff --name-only 47cd46552319f5865b3d901c11189671b389f77e..3912c5fc4a8bfca3b8d7373b2749fa6985425e25
+```
+
+**No ejecutados por la revisión:** DB local/Supabase/Docker, workflows propios, E2E `e2e-preview` (gate de migración a Develop bloquea antes de ejecutar E2E), test suite local y merge. Se verificaron **logs CI reales**, no se extrapola a pruebas inexistentes ni se atribuye la mutación #696 al revisor. El diff de esta carpeta es solo documental, sin obligación de pedir nuevo GREEN.
