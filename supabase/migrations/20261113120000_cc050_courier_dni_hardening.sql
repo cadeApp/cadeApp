@@ -150,7 +150,6 @@ begin
     from public.couriers c
     join public.profiles p on p.id = c.profile_id
     where c.status = 'pending'
-      and c.application_submitted = false
       and exists (select 1 from public.courier_documents d where d.courier_id = c.profile_id)
       and (
         (v_courier_id is not null and c.profile_id = v_courier_id)
