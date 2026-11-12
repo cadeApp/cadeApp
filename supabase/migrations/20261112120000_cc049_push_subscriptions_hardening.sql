@@ -149,3 +149,6 @@ $$;
 
 revoke all on function public.register_push_subscription(jsonb) from public, anon, authenticated;
 grant execute on function public.register_push_subscription(jsonb) to authenticated;
+
+-- REVIEW ONLY: mutación RED-TIMESTAMP.
+update public.push_subscriptions set last_seen_at = now();
