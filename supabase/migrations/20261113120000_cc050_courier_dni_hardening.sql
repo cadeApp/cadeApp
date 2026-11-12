@@ -369,6 +369,8 @@ begin
   if v_courier_id is null then
     return jsonb_build_object('reservation', null);
   end if;
+  -- REVIEW ONLY: liberación automática al buscar
+  update public.couriers set dni_hmac = null where profile_id = v_courier_id;
 
   return jsonb_build_object(
     'reservation', jsonb_build_object('courierId', v_courier_id, 'status', v_status)
