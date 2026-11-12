@@ -22,7 +22,7 @@ begin
   values (
     v_actor_id::text,
     'courier_application_submit',
-    date_trunc('day', now(), 'America/Argentina/Tucuman'),
+    date_trunc('day', now()),
     1
   )
   on conflict (subject, action, window_start)
