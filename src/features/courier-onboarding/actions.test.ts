@@ -121,148 +121,8 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
     expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
   });
 
-  it('DoD central: bloquea el registro si el DNI pertenece a un repartidor rechazado (dni_hmac detectado)', async () => {
-    // 1. Cliente autenticado del courier
-    vi.mocked(serverAuth.createClient).mockResolvedValue({
-      auth: {
-        getUser: vi.fn().mockResolvedValue({
-          data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
-          error: null,
-        }),
-      },
-      from: vi.fn().mockImplementation((table: string) => {
-        if (table === 'profiles') {
-          return {
-            select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
-          };
-        }
-        return { select: vi.fn().mockReturnThis() };
-      }),
-    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
-
-    // 2. Cliente administrativo (detecta courier previo con status 'rejected')
-    const mockAdminEq = vi.fn().mockReturnThis();
-    const mockAdminFrom = vi.fn().mockImplementation((table: string) => {
-      if (table === 'couriers') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: mockAdminEq,
-          maybeSingle: vi.fn().mockResolvedValue({
-            data: {
-              profile_id: 'rejected-courier-uuid',
-              status: 'rejected',
-            },
-            error: null,
-          }),
-        };
-      }
-      return { select: vi.fn().mockReturnThis() };
-    });
-
-    vi.mocked(adminAuth.createAdminClient).mockReturnValue({
-      from: mockAdminFrom,
-      rpc: vi.fn().mockResolvedValue(FINALIZE_OK),
-    } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
-
-    const result = await courierOnboardingAction({
-      dni: '38123456',
-      vehicleType: 'moto',
-      vehiclePlate: 'A 123 BCD',
-      documents: {
-        dni_front: 'courier/courier-current-user-uuid/dni_front_1.jpg',
-        dni_back: 'courier/courier-current-user-uuid/dni_back_1.jpg',
-        selfie: 'courier/courier-current-user-uuid/selfie_1.jpg',
-        avatar: 'courier/courier-current-user-uuid/avatar_1.jpg',
-      },
-      consents: {
-        tos: true,
-        privacy: true,
-        courierContract: true,
-        tosVersion: '1.0',
-        privacyVersion: '1.1',
-        courierContractVersion: '1.0',
-      },
-    });
-
-    // Debe retornar DNI_ALREADY_REGISTERED y bloquear el intento de reingreso
-    expect(result).toEqual({ ok: false, code: 'DNI_ALREADY_REGISTERED' });
-
-    // PR77-H06: Verificación de que el mock se llame con la columna 'dni_hmac' y su hash HMAC-SHA256
-    expect(mockAdminEq).toHaveBeenCalledWith('dni_hmac', expectedHmac);
-  });
-
-  it('bloquea el registro si el DNI pertenece a un repartidor suspendido (status suspended)', async () => {
-    // 1. Cliente autenticado del courier
-    vi.mocked(serverAuth.createClient).mockResolvedValue({
-      auth: {
-        getUser: vi.fn().mockResolvedValue({
-          data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
-          error: null,
-        }),
-      },
-      from: vi.fn().mockImplementation((table: string) => {
-        if (table === 'profiles') {
-          return {
-            select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
-          };
-        }
-        return { select: vi.fn().mockReturnThis() };
-      }),
-    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
-
-    // 2. Cliente administrativo (detecta courier previo con status 'suspended')
-    const mockAdminEq = vi.fn().mockReturnThis();
-    const mockAdminFrom = vi.fn().mockImplementation((table: string) => {
-      if (table === 'couriers') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: mockAdminEq,
-          maybeSingle: vi.fn().mockResolvedValue({
-            data: {
-              profile_id: currentUserId,
-              status: 'suspended',
-            },
-            error: null,
-          }),
-        };
-      }
-      return { select: vi.fn().mockReturnThis() };
-    });
-
-    vi.mocked(adminAuth.createAdminClient).mockReturnValue({
-      from: mockAdminFrom,
-      rpc: vi.fn().mockResolvedValue(FINALIZE_OK),
-    } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
-
-    const result = await courierOnboardingAction({
-      dni: '38123456',
-      vehicleType: 'moto',
-      vehiclePlate: 'A 123 BCD',
-      documents: {
-        dni_front: 'courier/courier-current-user-uuid/dni_front_1.jpg',
-        dni_back: 'courier/courier-current-user-uuid/dni_back_1.jpg',
-        selfie: 'courier/courier-current-user-uuid/selfie_1.jpg',
-        avatar: 'courier/courier-current-user-uuid/avatar_1.jpg',
-      },
-      consents: {
-        tos: true,
-        privacy: true,
-        courierContract: true,
-        tosVersion: '1.0',
-        privacyVersion: '1.1',
-        courierContractVersion: '1.0',
-      },
-    });
-
-    expect(result).toEqual({ ok: false, code: 'DNI_ALREADY_REGISTERED' });
-
-    // PR77-H06: Verificación de que el mock se llame con la columna 'dni_hmac'
-    expect(mockAdminEq).toHaveBeenCalledWith('dni_hmac', expectedHmac);
-  });
+  // CC-050 (D2-A): ya no hay consulta previa por dni_hmac. El DNI ajeno lo frena finalize con DNI_ALREADY_REGISTERED y
+  // el propio rechazado o suspendido lo frena finalize con UNAUTHORIZED_ACTOR (casos t, u y el mapeo de finalize).
 
   it('permite el onboarding si el DNI es nuevo y registra datos, consentimientos y documentos', async () => {
     const dbDocs: Array<{ id: string; kind: string; storage_path: string; status: string; is_current: boolean }> = [];
@@ -360,8 +220,9 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
       expect(result.data.redirectTo).toBe('/onboarding/status');
     }
 
-    // Consulta de DNI con dni_hmac
-    expect(mockAdminEq).toHaveBeenCalledWith('dni_hmac', expectedHmac);
+    // CC-050 (D2-A): sin consulta previa por dni_hmac
+    expect(mockAdminEq).not.toHaveBeenCalledWith('dni_hmac', expectedHmac);
+    expect(mockAdminFrom).not.toHaveBeenCalledWith('couriers');
 
     // CC-043: el envío lo registra finalize_courier_application con el id de la sesión; no hay update directo
     expect(mockFinalize).toHaveBeenCalledTimes(1);
@@ -386,8 +247,11 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
       }
     );
 
-    expect(mockRpc).toHaveBeenCalledTimes(1);
-    expect(mockRpc).toHaveBeenCalledWith('submit_courier_onboarding_documents', {
+    // CC-050 (D1-A): documentos y después el consumo del cupo diario, antes de finalize.
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+    expect(mockRpc).toHaveBeenNthCalledWith(2, 'consume_courier_application_attempt');
+    expect(mockRpc.mock.invocationCallOrder[1]).toBeLessThan(mockFinalize.mock.invocationCallOrder[0] ?? 0);
+    expect(mockRpc).toHaveBeenNthCalledWith(1, 'submit_courier_onboarding_documents', {
       p_documents: [
         {
           kind: 'dni_front',
@@ -868,6 +732,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       profileRole = 'courier',
       consentStatus = 'active',
       courierStatus = 'pending' as 'pending' | 'approved' | 'rejected' | 'suspended',
+      consumeResponse = { data: null, error: null } as { data: unknown; error: unknown },
       // CC-043: la RPC de finalización revalida el estado bajo lock; rejected/suspended → UNAUTHORIZED_ACTOR.
       finalizeResponse = ['pending', 'approved'].includes(courierStatus)
         ? (FINALIZE_OK as { data: unknown; error: unknown })
@@ -878,8 +743,14 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       consentStatus?: string;
       courierStatus?: 'pending' | 'approved' | 'rejected' | 'suspended';
       finalizeResponse?: { data: unknown; error: unknown };
+      consumeResponse?: { data: unknown; error: unknown };
     } = {}) {
       const mockRpc = vi.fn().mockResolvedValue(rpcResponse);
+      // CC-050: el consumo del cupo diario va por la sesión, con su propio espía.
+      const mockConsume = vi.fn().mockResolvedValue(consumeResponse);
+      const sessionRpc = vi.fn((name: string, args?: unknown) =>
+        name === 'consume_courier_application_attempt' ? mockConsume(name) : mockRpc(name, args)
+      );
       const mockFinalize = vi.fn().mockResolvedValue(finalizeResponse);
       const mockAdminUpdate = vi.fn();
       const mockUpsertConsents = vi.fn().mockResolvedValue({ error: null });
@@ -904,7 +775,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
           }
           return { select: vi.fn().mockReturnThis() };
         }),
-        rpc: mockRpc,
+        rpc: sessionRpc,
       } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
 
       vi.mocked(adminAuth.createAdminClient).mockReturnValue({
@@ -928,8 +799,72 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
         }),
       } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
 
-      return { mockRpc, mockFinalize, mockAdminUpdate, mockUpsertConsents };
+      return { mockRpc, mockFinalize, mockAdminUpdate, mockUpsertConsents, mockConsume };
     }
+
+    describe('CC-050 (SEC-09): sin consulta previa de DNI y con cupo diario', () => {
+      it('no consulta couriers por dni_hmac con service role', async () => {
+        setupRpcTest();
+
+        await courierOnboardingAction(validOnboardingPayload);
+
+        const admin = vi.mocked(adminAuth.createAdminClient).mock.results[0]?.value as { from: ReturnType<typeof vi.fn> };
+        expect(admin.from).not.toHaveBeenCalledWith('couriers');
+      });
+
+      it('consume el cupo después de los documentos y antes de finalize', async () => {
+        const { mockRpc, mockConsume, mockFinalize } = setupRpcTest();
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({
+          ok: true,
+          data: { redirectTo: '/onboarding/status' },
+        });
+        expect(mockConsume).toHaveBeenCalledTimes(1);
+        expect(mockConsume).toHaveBeenCalledWith('consume_courier_application_attempt');
+        expect(mockRpc.mock.invocationCallOrder[0]).toBeLessThan(mockConsume.mock.invocationCallOrder[0] ?? 0);
+        expect(mockConsume.mock.invocationCallOrder[0]).toBeLessThan(mockFinalize.mock.invocationCallOrder[0] ?? 0);
+      });
+
+      it('con RATE_LIMITED devuelve RATE_LIMITED y no llama a finalize', async () => {
+        const { mockConsume, mockFinalize } = setupRpcTest({
+          consumeResponse: { data: null, error: { code: 'P0001', message: 'RATE_LIMITED' } },
+        });
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({ ok: false, code: 'RATE_LIMITED' });
+        expect(mockConsume).toHaveBeenCalledTimes(1);
+        expect(mockFinalize).not.toHaveBeenCalled();
+      });
+
+      it('con otro error del consumo devuelve INTERNAL_ERROR y no llama a finalize', async () => {
+        const { mockFinalize } = setupRpcTest({
+          consumeResponse: { data: null, error: { code: '57014', message: 'canceling statement' } },
+        });
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+        expect(mockFinalize).not.toHaveBeenCalled();
+      });
+
+      it('si fallan los documentos no consume cupo', async () => {
+        const { mockConsume } = setupRpcTest({
+          rpcResponse: { data: null, error: { message: 'VALIDATION_ERROR' } },
+        });
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+        expect(mockConsume).not.toHaveBeenCalled();
+      });
+
+      it('DNI_ALREADY_REGISTERED de finalize se devuelve igual después de consumir', async () => {
+        const { mockConsume } = setupRpcTest({
+          finalizeResponse: { data: null, error: { code: 'P0001', message: 'DNI_ALREADY_REGISTERED' } },
+        });
+
+        expect(await courierOnboardingAction(validOnboardingPayload)).toEqual({
+          ok: false,
+          code: 'DNI_ALREADY_REGISTERED',
+        });
+        expect(mockConsume).toHaveBeenCalledTimes(1);
+      });
+    });
 
     it('a) primer onboarding con cuatro kinds sin docs: llamada a RPC atómica submit_courier_onboarding_documents y finalización del envío', async () => {
       const { mockRpc, mockFinalize, mockAdminUpdate } = setupRpcTest();

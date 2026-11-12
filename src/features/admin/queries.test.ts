@@ -2042,3 +2042,35 @@ describe('T-405: resumen por estado, filtro por chip y últimos movimientos (A03
     expect(JSON.stringify(item)).not.toMatch(/3865/);
   });
 });
+
+describe('CC-050 (D5-A): auditoría visible de la liberación de DNI', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('courier_dni_released muestra el motivo y el cambio dni_registered, sin hash', async () => {
+    mockClient({
+      audit_log: {
+        data: [
+          auditRow(
+            9,
+            'courier_dni_released',
+            'courier',
+            T400_COURIER,
+            { dni_registered: true },
+            { dni_registered: false, reason: 'Reclamo verificado del titular' }
+          ),
+          auditRow(8, 'admin_resolve_incident', 'incident', T400_INCIDENT, { status: 'open' }, { status: 'resolved', reason: 'texto libre' }),
+        ],
+        error: null,
+      },
+    });
+
+    const { items } = await getAuditLog();
+
+    expect(items[0]?.reason).toBe('Reclamo verificado del titular');
+    expect(items[0]?.changes).toEqual([{ field: 'dni_registered', before: true, after: false }]);
+    expect(items[1]?.reason).toBeNull();
+    expect(JSON.stringify(items)).not.toMatch(/[0-9a-f]{64}/);
+  });
+});

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import * as React from 'react';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import CanonicalCourierOnboardingVehiclePage from './page';
 import * as serverSupabase from '@/server/supabase/server';
@@ -148,6 +148,53 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
     } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
     await expect(CanonicalCourierOnboardingVehiclePage({})).rejects.toThrow('No se pudo consultar');
     expect(mocks.VehicleForm).not.toHaveBeenCalled();
+  });
+
+  describe('CC-050 (SEC-09): enlace al WhatsApp de soporte armado en el servidor', () => {
+    function mockIncompleteCourier() {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: courierUserId } } }) },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { vehicle_type: null, vehicle_plate: null, status: 'pending', application_submitted: false },
+            error: null,
+          }),
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    }
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('con un número válido pasa un wa.me con un mensaje neutral, sin DNI', async () => {
+      vi.stubEnv('CADEAPP_SUPPORT_WHATSAPP_NUMBER', '+54 9 381 555 0000');
+      mockIncompleteCourier();
+
+      render(await CanonicalCourierOnboardingVehiclePage({}));
+
+      const href = mocks.VehicleForm.mock.calls[0]?.[0]?.supportWhatsAppHref;
+      expect(typeof href).toBe('string');
+      expect(String(href)).toMatch(/^https:\/\/wa\.me\/5493815550000\?text=/);
+      const message = decodeURIComponent(new URL(String(href)).searchParams.get('text') ?? '');
+      expect(message).toBe('Hola, no pude completar mi alta como repartidor y necesito ayuda.');
+      expect(message).not.toMatch(/\d{7,8}|dni/i);
+    });
+
+    it.each([['inválido', '123'], ['ausente', undefined]])('con un número %s pasa null', async (_label, value) => {
+      if (value === undefined) {
+        vi.stubEnv('CADEAPP_SUPPORT_WHATSAPP_NUMBER', '');
+      } else {
+        vi.stubEnv('CADEAPP_SUPPORT_WHATSAPP_NUMBER', value);
+      }
+      mockIncompleteCourier();
+
+      render(await CanonicalCourierOnboardingVehiclePage({}));
+
+      expect(mocks.VehicleForm.mock.calls[0]?.[0]).toMatchObject({ supportWhatsAppHref: null });
+    });
   });
 
 });

@@ -185,3 +185,10 @@ describe('T-403: paginación en los dos sentidos', () => {
     expect(push).toHaveBeenCalledWith('/admin/applicants?tab=approved&q=jose');
   });
 });
+
+describe('CC-050 (D4-B): enlace a disputas de DNI', () => {
+  it('la cola enlaza a la búsqueda de disputas, separada de la lista', () => {
+    renderQueue();
+    expect(screen.getByRole('link', { name: 'Disputas de DNI' }).getAttribute('href')).toBe('/admin/applicants/disputes');
+  });
+});

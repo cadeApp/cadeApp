@@ -7,6 +7,7 @@ import {
   decideCourierAction,
   rejectCourierAction,
   reinstateCourierAction,
+  releaseCourierDniAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
   viewCourierDocumentAction,
@@ -32,6 +33,7 @@ vi.mock('@/server/supabase/admin', () => ({
 vi.mock('@/server/rpc/admin', () => ({
   adminDecideCourierRpc: vi.fn(),
   adminReinstateCourierRpc: vi.fn(),
+  adminReleaseCourierDniRpc: vi.fn(),
   adminSuspendCourierRpc: vi.fn(),
   adminVerifyDocumentRpc: vi.fn(),
   adminSetSubscriptionRpc: vi.fn(),
@@ -1302,4 +1304,61 @@ describe('T-405: getMerchantPlanMovementsAction (últimos movimientos del panel)
       code: 'INTERNAL_ERROR',
     });
   });
+});
+
+describe('CC-050 (D3-A): releaseCourierDniAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const releaseInput = { courierId: VALID_COURIER_ID, reason: 'Reclamo verificado del titular' };
+
+  it('rechaza entradas inválidas sin autenticar ni llamar a la RPC', async () => {
+    mockSession({ role: 'admin' });
+    const invalidInputs = [
+      { ...releaseInput, courierId: 'no-es-uuid' },
+      { ...releaseInput, reason: '  ab  ' },
+      { ...releaseInput, reason: 'x'.repeat(501) },
+      { ...releaseInput, reason: `hash ${'ab'.repeat(32)}` },
+      { ...releaseInput, reason: 'dni 30123456' },
+    ];
+    for (const input of invalidInputs) {
+      expect(await releaseCourierDniAction(input)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    }
+    expect(adminRpc.adminReleaseCourierDniRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ user: null }, 'UNAUTHENTICATED'],
+    [{ role: 'courier' }, 'UNAUTHORIZED_ACTOR'],
+    [{ role: 'admin', aal: 'aal1' as const }, 'AAL2_REQUIRED'],
+  ])('sin admin con AAL2 (%o) devuelve %s y no llama a la RPC', async (session, code) => {
+    mockSession(session);
+    expect(await releaseCourierDniAction(releaseInput)).toEqual({ ok: false, code });
+    expect(adminRpc.adminReleaseCourierDniRpc).not.toHaveBeenCalled();
+  });
+
+  it('llama a la RPC con el cliente de sesión AAL2 y revalida el detalle', async () => {
+    const client = mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminReleaseCourierDniRpc).mockResolvedValue({
+      ok: true,
+      data: { courierId: VALID_COURIER_ID, released: true },
+    });
+
+    expect(await releaseCourierDniAction(releaseInput)).toEqual({ ok: true, data: { success: true } });
+    expect(adminRpc.adminReleaseCourierDniRpc).toHaveBeenCalledWith(client, releaseInput);
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/applicants/${VALID_COURIER_ID}`);
+  });
+
+  it.each(['AAL2_REQUIRED', 'INVALID_STATE_TRANSITION', 'NOT_FOUND', 'UNAUTHORIZED_ACTOR', 'VALIDATION_ERROR'] as const)(
+    'mapea %s de la RPC sin convertirlo en INTERNAL_ERROR',
+    async (code) => {
+      mockSession({ role: 'admin' });
+      vi.mocked(adminRpc.adminReleaseCourierDniRpc).mockResolvedValue({ ok: false, code });
+
+      expect(await releaseCourierDniAction(releaseInput)).toEqual({ ok: false, code });
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+  );
 });

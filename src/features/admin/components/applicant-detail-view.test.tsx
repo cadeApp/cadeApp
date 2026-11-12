@@ -10,6 +10,7 @@ import {
   rejectCourierAction,
   suspendCourierAction,
   reinstateCourierAction,
+  releaseCourierDniAction,
   verifyCourierDocumentAction,
 } from '../actions';
 import type { ApplicantDetail, ApplicantListItem } from '../types';
@@ -28,6 +29,7 @@ vi.mock('../actions', () => ({
   rejectCourierAction: vi.fn(),
   suspendCourierAction: vi.fn(),
   reinstateCourierAction: vi.fn(),
+  releaseCourierDniAction: vi.fn(),
   verifyCourierDocumentAction: vi.fn(),
 }));
 
@@ -944,5 +946,54 @@ describe('T-404: detalle según A02', () => {
     fireEvent.click(screen.getByTitle('Restablecer vista'));
     expect(image.className).toContain('scale-100');
     expect(image.className).toContain('rotate-0');
+  });
+});
+
+describe('CC-050 (D3-A): Liberar DNI en el detalle del postulante', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['pendiente', { status: 'pending' as const, hasDni: true }],
+    ['aprobado', { status: 'approved' as const, hasDni: true }],
+    ['rechazado sin DNI', { status: 'rejected' as const, hasDni: false }],
+  ])('no muestra «Liberar DNI» si está %s', (_label, patch) => {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, ...patch }} />);
+    expect(screen.queryByRole('button', { name: 'Liberar DNI' })).toBeNull();
+  });
+
+  it.each(['rejected', 'suspended'] as const)('con %s y DNI pide motivo y llama a releaseCourierDniAction', async (status) => {
+    vi.mocked(releaseCourierDniAction).mockResolvedValue({ ok: true, data: { success: true } });
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status, hasDni: true }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Liberar DNI' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: 'Liberar DNI' })).toBeDefined();
+    expect(dialog.textContent).toContain('No escribas números de documento ni datos personales en el motivo');
+
+    const textarea = within(dialog).getByLabelText(/motivo de la liberación/i);
+    fireEvent.change(textarea, { target: { value: 'Reclamo verificado del titular por soporte' } });
+    fireEvent.submit(textarea.closest('form')!);
+
+    await waitFor(() => {
+      expect(releaseCourierDniAction).toHaveBeenCalledWith({
+        courierId: mockApplicant.id,
+        reason: 'Reclamo verificado del titular por soporte',
+      });
+      expect(refresh).toHaveBeenCalled();
+    });
+  });
+
+  it('con un motivo de menos de 3 caracteres no llama a la acción', async () => {
+    render(<ApplicantDetailView applicant={{ ...mockApplicant, status: 'rejected', hasDni: true }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Liberar DNI' }));
+    const dialog = screen.getByRole('dialog');
+    const textarea = within(dialog).getByLabelText(/motivo de la liberación/i);
+    fireEvent.change(textarea, { target: { value: 'ab' } });
+    fireEvent.submit(textarea.closest('form')!);
+
+    await waitFor(() => expect(within(dialog).getAllByRole('alert').length).toBeGreaterThan(0));
+    expect(releaseCourierDniAction).not.toHaveBeenCalled();
   });
 });
