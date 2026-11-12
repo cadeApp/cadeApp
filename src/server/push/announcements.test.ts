@@ -56,7 +56,7 @@ describe('T-414: envío en tandas de 10', () => {
     const subscriptions: PushSubscriptionRecord[] = Array.from({ length: 25 }, (_, index) => ({
       id: `sub-${index}`,
       userId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
-      endpoint: `https://push.example.com/sub/${index}`,
+      endpoint: `https://fcm.googleapis.com/fcm/send/sub/${index}`,
       p256dh: 'p256dh',
       auth: 'auth',
     }));

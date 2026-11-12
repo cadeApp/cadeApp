@@ -155,7 +155,7 @@ describe('CC-040: el fake se comporta como la base', () => {
     t.as(MERCHANT_A, 'merchant');
     await t.fake.set_promotions_opt_in({ enabled: true });
     const subscription = await t.fake.register_push_subscription({
-      endpoint: 'https://push.example.test/cc040-a',
+      endpoint: 'https://fcm.googleapis.com/fcm/send/cc040-a',
       p256dh: 'BCC040p256dhKeyForAnnouncementsTest0000000000000000000000000000000000000000000000000000',
       auth: 'cc040authKey00000000',
     });

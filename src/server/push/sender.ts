@@ -1,20 +1,15 @@
 import 'server-only';
+import type { ClientRequest, IncomingMessage, RequestOptions } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { createRequire } from 'node:module';
 import { z } from 'zod';
 import { createAdminClient } from '@/server/supabase/admin';
 import { serverEnv } from '@/server/env';
 import { publicEnv } from '@/lib/env.public';
-import type { AnnouncementAudience, AnnouncementCta } from '@/domain';
+import { type AnnouncementAudience, type AnnouncementCta, isAllowedPushEndpoint } from '@/domain';
 
 const require = createRequire(import.meta.url);
-const webpush = require('web-push') as {
-  setVapidDetails: (subject: string, publicKey: string, privateKey: string) => void;
-  sendNotification: (
-    subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
-    payload?: string | Buffer | null,
-    options?: { TTL?: number }
-  ) => Promise<{ statusCode: number }>;
-};
+const webpush = require('web-push') as WebPushClient;
 
 
 // CC-040: destinos posibles de una novedad. El service worker (public/sw.js) acepta solo esta lista.
@@ -127,11 +122,10 @@ export interface PushDatabaseClient {
   deleteSubscriptionByEndpoint(endpoint: string): Promise<void>;
 }
 
-export interface PushAttemptRecord {
-  endpoint: string;
-  status: number;
-  error?: string;
-}
+// CC-049 (H04): un intento bloqueado por la allowlist no lleva la clave `endpoint` (la URL rechazada no se guarda).
+export type PushAttemptRecord =
+  | { outcome: 'sent'; endpoint: string; status: number; error?: string }
+  | { outcome: 'blocked'; status: 0; error: 'ENDPOINT_NOT_ALLOWED' };
 
 export interface PushTransport {
   send(subscription: PushSubscriptionRecord, payload: string): Promise<{ status: number; error?: string }>;
@@ -201,14 +195,28 @@ export class DefaultPushDatabaseClient implements PushDatabaseClient {
   }
 }
 
+/** Lo que arma `web-push.generateRequestDetails`: método, headers y cuerpo cifrado con VAPID. */
+export interface WebPushRequestDetails {
+  method: string;
+  headers: Record<string, string | number>;
+  body: Buffer | null;
+  endpoint: string;
+}
+
 export interface WebPushClient {
   setVapidDetails: (subject: string, publicKey: string, privateKey: string) => void;
-  sendNotification: (
+  generateRequestDetails: (
     subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
     payload?: string | Buffer | null,
     options?: { TTL?: number }
-  ) => Promise<{ statusCode: number }>;
+  ) => WebPushRequestDetails;
 }
+
+export type PushHttpRequest = (
+  url: string,
+  options: RequestOptions,
+  callback: (res: IncomingMessage) => void
+) => ClientRequest;
 
 export interface WebPushOptions {
   vapid?: {
@@ -216,16 +224,27 @@ export interface WebPushOptions {
     publicKey?: string;
     privateKey?: string;
   };
+  /** Para pruebas contra un servidor local; en producción, `https.request`. */
+  request?: PushHttpRequest;
+  /** Plazo absoluto por envío; en producción, PUSH_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
+
+// CC-049 (D4-B): plazo absoluto por envío. El timeout de web-push es de inactividad del socket y no lo acota.
+export const PUSH_TIMEOUT_MS = 5000;
 
 export class WebPushTransport implements PushTransport {
   private vapidConfigured = false;
   private client: WebPushClient;
   private vapidOptions?: WebPushOptions['vapid'];
+  private request: PushHttpRequest;
+  private timeoutMs: number;
 
   constructor(client: WebPushClient = webpush, options?: WebPushOptions) {
     this.client = client;
     this.vapidOptions = options?.vapid;
+    this.request = options?.request ?? httpsRequest;
+    this.timeoutMs = options?.timeoutMs ?? PUSH_TIMEOUT_MS;
   }
 
   private configureVapid(): void {
@@ -246,28 +265,51 @@ export class WebPushTransport implements PushTransport {
   }
 
   async send(subscription: PushSubscriptionRecord, payload: string): Promise<{ status: number; error?: string }> {
+    let details: WebPushRequestDetails;
     try {
       this.configureVapid();
-      const res = await this.client.sendNotification(
-        {
-          endpoint: subscription.endpoint,
-          keys: {
-            p256dh: subscription.p256dh,
-            auth: subscription.auth,
-          },
-        },
+      details = this.client.generateRequestDetails(
+        { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
         payload,
-        {
-          TTL: 300,
-        }
+        { TTL: 300 }
       );
-      return { status: res.statusCode };
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'statusCode' in err && typeof err.statusCode === 'number') {
-        return { status: err.statusCode };
-      }
       return { status: 500, error: err instanceof Error ? err.message : String(err) };
     }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (result: { status: number; error?: string }) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(result);
+      };
+
+      let req: ClientRequest;
+      try {
+        // Sin seguir redirecciones: un 3xx se devuelve como fallo con su código.
+        req = this.request(details.endpoint, { method: details.method, headers: details.headers }, (res) => {
+          const status = res.statusCode ?? 0;
+          res.on('error', (err) => finish({ status: 500, error: err.message }));
+          res.on('end', () => finish({ status }));
+          res.resume();
+        });
+      } catch (err: unknown) {
+        finish({ status: 500, error: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+
+      // Plazo absoluto desde que se crea la request: al vencer se aborta el socket aunque siga llegando respuesta.
+      timer = setTimeout(() => {
+        finish({ status: 0, error: 'PUSH_TIMEOUT' });
+        req.destroy();
+      }, this.timeoutMs);
+      req.on('error', (err) => finish({ status: 500, error: err.message }));
+      if (details.body) req.write(details.body);
+      req.end();
+    });
   }
 }
 
@@ -319,9 +361,16 @@ export async function sendPushNotification(
   // CC-040: tandas de PUSH_BATCH_SIZE envíos en paralelo, para no exceder el tiempo de la función con muchos
   // destinatarios.
   const deliver = async (sub: PushSubscriptionRecord): Promise<void> => {
+    // CC-049 (D2-A): un host fuera de la allowlist no sale a la red ni se borra.
+    if (!isAllowedPushEndpoint(sub.endpoint)) {
+      result.failedCount += 1;
+      result.attempts.push({ outcome: 'blocked', status: 0, error: 'ENDPOINT_NOT_ALLOWED' });
+      return;
+    }
     try {
       const { status, error } = await transport.send(sub, payloadStr);
       result.attempts.push({
+        outcome: 'sent',
         endpoint: sub.endpoint,
         status,
         ...(error ? { error } : {}),
@@ -345,6 +394,7 @@ export async function sendPushNotification(
       result.failedCount += 1;
       const errorMsg = err instanceof Error ? err.message : String(err);
       result.attempts.push({
+        outcome: 'sent',
         endpoint: sub.endpoint,
         status: 500,
         error: errorMsg,

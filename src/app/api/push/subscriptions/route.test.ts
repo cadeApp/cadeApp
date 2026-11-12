@@ -232,7 +232,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'DELETE',
         body: JSON.stringify({
-          endpoint: 'https://push.example.com/sub/1',
+          endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1',
         }),
       });
 
@@ -279,7 +279,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'DELETE',
         body: JSON.stringify({
-          endpoint: 'https://push.example.com/sub/1',
+          endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1',
         }),
       });
 
@@ -288,7 +288,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
       const json = await res.json();
       expect(json).toEqual({ ok: true });
 
-      expect(mockEqEndpoint).toHaveBeenCalledWith('endpoint', 'https://push.example.com/sub/1');
+      expect(mockEqEndpoint).toHaveBeenCalledWith('endpoint', 'https://fcm.googleapis.com/fcm/send/sub/1');
       expect(mockEqUserId).toHaveBeenCalledWith('user_id', USER_ID);
     });
   });

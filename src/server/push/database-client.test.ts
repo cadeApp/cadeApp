@@ -40,7 +40,7 @@ describe('DefaultPushDatabaseClient', () => {
         {
           id: 'sub-1',
           user_id: USER_1,
-          endpoint: 'https://push.example.com/sub/1',
+          endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1',
           p256dh: 'test-p256dh',
           auth: 'test-auth',
           platform: 'web',
@@ -64,7 +64,7 @@ describe('DefaultPushDatabaseClient', () => {
       {
         id: 'sub-1',
         userId: USER_1,
-        endpoint: 'https://push.example.com/sub/1',
+        endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1',
         p256dh: 'test-p256dh',
         auth: 'test-auth',
         platform: 'web',
@@ -106,11 +106,11 @@ describe('DefaultPushDatabaseClient', () => {
     } as unknown as ReturnType<typeof createAdminClient>);
 
     const client = new DefaultPushDatabaseClient();
-    await client.deleteSubscriptionByEndpoint('https://push.example.com/sub/1');
+    await client.deleteSubscriptionByEndpoint('https://fcm.googleapis.com/fcm/send/sub/1');
 
     expect(mockFrom).toHaveBeenCalledWith('push_subscriptions');
     expect(mockDelete).toHaveBeenCalled();
-    expect(mockEq).toHaveBeenCalledWith('endpoint', 'https://push.example.com/sub/1');
+    expect(mockEq).toHaveBeenCalledWith('endpoint', 'https://fcm.googleapis.com/fcm/send/sub/1');
   });
 
   it('lanza error si la eliminación por endpoint falla', async () => {
@@ -124,7 +124,7 @@ describe('DefaultPushDatabaseClient', () => {
 
     const client = new DefaultPushDatabaseClient();
     await expect(
-      client.deleteSubscriptionByEndpoint('https://push.example.com/sub/1')
+      client.deleteSubscriptionByEndpoint('https://fcm.googleapis.com/fcm/send/sub/1')
     ).rejects.toThrow('Failed to delete expired push subscription: Delete constraint failure');
   });
 });
