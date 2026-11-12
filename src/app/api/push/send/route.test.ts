@@ -4,10 +4,13 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { sendPushNotification } from '@/server/push/sender';
 
+// T-433 (SEC-08): la ruta se autoriza con PUSH_SEND_SECRET, distinta de CRON_SECRET.
+const CRON_SECRET = 'test-cron-secret-0123456789abcdef';
+const PUSH_SEND_SECRET = 'test-push-send-secret-0123456789ab';
+const mockEnv: { CRON_SECRET: string; PUSH_SEND_SECRET: string | undefined } = { CRON_SECRET, PUSH_SEND_SECRET };
+
 vi.mock('@/server/env', () => ({
-  serverEnv: {
-    CRON_SECRET: 'test-cron-secret-12345',
-  },
+  serverEnv: new Proxy({}, { get: (_t, prop: string) => mockEnv[prop as keyof typeof mockEnv] }),
 }));
 
 vi.mock('@/server/push/sender', async (importOriginal) => {
@@ -25,7 +28,39 @@ describe('POST /api/push/send', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnv.PUSH_SEND_SECRET = PUSH_SEND_SECRET;
   });
+
+  const validBody = () =>
+    JSON.stringify({ userIds: [USER_ID], event: { event: 'request_published', requestId: REQ_ID } });
+
+  it('SEC-08: el Bearer de CRON_SECRET ya no autoriza el envío de push', async () => {
+    const req = new NextRequest('http://localhost:3000/api/push/send', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${CRON_SECRET}` },
+      body: validBody(),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    expect(sendPushNotification).not.toHaveBeenCalled();
+  });
+
+  it.each([`Bearer ${CRON_SECRET}`, 'Bearer ', 'Bearer undefined'])(
+    'SEC-08: sin PUSH_SEND_SECRET configurada, el header %j no autoriza',
+    async (authorization) => {
+      mockEnv.PUSH_SEND_SECRET = undefined;
+      const req = new NextRequest('http://localhost:3000/api/push/send', {
+        method: 'POST',
+        headers: { authorization },
+        body: validBody(),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(401);
+      expect(sendPushNotification).not.toHaveBeenCalled();
+    }
+  );
 
   it('responde 401 si no se envía la cabecera Authorization', async () => {
     const req = new NextRequest('http://localhost:3000/api/push/send', {
@@ -64,7 +99,7 @@ describe('POST /api/push/send', () => {
     const req = new NextRequest('http://localhost:3000/api/push/send', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer test-cron-secret-12345',
+        authorization: `Bearer ${PUSH_SEND_SECRET}`,
       },
       body: JSON.stringify({
         userIds: ['not-a-uuid'],
@@ -91,7 +126,7 @@ describe('POST /api/push/send', () => {
     const req = new NextRequest('http://localhost:3000/api/push/send', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer test-cron-secret-12345',
+        authorization: `Bearer ${PUSH_SEND_SECRET}`,
       },
       body: JSON.stringify({
         userIds: [USER_ID],
@@ -125,7 +160,7 @@ describe('POST /api/push/send', () => {
 
     const req = new NextRequest('http://localhost:3000/api/push/send', {
       method: 'POST',
-      headers: { authorization: 'Bearer test-cron-secret-12345' },
+      headers: { authorization: `Bearer ${PUSH_SEND_SECRET}` },
       body: JSON.stringify({
         userIds: [USER_ID],
         event: { event: 'request_published', requestId: REQ_ID },

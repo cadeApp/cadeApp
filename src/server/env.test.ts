@@ -7,7 +7,7 @@ describe('Server Environment Validation', () => {
     NODE_ENV: 'test',
     SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key-12345',
     DNI_HMAC_SECRET: 'super-secret-hmac-key-min-16-chars',
-    CRON_SECRET: 'test-cron-secret-abcdef',
+    CRON_SECRET: 'test-cron-secret-abcdef-0123456789',
     DISCORD_ERROR_WEBHOOK_URL: 'https://discord.com/api/webhooks/123/abc',
     RPC_ADAPTER: 'real',
   };
@@ -17,7 +17,7 @@ describe('Server Environment Validation', () => {
     expect(env.NODE_ENV).toBe('test');
     expect(env.SUPABASE_SERVICE_ROLE_KEY).toBe('test-service-role-key-12345');
     expect(env.DNI_HMAC_SECRET).toBe('super-secret-hmac-key-min-16-chars');
-    expect(env.CRON_SECRET).toBe('test-cron-secret-abcdef');
+    expect(env.CRON_SECRET).toBe('test-cron-secret-abcdef-0123456789');
     expect(env.RPC_ADAPTER).toBe('real');
   });
 
@@ -34,6 +34,30 @@ describe('Server Environment Validation', () => {
   it('debe fallar con mensaje claro si falta CRON_SECRET', () => {
     const invalidEnv = { ...validServerEnv, CRON_SECRET: undefined };
     expect(() => createServerEnv(invalidEnv)).toThrowError(/CRON_SECRET es obligatoria/);
+  });
+
+  // T-433 (SEC-08): largo mínimo del secreto del cron y secreto propio para /api/push/send.
+  it('SEC-08: CRON_SECRET de 31 caracteres falla y de 32 pasa', () => {
+    expect(() => createServerEnv({ ...validServerEnv, CRON_SECRET: 'c'.repeat(31) })).toThrowError(
+      /CRON_SECRET debe tener al menos 32 caracteres/
+    );
+    expect(createServerEnv({ ...validServerEnv, CRON_SECRET: 'c'.repeat(32) }).CRON_SECRET).toBe('c'.repeat(32));
+  });
+
+  it('SEC-08: PUSH_SEND_SECRET es opcional; si está, exige 32 caracteres', () => {
+    expect(createServerEnv(validServerEnv).PUSH_SEND_SECRET).toBeUndefined();
+    expect(() => createServerEnv({ ...validServerEnv, PUSH_SEND_SECRET: 'p'.repeat(31) })).toThrowError(
+      /PUSH_SEND_SECRET debe tener al menos 32 caracteres/
+    );
+    expect(createServerEnv({ ...validServerEnv, PUSH_SEND_SECRET: 'p'.repeat(32) }).PUSH_SEND_SECRET).toBe(
+      'p'.repeat(32)
+    );
+  });
+
+  it('SEC-08: PUSH_SEND_SECRET igual a CRON_SECRET falla', () => {
+    expect(() =>
+      createServerEnv({ ...validServerEnv, PUSH_SEND_SECRET: validServerEnv.CRON_SECRET })
+    ).toThrowError(/PUSH_SEND_SECRET tiene que ser distinta de CRON_SECRET/);
   });
 
   it('CC-030: la purga de huérfanos arranca en dry-run si no se configura', () => {
