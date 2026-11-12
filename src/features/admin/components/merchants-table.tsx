@@ -8,7 +8,7 @@ import { Card } from '@/ui/card';
 import { EmptyState } from '@/ui/empty-state';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table';
 import { cn } from '@/ui/cn';
-import { formatDate, formatPhone } from '@/lib/format';
+import { formatDate, formatPhone, whatsappLink } from '@/lib/format';
 import type { MerchantSubscriptionStatus } from '@/domain';
 import { formatCivilDate } from '../audit-format';
 import { ADMIN_COPY } from '../copy';
@@ -141,7 +141,19 @@ export function MerchantsTable({ result, currentCursor, counts, status }: Mercha
                     {merchant.ownerName || COPY.empty}
                   </TableCell>
                   <TableCell className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
-                    {merchant.phone ? formatPhone(merchant.phone) : COPY.empty}
+                    {merchant.phone ? (
+                      <a
+                        href={whatsappLink(merchant.phone)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={COPY.whatsappLabel(merchant.businessName)}
+                        className="font-medium text-primary-dark underline-offset-4 hover:underline"
+                      >
+                        {formatPhone(merchant.phone)}
+                      </a>
+                    ) : (
+                      COPY.empty
+                    )}
                   </TableCell>
                   <TableCell className="px-6 py-4 text-sm text-foreground">
                     {merchant.pickupZoneName ?? COPY.empty}

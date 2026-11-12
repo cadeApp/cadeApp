@@ -37,7 +37,8 @@ export function MerchantNav() {
       label: 'Cuenta',
       href: '/merchant/plan',
       icon: <User className="h-5 w-5" aria-hidden="true" />,
-      active: pathname === '/merchant/plan',
+      // T-431: también en sus subpáginas (avisos), sin activar rutas que solo empiezan igual.
+      active: pathname === '/merchant/plan' || pathname.startsWith('/merchant/plan/'),
     },
   ];
 

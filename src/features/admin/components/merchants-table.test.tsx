@@ -284,4 +284,18 @@ describe('T-405: chips de resumen y etiquetas de estado (A03)', () => {
     expect(within(table).getByText('Piloto').className).toMatch(/bg-primary /);
     expect(within(table).getByText('Activo').className).toMatch(/badge-success/);
   });
+
+  it('T-431: el teléfono abre WhatsApp en otra pestaña y sin teléfono no hay enlace', () => {
+    const { unmount } = render(<MerchantsTable counts={COUNTS} result={result} />);
+    const link = screen.getByRole('link', { name: 'Escribir por WhatsApp a Panadería La Espiga' });
+    expect(link.getAttribute('href')).toBe('https://wa.me/5493865551234');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    unmount();
+
+    const [first] = result.items;
+    if (!first) throw new Error('fixture sin comercio');
+    render(<MerchantsTable counts={COUNTS} result={{ ...result, items: [{ ...first, phone: '' }] }} />);
+    expect(screen.queryByRole('link', { name: /whatsapp/i })).toBeNull();
+  });
 });

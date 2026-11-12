@@ -45,6 +45,16 @@ export const PUSH_COPY = {
     btnRetry: 'Reintentar',
     btnDismiss: 'Ahora no',
   },
+  // T-431: el comercio usa el mismo componente; solo cambian los textos que le hablan al repartidor.
+  merchantPrompt: {
+    subtitle: 'Te avisamos cuando un repartidor le haga una oferta a tu pedido.',
+    benefitSpeedDesc: 'Enterate al segundo de cada oferta y elegí repartidor sin esperar.',
+  },
+  merchantProfileLink: {
+    title: 'Notificaciones y avisos',
+    description: 'Configurá los avisos de ofertas para tus pedidos',
+    action: 'Configurar →',
+  },
   profileLink: {
     title: 'Notificaciones y avisos',
     description: 'Configurá las alertas instantáneas de pedidos',
