@@ -218,3 +218,113 @@ Resultado: control GREEN, 8 mutaciones de oraculos RED, carrera H04 actual RED/p
 ```
 
 **Advertencia:** RED de H04 no significa que haya ocurrido en Develop; es una reproducción determinística de la posibilidad de carrera en JavaScript bajo un fallo asíncrono de suscripción. Los resultados de R2-H01/H02/H03/H05 son de un modelo local, no una ejecución del test E2E del repositorio. El script de 8 RED declarado por el autor no está en la rama: no se reproduce como fuente primaria y por eso `verificado_en_sha` sigue nulo. El preview de R2 estaba en cola al revisar.
+
+---
+
+## R3 — Mutaciones **nuevas e independientes** del arreglo de la carrera H04
+
+Fuente comprobada: `e2e/specs/courier-private-columns.spec.ts:383–394` en `ecb04e80a0d634c6177c14ec121098134388269a` y head `bcf71318f942f26c64fac50439d3652b72d99210`: `await Promise.allSettled([subscribe(A), subscribe(M), subscribe(N), subscribe(S)])` seguido de `find(rejected)` y `throw failedSubscription.reason`; `finally` usa `Promise.allSettled` para retirar los canales registrados. La implementación del spec quedó **idéntica** tras el merge de `develop` (comparado el diff ecb→bcf).
+
+**Modo de ejecución:** solo Node local con intercalación determinística de promesas. No se usaron credenciales, Supabase, Playwright, ni mocks para sustituir el E2E real. El harness modela la barrera y la limpieza; no es el test Playwright ni prueba una fuga en producción.
+
+Copiar **todo** este bloque a `/tmp/pr736-r3-harness.cjs` y ejecutar `node /tmp/pr736-r3-harness.cjs`:
+
+```js
+'use strict';
+// PR736 R3: mutation harness (deterministic async scheduler; no Playwright/Supabase).
+const assert = require('node:assert/strict');
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+async function scenario(mode, rejectAfterRegister = false) {
+  const gate = deferred();
+  const channels = [];
+  const removed = [];
+  let cleanupStarted = false;
+  let mutationStarted = false;
+  let initialError = null;
+  let results;
+
+  async function subscribe(actor) {
+    if (actor === 'A') {
+      if (rejectAfterRegister) channels.push(actor);
+      throw new Error('CHANNEL_ERROR A');
+    }
+    if (actor === 'M') await gate.promise;
+    channels.push(actor);
+  }
+  async function runTestBody() {
+    try {
+      const tasks = [subscribe('A'), subscribe('M'), subscribe('N'), subscribe('S')];
+      if (mode === 'mutant-promise-all') {
+        await Promise.all(tasks); // adversarial mutation: premature rejection
+      } else {
+        results = await Promise.allSettled(tasks); // exact barrier form in ecb04e80
+        const rejection = results.find((r) => r.status === 'rejected');
+        if (rejection && mode !== 'mutant-ignore-rejection') throw rejection.reason;
+      }
+      mutationStarted = true; // should never mutate after failed subscription
+    } catch (error) {
+      initialError = error.message;
+    } finally {
+      cleanupStarted = true;
+      const targets = mode === 'mutant-cleanup-successes-only'
+        ? channels.filter((actor) => actor !== 'A')
+        : channels;
+      await Promise.allSettled(targets.map(async (actor) => { removed.push(actor); return 'ok'; }));
+    }
+  }
+
+  const done = runTestBody();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const prematureCleanup = cleanupStarted;
+  gate.resolve();
+  await done;
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const orphaned = channels.filter((actor) => !removed.includes(actor));
+  return { prematureCleanup, orphaned, initialError, mutationStarted, channels, removed };
+}
+function invariant(result) {
+  return !result.prematureCleanup && result.orphaned.length === 0 &&
+    result.initialError === 'CHANNEL_ERROR A' && !result.mutationStarted;
+}
+(async () => {
+  for (const [name, mode, rejectAfterRegister, expected] of [
+    ['Control limpio: rechazo antes de registro', 'control', false, true],
+    ['Control limpio: rechazo después de registrar canal', 'control', true, true],
+    ['Mutación 1: Promise.all prematuro', 'mutant-promise-all', false, false],
+    ['Mutación 2: ignorar rechazos', 'mutant-ignore-rejection', false, false],
+    ['Mutación 3: limpiar solo los exitosos', 'mutant-cleanup-successes-only', true, false],
+  ]) {
+    const got = await scenario(mode, rejectAfterRegister);
+    const ok = invariant(got);
+    assert.equal(ok, expected, name);
+    console.log(name+': '+(ok ? 'GREEN' : 'RED')+
+      '; orphaned='+got.orphaned.length+
+      '; premature='+got.prematureCleanup+
+      '; bodyRan='+got.mutationStarted+
+      '; failure='+(got.initialError ?? 'none'));
+  }
+  console.log('Resultado: control 2/2 GREEN, mutaciones nuevas 3/3 RED. Modelo de scheduling, NO prueba E2E.');
+})().catch((err) => { console.error(err); process.exitCode = 1; });
+```
+
+**Salida comprobada independientemente (Node 22.16.0):**
+
+```text
+Control limpio: rechazo antes de registro: GREEN; orphaned=0; premature=false; bodyRan=false; failure=CHANNEL_ERROR A
+Control limpio: rechazo después de registrar canal: GREEN; orphaned=0; premature=false; bodyRan=false; failure=CHANNEL_ERROR A
+Mutación 1: Promise.all prematuro: RED; orphaned=1; premature=true; bodyRan=false; failure=CHANNEL_ERROR A
+Mutación 2: ignorar rechazos: RED; orphaned=0; premature=false; bodyRan=true; failure=none
+Mutación 3: limpiar solo los exitosos: RED; orphaned=1; premature=false; bodyRan=false; failure=CHANNEL_ERROR A
+Resultado: control 2/2 GREEN, mutaciones nuevas 3/3 RED. Modelo de scheduling, NO prueba E2E.
+```
+
+**R3 / Evidencia externa verificada:** e2e-preview [43322939621](https://github.com/cadeApp/cadeApp/actions/runs/43322939621) hace checkout de `ecb04e80a0d634c6177c14ec121098134388269a`; test T-345 y CC-051 PASS, CC-051 demora **17,8 s**. El registro `[CC-051 captura]` lista solo nombres de claves: S contiene ambas columnas en INSERT/UPDATE publicados y draft, A/M no; A no ve eventos del draft, N no tiene eventos. **Global: 121 passed, 3 failed**, solo `courier-onboarding.spec.ts:271,803,906` (el SHA aún no incluía PR #737). El gate global no era verde en ese run.
+
+CI [43304153075](https://github.com/cadeApp/cadeApp/actions/runs/43304153075) sobre `ecb04e80`: `success` en todos los jobs; `unit` **209 test files**, `pnpm test:coverage` **3961 tests** según resumen; `db-tests` en log pgTAP `Files=47, Tests=3958, Result: PASS` y `git diff --exit-code -- src/types/database.types.ts`; no se ejecutó Supabase/Docker local. CI del head `bcf71318` [43328941951](https://github.com/cadeApp/cadeApp/actions/runs/43328941951) tenía `unit/lint/typecheck/build/audit/bundle-budget` verdes y `db-tests` en progreso al momento del informe.
+
+`origin/develop` se incorporó por merge `ab32909f` con padres `ecb04e80` y `434ee222`, trayendo `courier-onboarding.spec.ts` de #737; HEAD `bcf71318` solo suma bitácora. **Aún sin e2e-preview global verificado sobre head post-merge.** No inferir GREEN de un run aún no terminado. No disparar workflow manual. No exigir repetir CI solo por esta documentación de revisión.
