@@ -25,3 +25,9 @@
 H07/H08/H09 se corrigieron coherentemente en el contrato; sólo hay evidencia documental. **H10** aparece por no cotejar el `ORDER BY` nuevo con la tabla. `public.couriers` no tiene `created_at`, pero `profiles` sí, y CC-044 ya usa `p.created_at`. Es un error de la ficha y un agujero de la revisión anterior: se revisó seguridad, tipo de entrada y salida, pero no la clase completa de columnas en `SELECT/WHERE/ORDER BY`.
 
 Patrón `P15-entregable-declarado-pero-no-ejecutable` y aprendizaje de `pr-56/AG-37`: al evaluar SQL documental contra esquema existente, verificar alias y columnas con DDL/tipos. Prueba de orden con empates y mutación quitando ORDER BY, no sólo longitud 10. Sin AG nuevo por esta única aparición; sin cambios a `AGENTS.md`.
+## Ronda 4 — cerrar un contrato no certifica código todavía inexistente
+
+- **H10** se resolvió en `CC-050 `3b` con `join public.profiles p` y `ORDER BY p.created_at DESC,c.profile_id DESC`. El cruce independiente con DDL, tipos y CC-044 + 9/9 aserciones y 4/4 mutantes en memoria evita repetir el alias roto de R3.
+- **20 referencias de columnas verificadas** en cinco tablas; la revisión R3 sólo detectó el alias específico. El ejercicio muestra la utilidad de enumerar clase completa sin confiar en el texto «repasé todos los campos» del autor. **No hubo nueva regresión contractual.**
+- **CI cancelado no es CI verde:** el control `approval-policy` en éxito no prueba unit, typecheck, lint ni db-tests. Mantener el gate operativo como condición visible, sin exigir una corrida nueva exclusivamente por el commit del reviewer ni presentar 123 tests declarados por el autor como evidencia propia.
+- **No agregar AG nueva**: esta ronda confirma y cierra el patrón H10, no introduce una clase recurrente. El cierre de la PR de contratos no concluye SEC-09; la implementación y las mutaciones SQL quedan para una PR nueva.

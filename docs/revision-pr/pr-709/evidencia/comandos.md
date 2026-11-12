@@ -256,3 +256,81 @@ node /tmp/pr709-r3-static.mjs "$PWD"
 ```
 
 **Prueba RED futura** de `cc050_courier_dni_hardening.sql`: varias filas con fechas conocidas + empate; verificar array de IDs en orden `p.created_at DESC,c.profile_id DESC`, no solo contar filas. Mutación de alias `c.created_at` y mutación de quitar `ORDER BY` deben poner el test en rojo, y restaurar el orden correcto debe dejarlo verde. Solo para la PR de implementación.
+---
+
+## Ronda 4 — PR #709 head 1a0b53d6 (2026-11-12)
+
+### Qué se verificó, sobre qué SHA
+
+- GitHub head exacto `1a0b53d6caeb028f471182ed9055896ceb3cd593`, base `dba3314f17f2068b6ff0c7596476d81c2c92e1c1`.
+- `compare_commits(7ad637db,1a0b53d6)`: un commit, tres archivos documentales (`CC-050.md` +8/-3; `T-434.md` +3/-1; `log/T-434.md` +15). Ficha y plan conservan archivos permitidos. Sin edición de la carpeta del revisor por parte del agy.
+- Fuente de H10: `CC-050 `3b`, `T-434 DoD`, DDL `schema_v1`, `database.types.ts` y SQL de `CC-044` desde develop. **9/9 comprobaciones independientes verdes y 4/4 mutaciones de strings en memoria detectadas**. El control realiza cruces de alias, permisos previstos, campos declarados, DoD de secuencia, fechas, UUIDs y count.
+- **20/20 campos contrastados contra `database.types.ts`** en `profiles`, `couriers`, `courier_documents`, `rate_limits` y `audit_log`. Esquema DDL confirma `profiles.created_at`, no `couriers.created_at`. `CC-044` usa `p.created_at`.
+- **CI real leído:** run [43193576599](https://github.com/cadeApp/cadeApp/actions/runs/43193576599) de ese SHA `cancelled`, sin jobs; combinado: `approval-policy` y Vercel `success`. No CI GREEN. Autor declara `pnpm exec vitest run tools` 123/123, no reproducido por el revisor.
+- **No ejecutado:** clone local, typecheck, lint, unit, test:db, pgTAP, Docker, Supabase, `git merge-tree` o scripts de `docs/revision-pr/**`. Las mutaciones son **documentales en memoria**, no RED→GREEN SQL de la implementación que aún no existe.
+
+### Control completo del revisor R4 (portable, sin ejecutar scripts de docs/revision-pr)
+
+El siguiente script Node reproduce desde un clone limpio en el head exacto el control aplicado a los textos por JS del conector. El equivalente se **ejecutó en el runtime JS del revisor**; el script Node que se muestra abajo **no se ejecutó en esta sesión**. Guardarlo bajo `/tmp`, no en `docs/revision-pr/**`:
+
+```bash
+cat > /tmp/pr709-r4-static.mjs <<'NODE'
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+const root=process.argv[2]||process.cwd();
+const get=p=>readFileSync(path.join(root,p),'utf8');
+const d={
+  cc:get('docs/contracts/CC-050.md'),
+  task:get('docs/tasks/T-434.md'),
+  types:get('src/types/database.types.ts'),
+  schema:get('supabase/migrations/20260922031435_schema_v1.sql'),
+  sql044:get('supabase/migrations/20261104200100_cc044_admin_list_applicants.sql')
+};
+const rowBlock=(table)=>d.types.split('      '+table+': {')[1]?.split('        Insert: {')[0]||'';
+const cols={
+  profiles:['display_name','phone','created_at','id'],
+  couriers:['profile_id','status','application_submitted','dni_hmac'],
+  courier_documents:['courier_id'],
+  rate_limits:['subject','action','window_start','count'],
+  audit_log:['actor_id','action','target_type','target_id','before','after']
+};
+const allCols=Object.entries(cols).every(([table,fields])=>fields.every(field=>new RegExp('^          '+field+': ','m').test(rowBlock(table))));
+const order='order by p.created_at desc, c.profile_id desc';
+const join='from public.couriers c join public.profiles p on p.id = c.profile_id';
+const checks={
+  contractJoin:d.cc.includes(join),
+  contractOrder:d.cc.includes(order)&&!d.cc.includes('order by c.created_at'),
+  contractLimit:d.cc.includes('`limit 10`'),
+  doDSequence:d.task.includes('secuencia exacta sigue `p.created_at desc, c.profile_id desc`'),
+  doDMutants:d.task.includes('Mutaciones: `c.created_at` (falla) y sin `order by` (cambia la secuencia)'),
+  cc44Reference:d.sql044.includes('join public.profiles p on p.id = c.profile_id')&&d.sql044.includes('p.created_at'),
+  schemaHasProfileDate:d.schema.includes('create table public.profiles')&&d.schema.includes('created_at timestamptz not null default now()'),
+  typesNoCourierDate:!rowBlock('couriers').includes('created_at:'),
+  allDomainColumns:allCols
+};
+for(const [name,ok] of Object.entries(checks))assert.equal(ok,true,name+' baseline');
+console.log('BASELINE: 9/9 hechos sobre fuentes reales PASS');
+const mut={
+  badAlias:d.cc.replace(order,'order by c.created_at desc, c.profile_id desc'),
+  noOrder:d.cc.replace(order,'-- no order'),
+  noJoin:d.cc.replace(join,'from public.couriers c'),
+  weakTest:d.task.replace('secuencia exacta sigue `p.created_at desc, c.profile_id desc`','solo cuenta candidatos')
+};
+assert.equal(mut.badAlias.includes(order),false);
+assert.equal(mut.noOrder.includes(order),false);
+assert.equal(mut.noJoin.includes(join),false);
+assert.equal(mut.weakTest.includes('secuencia exacta sigue `p.created_at desc, c.profile_id desc`'),false);
+console.log('MUTACIONES DOC EN MEMORIA: 4/4 detectadas (sin escribir archivos)');
+console.log('COLUMNAS: 20/20 por 5 tablas; no se ejecutó SQL ni CI');
+NODE
+node /tmp/pr709-r4-static.mjs "$PWD"
+```
+
+**Precaución:** el caso de la futura pgTAP debe insertar candidatos deliberadamente fuera del orden exigido y comparar la **secuencia completa de UUIDs**, no confiar en que quitar `ORDER BY` altere la salida espontáneamente. Las mutaciones de alias y de ausencia de ORDER BY deberán comprobarse en RED/GREEN de **la PR de implementación**, no en esta documental.
+
+### Checks que deben constar antes del merge documental
+
+- `CI` del head 1a0b53d6: **cancelado**, no evaluable; sin salida de typecheck/lint/unit/db-tests.
+- `approval-policy` success; Vercel success. No se sustituye un workflow cancelado por estos checks.
+- **No ejecutar manualmente CI o workflow desde esta revisión**. El commit documental de revisión puede lanzar un workflow nuevo, pero por regla no se exige verde nuevo **solo** por ese commit. Queda al responsable del merge verificar el gate exigido por el repositorio y los logs de una corrida que realmente haya terminado o el procedimiento de excepción documentado.
