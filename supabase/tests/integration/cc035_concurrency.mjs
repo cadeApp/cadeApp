@@ -11,6 +11,13 @@
  *   reasignación audite a C como dueño previo (cadena C→A, C→B: RED); al restaurar, C→A→B (GREEN).
  *   --mutation-check: una copia efímera de la migración con un solo intento (sin reintento ante unique_violation) deja
  *   a la segunda sesión del escenario 1 en error (RED); al restaurar la migración original vuelve a GREEN.
+ *   3. (CC-049, solo en el modo estándar) preservación en la primera aplicación: la base vuelve a la migración
+ *      anterior a CC-049, se siembran una suscripción permitida (E01) y otra fuera de la lista (E08) con timestamps
+ *      fijos, se aplica CC-049 con `supabase migration up` y las dos filas siguen con sus ocho columnas iguales. Al
+ *      final se restaura la base completa con `supabase db reset`.
+ *
+ * Las mutaciones re-aplican la migración vigente de la RPC (CC-049, idempotente): restaurar la de CC-035 dejaría la RPC
+ * sin la allowlist para los runners siguientes.
  */
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -28,8 +35,16 @@ if (!dbContainer) {
 
 const migrationPath = path.resolve(
   process.cwd(),
-  'supabase/migrations/20261020123000_cc035_register_push_subscription.sql'
+  'supabase/migrations/20261112120000_cc049_push_subscriptions_hardening.sql'
 );
+const PRE_CC049_VERSION = '20261111120000';
+
+function supabaseCli(args) {
+  const res = spawnSync('pnpm', ['supabase', ...args], { encoding: 'utf8', stdio: 'inherit' });
+  if (res.status !== 0) {
+    throw new Error(`${TAG} supabase ${args.join(' ')} terminó con código ${res.status}`);
+  }
+}
 
 function runSql(sql) {
   const res = spawnSync(
@@ -378,6 +393,51 @@ async function lockMutationCheck(userA, userB, userC, endpoint) {
   console.log(`${TAG} Control de mutación del lock GREEN confirmado: con la migración original la cadena es C→A→B.`);
 }
 
+/** CC-049 (H02, D5-C): la primera aplicación de la migración conserva las filas históricas, permitidas o no. */
+function preservationOnFirstApply() {
+  console.log(`${TAG} --- CC-049: preservación de suscripciones en la primera aplicación de la migración ---`);
+  supabaseCli(['db', 'reset', '--version', PRE_CC049_VERSION, '--no-seed']);
+  try {
+    const owner = crypto.randomUUID();
+    const allowedId = crypto.randomUUID();
+    const blockedId = crypto.randomUUID();
+    const cc049Applied = () =>
+      runSql(`select count(*)::int from pg_policies where tablename = 'push_subscriptions' and policyname = 'push_subscriptions_select_self';`);
+    assert.equal(cc049Applied(), '0', `${TAG} precondición: CC-049 todavía no está aplicada`);
+
+    runSql(`
+      insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
+      values ('${owner}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'p_${owner}@cc049.test', 'pwd', '{"role":"merchant"}'::jsonb);
+      insert into public.push_subscriptions (id, user_id, endpoint, p256dh, auth, platform, created_at, last_seen_at)
+      values
+        ('${allowedId}', '${owner}', 'https://fcm.googleapis.com/fcm/send/abc', 'p256dhE01', 'authE01', 'web',
+         '2025-01-01T00:00:00Z', '2025-02-01T00:00:00Z'),
+        ('${blockedId}', '${owner}', 'https://push.example.com/abc', 'p256dhE08', 'authE08', null,
+         '2025-01-01T00:00:00Z', '2025-02-01T00:00:00Z');
+    `);
+    const snapshot = () =>
+      runSql(`
+        select coalesce(jsonb_agg(to_jsonb(s) order by s.id), '[]'::jsonb)::text
+        from public.push_subscriptions s where s.user_id = '${owner}';
+      `);
+    const before = snapshot();
+    assert.equal(JSON.parse(before).length, 2, `${TAG} se sembraron las dos filas`);
+
+    supabaseCli(['migration', 'up']);
+    assert.equal(cc049Applied(), '1', `${TAG} CC-049 quedó aplicada por migration up`);
+
+    const after = snapshot();
+    assert.deepEqual(
+      JSON.parse(after),
+      JSON.parse(before),
+      `${TAG} la primera aplicación de CC-049 debe conservar las dos filas con sus ocho columnas`
+    );
+    console.log(`${TAG} CC-049 preservación GREEN: E01 y E08 siguen idénticas tras la primera aplicación.`);
+  } finally {
+    supabaseCli(['db', 'reset']);
+  }
+}
+
 async function main() {
   const userA = crypto.randomUUID();
   const userB = crypto.randomUUID();
@@ -403,6 +463,9 @@ async function main() {
     await scenario2(userA, userB, userC, endpoint);
   }
   resetEndpoint(endpoint);
+  if (!process.argv.includes('--mutation-check') && !process.argv.includes('--mutation-lock-check')) {
+    preservationOnFirstApply();
+  }
   console.log(`${TAG} Todos los escenarios GREEN.`);
 }
 

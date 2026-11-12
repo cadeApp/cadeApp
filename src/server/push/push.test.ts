@@ -4,13 +4,10 @@ import {
   validatePushPayload,
   sendPushNotification,
   safeNotifyPostTransition,
-  WebPushTransport,
   type PushEvent,
   type PushSubscriptionRecord,
   type PushTransport,
   type PushDatabaseClient,
-  type WebPushClient,
-  type WebPushOptions,
 } from './sender';
 
 vi.mock('@/server/env', () => ({
@@ -36,7 +33,7 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
     {
       id: 'sub-1',
       userId: USER_1,
-      endpoint: 'https://push.example.com/sub/1',
+      endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1',
       p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9t0PvNuypwcPf8J3xW9Q5h3oG_SNNowv8WymgwWwgWwgWg=',
       auth: 'tBHItJI5svbpez7KI4CCXg==',
       platform: 'web',
@@ -44,7 +41,7 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
     {
       id: 'sub-2',
       userId: USER_2,
-      endpoint: 'https://push.example.com/sub/2',
+      endpoint: 'https://fcm.googleapis.com/fcm/send/sub/2',
       p256dh: 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjXYJuMWTr3qgllFYBsDrDNbDHVmE=',
       auth: 'G2B5YmCg2s8R9eT9_W7_ag==',
       platform: 'android',
@@ -153,7 +150,8 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
       expect(result.errors[0]?.message).toMatch(/unavailable|ECONNRESET/);
       expect(result.attempts).toEqual([
         {
-          endpoint: 'https://push.example.com/sub/1',
+          outcome: 'sent',
+          endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1',
           status: 500,
           error: expect.stringMatching(/unavailable|ECONNRESET/),
         },
@@ -223,146 +221,59 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
     });
   });
 
-  describe('PR91-H03: WebPushTransport contra el comportamiento real del adaptador', () => {
-    it('traduce un rechazo con statusCode 410 en { status: 410 } sin propagar excepción', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockRejectedValue({ statusCode: 410, body: 'Gone' }),
+  // PR91-H03 y PR91-H08 (adaptador y VAPID) pasaron a transport.test.ts: con CC-049 (D4-B) el transporte ya no usa
+  // web-push.sendNotification y se prueba contra un servidor local.
+
+  describe('CC-049: el emisor aplica la allowlist (E01–E19)', () => {
+    const CASES: ReadonlyArray<readonly [string, string, boolean]> = [
+      ['E01', 'https://fcm.googleapis.com/fcm/send/abc', true],
+      ['E02', 'https://updates.push.services.mozilla.com/wpush/v2/abc', true],
+      ['E03', 'https://web.push.apple.com/QAbc', true],
+      ['E04', 'https://wns2-par02p.notify.windows.com/w/?token=abc', true],
+      ['E05', 'https://FCM.GoogleAPIs.com/fcm/send/abc', true],
+      ['E06', 'https://fcm.googleapis.com:443/fcm/send/abc', true],
+      ['E07', 'http://fcm.googleapis.com/fcm/send/abc', false],
+      ['E08', 'https://push.example.com/abc', false],
+      ['E09', 'https://fcm.googleapis.com.evil.example/abc', false],
+      ['E10', 'https://fcm.googleapis.com@evil.example/abc', false],
+      ['E11', 'https://fcm.googleapis.com:8443/fcm/send/abc', false],
+      ['E12', 'https://fcm.googleapis.com\\evil.example/abc', false],
+      ['E13', 'https://fcm.googleapis.com./fcm/send/abc', false],
+      ['E14', 'https://fcm%2egoogleapis.com/fcm/send/abc', false],
+      ['E15', 'https://[2001:db8::1]/fcm/send/abc', false],
+      ['E16', 'https://fcm.googleapis.com', false],
+      ['E17', 'https://notify.windows.com/w/?token=abc', false],
+      ['E18', 'https://a.b.notify.windows.com/w/?token=abc', false],
+      ['E19', 'https://evilnotify.windows.com/w/?token=abc', false],
+    ];
+
+    it.each(CASES)('%s %s → enviado: %s', async (_id, endpoint, allowed) => {
+      const db: PushDatabaseClient = {
+        getSubscriptionsForUsers: vi.fn().mockResolvedValue([
+          { id: 'sub-x', userId: USER_1, endpoint, p256dh: 'k', auth: 'a' },
+        ]),
+        deleteSubscriptionByEndpoint: vi.fn(),
       };
+      const transport: PushTransport = { send: vi.fn().mockResolvedValue({ status: 201 }) };
 
-      const transport = new WebPushTransport(mockWebpush);
-      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-
-      expect(res.status).toBe(410);
-    });
-
-    it('traduce un rechazo con statusCode 404 en { status: 404 } sin propagar excepción', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockRejectedValue({ statusCode: 404, body: 'Not Found' }),
-      };
-
-      const transport = new WebPushTransport(mockWebpush);
-      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-
-      expect(res.status).toBe(404);
-    });
-
-    it('traduce un rechazo sin statusCode en { status: 500, error: ... }', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockRejectedValue(new Error('DNS lookup failure')),
-      };
-
-      const transport = new WebPushTransport(mockWebpush);
-      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-
-      expect(res.status).toBe(500);
-      expect(res.error).toBe('DNS lookup failure');
-    });
-
-    it('traduce una resolución exitosa con statusCode 201 en { status: 201 }', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
-      };
-
-      const transport = new WebPushTransport(mockWebpush);
-      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-
-      expect(res.status).toBe(201);
-    });
-
-    it('integra WebPushTransport con sendPushNotification eliminando la suscripción ante un 410 real de web-push', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockRejectedValue({ statusCode: 410, body: 'Gone' }),
-      };
-
-      const transport = new WebPushTransport(mockWebpush);
-      const result = await sendPushNotification([USER_1], {
-        event: 'request_published',
-        requestId: REQ_ID,
-      }, {
-        db: mockDb,
+      const result = await sendPushNotification([USER_1], { event: 'request_published', requestId: REQ_ID }, {
+        db,
         transport,
       });
 
-      expect(result.failedCount).toBe(1);
-      expect(result.deletedSubscriptions).toContain('https://push.example.com/sub/1');
-      expect(mockDb.deleteSubscriptionByEndpoint).toHaveBeenCalledWith('https://push.example.com/sub/1');
-    });
-  });
-
-  describe('PR91-H08: Protección y configuración VAPID de WebPushTransport', () => {
-    it('configura VAPID con subject, clave pública y clave privada esperadas en el primer envío y no repite la llamada', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
-      };
-
-      const transport = new WebPushTransport(mockWebpush);
-      await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-      await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-
-      expect(mockWebpush.setVapidDetails).toHaveBeenCalledTimes(1);
-      expect(mockWebpush.setVapidDetails).toHaveBeenCalledWith(
-        'mailto:test@cadeapp.com',
-        'test-public-key',
-        'test-private-key'
-      );
-      expect(mockWebpush.sendNotification).toHaveBeenCalledTimes(2);
-    });
-
-    it('devuelve fallo técnico determinista 500 y NO llama a sendNotification si falta la clave pública', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
-      };
-
-      const transport = new WebPushTransport(mockWebpush, {
-        vapid: { publicKey: '', privateKey: 'test-private-key' },
-      });
-      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-
-      expect(res.status).toBe(500);
-      expect(res.error).toMatch(/VAPID credentials missing.*NEXT_PUBLIC_VAPID_PUBLIC_KEY/i);
-      expect(mockWebpush.setVapidDetails).not.toHaveBeenCalled();
-      expect(mockWebpush.sendNotification).not.toHaveBeenCalled();
-    });
-
-    it('devuelve fallo técnico determinista 500 y NO llama a sendNotification si falta la clave privada', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
-      };
-
-      const transport = new WebPushTransport(mockWebpush, {
-        vapid: { publicKey: 'test-public-key', privateKey: '' },
-      });
-      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-
-      expect(res.status).toBe(500);
-      expect(res.error).toMatch(/VAPID credentials missing.*VAPID_PRIVATE_KEY/i);
-      expect(mockWebpush.setVapidDetails).not.toHaveBeenCalled();
-      expect(mockWebpush.sendNotification).not.toHaveBeenCalled();
-    });
-
-    it('devuelve fallo técnico determinista 500 y NO llama a sendNotification si faltan ambas claves', async () => {
-      const mockWebpush: WebPushClient = {
-        setVapidDetails: vi.fn(),
-        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
-      };
-
-      const transport = new WebPushTransport(mockWebpush, {
-        vapid: { publicKey: '', privateKey: '' },
-      });
-      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
-
-      expect(res.status).toBe(500);
-      expect(res.error).toMatch(/VAPID credentials missing/i);
-      expect(mockWebpush.setVapidDetails).not.toHaveBeenCalled();
-      expect(mockWebpush.sendNotification).not.toHaveBeenCalled();
+      expect(result.attempts).toHaveLength(1);
+      const attempt = result.attempts[0]!;
+      if (allowed) {
+        expect(transport.send).toHaveBeenCalledTimes(1);
+        expect(attempt).toEqual({ outcome: 'sent', endpoint, status: 201 });
+        expect(result.sentCount).toBe(1);
+      } else {
+        expect(transport.send).not.toHaveBeenCalled();
+        expect(attempt).toEqual({ outcome: 'blocked', status: 0, error: 'ENDPOINT_NOT_ALLOWED' });
+        expect(Object.hasOwn(attempt, 'endpoint')).toBe(false);
+        expect(result.failedCount).toBe(1);
+        expect(db.deleteSubscriptionByEndpoint).not.toHaveBeenCalled();
+      }
     });
   });
 
@@ -388,7 +299,7 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
         expect(mockDb.deleteSubscriptionByEndpoint).not.toHaveBeenCalled();
         expect(deletedEndpoints).toEqual([]);
         expect(result.attempts).toEqual([
-          { endpoint: 'https://push.example.com/sub/1', status },
+          { outcome: 'sent', endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1', status },
         ]);
       }
     );
@@ -410,17 +321,18 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
 
         expect(result.sentCount).toBe(0);
         expect(result.failedCount).toBe(1);
-        expect(result.deletedSubscriptions).toContain('https://push.example.com/sub/1');
-        expect(mockDb.deleteSubscriptionByEndpoint).toHaveBeenCalledWith('https://push.example.com/sub/1');
-        expect(deletedEndpoints).toEqual(['https://push.example.com/sub/1']);
+        expect(result.deletedSubscriptions).toContain('https://fcm.googleapis.com/fcm/send/sub/1');
+        expect(mockDb.deleteSubscriptionByEndpoint).toHaveBeenCalledWith('https://fcm.googleapis.com/fcm/send/sub/1');
+        expect(deletedEndpoints).toEqual(['https://fcm.googleapis.com/fcm/send/sub/1']);
         expect(result.attempts).toEqual([
-          { endpoint: 'https://push.example.com/sub/1', status },
+          { outcome: 'sent', endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1', status },
         ]);
       }
     );
 
-    it.each([429, 500, 503])(
-      'trata HTTP %i como error transitorio, NO elimina la suscripción válida y registra el status',
+    // CC-049 (PR698-H02): un 3xx no se sigue ni cuenta como envío.
+    it.each([300, 302, 399, 429, 500, 503])(
+      'trata HTTP %i como falla sin baja, NO elimina la suscripción válida y registra el status',
       async (status) => {
         const transport: PushTransport = {
           send: vi.fn().mockResolvedValue({ status }),
@@ -440,7 +352,7 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
         expect(mockDb.deleteSubscriptionByEndpoint).not.toHaveBeenCalled();
         expect(deletedEndpoints).toEqual([]);
         expect(result.attempts).toEqual([
-          { endpoint: 'https://push.example.com/sub/1', status },
+          { outcome: 'sent', endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1', status },
         ]);
       }
     );

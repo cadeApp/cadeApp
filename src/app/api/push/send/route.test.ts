@@ -84,7 +84,7 @@ describe('POST /api/push/send', () => {
       sentCount: 1,
       failedCount: 0,
       deletedSubscriptions: [],
-      attempts: [{ endpoint: 'https://push.example.com/sub/1', status: 201 }],
+      attempts: [{ outcome: 'sent', endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1', status: 201 }],
       errors: [],
     });
 
@@ -109,5 +109,37 @@ describe('POST /api/push/send', () => {
       event: 'request_published',
       requestId: REQ_ID,
     });
+  });
+  it('CC-049 (PR698-H01): un intento bloqueado llega al JSON sin la propiedad endpoint', async () => {
+    vi.mocked(sendPushNotification).mockResolvedValue({
+      totalSubscriptions: 2,
+      sentCount: 1,
+      failedCount: 1,
+      deletedSubscriptions: [],
+      attempts: [
+        { outcome: 'sent', endpoint: 'https://fcm.googleapis.com/fcm/send/sub/1', status: 201 },
+        { outcome: 'blocked', status: 0, error: 'ENDPOINT_NOT_ALLOWED' },
+      ],
+      errors: [],
+    });
+
+    const req = new NextRequest('http://localhost:3000/api/push/send', {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-cron-secret-12345' },
+      body: JSON.stringify({
+        userIds: [USER_ID],
+        event: { event: 'request_published', requestId: REQ_ID },
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.result.sentCount).toBe(1);
+    expect(json.result.failedCount).toBe(1);
+    expect(JSON.stringify(json)).not.toContain('push.example.com');
+    const blocked = json.result.attempts[1];
+    expect(blocked).toEqual({ outcome: 'blocked', status: 0, error: 'ENDPOINT_NOT_ALLOWED' });
+    expect(Object.hasOwn(blocked, 'endpoint')).toBe(false);
   });
 });

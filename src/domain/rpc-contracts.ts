@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { type ActionResult, type DomainErrorCode, err, ok } from './errors';
+import { isAllowedPushEndpoint } from './push-endpoint';
 import {
   aguilaresLatSchema,
   aguilaresLngSchema,
@@ -637,7 +638,9 @@ export const registerPushSubscriptionInputSchema = z.object({
   endpoint: z
     .string()
     .max(2048)
-    .regex(/^https:\/\/\S+$/),
+    .regex(/^https:\/\/\S+$/)
+    // CC-049: solo servicios push de los navegadores (misma regla que la RPC).
+    .refine(isAllowedPushEndpoint),
   p256dh: pushKeySchema,
   auth: pushKeySchema,
   platform: z.literal('web').nullable().optional(),

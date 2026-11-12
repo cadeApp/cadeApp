@@ -146,7 +146,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
     it('DoD: una suscripción no se elimina (debe fallar si la baja no desuscribe en navegador y backend)', async () => {
       const mockUnsubscribe = vi.fn().mockResolvedValue(true);
       const mockSubscription = {
-        endpoint: 'https://push.example.com/sub/active-1',
+        endpoint: 'https://fcm.googleapis.com/fcm/send/sub/active-1',
         unsubscribe: mockUnsubscribe,
       };
 
@@ -177,7 +177,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
         '/api/push/subscriptions',
         expect.objectContaining({
           method: 'DELETE',
-          body: JSON.stringify({ endpoint: 'https://push.example.com/sub/active-1' }),
+          body: JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/sub/active-1' }),
         })
       );
     });
@@ -207,9 +207,9 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 
     it('DoD: alta de suscripción es idempotente si ya existe suscripción activa y RECONCILIA con el backend', async () => {
       const existingSubscription = {
-        endpoint: 'https://push.example.com/sub/existing',
+        endpoint: 'https://fcm.googleapis.com/fcm/send/sub/existing',
         toJSON: () => ({
-          endpoint: 'https://push.example.com/sub/existing',
+          endpoint: 'https://fcm.googleapis.com/fcm/send/sub/existing',
           keys: { p256dh: 'p256', auth: 'auth' },
         }),
       };
@@ -257,9 +257,9 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 
     it('PR120-H03: subscribeToPush falla si el backend responde 401', async () => {
       const mockSub = {
-        endpoint: 'https://push.example.com/sub/new-1',
+        endpoint: 'https://fcm.googleapis.com/fcm/send/sub/new-1',
         toJSON: () => ({
-          endpoint: 'https://push.example.com/sub/new-1',
+          endpoint: 'https://fcm.googleapis.com/fcm/send/sub/new-1',
           keys: { p256dh: 'p256', auth: 'auth' },
         }),
       };
@@ -294,9 +294,9 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 
     it('PR120-H03: subscribeToPush falla si las claves p256dh o auth están ausentes', async () => {
       const mockSubWithoutKeys = {
-        endpoint: 'https://push.example.com/sub/no-keys',
+        endpoint: 'https://fcm.googleapis.com/fcm/send/sub/no-keys',
         toJSON: () => ({
-          endpoint: 'https://push.example.com/sub/no-keys',
+          endpoint: 'https://fcm.googleapis.com/fcm/send/sub/no-keys',
           keys: {},
         }),
       };
@@ -330,7 +330,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
     });
 
     it('PR120-H05: unsubscribeFromPush retiene endpoint pendiente si DELETE falla con 500 y reconcilia en segunda llamada', async () => {
-      const targetEndpoint = 'https://push.example.com/sub/orphan-check';
+      const targetEndpoint = 'https://fcm.googleapis.com/fcm/send/sub/orphan-check';
       const mockUnsubscribe = vi.fn().mockResolvedValue(true);
       const mockSub = {
         endpoint: targetEndpoint,
@@ -390,7 +390,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
   });
 
   describe('4. PR120 Ronda 2: permiso, matriz de alta/baja, storage y layout', () => {
-    const SUB_ENDPOINT = 'https://push.example.com/sub/round-2';
+    const SUB_ENDPOINT = 'https://fcm.googleapis.com/fcm/send/sub/round-2';
 
     function mockServiceWorker(pushManager: Record<string, unknown>) {
       Object.defineProperty(globalThis.navigator, 'serviceWorker', {
@@ -558,8 +558,8 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
             pushManager: {
               getSubscription: vi.fn().mockResolvedValue(null),
               subscribe: vi.fn().mockResolvedValue({
-                endpoint: 'https://push.example.com/sub/err',
-                toJSON: () => ({ endpoint: 'https://push.example.com/sub/err', keys: { p256dh: 'p', auth: 'a' } }),
+                endpoint: 'https://fcm.googleapis.com/fcm/send/sub/err',
+                toJSON: () => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/sub/err', keys: { p256dh: 'p', auth: 'a' } }),
               }),
             },
           }),
@@ -644,8 +644,8 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
             pushManager: {
               getSubscription: vi.fn().mockResolvedValue(null),
               subscribe: vi.fn().mockResolvedValue({
-                endpoint: 'https://push.example.com/sub/ok',
-                toJSON: () => ({ endpoint: 'https://push.example.com/sub/ok', keys: { p256dh: 'p', auth: 'a' } }),
+                endpoint: 'https://fcm.googleapis.com/fcm/send/sub/ok',
+                toJSON: () => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/sub/ok', keys: { p256dh: 'p', auth: 'a' } }),
               }),
             },
           }),
@@ -673,8 +673,8 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
             pushManager: {
               getSubscription: vi.fn().mockResolvedValue(null),
               subscribe: vi.fn().mockResolvedValue({
-                endpoint: 'https://push.example.com/sub/promo',
-                toJSON: () => ({ endpoint: 'https://push.example.com/sub/promo', keys: { p256dh: 'p', auth: 'a' } }),
+                endpoint: 'https://fcm.googleapis.com/fcm/send/sub/promo',
+                toJSON: () => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/sub/promo', keys: { p256dh: 'p', auth: 'a' } }),
               }),
             },
           }),
@@ -702,8 +702,8 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
             pushManager: {
               getSubscription: vi.fn().mockResolvedValue(null),
               subscribe: vi.fn().mockResolvedValue({
-                endpoint: 'https://push.example.com/sub/promo-fail',
-                toJSON: () => ({ endpoint: 'https://push.example.com/sub/promo-fail', keys: { p256dh: 'p', auth: 'a' } }),
+                endpoint: 'https://fcm.googleapis.com/fcm/send/sub/promo-fail',
+                toJSON: () => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/sub/promo-fail', keys: { p256dh: 'p', auth: 'a' } }),
               }),
             },
           }),
@@ -894,7 +894,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 });
 
 describe('T-382: errores claros al activar avisos y estado real en «Configurar»', () => {
-  const ENDPOINT = 'https://push.example.com/sub/t382-secret-capability';
+  const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/sub/t382-secret-capability';
 
   function subscription(endpoint = ENDPOINT) {
     return {
@@ -1573,7 +1573,7 @@ describe('T-382: errores claros al activar avisos y estado real en «Configurar�
 
     it('H05: si B falla su propia baja, no pisa la baja pendiente de A', async () => {
       setPermission('granted');
-      const OTHER = 'https://push.example.com/sub/t382-account-b';
+      const OTHER = 'https://fcm.googleapis.com/fcm/send/sub/t382-account-b';
       localStorage.setItem(pendingUnsubStorageKey(USER_A), ENDPOINT);
       session.userId = USER_B;
       setPushManager({ getSubscription: vi.fn().mockResolvedValue(subscription(OTHER)) });

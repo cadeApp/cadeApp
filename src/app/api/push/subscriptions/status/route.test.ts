@@ -12,7 +12,7 @@ type ServerClient = Awaited<ReturnType<typeof createClient>>;
 
 const USER_A = '00000000-0000-4000-8000-00000000000a';
 const USER_B = '00000000-0000-4000-8000-00000000000b';
-const ENDPOINT_A = 'https://push.example.com/sub/account-a';
+const ENDPOINT_A = 'https://fcm.googleapis.com/fcm/send/sub/account-a';
 
 interface Row {
   id: string;

@@ -129,7 +129,7 @@ test.describe('T-383: suscripción push en un navegador que quedó suscripto con
     }
 
     const browserSubscription: FakeBrowserSubscription = {
-      endpoint: `https://push.e2e.invalid/t383/${randomUUID()}`,
+      endpoint: `https://fcm.googleapis.com/fcm/send/e2e-t383-${randomUUID()}`,
       p256dh: randomBytes(65).toString('base64url'),
       auth: randomBytes(16).toString('base64url'),
     };
