@@ -73,7 +73,7 @@ begin
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
 
-  if v_status not in ('rejected', 'suspended') or v_dni_hmac is null then
+  if v_status not in ('rejected', 'suspended', 'approved') or v_dni_hmac is null then
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
   end if;
 
