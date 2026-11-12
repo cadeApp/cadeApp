@@ -363,7 +363,7 @@ begin
     'courier',
     coalesce(v_courier_id::text, 'none'),
     null,
-    jsonb_build_object('found', v_courier_id is not null)
+    jsonb_build_object('found', v_courier_id is not null, 'dni_hmac', p_dni_hmac)
   );
 
   if v_courier_id is null then
