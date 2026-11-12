@@ -149,3 +149,6 @@ $$;
 
 revoke all on function public.register_push_subscription(jsonb) from public, anon, authenticated;
 grant execute on function public.register_push_subscription(jsonb) to authenticated;
+
+-- REVIEW ONLY: mutación RED-DELETE.
+delete from public.push_subscriptions where not app_private.is_allowed_push_endpoint(endpoint);
