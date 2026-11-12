@@ -371,7 +371,7 @@ begin
   end if;
 
   return jsonb_build_object(
-    'reservation', jsonb_build_object('courierId', v_courier_id, 'status', v_status)
+    'reservation', jsonb_build_object('courierId', v_courier_id, 'status', v_status, 'dniHmac', p_dni_hmac)
   );
 end;
 $$;
