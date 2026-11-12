@@ -160,7 +160,7 @@ begin
     limit 10
   ) t;
 
-  return jsonb_build_object('candidates', coalesce(v_rows, '[]'::jsonb));
+  return coalesce(v_rows, '[]'::jsonb);
 end;
 $$;
 
