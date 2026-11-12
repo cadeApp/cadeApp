@@ -41,3 +41,13 @@ No se asigna un AG nuevo porque no se verificó el máximo de todas las ramas re
 H02 mejoró sustancialmente: el control ya se ubica en la primera aplicación y no en la segunda. El residuo es de **enumeración de fila**: un test que verifica los seis campos nombrados puede dejar fuera `created_at` y `last_seen_at`, pese a que el esquema guarda ocho. Una migración mutada que solo pisa esos timestamps no altera los seis campos y pasa en verde. La defensa es comparar **la fila completa** y sembrar timestamps sentinela distintos de los defaults y de `now()`; después matar una mutación que solo toca uno de ellos. Es el patrón `P08` aplicado a una proyección incompleta.
 
 H05 quedó bien cerrada con una tabla de 19 pares literales en el CC y réplica con expected fijo en SQL/TS. La lección es que una matriz de pruebas contractual necesita **IDs, ejemplos específicos y oráculo independiente**, y no solo nombres de clases de URL. Cinco mutaciones independientes sobre esos pares dieron rojo en un arnés local Node, sin confundirlo con los tests aún futuros.
+
+---
+
+## Ronda 4 — cierre H02 (sin nuevo AG)
+
+**Corrección de un agujero señalado por la propia revisión previa:** en ronda 3 se pasó de la reaplicación a la primera aplicación, pero recién allí se detectó que verificar seis campos no equivale a preservar una fila de ocho columnas. La ronda 4 exige instantánea de fila completa, sentinels históricos en los timestamps y una mutación independiente que demuestre que el oráculo captura un UPDATE que no destruye filas.
+
+**Disciplina probatoria:** las tres mutaciones RED ejecutadas son **del texto del contrato**, no de PostgreSQL. En una PR documental es válido usar este tipo de control para decidir si el DoD está especificado; sería incorrecto tratarlo como GREEN de la migración. La PR de implementación debe traer su propia evidencia SQL y transporte, incluyendo RED-DELETE/RED-TIMESTAMP reales.
+
+**Ronda 4 cerrada sin bloqueantes:** no agregar reglas globales por un único caso, no reabrir D1–D5, y no pedir otro CI GREEN solo porque la revisión añadió archivos a `docs/revision-pr/**`.

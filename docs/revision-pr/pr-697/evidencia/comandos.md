@@ -189,7 +189,7 @@ Extraje del contrato E01–E19, comprobé IDs ordenados, 19 URLs únicas y compa
 
 Código autónomo, copiable a `/tmp/pr697_r3_matrix.mjs`:
 
-§§§js
+```js
 import assert from 'node:assert/strict';
 const rows = [
   {
@@ -309,18 +309,18 @@ const mutants=[
  ['E12',u=>allowed(u.replace('\\evil.example','/evil.example'))]
 ];
 for(const [id,fn] of mutants){let bad=rows.filter(r=>fn(r.url)!==r.expected).map(r=>r.id);assert.ok(bad.includes(id));const labels={E09:'substr en lugar de host entero',E19:'WNS sin punto de separación',E14:'aceptar escape %2e en hostname',E11:'aceptar puerto indebido',E12:'normalizar barra invertida antes del filtro'};console.log('RED de mutación '+id+': '+labels[id]+': '+bad.join(', '));}
-§§§
+```
 
 Salida observada de la ejecución local del mismo conjunto de casos:
 
-§§§text
+```text
 GREEN: 19/19 casos literales; IDs ordenados, URLs únicas y expectativas compatibles con el contrato.
 RED de mutación E09: substr en lugar de host entero: E09
 RED de mutación E19: WNS sin punto de separación: E19
 RED de mutación E14: aceptar escape %2e en hostname: E14
 RED de mutación E11: aceptar puerto indebido: E11
 RED de mutación E12: normalizar barra invertida antes del filtro: E12
-§§§
+```
 
 Este arnés valida **la especificación** de 19 URLs contra un clasificador local, **no** que las futuras implementaciones PostgreSQL o TypeScript estén verdes. Los cinco rojos son **mutaciones propias del revisor**, no salidas de CI del proyecto.
 
@@ -328,7 +328,7 @@ Este arnés valida **la especificación** de 19 URLs contra un clasificador loca
 
 Código completo para `/tmp/pr697_r3_h02.mjs`:
 
-§§§js
+```js
 import assert from 'node:assert/strict';
 const oldRow={id:'00000000-0000-4000-8000-000000000001',user_id:'00000000-0000-4000-8000-000000000002',endpoint:'https://push.example.com/abc',p256dh:'P256dhTestKey',auth:'AuthTestKey',platform:'web',created_at:'2025-01-01T00:00:00.000Z',last_seen_at:'2025-02-01T00:00:00.000Z'};
 const keys=['id','user_id','endpoint','p256dh','auth','platform'];
@@ -342,18 +342,98 @@ const mutatedCreated={...oldRow,created_at:'2026-11-12T05:00:00.000Z'};
 assert.deepEqual(keys.map(k=>mutatedCreated[k]),before);
 assert.notDeepEqual(mutatedCreated,oldRow);
 console.log('GREEN falso: created_at omitido; comparación integral lo detectaría');
-§§§
+```
 
 Salida observada:
 
-§§§text
+```text
 GREEN falso: seis valores comparados iguales pese a sobrescribir last_seen_at
 RED correcto: comparación de fila completa detecta last_seen_at alterado
 GREEN falso: created_at omitido; comparación integral lo detectaría
-§§§
+```
 
 Interpretable como: la prueba futura de primera aplicación puede resultar verde con una mutación que altera solo una columna temporal. **No se ejecutó ningún SQL ni pgTAP**. Los dos timestamps deben precargarse deliberadamente con valores diferentes a `now()`.
 
 ## Límites
 
 Sin clon Git local ni `git merge-tree`, ni dependencias PNPM; no se levantó Supabase o Docker; no se ejecutaron E2E ni tests SQL del futuro CC-049. La corrida real del job unit se consultó por el SHA revisado, pero no se presenta como ejecución de una implementación todavía ausente. Al revisor solo le consta lo que inspeccionó/ejecutó en esta ronda.
+
+---
+
+# Evidencia independiente — ronda 4 (SHA `afa9b40c`)
+
+## Origen, delta y límites
+
+- GitHub PR #697: head de contenido `afa9b40c9bd11b6e4039b53940aea25ed2a97c2e`, base `9dafedab`, mergeable=true.
+- `0745dfef..afa9b40c`: solo tres documentos CC/ficha/bitácora. La carpeta de revisión no fue tocada por el autor.
+- `supabase/migrations/20260922031435_schema_v1.sql:165-174` contiene exactamente ocho columnas de `push_subscriptions`.
+- `supabase/migrations/20261111120000_cc048_merchant_draft_only.sql` es la última migración existente antes del hipotético CC-049; no se ejecutó CC-049 porque la implementación aún está pendiente.
+- CI del SHA: typecheck, lint, build, audit, bundle-budget y unit success. Log de unit: `Test Files 202 passed (202)`, `Tests 3775 passed (3775)`. `db-tests` consultado en progreso. Autor declara 123/123 de vitest tools; no repetido por el revisor.
+- No se clonó (el contenedor no resolvió github.com), no se hizo `git merge-tree`, ni pgTAP, ni Supabase local/remoto, ni E2E.
+
+## Checker del contrato — completo y reproducible
+
+El siguiente script se ejecuta desde la raíz de un **clon local** del SHA de contenido. Su equivalente de lectura y mutación se ejecutó en la sesión de revisión sobre el texto recuperado del conector GitHub. Mide **solo la completitud de la especificación**, no el funcionamiento de SQL real. Guardar en `/tmp/pr697_r4_contract.mjs` y ejecutar `node /tmp/pr697_r4_contract.mjs`.
+
+```js
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const cc=fs.readFileSync('docs/contracts/CC-049.md','utf8');
+const task=fs.readFileSync('docs/tasks/T-432.md','utf8');
+const plan=fs.readFileSync('docs/implementation-plan.md','utf8');
+const schema=fs.readFileSync('supabase/migrations/20260922031435_schema_v1.sql','utf8');
+const section=cc.split('- **Preservación de filas históricas en la primera aplicación')[1]?.split('  - **Dominio:**')[0]??'';
+function verifyH02(s) {
+  const step4=s.match(/4\.\s+exige que las dos filas existan([\s\S]*?)5\./)?.[1]??'';
+  const cols=['id','user_id','endpoint','p256dh','auth','platform','created_at','last_seen_at'];
+  assert.ok(s.includes('antes de aplicar CC-049 por primera vez'));
+  assert.ok(s.includes('20261111120000'));
+  for (const name of cols) assert.ok(step4.includes('`'+name+'`'), 'No se compara: '+name);
+  assert.ok(s.includes("created_at = '2025-01-01T00:00:00Z'"), 'No hay sentinel created_at');
+  assert.ok(s.includes("last_seen_at = '2025-02-01T00:00:00Z'"), 'No hay sentinel last_seen_at');
+  assert.ok(s.includes('is not distinct from') && s.includes('to_jsonb'));
+  assert.ok(s.includes('**RED-DELETE:**') && s.includes('**RED-TIMESTAMP:**'));
+  assert.ok(s.includes('last_seen_at = now()'), 'RED-TIMESTAMP no especificado');
+  assert.ok(s.includes('pnpm supabase db reset'));
+}
+verifyH02(section);
+console.log('GREEN: H02 (8 columnas, 2 sentinels, primera aplicación, dos mutaciones)');
+const mutations=[
+ ['omitir timestamps',section.replace('`created_at`, `last_seen_at`','')],
+ ['quitar RED-TIMESTAMP',section.replace('**RED-TIMESTAMP:**','**MUTACION ELIMINADA:**')],
+ ['usar now() en el seed',section.replace("last_seen_at = '2025-02-01T00:00:00Z'","last_seen_at = now()")]
+];
+for (const [name,mutated] of mutations) {
+  assert.throws(()=>verifyH02(mutated),assert.AssertionError,'el control debió detectar: '+name);
+  console.log('RED detectado: '+name);
+}
+const dod=task.split('## DoD\n')[1]?.match(/^- \[ \] (.*)$/m)?.[1];
+const planDod=plan.split('\n').find(l=>l.startsWith('| T-432 |'))?.split('|')[6]?.trim();
+assert.equal(dod,planDod);
+assert.ok(task.includes('las ocho columnas')&&task.includes('RED-DELETE')&&task.includes('RED-TIMESTAMP'));
+assert.ok(schema.includes('created_at timestamptz')&&schema.includes('last_seen_at timestamptz'));
+console.log('GREEN: ficha / plan / esquema sincronizados');
+```
+
+**Salida equivalente observada sobre los textos reales del SHA:**
+
+```text
+GREEN: H02 (8 columnas, 2 sentinels, primera aplicación, dos mutaciones)
+RED detectado: omitir timestamps
+RED detectado: quitar RED-TIMESTAMP
+RED detectado: usar now() en el seed
+GREEN: ficha / plan / esquema sincronizados
+```
+
+Los tres resultados RED son **mutaciones de la especificación en memoria** que el validador detecta: una prueba real de la migración vendrá después, en la PR de implementación.
+
+## Verificación complementaria sin regresiones
+
+- H01: existen controles independientes de grants y policy con mutaciones, declarados en ficha y CC.
+- H03: `generateRequestDetails`, `request.destroy()`, goteo de bytes y prohibición de seguir 3xx conservados.
+- H04: unión `sent/blocked`, ausencia de propiedad `endpoint` y pruebas `Object.hasOwn` conservadas.
+- H05: 19 URLs E01–E19 únicas y con expecteds fijos; oráculo independiente de URL coincide 19/19.
+- M02: bitácora atribuye D4-B y D5-C a Lautaro073.
+- Primer DoD y fila T-432 en plan son literalmente iguales.
+
+**Criterio de fin:** esta ronda declara `SIN BLOQUEANTES DOCUMENTALES` y transfiere la obligación de demostrar RED/GREEN real de la migración y el transporte a la PR de implementación. No se emite autorización automática de merge ni se crea un nuevo test de CI artificial.
