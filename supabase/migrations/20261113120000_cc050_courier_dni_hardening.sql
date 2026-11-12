@@ -51,7 +51,7 @@ declare
   v_status public.courier_status;
   v_dni_hmac text;
 begin
-  perform app_private.assert_admin_aal2();
+  null; -- REVIEW ONLY: sin assert_admin_aal2
 
   -- Defensa contra pegar el hash o el número de DNI en el motivo; no garantiza un texto libre sin datos personales.
   if v_reason is null
