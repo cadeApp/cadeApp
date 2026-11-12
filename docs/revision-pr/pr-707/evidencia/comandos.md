@@ -117,3 +117,73 @@ La demostración es textual, no valida secrets efectivos ni un resultado HTTP. E
 El cuerpo de la PR comunica `pnpm exec vitest run tools` → 123 passed. **Ese resultado no fue reproducido por esta revisión**. El autor deberá correrlo en el checkout y registrar la línea resumen, junto con el harness; no alterar tests para ponerlos verdes. Mientras exista H01, el protocolo pospone el examen de CI global; no se exige otro CI GREEN solo por actualizar bitácora.
 
 **Verificación manual futura (responsable Lautaro073):** antes del merge de implementación y de cada promoción, registrar en #666 la doble verificación Vercel/secret efectivo de GitHub correspondiente, sin revelar valores; para staging/producción validar el éxito del health-cron con el secret sincronizado. La PR documental no requiere acceso actual a secrets.
+
+
+---
+
+## Ronda 2 — evidencia propia y harness independiente
+
+El revisor ejecutó **en V8 sobre textos reales obtenidos de GitHub en ambos SHAs**: 5 contextos de workflow GREEN, H01–H04 RED en `cdd9644`, H01–H04 GREEN en `6f5a142c` y **6 mutaciones propias RED** (tres H01 y una de cada H02–H04). Cada mutante falló exactamente en su propiedad y las demás quedaron verdes. Resultado final de control: GREEN.
+
+**Límite:** esta comprobación fue documental, no Vitest ni verificación de secrets. El clon local no se pudo obtener por fallo DNS. El siguiente harness portable **no fue ejecutado en `/tmp` por el revisor**, pero reproduce el mismo oráculo usando `git show` sin tocar el árbol. El harness de Ronda 1 es demasiado literal y podría marcar falso RED cuando el texto es semánticamente correcto; no se usó como prueba de cierre.
+
+Copiar el bloque JavaScript **a `/tmp/pr707-r2.mjs`**, no ejecutarlo desde `docs/revision-pr/**`. Desde un clon que contenga ambos commits:
+
+```bash
+REPO_ROOT=/ruta/al/clon node /tmp/pr707-r2.mjs
+```
+
+```js
+// Guardar este bloque en /tmp/pr707-r2.mjs y ejecutar con REPO_ROOT=/clon node /tmp/pr707-r2.mjs
+// Lee solo blobs versionados de docs/workflows mediante git show. No escribe, no consulta secrets ni red.
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+const root=process.env.REPO_ROOT || process.cwd();
+const before='cdd964438d8f4ed726fa0f2eeaad3ee28621b1bf';
+const after='6f5a142c755827667ed66cc55eedb31ed7e1325d';
+const file=(sha,path)=>execFileSync('git',['show',sha+':'+path],{cwd:root,encoding:'utf8'});
+const old=file(before,'docs/tasks/T-433.md'), now=file(after,'docs/tasks/T-433.md');
+for(const [name,env] of [['e2e-preview.yml','develop'],['e2e-mutation.yml','develop'],['e2e-staging.yml','staging'],['health-cron.yml','staging'],['health-cron.yml','production']]){
+ const source=file(after,'.github/workflows/'+name);
+ assert.ok(source.includes('environment: '+env),'sin environment '+env+' en '+name);
+ assert.match(source,/CRON_SECRET:\s*\$\{\{\s*secrets\.CRON_SECRET\s*\}\}/);
+}
+assert.ok(!file(after,'docs/contracts/CC-040.md').includes('/api/push/send'));
+assert.ok(file(after,'docs/tasks/log/T-203.md').includes('src/app/api/push/send/route.ts'));
+console.log('WIRING GREEN: 5 ambientes de uso; CC-040 y T-203 contrastados');
+const check=s=>{
+ const d1=s.split('**D1-A')[1]?.split('**D2-A')[0]??'';
+ const d3=s.split('**D3-A')[1]?.split('\n## Archivos permitidos')[0]??'';
+ const dod=s.split('\n## DoD')[1]?.split('\n## Regla de pruebas')[0]??'';
+ return {
+ H01: /verifica\s*\*\*por separado\*\*/.test(d3)&&/Vercel/.test(d3)&&/GitHub Actions/.test(d3)&&/no depende de que se rote Vercel/.test(d3)&&/environment `develop`/.test(d3)&&/environment `staging`/.test(d3)&&/environment `production`/.test(d3)&&/prioridad sobre el del repositorio/.test(d3)&&/confirma que funciona/.test(d3)&&/sin 401/.test(d3)&&/constancia por ambiente \(sí\/no/.test(d3)&&/doble verificación de Develop/.test(dod),
+ H02:/ruta que creó T-203/.test(d1)&&/CC-040 no la documenta/.test(d1),
+ H03:/Generación:/.test(d3)&&/generador criptográfico/.test(d3)&&/32 bytes aleatorios/.test(d3)&&/cada ambiente usa un valor propio/.test(d3)&&/nunca se copia, pega ni imprime/.test(d3),
+ H04:/Proxy/.test(d3)&&/rutas y funciones que leen `serverEnv`/.test(d3)&&!/fallan todas las rutas de servidor de ese ambiente/.test(d3)
+ };
+};
+const fail=s=>Object.entries(check(s)).filter(([,ok])=>!ok).map(([id])=>id);
+assert.deepEqual(fail(old),['H01','H02','H03','H04']);
+console.log('R1 RED: H01 H02 H03 H04');
+assert.deepEqual(fail(now),[]);
+console.log('R2 GREEN: H01 H02 H03 H04');
+const mutants=[
+ ['H01',s=>s.replace('environment `develop` (`e2e-preview`, `e2e-mutation`)','repositorio (`e2e-preview`, `e2e-mutation`)')],
+ ['H01',s=>s.replace('tiene prioridad sobre el del repositorio','no tiene prioridad sobre el del repositorio')],
+ ['H01',s=>s.replace('no depende de que se rote Vercel','depende de que se rote Vercel')],
+ ['H02',s=>s.replace('ruta que creó T-203','ruta que creó CC-040')],
+ ['H03',s=>s.replace('32 bytes aleatorios','32 caracteres repetidos')],
+ ['H04',s=>s.replace('rutas y funciones que leen `serverEnv`','absolutamente todas las rutas')]
+];
+for(const [i,[id,f]] of mutants.entries()){
+ const altered=f(now);
+ assert.notEqual(altered,now,'SIN OBJETIVO: mutación '+i);
+ assert.deepEqual(fail(altered),[id],'control no detectó mutación '+i);
+ console.log('MUTACION '+(i+1)+' RED: '+id);
+}
+assert.deepEqual(fail(now),[]);
+console.log('CONTROL FINAL GREEN; sin cambios en archivos');
+
+```
+
+CI del SHA `6f5a142c`: [run 43178113665](https://github.com/cadeApp/cadeApp/actions/runs/43178113665) `cancelled`, sin jobs. `cdd9644` y `ec2d54e` también tuvieron runs cancelados. El autor afirma `pnpm exec vitest run tools`: 10 archivos / 123 tests; no fue reproducido por el revisor. No se consultaron secretos, CI logs de tests, Supabase ni Docker.

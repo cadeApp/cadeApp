@@ -9,31 +9,36 @@
 | Base | `395fdce5f034e2d7c630c2d9f0272ee018477f3a` |
 | Head auditado | `cdd964438d8f4ed726fa0f2eeaad3ee28621b1bf` |
 | Alcance | 3 archivos documentales, +148/-0 líneas; sin CC |
-| Estado | **Ronda 1: CON BLOQUEANTES (1 documental)**; no aprobar ni mergear |
+| Estado | **Ronda 2: SIN BLOQUEANTES DOCUMENTALES**, CI cancelado; no aprobar ni mergear |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `cdd9644` | 1 bloqueante, 3 mejoras | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `6f5a142c` | H01–H04 verificados documentalmente | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Severidad | Estado |
 |---|---|---|---|
-| PR707-H01 | Procedimiento de CRON_SECRET no verifica secrets efectivos de GitHub por environment | alto (bloqueante documental) | abierto |
-| PR707-H02 | Justificación de D1-C atribuye una ruta a CC-040 que no aparece allí | bajo (mejora) | abierto |
-| PR707-H03 | Falta indicar generación criptográficamente aleatoria de secretos | medio (mejora) | abierto |
-| PR707-H04 | La ficha afirma que serverEnv rompe necesariamente todas las rutas | bajo (mejora) | abierto |
+| PR707-H01 | Procedimiento de CRON_SECRET no verifica secrets efectivos de GitHub por environment | alto (bloqueante documental) | arreglado-verificado (documental R2) |
+| PR707-H02 | Justificación de D1-C atribuye una ruta a CC-040 que no aparece allí | bajo (mejora) | arreglado-verificado (documental R2) |
+| PR707-H03 | Falta indicar generación criptográficamente aleatoria de secretos | medio (mejora) | arreglado-verificado (documental R2) |
+| PR707-H04 | La ficha afirma que serverEnv rompe necesariamente todas las rutas | bajo (mejora) | arreglado-verificado (documental R2) |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Evidencia: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md).
 
 ## Qué queda por hacer
 
-1. Corregir H01 en la ficha y actualizar la bitácora; incluir verificación independiente de los secretos efectivos en GitHub Actions (desarrollo, staging y producción), prioridad environment > repositorio y sincronización/validación de la autenticación de health-cron, sin exponer valores.
-2. Aplicar H02–H04 al mismo documento, sin alterar D1-A/D2-A/D3-A ni ampliar alcance.
-3. Revisión independiente Ronda 2 del nuevo SHA y su evidencia. **No hay decisiones nuevas de Lautaro073 abiertas en esta ronda.**
-4. La comprobación real de secrets por ambiente corresponde a Lautaro073 **antes del merge de la futura PR de implementación o antes de cada promoción**, no al agente revisor ni a la PR documental.
+1. H01–H04 cerrados documentalmente en Ronda 2; no hay decisiones nuevas.
+2. CI oficial de esta PR cancelado sin jobs: si la política de merge exige CI positivo, Lautaro073 debe investigar/reintentar antes de fusionar. No pedir otro CI exclusivamente por el informe de revisión.
+3. Implementación SEC-08 en otra PR después del merge documental, con tests RED/GREEN de runtime y revisión independiente.
+4. Antes del merge de la implementación y las promociones, Lautaro073 registra en [#666](https://github.com/cadeApp/cadeApp/issues/666) la verificación manual por ambiente sin divulgar secrets.
+
+## Alcance de Ronda 2
+
+Auditor documental independiente RED (SHA original) / GREEN (SHA corregido) / seis mutaciones RED. CI `cancelled` sin jobs, 123/123 solo en bitácora del autor, sin clone por DNS. Se actualizó mínimamente el cuerpo del PR, sin mover el SHA. El protocolo prohíbe que el revisor apruebe, mergee o acceda a secrets.
 
 ## Alcance de la revisión
 

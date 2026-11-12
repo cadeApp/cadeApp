@@ -23,3 +23,9 @@ Los hallazgos H02/H04 recuerdan el patrón P03: antes de citar un CC o afirmar u
 - El problema de precedencia de GitHub está documentado y los jobs sí usan environments; **no se conoce** si hoy existe un secret duplicado ni si algún valor es insuficiente.
 - La comparación y las mutaciones del revisor son **sobre el documento en memoria**, no sobre código, despliegues, secretos o E2E.
 - D1-A, D2-A y D3-A no se reabren. La mejora H02 corrige el argumento documental, no cambia la decisión del producto.
+
+## Ronda 2
+
+Las cuatro correcciones cumplen las propiedades documentales. La versión de Ronda 1 del harness exigía frases exactas y podría producir falsos RED aunque la redacción corrigiera el problema: no se utilizó para verificar R2. El auditor independiente de esta ronda se probó mediante seis mutaciones aisladas, análogo a AG-60. No se crea una nueva AG por una única PR documental.
+
+La validación de secretos efectivos queda deliberadamente en manos de Lautaro073 durante el rollout de la implementación. El CI oficial se encontró cancelado sin jobs; `approval-policy` verde y 123 tests declarados por el autor no equivalen a CI completo.
