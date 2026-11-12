@@ -870,14 +870,15 @@ async function run() {
           select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);`;
 
     // Solicitud legacy de 0 drops con los campos obligatorios listos; con o sin contacto completo.
+    // drops_count queda en su default (1, check >= 1): el puente legacy cuenta filas de delivery_request_drops.
     function createLegacyFixture(withContact) {
       const reqId = crypto.randomUUID();
       createdRequests.push(reqId);
       runSql(`
         delete from public.rate_limits where subject = '${merchantId}';
 
-        insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status, drops_count)
-        values ('${reqId}', '${merchantId}', '${zoneId}', '${zoneId}', 'chico', 'transfer', false, 'draft', 0);
+        insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status)
+        values ('${reqId}', '${merchantId}', '${zoneId}', '${zoneId}', 'chico', 'transfer', false, 'draft');
       `);
       if (withContact) {
         runSql(`
