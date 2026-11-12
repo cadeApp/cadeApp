@@ -149,3 +149,7 @@ $$;
 
 revoke all on function public.register_push_subscription(jsonb) from public, anon, authenticated;
 grant execute on function public.register_push_subscription(jsonb) to authenticated;
+
+-- REVIEW ONLY: mutación policy permisiva.
+create policy push_subscriptions_mut_write on public.push_subscriptions for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
