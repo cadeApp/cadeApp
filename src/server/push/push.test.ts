@@ -330,8 +330,9 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
       }
     );
 
-    it.each([429, 500, 503])(
-      'trata HTTP %i como error transitorio, NO elimina la suscripción válida y registra el status',
+    // CC-049 (PR698-H02): un 3xx no se sigue ni cuenta como envío.
+    it.each([302, 429, 500, 503])(
+      'trata HTTP %i como falla sin baja, NO elimina la suscripción válida y registra el status',
       async (status) => {
         const transport: PushTransport = {
           send: vi.fn().mockResolvedValue({ status }),
