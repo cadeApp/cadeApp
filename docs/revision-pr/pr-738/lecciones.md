@@ -15,3 +15,11 @@ No se crea número AG nuevo sin comprobar primero el máximo de todas las ramas 
 **Revisión estática independiente:** los cuatro ajustes de H01–H04 están ahora especificados; se ejecutaron comparaciones y mutaciones sobre el contenido documental, no el navegador. No equiparar «DoD bien redactado» con «E2E RED→GREEN real». El defecto de ejecución H05 fue invisible para los 123 unit tests declarados por el autor.
 
 La carpeta `pr-738/` no fue tocada por el autor entre rondas. No numerar un AG sin inspección de todas las ramas remotas; referencia estable `pr-738/PR738-H05`.
+
+## Ronda 3 — cierre de H05 (sin bloqueantes documentales)
+
+El DoD puede exigir **RED real antes del merge** y **RED_CONFIRMED trusted después del merge** si la ficha enumera los patches y el manifest autorizados sin ejecutar la PR como target del workflow. En T-436.md:56-75,129-146,179-181 ya se distingue pre-merge de post-merge y se conserva la frontera trusted. La revisión verifica la **factibilidad de la especificación**, no los E2E futuros.
+
+En el manifest de e2e-mutation cada mutación selecciona **un solo grep**. Si el patch HTTPS debe demostrar fallos de REST y Storage, el test seleccionado tiene que observar ambas operaciones o indicar qué prueba realmente cubre. El expectedFailure exige RED observado, no una cadena inventada. No proponer nueva regla AG por un único caso.
+
+**Detalle editorial no bloqueante:** T-436.md:39 dice «Las tres» después de agregar D4-A. Bitácora y PR sí registran la procedencia de D4 como automática. Se puede cambiar por «Las cuatro» cuando se vuelva a editar la ficha, sin otra ronda por este detalle.
