@@ -235,3 +235,98 @@ H04: diagnóstico antes del poll, aserciones conservadas (solo inspección)
 ```
 
 **Limitación de esta verificación:** ejecutar el callback TS extraído (con dos anotaciones eliminadas) contra un `sessionStorage` simulado no es Chromium. La autoría de los RED E2E locales se mantiene atribuida al autor; el revisor no los presenta como reproducidos. No disparar manualmente `e2e-preview` ni `e2e-mutation`. Ambos `RED_CONFIRMED` del catálogo requieren develop **ya mergeado**.
+
+## Ronda 3 — 2026-11-13 — SHA 182d413ae09ab80fa3645aa7b831f134d578b2fb
+
+**Fuentes:** GitHub Actions + GitHub API sobre SHA exacto, sin acceso local al checkout de la PR. Archivos revisados: `src/instrumentation-client{,.test}.ts`, Providers y su test contra develop (SHA blobs iguales), `docs/tasks/T-436.md`, `docs/implementation-plan.md`, bitácora, diff de 29202680...182d413a, y los logs de CI/E2E de los dos runs concretos. No se leyeron `.env*`, secretos ni información personal, no se levantó Supabase/Docker local. `git merge-tree` no ejecutado. La comparación GitHub devolvió 28 ahead y 0 behind respecto de develop; no es un merge-tree real.
+
+### RED de producción anterior (D5-A)
+
+[Run 43394289306](https://github.com/cadeApp/cadeApp/actions/runs/43394289306) · job `131781422266` · **checkout `2920268041cd6eac35ef1b6d14b481422da1d00d`** confirmado desde el log. T-436: 5 E2E fallaron repetidamente por `disposition=enforce directiva=script-src origen=eval` en admin MFA, courier-feed, merchant-map, home/login, Storage y Realtime. Conteo de líneas `[T-436 csp]` en log: **18**. Bypass: `script=error image=error fetch=rejected scriptRan=false handlers=ninguno` y PASS. Resumen: 123 passed, 5 failed, 1 flaky. El test de Providers no alcanzaba a detectar este defecto de orden de imports, como también lo pasó por alto la recomendación de R1 del revisor.
+
+### GREEN de producción actual (D5-C)
+
+[Run 43406950298](https://github.com/cadeApp/cadeApp/actions/runs/43406950298) · job `131823570973` · **checkout `182d413ae09ab80fa3645aa7b831f134d578b2fb`** comprobado explícitamente en logs de `actions/checkout` y `git checkout` del SHA, luego `pnpm build` + `pnpm start -H 127.0.0.1 -p 3100`. Job CONCLUSION **success**. Los **12 casos del spec security-headers** pasan en el primer intento: respuesta de /, /login, /admin/applicants y /api/health; admin MFA, bloqueo iframe, courier feed + mapa real, inventario, bypass, captura entre documentos, subida Storage y join Realtime. Total de `[T-436 csp]` en el log: **cero**. El bypass publicó: `[T-436 bypass] script=error image=error fetch=rejected scriptRan=false handlers=ninguno`. Resumen `2 flaky`, `127 passed` más `7 passed` de una fase posterior; ningún fallo final de la suite.
+
+**Flaky 1** (`e2e/specs/map-privacy.spec.ts:34`): `/api/live/available-requests` devolvió 500 frente a expectativa 200 (`:94`), pasó en retry 1; es el caso seguido por [issue #478](https://github.com/cadeApp/cadeApp/issues/478), abierto previamente.
+
+**Flaky 2** (`e2e/specs/map-privacy.spec.ts:215`): tras mapa mockeado y `setGeolocation(-27.55,-65.70)`, no apareció el aviso del drop `fuera de Aguilares` (`:279`) en 10 s; falló intento y retry 1, pasó en retry 2. Se buscó issue previo por test/flaky/GPS y se creó [issue #741](https://github.com/cadeApp/cadeApp/issues/741) para investigar sin atribuir causa a la CSP. Ninguno de estos flakies toca el spec T-436 ni está demostrado causado por el cambio, y el workflow terminó GREEN; se documentan como mejora QA no bloqueante, no se ocultan ni se fuerzan pruebas falsas.
+
+### CI de implementación
+
+[CI 43405560158](https://github.com/cadeApp/cadeApp/actions/runs/43405560158) asociado a `182d413a`: conclusion **success**; `lint`, `unit`, `db-tests`, `audit`, `build`, `typecheck` y `bundle-budget` verdes. Job `unit 131818939969`: **210 suites/3964 Vitest**, incluyendo `src/instrumentation-client.test.ts` 1 PASS; `verify-workflows.test.mjs` 86/86; ADR 6/6. Job `db-tests 131818940015`: pgTAP final `Files=47, Tests=3958, Result: PASS`; las fallas intermedias del job son RED de mutaciones temporales probadas y restauradas, no resultado final; `git diff --exit-code -- src/types/database.types.ts` fue ejecutado. No se imprimen logs brutos.
+
+### Mutaciones independientes del revisor (Zod SIMULADO)
+
+**Protocolo:** guardar este script completo en `/tmp/pr740-r3-bootstrap.mjs` y correr `node /tmp/pr740-r3-bootstrap.mjs "$PWD"` desde un checkout exacto de 182d413a. Se verifica control GREEN sobre **fuente real** y cuatro cambios negativos **en strings en memoria** de código de bootstrap. En el test del harness se inyecta un objeto Zod **simulado**; **no** se ejecutan Zod real, Vitest ni Next: **no afirmar que el mock reproduce la sonda de Zod**. La prueba de integración real independiente es el RED→GREEN de los dos E2E trusted arriba. El autor además reportó RED en su unit al quitar la línea, que no se reproduce aquí.
+
+```js
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+
+// Ejecutar: node /tmp/pr740-r3-bootstrap.mjs "$PWD" en un checkout de 182d413a.
+// Los import se eliminan SOLO de la copia en memoria para inyectar un z SIMULADO.
+// NO es prueba runtime de Zod/Next. El E2E de producción es la prueba de integración.
+const root=process.argv[2]||process.cwd();
+const read=p=>readFileSync(resolve(root,p),'utf8');
+const source=read('src/instrumentation-client.ts');
+const unit=read('src/instrumentation-client.test.ts');
+const provider=read('src/app/providers.tsx');
+
+assert.ok(source.includes("import { z } from 'zod'"),'falta import Zod, no evaluar');
+assert.ok(source.includes('z.config({ jitless: true });'),'falta bootstrap esperado');
+assert.ok(!provider.includes('z.config({ jitless: true })'),'Providers sigue configurando Zod demasiado tarde');
+const spy=unit.indexOf("vi.spyOn(globalThis, 'Function')");
+const load=unit.indexOf("await import('./instrumentation-client')");
+assert.ok(spy>=0&&load>spy,'el spy debe preceder al import');
+assert.ok(unit.includes('expect(z.config().jitless).toBe(true)'), 'falta aserción jitless');
+assert.ok(unit.includes('expect(probe).not.toHaveBeenCalled()'), 'falta aserción contra Function');
+assert.ok(unit.includes("const schema = z.object({ a: z.string() })"), 'falta construcción schema');
+
+function exercise(text){
+  const state={};
+  const probes=[];
+  const z={
+    config(value){if(value){Object.assign(state,value);} return state;},
+    object(){if(!state.jitless)probes.push('would-probe-eval');return {parse:x=>x};}
+  };
+  const body=text.replace("import { z } from 'zod';",'');
+  new Function('z',body)(z); // ejecuta únicamente el cuerpo del bootstrap con z SIMULADO
+  const schema=z.object({a:'synthetic'});
+  assert.deepEqual(schema.parse({a:'x'}),{a:'x'});
+  return {jitless:state.jitless,probes:probes.length};
+}
+function oracle(out){
+  assert.equal(out.jitless,true,'jitless no está activo');
+  assert.equal(out.probes,0,'schema creado antes de jitless');
+}
+oracle(exercise(source));
+console.log('CONTROL GREEN: bootstrap llama z.config con jitless true antes de schema (Zod simulado)');
+const mutations=[
+ ['M21 quitar config',s=>s.replace('z.config({ jitless: true });','')],
+ ['M22 jitless false',s=>s.replace('z.config({ jitless: true });','z.config({ jitless: false });')],
+ ['M23 diferir sin invocar',s=>s.replace('z.config({ jitless: true });','void (() => z.config({ jitless: true }));')],
+ ['M24 propiedad mal escrita',s=>s.replace('z.config({ jitless: true });','z.config({ jittless: true });')]
+];
+for(const [label,mutate] of mutations){
+  const changed=mutate(source);
+  assert.notEqual(changed,source,label+' SIN OBJETIVO');
+  assert.throws(()=>oracle(exercise(changed)),undefined,label+' SOBREVIVIÓ');
+  console.log(label+': RED del control independiente');
+}
+console.log('NOTA: 4 RED en simulación aislada, NO Vitest ni E2E; RED/GREEN auténticos provienen de Actions');
+
+```
+
+Salida del control independiente en JS sobre la fuente exacta de 182d413a:
+
+```text
+CONTROL GREEN: bootstrap llama z.config con jitless true antes de schema (Zod simulado)
+M21 quitar config: RED del control independiente
+M22 jitless false: RED del control independiente
+M23 diferir sin invocar: RED del control independiente
+M24 propiedad mal escrita: RED del control independiente
+```
+
+**D4-A:** no se ejecutó ni se falsificó `e2e-mutation` trusted de las dos entradas: sigue reservado a develop **después del merge**, con `RED_CONFIRMED` y artifacts por ID. Issue #669 debe quedar abierto hasta ambos.
