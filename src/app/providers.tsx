@@ -4,7 +4,6 @@ import * as React from 'react';
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { z } from 'zod';
 import { MotionProvider, Toaster } from '@/ui';
 import {
   isIosSafariNonStandalone,
@@ -12,10 +11,6 @@ import {
   loadOfflineBanner,
   loadOfflineFloatingCard,
 } from '@/features/notifications';
-
-// T-436: sin la sonda `new Function` de Zod, que la CSP forzada (sin 'unsafe-eval') reporta como violación en
-// cada página. Va en el módulo raíz del cliente para correr antes de cualquier parse.
-z.config({ jitless: true });
 
 const OfflineBanner = dynamic(loadOfflineBanner);
 const OfflineFloatingCard = dynamic(loadOfflineFloatingCard);
