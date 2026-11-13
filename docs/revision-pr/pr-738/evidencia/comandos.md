@@ -179,3 +179,69 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 No leer `.env*` ni disparar `e2e-mutation` o workflows manualmente durante revisión; no levantar Docker ni Supabase. Toda mutación futura de `src/security/headers.ts` se ejecuta solo en runner trusted sobre `develop` ya mergeado, con patch revisado, nunca en un Preview público con secretos.
+
+## Ronda 3 — comprobación independiente de H05 (2026-11-12)
+
+**Fuente:** commit `3d890c1526e44e09acc93fbe78d90bd6053ed3d1` sobre `develop@3c4d26b6`. Se inspeccionó diff con solo ficha, bitácora y fila T-436 del plan. Se confirmó `RED_CONFIRMED` únicamente post-merge con `target=develop`, catálogo y dos patches autorizados.
+
+**Checks estáticos realmente evaluados por el revisor sobre texto recuperado por GitHub:** `scope_All_patches=true`, `plan_manifest=true`, `plan_patch_pair=true`, `plan_dod_identical=true`, `stage_before=true`, `stage_after=true`, `issue_uncleared=true`, `patch_src_only=true`, `catalog_expectedFailure=true`, `workflow_target_dev=true`. Cinco mutaciones sintéticas del documento dieron **true → false** en sus guardas: quitar manifest, quitar patch WSS, eliminar etapa post-merge, permitir trusted pre-merge y desincronizar DoD. Son controles **de especificación**, no pruebas Playwright ni de servidor.
+
+### Reproducir desde un checkout limpio (código completo)
+
+El script siguiente es un equivalente autónomo de las guardas anteriores para que alguien con checkout del SHA las reproduzca. **El revisor no pudo ejecutarlo dentro de un clon local.**
+
+```bash
+cat > /tmp/pr738-r3-guard.mjs <<'NODE'
+import { readFileSync } from 'node:fs';
+const read = p => readFileSync(p, 'utf8');
+const task = read('docs/tasks/T-436.md');
+const plan = read('docs/implementation-plan.md');
+const agents = read('e2e/AGENTS.md');
+const workflow = read('.github/workflows/e2e-mutation.yml');
+const row = plan.split('\n').find(s => s.startsWith('| T-436 |'));
+if (!row) throw new Error('No existe la fila T-436');
+const fields = row.split('|').slice(1,-1).map(s=>s.trim());
+const allowed = task.split('## Archivos permitidos')[1].split('## Fuera de alcance')[0];
+const patches = ['e2e/mutations/manifest.json', 'e2e/mutations/t436-csp-connect-https.patch', 'e2e/mutations/t436-csp-connect-wss.patch'];
+const firstDod = task.match(/^- \[ \] (.+)$/m)?.[1];
+const checks = {
+  allowed: patches.every(p=>allowed.includes(p)),
+  planAllowed: fields[4].includes('e2e/mutations/manifest.json') && fields[4].includes('t436-csp-connect-{https,wss}.patch'),
+  dodEqual: firstDod===fields[5],
+  preMerge: task.includes('**Gates antes de mergear la PR de implementación:**') && task.includes('sin disparar el job trusted'),
+  postMerge: task.includes('**Después del merge de la implementación a develop:**') && task.includes('target=develop') && task.includes('RED_CONFIRMED'),
+  issueNotClosed: task.includes('El hallazgo #669 no se da por cerrado hasta tener las dos evidencias'),
+  patchOnlyHeader: task.includes('src/security/headers.ts') && task.includes('toca **solo**'),
+  expectedFailureReal: task.includes('no se inventa antes de observar el RED'),
+  workflowDevelop: agents.includes('único') && agents.includes('develop') && workflow.includes('target: "develop"'),
+};
+console.log(JSON.stringify(checks,null,2));
+const mutants = [
+  ['manifest', allowed.replace('e2e/mutations/manifest.json','manifest-faltante'), x=>x.includes('e2e/mutations/manifest.json')],
+  ['wss', allowed.replace('e2e/mutations/t436-csp-connect-wss.patch','wss-faltante'), x=>x.includes('e2e/mutations/t436-csp-connect-wss.patch')],
+  ['postmerge', task.replace('**Después del merge de la implementación a develop:**','**Antes del merge:**'), x=>x.includes('**Después del merge de la implementación a develop:**')],
+  ['no-trusted-before', task.replace('sin disparar el job trusted','disparar trusted'), x=>x.includes('sin disparar el job trusted')],
+  ['dod-equal', row.replace(firstDod,'DoD diferente'), x=>x.split('|').slice(1,-1).map(y=>y.trim())[5]===firstDod],
+];
+for(const [id,text,probe] of mutants) {
+  if(probe(text)) throw new Error('Mutación no detectada: '+id);
+  console.log('RED DOCUMENTAL: '+id);
+}
+if(Object.values(checks).some(v=>!v)) process.exitCode=1;
+else console.log('STATIC CHECKS PASS (solo documentación)');
+NODE
+node /tmp/pr738-r3-guard.mjs
+```
+
+**CI remoto consultado:** GitHub Actions `43350144313` (CI, SHA `3d890c15`) tenía `status=in_progress`, `conclusion=null` al momento de la lectura. Los dos estados Vercel eran `success`, no sustituyen CI. El autor reportó `pnpm exec vitest run tools`: **10 archivos / 123 tests** y `git diff --check` limpio; el revisor no los ejecutó ni declara GREEN independiente.
+
+```bash
+git fetch origin
+git rev-parse HEAD
+git diff --name-only 507f24d844b3dbc5eab3596f55614b53423fc461 3d890c1526e44e09acc93fbe78d90bd6053ed3d1
+git diff --check origin/develop...HEAD
+pnpm exec vitest run tools
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+No se ejecutaron clonación/merge-tree, `pnpm`, Playwright, `e2e-preview` ni `e2e-mutation` por el revisor. No leer `.env*` ni ejecutar contra producción. En la futura implementación, los patches de seguridad solo corren en trusted `develop` **después** de mergear, nunca en un Preview público.
