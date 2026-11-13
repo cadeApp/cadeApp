@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { onlineManager, useQuery } from '@tanstack/react-query';
 import { Providers } from './providers';
+import { z } from 'zod';
 
 function setNavigatorOnLine(value: boolean) {
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => value });
@@ -72,5 +73,16 @@ describe('T-333 / PR236-H01: frontera navegador → onlineManager → refetch de
     await waitFor(() => {
       expect(queryFn.mock.calls.length).toBeGreaterThan(baseline);
     });
+  });
+});
+
+describe('T-436: Zod sin JIT en el cliente', () => {
+  it('el módulo de Providers activa jitless y Zod no prueba new Function', () => {
+    const probe = vi.spyOn(globalThis, 'Function');
+
+    expect(z.config().jitless).toBe(true);
+    expect(z.object({ a: z.string() }).parse({ a: 'x' })).toEqual({ a: 'x' });
+    expect(probe).not.toHaveBeenCalled();
+    probe.mockRestore();
   });
 });

@@ -21,10 +21,13 @@ import { COURIER_DOCS_BUCKET } from '@/features/courier-onboarding/upload-manage
  *   (anónimo y autenticado con MFA) y de `/api`.
  * - La app no se puede embeber en un iframe de otro origen (clickjacking).
  * - La CSP forzada no rompe los flujos: el mapa real de Google carga en la nueva solicitud y no hay errores de CSP
- *   forzada; los avisos de Report-Only se registran como evidencia para T-409.
+ *   forzada.
+ * - T-436: la CSP completa va forzada; se inventarían violaciones y orígenes por stdout, se prueba el bloqueo de un
+ *   script, un fetch y una imagen ajenos, y Storage y Realtime de Supabase desde el navegador.
  */
 
 const ENFORCED_CSP_DIRECTIVES = [
+  "default-src 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -43,8 +46,10 @@ function expectSecurityHeaders(response: APIResponse): void {
   for (const directive of ENFORCED_CSP_DIRECTIVES) {
     expect(headers['content-security-policy'], directive).toContain(directive);
   }
-  expect(headers['content-security-policy']).not.toMatch(/script-src|default-src/);
-  expect(headers['content-security-policy-report-only']).toContain("default-src 'self'");
+  // T-436: la política completa va forzada (script-src y connect-src incluidas) y ya no hay Report-Only.
+  expect(headers['content-security-policy']).toMatch(/(^|; )script-src /);
+  expect(headers['content-security-policy']).toMatch(/(^|; )connect-src /);
+  expect(headers['content-security-policy-report-only']).toBeUndefined();
   expect(headers['x-powered-by']).toBeUndefined();
 }
 
@@ -379,20 +384,23 @@ test.describe('T-391 — Cabeceras de seguridad (SEC-05)', () => {
       await page.goto('/courier/onboarding/identity');
       await waitForNoSkeletons(page);
 
-      const upload = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' && /\/storage\/v1\/object\/courier-docs\//.test(response.url()),
-        { timeout: 30000 }
-      );
+      // La subida se observa por evento: si la CSP la bloquea no hay respuesta y falla el poll con su mensaje.
+      const upload: { status: number | null; origin: string | null } = { status: null, origin: null };
+      page.on('response', (response) => {
+        const match = response.url().match(/\/storage\/v1\/object\/courier-docs\/(.+?)(\?.*)?$/);
+        if (response.request().method() !== 'POST' || !match?.[1]) return;
+        upload.status = response.status();
+        upload.origin = new URL(response.url()).origin;
+        storagePath = decodeURIComponent(match[1]);
+      });
       const dniFrontInput = page.getByLabel(/DNI frente/i);
       await expect(dniFrontInput).toBeAttached();
       await dniFrontInput.setInputFiles({ name: 'dni_front.png', mimeType: 'image/png', buffer: PROBE_PNG });
-      const response = await upload;
-      const match = response.url().match(/\/storage\/v1\/object\/courier-docs\/(.+?)(\?.*)?$/);
-      storagePath = match?.[1] ? decodeURIComponent(match[1]) : null;
 
-      expect(response.ok()).toBe(true);
-      expect(new URL(response.url()).origin).toBe(new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').origin);
+      await expect
+        .poll(() => upload.status, { timeout: 30000, message: 'subida a Storage desde el navegador respondida OK' })
+        .toBe(200);
+      expect(upload.origin).toBe(new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').origin);
       await expect(page.getByRole('status').filter({ hasText: 'dni_front.png' })).toBeVisible({ timeout: 15000 });
       expect(enforcedViolations(await readCspViolations(page))).toEqual([]);
     } finally {

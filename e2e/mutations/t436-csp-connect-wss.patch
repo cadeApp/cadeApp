@@ -1,0 +1,13 @@
+diff --git a/src/security/headers.ts b/src/security/headers.ts
+index 3d8c56c8..59ca8e54 100644
+--- a/src/security/headers.ts
++++ b/src/security/headers.ts
+@@ -55,7 +55,7 @@ export function buildContentSecurityPolicy({ supabaseUrl, isDevelopment }: Secur
+     'script-src': ["'self'", "'unsafe-inline'", ...(isDevelopment ? ["'unsafe-eval'"] : []), ...GOOGLE_MAPS_SCRIPT_HOSTS],
+     'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+     'img-src': ["'self'", 'data:', 'blob:', ...supabaseHttp, ...GOOGLE_MAPS_SCRIPT_HOSTS, ...GOOGLE_MAPS_ASSET_HOSTS],
+-    'connect-src': ["'self'", ...supabaseHttp, ...supabaseRealtime, ...GOOGLE_MAPS_SCRIPT_HOSTS, ...GOOGLE_MAPS_ASSET_HOSTS],
++    'connect-src': ["'self'", ...supabaseHttp, ...GOOGLE_MAPS_SCRIPT_HOSTS, ...GOOGLE_MAPS_ASSET_HOSTS],
+     'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
+     'worker-src': ["'self'", 'blob:'],
+     'manifest-src': ["'self'"],

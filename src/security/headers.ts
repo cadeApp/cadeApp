@@ -1,11 +1,10 @@
 /**
- * T-391 (SEC-05): cabeceras de seguridad para todas las rutas, páginas y `/api`.
+ * T-391 (SEC-05) y T-436: cabeceras de seguridad para todas las rutas, páginas y `/api`.
  *
- * - Se fuerzan solo las directivas que no dependen de scripts y no pueden romper la app: `frame-ancestors`,
- *   `object-src`, `base-uri` y `form-action`, más `X-Frame-Options`, `nosniff`, `Referrer-Policy`,
- *   `Permissions-Policy` y HSTS fuera de desarrollo.
- * - La CSP completa va en `Content-Security-Policy-Report-Only`: Next inyecta scripts inline y Google Maps carga
- *   recursos de varios hosts, así que se observa primero y se fuerza en Fase 4 (T-409) con los reportes reales.
+ * - La CSP completa se fuerza en `Content-Security-Policy` (T-436), sin Report-Only paralela (D3-A), junto con
+ *   `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` y HSTS fuera de desarrollo.
+ * - `script-src` conserva `'unsafe-inline'` temporalmente (D1-C): Next inyecta scripts inline de arranque. El XSS
+ *   inline sigue siendo un riesgo residual hasta la CSP estricta de scripts (issue #739).
  */
 
 export interface SecurityHeadersOptions {
@@ -22,8 +21,6 @@ export interface SecurityHeader {
 
 const GOOGLE_MAPS_SCRIPT_HOSTS = ['https://maps.googleapis.com', 'https://maps.gstatic.com'];
 const GOOGLE_MAPS_ASSET_HOSTS = ['https://*.googleapis.com', 'https://*.gstatic.com', 'https://*.google.com'];
-
-export const ENFORCED_CSP = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'";
 
 export const PERMISSIONS_POLICY = 'camera=(), microphone=(), payment=(), usb=(), geolocation=(self)';
 
@@ -48,7 +45,7 @@ function supabaseOrigins(
   }
 }
 
-export function buildReportOnlyCsp({ supabaseUrl, isDevelopment }: SecurityHeadersOptions): string {
+export function buildContentSecurityPolicy({ supabaseUrl, isDevelopment }: SecurityHeadersOptions): string {
   const supabase = supabaseOrigins(supabaseUrl, isDevelopment);
   const supabaseHttp = supabase ? [supabase.https] : [];
   const supabaseRealtime = supabase ? [supabase.wss] : [];
@@ -75,8 +72,7 @@ export function buildReportOnlyCsp({ supabaseUrl, isDevelopment }: SecurityHeade
 
 export function buildSecurityHeaders(options: SecurityHeadersOptions): SecurityHeader[] {
   const headers: SecurityHeader[] = [
-    { key: 'Content-Security-Policy', value: ENFORCED_CSP },
-    { key: 'Content-Security-Policy-Report-Only', value: buildReportOnlyCsp(options) },
+    { key: 'Content-Security-Policy', value: buildContentSecurityPolicy(options) },
     { key: 'X-Frame-Options', value: 'DENY' },
     { key: 'X-Content-Type-Options', value: 'nosniff' },
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

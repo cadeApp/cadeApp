@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import nextConfig from '../../next.config';
 import {
-  buildReportOnlyCsp,
+  buildContentSecurityPolicy,
   buildSecurityHeaders,
-  ENFORCED_CSP,
   HSTS,
   PERMISSIONS_POLICY,
   type SecurityHeader,
@@ -15,16 +14,25 @@ function headerMap(headers: readonly SecurityHeader[]): Map<string, string> {
   return new Map(headers.map((h) => [h.key, h.value]));
 }
 
-describe('T-391: cabeceras de seguridad', () => {
-  it('fuerza las cabeceras que no dependen de scripts', () => {
+describe('T-391 / T-436: cabeceras de seguridad', () => {
+  it('fuerza la CSP completa y no envía Report-Only', () => {
     const headers = headerMap(buildSecurityHeaders({ supabaseUrl: SUPABASE_URL, isDevelopment: false }));
+    const csp = headers.get('Content-Security-Policy') ?? '';
 
-    expect(headers.get('Content-Security-Policy')).toBe(ENFORCED_CSP);
-    expect(ENFORCED_CSP).toContain("frame-ancestors 'none'");
-    expect(ENFORCED_CSP).toContain("object-src 'none'");
-    expect(ENFORCED_CSP).toContain("base-uri 'self'");
-    expect(ENFORCED_CSP).toContain("form-action 'self'");
-    expect(ENFORCED_CSP).not.toMatch(/script-src|default-src/);
+    expect(csp).toBe(buildContentSecurityPolicy({ supabaseUrl: SUPABASE_URL, isDevelopment: false }));
+    for (const directive of [
+      "default-src 'self'",
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "manifest-src 'self'",
+    ]) {
+      expect(csp, directive).toContain(directive);
+    }
+    expect(csp).toMatch(/(^|; )script-src /);
+    expect(csp).toMatch(/(^|; )connect-src /);
+    expect(headers.has('Content-Security-Policy-Report-Only')).toBe(false);
     expect(headers.get('X-Frame-Options')).toBe('DENY');
     expect(headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
@@ -41,8 +49,8 @@ describe('T-391: cabeceras de seguridad', () => {
     expect(dev.has('Strict-Transport-Security')).toBe(false);
   });
 
-  it('la CSP completa va en Report-Only con Supabase (https y wss) y Google Maps', () => {
-    const csp = buildReportOnlyCsp({ supabaseUrl: SUPABASE_URL, isDevelopment: false });
+  it('la CSP forzada habilita Supabase (https y wss) y Google Maps, sin unsafe-eval en producción', () => {
+    const csp = buildContentSecurityPolicy({ supabaseUrl: SUPABASE_URL, isDevelopment: false });
     const connect = csp.split('; ').find((d) => d.startsWith('connect-src ')) ?? '';
     const img = csp.split('; ').find((d) => d.startsWith('img-src ')) ?? '';
     const script = csp.split('; ').find((d) => d.startsWith('script-src ')) ?? '';
@@ -54,17 +62,25 @@ describe('T-391: cabeceras de seguridad', () => {
     expect(script).not.toContain("'unsafe-eval'");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("worker-src 'self' blob:");
+    expect(csp).not.toMatch(/(^|[ ;])(\*|https:)( |;|$)/);
+  });
+
+  it('sin URL de Supabase no habilita ningún origen de Supabase', () => {
+    const csp = buildContentSecurityPolicy({ isDevelopment: false });
+
+    expect(csp).not.toContain('supabase');
+    expect(csp).not.toMatch(/wss?:\/\//);
   });
 
   it('en desarrollo permite unsafe-eval y una URL local de Supabase por ws', () => {
-    const csp = buildReportOnlyCsp({ supabaseUrl: 'http://127.0.0.1:54321', isDevelopment: true });
+    const csp = buildContentSecurityPolicy({ supabaseUrl: 'http://127.0.0.1:54321', isDevelopment: true });
 
     expect(csp).toContain("'unsafe-eval'");
     expect(csp).toContain('ws://127.0.0.1:54321');
   });
 
   it('sin URL de Supabase válida no inventa orígenes', () => {
-    const csp = buildReportOnlyCsp({ supabaseUrl: 'no-es-una-url', isDevelopment: false });
+    const csp = buildContentSecurityPolicy({ supabaseUrl: 'no-es-una-url', isDevelopment: false });
 
     expect(csp).not.toContain('no-es-una-url');
     expect(csp).not.toContain('wss://');
@@ -76,7 +92,7 @@ describe('T-391: cabeceras de seguridad', () => {
     ['http://abcd1234.supabase.co', false],
     ['ftp://127.0.0.1:54321', true],
   ])('rechaza el esquema de %s (desarrollo: %s)', (supabaseUrl, isDevelopment) => {
-    const csp = buildReportOnlyCsp({ supabaseUrl, isDevelopment });
+    const csp = buildContentSecurityPolicy({ supabaseUrl, isDevelopment });
 
     expect(csp).not.toMatch(/ftp:|javascript:|null|wss?:\/\/|http:\/\//);
   });
@@ -91,12 +107,12 @@ describe('T-391: cabeceras de seguridad', () => {
     expect(keys).toEqual(
       expect.arrayContaining([
         'Content-Security-Policy',
-        'Content-Security-Policy-Report-Only',
         'X-Frame-Options',
         'X-Content-Type-Options',
         'Referrer-Policy',
         'Permissions-Policy',
       ])
     );
+    expect(keys).not.toContain('Content-Security-Policy-Report-Only');
   });
 });
