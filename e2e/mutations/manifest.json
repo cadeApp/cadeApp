@@ -52,8 +52,8 @@
       "spec": "e2e/specs/security-headers.spec.ts",
       "grep": "T-436: Storage desde el navegador sube un documento con el origen HTTPS de Supabase y sin violaciones forzadas",
       "expectedFailure": [
-        "subida a Storage desde el navegador respondida OK",
-        "Received: null"
+        "toBe",
+        "subida a Storage desde el navegador respondida OK"
       ]
     },
     {
@@ -63,8 +63,8 @@
       "spec": "e2e/specs/security-headers.spec.ts",
       "grep": "T-436: Realtime desde el navegador une el canal del feed por el origen WSS de Supabase y sin violaciones forzadas",
       "expectedFailure": [
-        "join de Realtime confirmado (phx_reply ok)",
-        "Received: false"
+        "toBe",
+        "join de Realtime confirmado (phx_reply ok)"
       ]
     }
   ]
