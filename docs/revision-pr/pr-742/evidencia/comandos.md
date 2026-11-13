@@ -225,9 +225,9 @@ La revisión termina con cero bloqueantes técnicos del contrato documental y `P
 
 ### Harness de contenido documental para repetir en checkout de b00032ba
 
-El siguiente script es repetible si se copia a \`/tmp/pr742-r4.mjs\` y se ejecuta **desde la raíz del checkout de SHA b00032ba98c950d34c6a8326dc58eee5b1094a07**. El control del cuerpo de la PR se hace **aparte** por API GitHub, pues no es un archivo local.
+El siguiente script es repetible si se copia a `/tmp/pr742-r4.mjs` y se ejecuta **desde la raíz del checkout de SHA b00032ba98c950d34c6a8326dc58eee5b1094a07**. El control del cuerpo de la PR se hace **aparte** por API GitHub, pues no es un archivo local.
 
-\`\`\`js
+```js
 import {readFileSync} from 'node:fs';
 const cc = readFileSync('docs/contracts/CC-052.md','utf8');
 const task = readFileSync('docs/tasks/T-437.md','utf8');
@@ -255,7 +255,7 @@ for(const [id,needle] of [
 mut('abiertas',task,'Decisiones abiertas: 0.','Decisiones abiertas: 7.',s=>s.includes('Decisiones abiertas: 0.'));
 mut('primer-fallo',log,'La primera dio 1 archivo fallido','Las tres fueron verdes',s=>s.includes('La primera dio 1 archivo fallido'));
 mut('cita-log',log,'«aprobadas las deciciones»','«seleccion del agente»',s=>s.includes('«aprobadas las deciciones»'));
-\`\`\`
+```
 
 Este harness solo valida **texto**, no autoría personal, SQL o tests de producto; no fue ejecutado en worktree local de esta sesión. Las comprobaciones equivalentes sí se ejecutaron in-memory con contenido remoto. Los ocho mutantes de la sesión fueron los mismos salvo que el último operó sobre **PR body** y no sobre el log.
 
