@@ -32,9 +32,11 @@ function withSelfie(courierId: string, patch: Partial<FakeSeedDocument>): FakeSe
   return verifiedRequiredDocuments(courierId).map((doc) => (doc.kind === 'selfie' ? { ...doc, ...patch } : doc));
 }
 
-function fake(documents: FakeSeedDocument[], actorId: string = ADMIN_ID) {
+function fake(documents: FakeSeedDocument[], actorId: string = ADMIN_ID, storagePaths: readonly string[] = []) {
   return createFakeRpcClient({
     settings: SETTINGS,
+    // PR744-H01: como la SQL, la subsanación exige el objeto en Storage.
+    initialStoragePaths: storagePaths,
     initialActor:
       actorId === ADMIN_ID ? { userId: ADMIN_ID, role: 'admin', aal: 'aal2' } : { userId: actorId, role: 'courier', aal: 'aal1' },
     initialCouriers: [
@@ -114,7 +116,8 @@ describe('CC-052 — fake: guarda de aprobar y rehabilitar', () => {
 
 describe('CC-052 — fake: subsanación (D5-A)', () => {
   // El actor courier va desde el arranque: setActor con rol courier vuelve a sembrar al repartidor como aprobado.
-  const asCourier = (courierId: string, documents: FakeSeedDocument[]) => fake(documents, courierId);
+  const asCourier = (courierId: string, documents: FakeSeedDocument[], storagePaths: readonly string[] = []) =>
+    fake(documents, courierId, storagePaths);
 
   it('sin vigente inserta; vigente rechazado o purgado reemplaza; no rehabilita', async () => {
     const docs = verifiedRequiredDocuments(REJECTED_ID)
@@ -126,7 +129,11 @@ describe('CC-052 — fake: subsanación (D5-A)', () => {
             ? { ...d, purgedAt: '2026-10-01T00:00:00.000Z' }
             : d
       );
-    const client = asCourier(REJECTED_ID, docs);
+    const client = asCourier(REJECTED_ID, docs, [
+      path(REJECTED_ID, 'selfie', 1),
+      path(REJECTED_ID, 'dni_front', 1),
+      path(REJECTED_ID, 'dni_back', 1),
+    ]);
     const inserted = await client.resubmit_courier_required_document({
       kind: 'selfie',
       storagePath: path(REJECTED_ID, 'selfie', 1),
@@ -145,7 +152,7 @@ describe('CC-052 — fake: subsanación (D5-A)', () => {
   });
 
   it('submitted con la misma ruta o la misma clave es idempotente; otra ruta o verificado sin purgar fallan', async () => {
-    const client = asCourier(REJECTED_ID, withSelfie(REJECTED_ID, { status: 'rejected' }));
+    const client = asCourier(REJECTED_ID, withSelfie(REJECTED_ID, { status: 'rejected' }), [path(REJECTED_ID, 'selfie', 1)]);
     const first = await client.resubmit_courier_required_document({
       kind: 'selfie',
       storagePath: path(REJECTED_ID, 'selfie', 1),
@@ -179,6 +186,26 @@ describe('CC-052 — fake: subsanación (D5-A)', () => {
         idempotencyKey: crypto.randomUUID(),
       })
     ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+  });
+
+  it('PR744-H01: sin el objeto en Storage devuelve NOT_FOUND sin efectos; con el objeto reemplaza', async () => {
+    const seeded = withSelfie(REJECTED_ID, { status: 'rejected' });
+    const selfieId = seeded.find((d) => d.kind === 'selfie')?.documentId ?? '';
+    const input = { kind: 'selfie' as const, storagePath: path(REJECTED_ID, 'selfie', 1), idempotencyKey: KEY_1 };
+
+    const missing = asCourier(REJECTED_ID, seeded);
+    expect(await missing.resubmit_courier_required_document(input)).toEqual({ ok: false, code: 'NOT_FOUND' });
+    expect(missing.getDocument(selfieId)).toMatchObject({ isCurrent: true, status: 'rejected' });
+    // Sin efectos: con el objeto ya subido, la misma clave crea el documento (no quedó ligada a un intento fallido).
+    const stored = asCourier(REJECTED_ID, seeded, [input.storagePath]);
+    const ok = await stored.resubmit_courier_required_document(input);
+    expect(ok).toEqual({ ok: true, data: expect.objectContaining({ status: 'submitted', idempotent: false, replacedDocumentId: selfieId }) });
+    const newId = ok.ok ? ok.data.documentId : '';
+    expect(stored.getDocument(newId)).toMatchObject({ isCurrent: true, status: 'submitted' });
+    expect(stored.getDocument(selfieId)).toMatchObject({ isCurrent: false, status: 'rejected' });
+
+    const retry = await stored.resubmit_courier_required_document(input);
+    expect(retry).toEqual({ ok: true, data: expect.objectContaining({ documentId: newId, idempotent: true }) });
   });
 
   it('pending, DNI liberado y ruta ajena no subsanan', async () => {

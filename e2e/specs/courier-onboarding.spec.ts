@@ -997,21 +997,24 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       mimeType: 'image/png',
       buffer: DUMMY_2X2_PNG,
     });
-    await expect(
-      section.locator('[data-slot="document-replacement-card"][data-kind="selfie"]').getByText(COURIER_ONBOARDING_COPY.underReviewBadge)
-    ).toBeVisible({ timeout: 20000 });
-
-    // 2. Sigue rechazado y la selfie vigente queda en revisión; rehabilitar todavía falla.
+    // 2. La selfie vigente queda en revisión y la cuenta sigue rechazada. Tras el router.refresh() el servidor la saca
+    // de la sección de subsanación (PR744-H02), así que se espera por la base y por el resumen, no por la tarjeta.
+    const currentSelfie = async () =>
+      (
+        await dbAdmin
+          .from('courier_documents')
+          .select('id, status')
+          .eq('courier_id', courier.id)
+          .eq('kind', 'selfie')
+          .eq('is_current', true)
+          .single()
+      ).data;
+    await expect.poll(async () => (await currentSelfie())?.status, { timeout: 20000 }).toBe('submitted');
+    const selfie = await currentSelfie();
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toHaveCount(0);
+    await expect(page.getByText('En revisión', { exact: true }).first()).toBeVisible();
     const { data: courierRow } = await dbAdmin.from('couriers').select('status').eq('profile_id', courier.id).single();
     expect(courierRow?.status).toBe('rejected');
-    const { data: selfie } = await dbAdmin
-      .from('courier_documents')
-      .select('id, status')
-      .eq('courier_id', courier.id)
-      .eq('kind', 'selfie')
-      .eq('is_current', true)
-      .single();
-    expect(selfie?.status).toBe('submitted');
 
     const admin = await seedAdminUser(stagingContext);
     const { secret, client: aal2Client } = await enrollAdminTotpFactor(admin);

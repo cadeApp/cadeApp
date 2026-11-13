@@ -2986,6 +2986,51 @@ describe('CC-052 (D5-A): subsanación de obligatorios con la cuenta rechazada o 
     expect(screen.getByText(COURIER_ONBOARDING_COPY.resubmitNote)).toBeDefined();
   });
 
+  it('PR744-H02: subsanar la selfie actualiza el resumen documental de «Observado» a «En revisión» y refresca', async () => {
+    mockUploadCourierDocument.mockResolvedValueOnce({ storagePath: 'courier/courier-052/selfie_1730000000502.jpg' });
+    vi.spyOn(actionsModule, 'resubmitRequiredDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        documentId: 'd0000000-0000-4000-8000-000000000522',
+        kind: 'selfie',
+        status: 'submitted',
+        replacedDocumentId: 'd0000000-0000-4000-8000-000000000520',
+        idempotent: false,
+      },
+    });
+    render(
+      <CourierProfileView
+        profile={{
+          courierId: 'courier-052',
+          displayName: 'Carla Rechazada',
+          email: 'carla@test.com',
+          vehicleType: 'bike',
+          plate: null,
+          dniStatus: 'verified',
+          selfieStatus: 'rejected',
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          courierStatus: 'rejected',
+          onboardingComplete: true,
+          requiredResubmissions: [{ kind: 'selfie', status: 'rejected', rejectionMessage: 'La imagen está borrosa.' }],
+        }}
+      />
+    );
+    // El badge de rechazado aparece en el resumen y en la tarjeta de subsanación.
+    expect(screen.getAllByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toHaveLength(2);
+    expect(screen.queryByText('En revisión')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/^Reemplazar selfie con el dni$/i), {
+      target: { files: [new File(['selfie'], 'selfie.jpg', { type: 'image/jpeg', lastModified: 53 })] },
+    });
+
+    await waitFor(() => expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined());
+    // El resumen ya no dice rechazado: la selfie figura «En revisión».
+    expect(screen.queryAllByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toHaveLength(0);
+    expect(screen.getByText('En revisión')).toBeDefined();
+    expect(mockRouterRefresh).toHaveBeenCalled();
+  });
+
   it('el perfil muestra la sección de subsanación y no las tarjetas de reemplazo de los obligatorios', () => {
     render(
       <CourierProfileView

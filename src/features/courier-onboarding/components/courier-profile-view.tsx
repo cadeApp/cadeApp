@@ -567,6 +567,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
               title={REQUIRED_DOCUMENT_TITLES[item.kind]}
               initialStatus={item.status}
               rejectionMessage={item.rejectionMessage}
+              onReplaced={handleDocumentReplaced}
             />
           ))}
         </Card>

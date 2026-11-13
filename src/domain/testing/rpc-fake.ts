@@ -3447,6 +3447,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           }
           const purged = current.status === 'verified' && (current.purgedAt ?? null) !== null;
           if (current.status !== 'rejected' && !purged) return err('INVALID_STATE_TRANSITION');
+        }
+        // PR744-H01: como la SQL, el objeto tiene que existir en Storage antes de mutar nada.
+        if (!storedCourierDocumentPaths.has(input.storagePath)) return err('NOT_FOUND');
+        if (current) {
           current.isCurrent = false;
           current.purgeAfter ??= new Date(nowFn().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
         }
