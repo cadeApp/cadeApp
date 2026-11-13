@@ -41,6 +41,40 @@ describe('T-391 / T-436: cabeceras de seguridad', () => {
     expect(PERMISSIONS_POLICY).toContain('camera=()');
   });
 
+  it('la CSP forzada de producción es exactamente la matriz esperada de directivas y orígenes', () => {
+    const csp = buildContentSecurityPolicy({ supabaseUrl: SUPABASE_URL, isDevelopment: false });
+    const parsed = Object.fromEntries(
+      csp.split('; ').map((directive) => {
+        const [name = '', ...sources] = directive.split(' ');
+        return [name, sources];
+      })
+    );
+    const mapsScript = ['https://maps.googleapis.com', 'https://maps.gstatic.com'];
+    const googleWildcards = ['https://*.googleapis.com', 'https://*.gstatic.com', 'https://*.google.com'];
+
+    // Matriz literal independiente del código probado: cualquier alta, baja o cambio de orden rompe el test.
+    expect(parsed).toEqual({
+      'default-src': ["'self'"],
+      'script-src': ["'self'", "'unsafe-inline'", ...mapsScript],
+      'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      'img-src': ["'self'", 'data:', 'blob:', 'https://abcd1234.supabase.co', ...mapsScript, ...googleWildcards],
+      'connect-src': [
+        "'self'",
+        'https://abcd1234.supabase.co',
+        'wss://abcd1234.supabase.co',
+        ...mapsScript,
+        ...googleWildcards,
+      ],
+      'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
+      'worker-src': ["'self'", 'blob:'],
+      'manifest-src': ["'self'"],
+      'frame-ancestors': ["'none'"],
+      'object-src': ["'none'"],
+      'base-uri': ["'self'"],
+      'form-action': ["'self'"],
+    });
+  });
+
   it('agrega HSTS fuera de desarrollo y no en desarrollo', () => {
     const prod = headerMap(buildSecurityHeaders({ supabaseUrl: SUPABASE_URL, isDevelopment: false }));
     const dev = headerMap(buildSecurityHeaders({ supabaseUrl: SUPABASE_URL, isDevelopment: true }));

@@ -77,14 +77,30 @@ interface CspViolation {
   readonly origin: string;
 }
 
+/** Clave propia del arnés en `sessionStorage`: sobrevive a las navegaciones del mismo origen dentro de la pestaña. */
+const CSP_CAPTURE_KEY = '__t436_csp_violations';
+
+const isCspViolation = (value: unknown): value is CspViolation =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof Reflect.get(value, 'directive') === 'string' &&
+  typeof Reflect.get(value, 'disposition') === 'string' &&
+  typeof Reflect.get(value, 'origin') === 'string';
+
 /**
- * Registra `securitypolicyviolation` antes de que corra cualquier script de la página, en cada documento.
- * `blockedURI` se reduce al origen; los valores sin origen (`inline`, `eval`, `data:`) quedan como esquema o palabra.
+ * Registra `securitypolicyviolation` antes de que corra cualquier script de la página, en cada documento, y acumula
+ * los eventos entre documentos (login → MFA → admin) en `sessionStorage`. `blockedURI` se reduce al origen; los
+ * valores sin origen (`inline`, `eval`, `data:`) quedan como palabra o esquema.
  */
 async function installCspViolationCapture(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const store: { directive: string; disposition: string; origin: string }[] = [];
-    Object.defineProperty(window, '__t436CspViolations', { value: store, configurable: true });
+  await page.addInitScript((key) => {
+    let storage: Storage;
+    try {
+      storage = window.sessionStorage;
+    } catch {
+      return; // Documento sin origen (about:blank): no hay página propia que observar.
+    }
+    if (storage.getItem(key) === null) storage.setItem(key, '[]');
     document.addEventListener('securitypolicyviolation', (event) => {
       let origin = event.blockedURI;
       try {
@@ -93,16 +109,25 @@ async function installCspViolationCapture(page: Page): Promise<void> {
       } catch {
         // `inline`, `eval` u otro valor sin URL: se conserva tal cual (no trae datos).
       }
-      store.push({ directive: event.effectiveDirective, disposition: event.disposition, origin });
+      const stored: unknown = JSON.parse(storage.getItem(key) ?? '[]');
+      const list = Array.isArray(stored) ? stored : [];
+      list.push({ directive: event.effectiveDirective, disposition: event.disposition, origin });
+      storage.setItem(key, JSON.stringify(list));
     });
-  });
+  }, CSP_CAPTURE_KEY);
 }
 
+/** Lee el acumulado; falla en vez de devolver `[]` si la captura no está instalada o tiene otro formato. */
 async function readCspViolations(page: Page): Promise<CspViolation[]> {
-  return page.evaluate(() => {
-    const value: unknown = Reflect.get(window, '__t436CspViolations');
-    return Array.isArray(value) ? (value as CspViolation[]) : [];
-  });
+  const raw = await page.evaluate((key) => window.sessionStorage.getItem(key), CSP_CAPTURE_KEY);
+  if (raw === null) {
+    throw new Error('[T-436] La captura de violaciones CSP no está instalada en esta página');
+  }
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed) || !parsed.every(isCspViolation)) {
+    throw new Error('[T-436] La captura de violaciones CSP tiene un formato inválido');
+  }
+  return parsed;
 }
 
 const enforcedViolations = (violations: readonly CspViolation[]) =>
@@ -361,6 +386,11 @@ test.describe('T-391 — Cabeceras de seguridad (SEC-05)', () => {
       }
       return { scriptResult, imageResult, fetchResult, scriptRan: Reflect.get(window, '__t436ProbeRan') === true };
     }, BYPASS_ORIGIN);
+    // Diagnóstico antes del primer poll: con Report-Only el control positivo queda impreso aunque el test falle.
+    console.log(
+      `[T-436 bypass] script=${attempt.scriptResult} image=${attempt.imageResult} fetch=${attempt.fetchResult} ` +
+        `scriptRan=${attempt.scriptRan} handlers=${reachedHandler.join(',') || 'ninguno'}`
+    );
 
     const blockedBy = async (directive: string) =>
       (await readCspViolations(page)).filter(
@@ -371,6 +401,33 @@ test.describe('T-391 — Cabeceras de seguridad (SEC-05)', () => {
     await expect.poll(() => blockedBy('connect-src'), { timeout: 10000 }).toBeGreaterThan(0);
     expect(attempt).toEqual({ scriptResult: 'error', imageResult: 'error', fetchResult: 'rejected', scriptRan: false });
     expect(reachedHandler).toEqual([]);
+  });
+
+  test('T-436: la captura CSP conserva una violación forzada al navegar a otro documento', async ({ page }) => {
+    await installCspViolationCapture(page);
+    await page.route(`${BYPASS_ORIGIN}/**`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/javascript', body: 'window.__t436ProbeRan = true;' });
+    });
+    await page.goto('/login');
+    await page.evaluate(
+      (origin) =>
+        new Promise<void>((resolve) => {
+          const script = document.createElement('script');
+          script.onload = () => resolve();
+          script.onerror = () => resolve();
+          script.src = `${origin}/script.js`;
+          document.head.appendChild(script);
+        }),
+      BYPASS_ORIGIN
+    );
+    const scriptBlocks = async () =>
+      (await readCspViolations(page)).filter(
+        (v) => v.disposition === 'enforce' && v.directive === 'script-src-elem' && v.origin === BYPASS_ORIGIN
+      ).length;
+    await expect.poll(scriptBlocks, { timeout: 10000 }).toBe(1);
+
+    await page.goto('/');
+    expect(await scriptBlocks()).toBe(1);
   });
 
   test('T-436: Storage desde el navegador sube un documento con el origen HTTPS de Supabase y sin violaciones forzadas', async ({
