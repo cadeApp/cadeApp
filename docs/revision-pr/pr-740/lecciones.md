@@ -7,3 +7,11 @@
 5. **H01 / informe corregido:** `pnpm test` puede incluir más que Vitest. La bitácora decía verde mirando solo 3963 Vitest; la CI detectó el contrato roto del catálogo, y `3350cdb4` fue comprobado por el revisor en CI 86/86.
 
 No se acuña AG nuevo hasta poder enumerar el máximo en **todas** las ramas remotas; esta sesión no tiene un clon Git para esa enumeración y los números históricos tienen colisiones. Conservar referencias con carpeta. No modificar `AGENTS.md` por un solo caso.
+
+## Ronda 2 — Qué se aprendió al verificar los arreglos
+
+- **H02 / P08:** una matriz literal independiente de directivas permite detectar tanto faltantes como **ampliaciones peligrosas** de la CSP (ej. `unsafe-eval`, `form-action *`, `object-src data:`). Ocho mutaciones nuevas del revisor fallaron en el comparador extraído; **no equivale** a ejecutar ocho Vitest mutados.
+- **H03 / P08:** validar eventos **antes y después de navegar** obliga a conservar evidencia entre documentos y a reducir orígenes. El revisor ejecutó el callback real en un entorno JS con `sessionStorage` simulado: control GREEN y cinco mutaciones propias RED. Todavía falta el navegador de producción para asegurar integración con Next y CSP.
+- **H04 / P08:** `[T-436 bypass]` anterior al primer `expect.poll` convierte un RED por falta de enforce en evidencia auditable de la **condición positiva previa**. Es correcto distinguir el RED/GREEN local en `next dev` del E2E confiable sobre build de CI. No vender stdout de bitácora como prueba independiente del revisor.
+- **Flujo y CI:** los tests unit son el primer gate, pero en esta PR el factor decisivo es el `e2e-preview` de navegador real, con recursos y usuarios del entorno Develop; el workflow de mutaciones está diseñado para ejecutarse *después* del merge. No exigir otro CI verde **solo** por documentación de revisión.
+- No se propone nueva regla AG ni una decisión adicional: las referencias P08 y las lecciones de `pr-738` ya cubren estas clases.

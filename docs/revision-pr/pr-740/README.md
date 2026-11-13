@@ -1,6 +1,8 @@
 # PR #740 — revisión independiente T-436
 
-**Ronda 1 · 2026-11-13 · CON BLOQUEANTES (3): PR740-H02–H04.** H01 corregido y verificado. No aprobar ni mergear.
+**Estado Ronda 2 (2026-11-13):** sin nuevos bloqueantes de código en `f5f9b580a2f99410f801f1a0a29e08214fc48226`. H01 continúa verificado en `3350cdb4`; H02 y H03 corregidos y comprobados con controles independientes de alcance declarado; H04 con corrección inspeccionada y RED/GREEN locales documentados por el autor, **sin e2e-preview productivo verificado**. **NO APROBAR/MERGEAR** antes de obtener CI + E2E-preview GREEN sobre el SHA de implementación, o equivalente solo documental. Los dos `RED_CONFIRMED` sobre develop son post-merge y #669 sigue abierto. [Leer Ronda 2](revisiones/ronda-2.md).
+
+**Historial Ronda 1 · 2026-11-13 · CON BLOQUEANTES (3): PR740-H02–H04.** H01 corregido y verificado. No aprobar ni mergear.
 
 - PR: https://github.com/cadeApp/cadeApp/pull/740
 - Rama: `feat/T-436-csp-enforce`; base `develop@d69eff7e8b6a05dff5535bd5a3da15d85b5c7239`.
