@@ -1,0 +1,123 @@
+# Evidencia reproducible — PR #742 — Ronda 1
+
+## Identidad, contraste y límites
+
+- `develop`: `22dff3fa93df5c79b88d8021c1267389b2055666`; PR HEAD revisado: `a8166b5b0f037c561e8652142e90768cda698b37`.
+- GitHub compare: ahead 1, behind 0, mergeable verdadero, solo tres archivos documentales.
+- Bitácora `docs/tasks/log/T-437.md` ausente; sin review threads humanos ni carpeta de revisión previa.
+- Se leyeron migraciones CC-050 (dos RPC vigentes), CC-043 (obligatorios), CC-042 (verificación y locks) y CC-025 (reemplazo), además de queries/types/fake/tests/seed indicados en informe.
+- No se ejecutó `git merge-tree`, `pnpm` ni `test:db`; sin repositorio local en esta sesión. CI para `a8166b5b0f037c561e8652142e90768cda698b37`: workflow cancelado. No inventar resultados.
+
+## Probes independientes sobre el contrato (6 baseline GREEN / 6 mutantes RED)
+
+Se ejecutó el equivalente JavaScript **en memoria sobre el texto obtenido de GitHub de ese SHA**, sin modificar archivos. Cada control se limita a su sección; una versión inicial de probes con `includes` global dejaba pasar cambios fuera de esa sección y se descartó (AG-60). El control final exige un target exacto y detectó las seis mutaciones:
+
+| Probe | Invariante documental | Mutación (en memoria) | Baseline | Mutado |
+|---|---|---|---|---|
+| DOC01 | Helper exige cuatro tipos | borrar `avatar` de la lista | GREEN | RED |
+| DOC02 | Aprobación produce error específico | reemplazar mensaje por `INVALID_STATE_TRANSITION` | GREEN | RED |
+| DOC03 | Rehabilitación incluye guarda | `la misma guarda` → `sin guarda` | GREEN | RED |
+| DOC04 | Helper sin execute clientes | `revoke` → `grant execute` | GREEN | RED |
+| DOC05 | UI especifica ambos botones | quitar Rehabilitar de la cláusula | GREEN | RED |
+| DOC06 | DoD exige ausencia de efectos | `sin update ni audit` → `con update y audit` | GREEN | RED |
+
+**Cuidado:** son pruebas de *texto contractual*, no demuestran el comportamiento SQL ni React, y no subsanan H01-H04.
+
+### Harness completo, sin escritura de archivos
+
+Guardá este script en `/tmp/pr742-documental.mjs` y ejecutalo sobre un **worktree limpio del SHA revisado** desde la raíz. El script lee el árbol y muta solo **strings en memoria**; falla si el objetivo no existe o si un control no detecta su propia mutación.
+
+```bash
+cat >/tmp/pr742-documental.mjs <<'NODE'
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const root = process.argv[2] || process.cwd();
+function read(path) {
+  return readFileSync(join(root, path), 'utf8');
+}
+const CC = read('docs/contracts/CC-052.md');
+const FICHA = read('docs/tasks/T-437.md');
+const SQL042 = read('supabase/migrations/20261106120000_cc042_courier_vehicles.sql');
+const QUERIES = read('src/features/admin/queries.ts');
+const TYPES = read('src/features/admin/types.ts');
+
+function between(source, first, next) {
+  const a = source.indexOf(first);
+  if (a < 0) throw new Error('Ancla no encontrada: ' + first);
+  const b = next ? source.indexOf(next, a + first.length) : source.length;
+  if (b < 0) throw new Error('Fin no encontrado: ' + next);
+  return source.slice(a, b);
+}
+function probe(id, source, a, b, needle, replacement, predicate) {
+  const sub = between(source, a, b);
+  const targets = sub.split(needle).length - 1;
+  if (targets !== 1) throw new Error(id + ': targets=' + targets + ' (sin objetivo es error)');
+  if (!predicate(sub)) throw new Error(id + ': baseline RED');
+  if (predicate(sub.replace(needle, replacement))) throw new Error(id + ': mutación CIEGA');
+  process.stdout.write(id + ' baseline GREEN; mutante RED; targets=1\n');
+}
+
+probe('DOC01', CC, '1. **Helper interno**', '2. **`admin_decide_courier`**',
+  "'dni_front', 'dni_back', 'selfie', 'avatar'",
+  "'dni_front', 'dni_back', 'selfie'",
+  (s) => s.includes("'dni_front', 'dni_back', 'selfie', 'avatar'"));
+probe('DOC02', CC, '2. **`admin_decide_courier`**', '3. **`admin_reinstate_courier`**',
+  "'DOCUMENTS_NOT_VERIFIED'", "'INVALID_STATE_TRANSITION'",
+  (s) => s.includes("'DOCUMENTS_NOT_VERIFIED'"));
+probe('DOC03', CC, '3. **`admin_reinstate_courier`**', '4. **Código',
+  'la misma guarda', 'sin guarda', (s) => s.includes('la misma guarda'));
+probe('DOC04', CC, '1. **Helper interno**', '2. **`admin_decide_courier`**',
+  '`revoke all … from public, anon, authenticated`',
+  '`grant execute … to authenticated`',
+  (s) => s.includes('`revoke all … from public, anon, authenticated`'));
+probe('DOC05', CC, '5. **UI del admin**', 'Ejemplo:',
+  '«Aprobar» y «Rehabilitar»', '«Aprobar»',
+  (s) => s.includes('«Aprobar» y «Rehabilitar»'));
+probe('DOC06', FICHA, '## DoD', '## Regla de pruebas',
+  'sin `update` ni `audit_log`', 'con `update` y `audit_log`',
+  (s) => s.includes('sin `update` ni `audit_log`'));
+
+const diagnostic = {
+  writers_block_rejected_suspended:
+    SQL042.includes("v_courier_rec.status::text in ('rejected', 'suspended')"),
+  admin_detail_omits_purged_at:
+    !between(QUERIES, ".from('courier_documents')", ".order('uploaded_at'")
+      .includes('purged_at'),
+  admin_type_omits_purged_at:
+    !between(TYPES, 'export interface ApplicantDocumentDetail', 'export interface ApplicantDetail')
+      .includes('purgedAt'),
+  no_reinstate_ui_mutation: !CC.includes('t437-ui-reinstate-guard'),
+  d4_contract_still_A: CC.includes('**D4-A'),
+};
+for (const [name, observed] of Object.entries(diagnostic)) {
+  if (!observed) throw new Error('Diagnóstico inesperado, verificar manualmente: ' + name);
+  process.stdout.write(name + ': OBSERVADO (inspección)\n');
+}
+NODE
+node /tmp/pr742-documental.mjs "$(pwd)"
+```
+
+La batería debe arrojar seis líneas `baseline GREEN; mutante RED; targets=1`, seguidas de cinco diagnósticos `OBSERVADO` en el commit fijado. Los diagnósticos de H01/H02/H03/H04 no son tests de producción y no certifican que exista exploit.
+
+**Ejecución observada contra GitHub en esta sesión:** 6/6 baseline GREEN, 6/6 mutaciones RED en memoria; la primera tentativa con comprobaciones globales fue deliberadamente descartada por ceguera de los controles. **No** se ejecutó el script de Node sobre un worktree completo: el runtime no dispone del clon y no hay acceso de red para descargarlo.
+
+## Casos RED→GREEN exigidos a la PR de implementación T-437 (NO corridos en #742)
+
+1. **pgTAP** `supabase/tests/cc052_courier_verified_documents.sql`: cada uno de los cuatro tipos en absent/submitted/rejected/purged/histórico, sin transición ni audit; control happy path y rechazo; quitar cada guarda de RPC produce RED en casos correspondientes. Si el duplicado vigente se prueba, aislar la restricción única y restaurarla; error del índice no acredita la guarda.
+2. **Concurrencia** `supabase/tests/integration/cc052_concurrency.mjs`: dos conexiones reales, lock en curso comprobado con `pg_blocking_pids`, último documento verificado/rechazado ↔ aprobar en ambos órdenes y con auditoría correcta.
+3. **UI** `e2e/mutations/manifest.json` con `t437-ui-approve-guard` y `t437-ui-reinstate-guard` independientes. Cada mutación debe dejar RED un `toBeDisabled` en flujo E2E real con admin MFA, no un mock o fallo de setup.
+4. **Rehabilitación posterior a subsanación**: no poder saltar directamente a approved; RPC segura para nuevos obligatorios; admin verifica cuatro, luego recién reinstate; fallo antes sin auditoría ni actualización. Confirmar permisos de otro repartidor, índices y locks.
+5. **Regresión de fixtures**: pgTAP `rpc_admin`, `cc034`, `cc043`, `cc050`; integración `cc034_concurrency`; E2E `courier-onboarding`, `admin-courier-reinstate`, `admin-audit-filters`. Cambiar únicamente semillas positivas a verificados; conservar todas las aserciones existentes.
+
+## Comandos de control, reservados para el autor de implementación
+
+```bash
+pnpm db:types
+pnpm typecheck && pnpm lint && pnpm test
+pnpm exec vitest run tools
+node docs/revision-pr/analizar.mjs verificacion
+# pgTAP en CI db-tests, NO Docker/Supabase local; E2E preview en staging de Develop
+```
+
+Verificar código del job `db-tests` contra el SHA final, `Files=` / `Tests=` / `Result:`, paso de comparación `db --local` + `git diff --exit-code`. En esta PR de docs no se exigen esos resultados de runtime.
