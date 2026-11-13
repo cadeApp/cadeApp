@@ -9,13 +9,14 @@
 | Base revisada | `22dff3fa93df5c79b88d8021c1267389b2055666` |
 | HEAD revisado | `a8166b5b0f037c561e8652142e90768cda698b37` |
 | Alcance observado | 3 archivos documentales: contrato, ficha y fila del plan |
-| Estado R1 | **CON BLOQUEANTES (4)** · 2 mejoras · sin aprobación ni merge |
+| Estado R1 | **R1: CON BLOQUEANTES (4)**; R2: 2 bloqueantes nuevos · sin aprobación ni merge |
 
 ## Rondas
 
 | Ronda | SHA de código/documentos revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `a8166b5b0f037c561e8652142e90768cda698b37` | 4 bloqueantes, 2 mejoras | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `5c8095cb42441245e4d12c45456d496bb4c27b73` | 2 bloqueantes nuevos; 1 mejora; ratificación pendiente | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
 
 ## Hallazgos
 
@@ -39,9 +40,18 @@
 - D5-A: habilitar subsanación documental autorizada para rechazados/suspendidos sin rehabilitación automática.
 - D6-A: ampliar consulta/tipo/tests del detalle admin para alcanzar paridad con `purged_at`.
 
+## Estado tras ronda 2
+
+- SHA verificado documentalmente: `5c8095cb42441245e4d12c45456d496bb4c27b73`.
+- R1: H01/H02/H05/H06 **arreglado-verificado (solo documentación)**; H03 **parcial**; H04 **decision-pendiente**.
+- R2: **PR742-R01** DNI liberado, **PR742-R02** mutación de Reactivar/Reconsiderar (ambos BLOQUEANTES); **PR742-R03** policy de Storage mal descrita (mejora).
+- La descripción de PR **ya contiene D4-C** y D7-A, verificadas por GitHub.
+- **D1-A, D2-A, D3-A, D4-C, D5-A, D6-A y D7-A son selecciones automáticas del agente con la opción recomendada, sin aprobación personal explícita de Lautaro073; todas siguen pendientes de ratificación. D8-B es la declaración del agente de que no puede ratificarlas por Lautaro073.**
+
 ## Entregables
 
 - [Informe R1](revisiones/ronda-1.md)
+- [Informe R2](revisiones/ronda-2.md)
 - [Hallazgos estructurados](hallazgos.jsonl)
 - [Evidencia y script de mutación documental](evidencia/comandos.md)
 - [Lecciones](lecciones.md)

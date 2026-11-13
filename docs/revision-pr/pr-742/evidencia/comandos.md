@@ -121,3 +121,47 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 Verificar código del job `db-tests` contra el SHA final, `Files=` / `Tests=` / `Result:`, paso de comparación `db --local` + `git diff --exit-code`. En esta PR de docs no se exigen esos resultados de runtime.
+
+# Ronda 2 — Evidencia y comandos
+
+- **HEAD documental examinado:** `5c8095cb42441245e4d12c45456d496bb4c27b73`; develop `22dff3fa93df5c79b88d8021c1267389b2055666`.
+- **Rango autoral:** `9967b141..5c8095cb`, solo CC, ficha, fila de plan y bitácora. PR body ya declara D4-C y D7-A como automáticas.
+- **CI:** status completed, conclusion cancelled; no afirmar verde. `pnpm exec vitest run tools` 10/123 se menciona únicamente en bitácora del autor, sin ejecución independiente. No se ejecutó pgTAP/E2E ni Docker/Supabase.
+
+## Mutaciones documentales independientes, sobre el texto remoto
+
+| Control | Basal | Mutación en memoria | Mutante |
+|---|---|---|---|
+| H01: RPC subsanación + lock `couriers` | GREEN | `RPC nueva` → `RPC ausente` | RED |
+| H02: `purgedAt` + allowlist query/types | GREEN | quitar `purgedAt` del tipo proyectado | RED |
+| H03: dos patches approve/reinstate | GREEN | borrar patch reinstate | RED |
+| H04: «sin aprobación personal» + D4-C | GREEN | sustituir «sin» por «con» | RED |
+| H05: índice y helper separados | GREEN | cambiar `unique_violation` por insert exitoso **solo en cláusula de duplicados** | RED |
+| H06: riesgo purga no demostrado | GREEN | cambiar «hipótesis» a «demostrado» | RED |
+| M3: mensaje «aprobar o rehabilitar» | GREEN | borrar «o rehabilitar» | RED |
+
+La primera prueba H05 con un `includes('unique_violation')` global **fue ciega** debido a una segunda ocurrencia; se descartó y se verificó el RED con el ámbito `**Duplicados vigentes (PR742-H05)** … **Purga del cron (PR742-H06)**`.
+
+### Evidencias cruzadas (lectura e inspección; no SQL en ejecución)
+
+- R01: `CC-052.md:105-107` remite al alta con DNI liberado; `20261104200000_cc043_courier_application.sql` bloquea `status NOT IN ('pending','approved')`; CC-050 reinstate requiere `dni_hmac IS NOT NULL`. La cuenta original `rejected/suspended` no puede reentrar al alta por ese RPC.
+- R02: `applicant-detail-view.tsx:826-834` tiene `openDecisionModal('reactivate')` y `('reconsider')`; `src/features/admin/copy.ts:165-169`: «Reactivar repartidor» y «Reconsiderar aprobación». No existe botón literal «Rehabilitar».
+- R03: `20260922051650_rls_v1.sql:134-148` define `is_courier()` solo como rol courier; `courier_docs_insert_own_folder` exige bucket/carpeta; consentimiento activo lo debe comprobar la RPC.
+
+## Para reproducir en checkout exacto, sin mutar archivos
+
+```bash
+git fetch origin
+git switch --detach 5c8095cb42441245e4d12c45456d496bb4c27b73
+git diff --stat 9967b14166bc58e8261954622fc07361011bc80b 5c8095cb42441245e4d12c45456d496bb4c27b73
+git diff --check 9967b14166bc58e8261954622fc07361011bc80b 5c8095cb42441245e4d12c45456d496bb4c27b73
+node docs/revision-pr/analizar.mjs verificacion
+# En implementación real solamente: pnpm db:types
+# pnpm typecheck && pnpm lint && pnpm test
+# pnpm exec vitest run tools
+# pgTAP por CI db-tests (no Docker/Supabase local)
+```
+
+El harness de texto usado en la sesión con fuentes obtenidas del conector compara in-memory las siete invariantes, crea cada mutante reemplazando exactamente una cláusula dentro de su sección y exige `baseline=true` y `mutated=false`. No hubo clon local para correr el script en el árbol entero. Al arreglar R01–R03 es normal que los diagnósticos de regresión ya no coincidan; se debe volver a revisar en R3.
+
+**Cautela pgTAP H05:** las pruebas existentes se envuelven en `BEGIN; … ROLLBACK;`. Si `DROP INDEX` y pruebas de integridad del mismo archivo comparten transacción, aislar la alteración con `SAVEPOINT … ROLLBACK TO SAVEPOINT` o colocarla como último caso antes del rollback externo; un rollback prematuro podría invalidar el resto de assertions.
