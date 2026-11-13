@@ -14,7 +14,7 @@ import {
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { waitForFormHydration } from '../helpers/hydration';
 import { createAdminClient } from '@/server/supabase/admin';
-import { finalizeSeededCourierApplication } from '@/server/e2e/staging-seed';
+import { finalizeSeededCourierApplication, verifySeededCourierDocuments } from '@/server/e2e/staging-seed';
 import { evaluateRouteGuard } from '@/features/auth/guards';
 import { ADMIN_COPY } from '@/features/admin/copy';
 import { COURIER_ONBOARDING_COPY, COURIER_VEHICLES_COPY } from '@/features/courier-onboarding/copy';
@@ -302,6 +302,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const courier = await usePendingOnboardingCourier(stagingContext, 0);
     // CC-050 (T-434): admin_decide_courier solo decide postulaciones enviadas; el postulante envía su alta como la app.
     await finalizeSeededCourierApplication(createAdminClient(), courier.id, 'bike', null);
+    // CC-052: aprobar exige los cuatro obligatorios verificados (seed del arnés, como si el admin los hubiera revisado).
+    await verifySeededCourierDocuments(createAdminClient(), courier.id);
     const dbAdmin = createAdminClient();
 
     // 3. Intento de aprobación por admin con AAL1: el backend rechaza incondicionalmente
@@ -812,6 +814,8 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const courier = await usePendingOnboardingCourier(stagingContext, 0);
     // CC-050 (T-434): admin_decide_courier solo decide postulaciones enviadas; el postulante envía su alta como la app.
     await finalizeSeededCourierApplication(createAdminClient(), courier.id, 'bike', null);
+    // CC-052: aprobar exige los cuatro obligatorios verificados (seed del arnés, como si el admin los hubiera revisado).
+    await verifySeededCourierDocuments(createAdminClient(), courier.id);
     const dbAdmin = createAdminClient();
 
     // 2. Enrolar y verificar factor TOTP para la cuenta del admin conservando secret (H04)
@@ -906,6 +910,143 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     expect(auditLogEntry).not.toBeNull();
     expect(auditLogEntry?.actor_id).toBe(admin.id);
+  });
+
+  test('T-437 (CC-052) bypass: con la selfie sin verificar «Aprobar repartidor» está deshabilitado y la RPC lo rechaza', async ({
+    page,
+    stagingContext,
+  }) => {
+    const admin = await seedAdminUser(stagingContext);
+    const courier = await usePendingOnboardingCourier(stagingContext, 0);
+    await finalizeSeededCourierApplication(createAdminClient(), courier.id, 'bike', null);
+    await verifySeededCourierDocuments(createAdminClient(), courier.id, { except: 'selfie' });
+    const { secret, client: aal2Client } = await enrollAdminTotpFactor(admin);
+
+    await page.goto(`/login?redirectTo=${encodeURIComponent(`/admin/applicants/${courier.id}`)}`);
+    await waitForNoSkeletons(page);
+    const loginSubmitBtn = page.getByRole('button', { name: /iniciar sesión|ingresar|continuar/i });
+    await waitForFormHydration(loginSubmitBtn);
+    await page.getByLabel(/^email$/i).fill(admin.email);
+    await page.getByLabel(/^contraseña$/i).fill(admin.password);
+    await loginSubmitBtn.click();
+    await page.waitForURL((url) => url.pathname.includes('/login/mfa'), { timeout: 15000 });
+    const totpInput = page.locator('#totp-code');
+    await waitForFormHydration(totpInput);
+    await totpInput.fill(generateTotp(secret));
+    await page.getByRole('button', { name: new RegExp(ADMIN_COPY.mfa.verifyButton, 'i') }).click();
+    await page.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+
+    await page.goto(`/admin/applicants/${courier.id}`);
+    await waitForNoSkeletons(page);
+    await expect(page.getByText(ADMIN_COPY.detail.requiredDocumentsPending)).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: ADMIN_COPY.detail.applicantActions.approve }),
+      'T-437: «Aprobar repartidor» deshabilitado con la selfie sin verificar'
+    ).toBeDisabled();
+
+    // La UI solo refleja: la RPC con el JWT AAL2 del admin también lo rechaza, sin update ni auditoría.
+    const { data, error } = await aal2Client.rpc('admin_decide_courier', {
+      p_courier_id: courier.id,
+      p_decision: 'approved',
+      p_reason: null,
+    } as never);
+    expect(data).toBeNull();
+    expect(error?.message).toContain('DOCUMENTS_NOT_VERIFIED');
+    const dbAdmin = createAdminClient();
+    const { data: courierRow } = await dbAdmin.from('couriers').select('status').eq('profile_id', courier.id).single();
+    expect(courierRow?.status).toBe('pending');
+    const { count } = await dbAdmin
+      .from('audit_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('target_id', courier.id)
+      .eq('action', 'admin_decide_courier');
+    expect(count).toBe(0);
+  });
+
+  test('T-437 (CC-052) subsanación: un rechazado vuelve a cargar la selfie, sigue rechazado y recién tras verificarla se puede reconsiderar', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    test.setTimeout(150_000);
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) throw new Error('[E2E Error] No courier user in stagingContext');
+    const dbAdmin = createAdminClient();
+    await verifySeededCourierDocuments(dbAdmin, courier.id, { except: 'selfie' });
+    const { error: selfieErr } = await dbAdmin
+      .from('courier_documents')
+      .update({ status: 'rejected' })
+      .eq('courier_id', courier.id)
+      .eq('kind', 'selfie')
+      .eq('is_current', true);
+    if (selfieErr) throw new Error(`[E2E Seed Error] selfie rechazada: ${selfieErr.message}`);
+    const { error: statusErr } = await dbAdmin
+      .from('couriers')
+      .update({ status: 'rejected', available: false })
+      .eq('profile_id', courier.id);
+    if (statusErr) throw new Error(`[E2E Seed Error] repartidor rechazado: ${statusErr.message}`);
+
+    // 1. El repartidor rechazado vuelve a cargar la selfie desde su perfil.
+    await loginAsCourier(0, page);
+    await page.goto('/courier/profile');
+    await waitForNoSkeletons(page);
+    const section = page.locator('[data-slot="required-resubmissions"]');
+    await expect(section.getByText(COURIER_ONBOARDING_COPY.resubmitNote)).toBeVisible();
+    await section.locator('input[type="file"]').setInputFiles({
+      name: 'selfie_corregida.png',
+      mimeType: 'image/png',
+      buffer: DUMMY_2X2_PNG,
+    });
+    await expect(
+      section.locator('[data-slot="document-replacement-card"][data-kind="selfie"]').getByText(COURIER_ONBOARDING_COPY.underReviewBadge)
+    ).toBeVisible({ timeout: 20000 });
+
+    // 2. Sigue rechazado y la selfie vigente queda en revisión; rehabilitar todavía falla.
+    const { data: courierRow } = await dbAdmin.from('couriers').select('status').eq('profile_id', courier.id).single();
+    expect(courierRow?.status).toBe('rejected');
+    const { data: selfie } = await dbAdmin
+      .from('courier_documents')
+      .select('id, status')
+      .eq('courier_id', courier.id)
+      .eq('kind', 'selfie')
+      .eq('is_current', true)
+      .single();
+    expect(selfie?.status).toBe('submitted');
+
+    const admin = await seedAdminUser(stagingContext);
+    const { secret, client: aal2Client } = await enrollAdminTotpFactor(admin);
+    const blocked = await aal2Client.rpc('admin_reinstate_courier', {
+      p_courier_id: courier.id,
+      p_reason: `Subsanación E2E ${stagingContext.testRunId}`,
+    });
+    expect(blocked.error?.message).toContain('DOCUMENTS_NOT_VERIFIED');
+
+    // 3. El admin verifica la selfie nueva y recién entonces «Reconsiderar aprobación» se habilita.
+    const verified = await aal2Client.rpc('admin_verify_document', {
+      p_document_id: selfie?.id ?? '',
+      p_decision: 'verified',
+      p_reason: null,
+      p_rejection_code: null,
+    } as never);
+    expect(verified.error).toBeNull();
+
+    await page.context().clearCookies();
+    await page.goto(`/login?redirectTo=${encodeURIComponent(`/admin/applicants/${courier.id}`)}`);
+    await waitForNoSkeletons(page);
+    const loginSubmitBtn = page.getByRole('button', { name: /iniciar sesión|ingresar|continuar/i });
+    await waitForFormHydration(loginSubmitBtn);
+    await page.getByLabel(/^email$/i).fill(admin.email);
+    await page.getByLabel(/^contraseña$/i).fill(admin.password);
+    await loginSubmitBtn.click();
+    await page.waitForURL((url) => url.pathname.includes('/login/mfa'), { timeout: 15000 });
+    const totpInput = page.locator('#totp-code');
+    await waitForFormHydration(totpInput);
+    await totpInput.fill(generateTotp(secret));
+    await page.getByRole('button', { name: new RegExp(ADMIN_COPY.mfa.verifyButton, 'i') }).click();
+    await page.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+    await page.goto(`/admin/applicants/${courier.id}`);
+    await waitForNoSkeletons(page);
+    await expect(page.getByRole('button', { name: ADMIN_COPY.detail.applicantActions.reconsider })).toBeEnabled();
   });
 
   test('T-404: Admin en UI rechaza con un motivo de la lista y el motivo compuesto queda en la auditoría y el historial', async ({

@@ -12,6 +12,7 @@ import { waitForNoSkeletons } from '../helpers/skeletons';
 import { waitForFormHydration } from '../helpers/hydration';
 import { AdminPage, LoginPage } from '../pages';
 import { createAdminClient } from '@/server/supabase/admin';
+import { verifySeededCourierDocuments } from '@/server/e2e/staging-seed';
 
 /**
  * T-407 (A06): filtros de la auditoría.
@@ -75,6 +76,9 @@ test.describe('T-407 — Auditoría A06: rango de fechas y entidad', () => {
     const courier = stagingContext.courierUsers?.[0];
     const otherCourier = stagingContext.courierUsers?.[1];
     if (!courier || !otherCourier) throw new Error('[E2E Error] Faltan repartidores en stagingContext');
+
+    // CC-052: reactivar exige los cuatro obligatorios verificados (seed del arnés).
+    await verifySeededCourierDocuments(createAdminClient(), courier.id);
 
     // 1. Acciones auditadas por RPC (datos por API, no por UI): suspender y reactivar a uno, suspender al otro.
     const { credentials, client, totpSecret } = await seedAdminWithTotp(stagingContext);
