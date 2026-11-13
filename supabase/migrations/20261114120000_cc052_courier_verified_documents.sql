@@ -82,10 +82,7 @@ begin
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
   end if;
 
-  -- CC-052: los cuatro obligatorios vigentes, verificados y sin purgar, antes del update y del audit_log.
-  if not app_private.courier_required_documents_verified(p_courier_id) then
-    raise exception using errcode = 'P0001', message = 'DOCUMENTS_NOT_VERIFIED';
-  end if;
+  -- REVIEW ONLY / NEVER MERGE (T-437 RED): guarda de admin_reinstate_courier quitada.
 
   -- available queda como esté (false tras la suspensión): el repartidor la reactiva con set_availability.
   update public.couriers
@@ -162,10 +159,7 @@ begin
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
   end if;
 
-  -- CC-052: aprobar exige los cuatro obligatorios vigentes, verificados y sin purgar.
-  if p_decision = 'approved' and not app_private.courier_required_documents_verified(p_courier_id) then
-    raise exception using errcode = 'P0001', message = 'DOCUMENTS_NOT_VERIFIED';
-  end if;
+  -- REVIEW ONLY / NEVER MERGE (T-437 RED): guarda de admin_decide_courier quitada.
 
   v_target_status := p_decision::public.courier_status;
 
