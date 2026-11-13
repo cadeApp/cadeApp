@@ -165,3 +165,50 @@ node docs/revision-pr/analizar.mjs verificacion
 El harness de texto usado en la sesión con fuentes obtenidas del conector compara in-memory las siete invariantes, crea cada mutante reemplazando exactamente una cláusula dentro de su sección y exige `baseline=true` y `mutated=false`. No hubo clon local para correr el script en el árbol entero. Al arreglar R01–R03 es normal que los diagnósticos de regresión ya no coincidan; se debe volver a revisar en R3.
 
 **Cautela pgTAP H05:** las pruebas existentes se envuelven en `BEGIN; … ROLLBACK;`. Si `DROP INDEX` y pruebas de integridad del mismo archivo comparten transacción, aislar la alteración con `SAVEPOINT … ROLLBACK TO SAVEPOINT` o colocarla como último caso antes del rollback externo; un rollback prematuro podría invalidar el resto de assertions.
+
+# Ronda 3 — Evidencias, SHA b9bad8bc61b66486b9cf31d01e11013023241ce8
+
+## Entradas y alcance
+
+- Comparación remota `a7e927a278b1695bb540ff697329cce9839ce18c..b9bad8bc61b66486b9cf31d01e11013023241ce8`: **1 commit / 4 rutas**, contrato, ficha, fila de plan y bitácora. 0 archivos productivos y sin cambios autorales a `docs/revision-pr/**`; sin rebase.
+- Protocolo y skill leídos. La rama y develop se contrastaron por SHA; #743 existe y está abierto.
+- GitHub Actions por SHA no devolvió runs; el autor informa CI cancelada. El autor informa 123 tests `vitest run tools` y `git diff --check`, **no ejecutados por el revisor**. Sin pgTAP/E2E/DB/Docker ni `pnpm`.
+- No se ejecutó `node docs/revision-pr/analizar.mjs verificacion` sobre todos los registros por falta de checkout. JSONL parseable; en memoria: **8 `arreglado-verificado`**, **1 `decision-pendiente`**, **0 `abierto/parcial`**; un resuelto es falso positivo R03.
+
+## Probes de contenido
+
+Nueve comprobaciones cruzadas de CC/ficha/plan y código vigente en develop: exclusión R01, UI sin tarjeta, tres patches en todas las fuentes sin el viejo reinstate, tres handlers reales, cada RED esperado en `toBeDisabled`, definición vigente de CC-007, chequeo independiente de consentimiento en RPC, savepoint, D8-B no ratificada. **9/9 GREEN**, tras corregir un matcher D8-B que inicialmente falló por el salto de línea Markdown.
+
+| Mutación sobre texto remoto (in-memory, sin tocar repo) | Basal | Mutante |
+|---|---|---|
+| D7-A «no puede subsanar, volver al onboarding ni rehabilitarse» → «puede...» | GREEN | RED |
+| Quitar patch `t437-ui-approve-guard.patch` de sección catálogo | GREEN | RED |
+| Quitar patch `t437-ui-reactivate-guard.patch` de sección catálogo | GREEN | RED |
+| Quitar patch `t437-ui-reconsider-guard.patch` de sección catálogo | GREEN | RED |
+| Sustituir `rollback to savepoint` por rollback total | GREEN | RED |
+| D8-B «no puede ratificarlas en nombre» → «ratifica en nombre» | GREEN | RED |
+
+Los seis mutantes **no ejecutan SQL/TypeScript** ni demuestran el RED futuro de los E2E: comprueban que una alteración textual de los requisitos no pase desapercibida.
+
+## Rectificación de R03, fuentes vigentes
+
+1. `supabase/migrations/20260922051650_rls_v1.sql:134-148`: primera versión de `app_private.is_courier()` solo role courier.
+2. `supabase/migrations/20260925170000_cc007_consent_enforcement.sql:103-116`: **CREATE OR REPLACE** exige role courier **y** `consent_status='active'`.
+3. Lectura de las **47 migraciones posteriores** disponibles en develop: ninguna redefine `is_courier()`. Por lo tanto, la policy Storage vigente usa el helper **con consentimiento activo**. La crítica R2-R03 fue un **falso positivo del revisor**; el CC actual especifica esta sucesión y exige además validación de consentimiento propia en `resubmit`.
+4. `supabase/migrations/20261106120000_cc042_courier_vehicles.sql:1646`: `finalize_courier_application` no acepta cuentas rejected/suspended; CC-050 `admin_reinstate_courier` exige `dni_hmac`, confirmado contra D7-A.
+
+## Reproducibilidad al disponer del checkout
+
+```bash
+git fetch origin
+git diff --stat a7e927a278b1695bb540ff697329cce9839ce18c b9bad8bc61b66486b9cf31d01e11013023241ce8
+git diff --check a7e927a278b1695bb540ff697329cce9839ce18c b9bad8bc61b66486b9cf31d01e11013023241ce8
+node docs/revision-pr/analizar.mjs verificacion
+# Solo en futura PR de implementación:
+pnpm db:types
+pnpm typecheck && pnpm lint && pnpm test
+pnpm exec vitest run tools
+# pgTAP con db-tests en CI; E2E-mutantes GREEN/RED reales
+```
+
+La revisión termina con cero bloqueantes técnicos del contrato documental y `PR742-H04` de ratificación personal pendiente. Sin aprobación ni merge.

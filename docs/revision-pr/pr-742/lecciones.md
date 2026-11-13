@@ -18,3 +18,11 @@ Esta ronda documental no crea numeración AG nueva: existen `pr-82/AG-97` y rama
 - **R2-L03 (PR742-R03):** registrar qué chequea Storage (`is_courier` = rol/carpeta) y qué chequea la RPC (`consent_status` = active); no atribuirle al helper un control que no hace.
 - **Proveniencia:** D7-A fue selección automática del agente; D8-B reconoce incapacidad del agente de ratificar por Lautaro073. D1-A…D7-A siguen sin ratificación humana explícita.
 - **No exagerar checks:** CI cancelada, 123 tests declarados solo por el autor; 7/7 mutaciones de documentación RED sí comprobadas por revisión; no valida SQL ni React.
+
+## Ronda 3 — Errata de revisión y buenas prácticas
+
+- **R3-L01 / PR742-R03: retractación.** La lección R2-L03 se basó en la función **anterior** `is_courier()` de `rls_v1.sql`. **CC-007 la redefinió con rol y consentimiento activo** y ninguna de las 47 migraciones posteriores revierte esa guarda. El hallazgo R03 fue un falso positivo **del revisor**, no del autor. Queda en el histórico con `falso_positivo:true`, no usarlo para imputar fallas al agente. Para revisar SQL, reconstruir la definición **vigente por orden de migraciones**, nunca leer solo la primera ocurrencia.
+- **R3-L02 / H03/R02:** una RPC compartida puede tener tres botones con handlers, estados y labels separados. El manifest tiene una prueba por entrada: exigir mutante por rama y RED real de `toBeDisabled`.
+- **R3-L03 / H04:** D7-A y D1-A…D6-A siguen como elecciones automáticas; D8-B es constancia de no ratificación. Sin casillas aprobadas, ningún agente autoriza merge.
+- **R3-L04 / alcance de evidencia:** 123 tests son declaración de bitácora; los probes del revisor son textuales y no prueban pgTAP, E2E, transacciones ni seguridad en runtime.
+- **R3-L05 / datos:** `origen` es enum sin categoría «error del revisor»; se mantiene por compatibilidad con el analizador y se añade `falso_positivo: true` y `rectificado_por: revisor`. Excluir R03 de cálculos de culpa hasta que el agregador admita rectificaciones.
