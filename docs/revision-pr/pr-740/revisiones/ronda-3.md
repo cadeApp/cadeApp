@@ -1,0 +1,49 @@
+# Ronda 3 — PR #740 / T-436 · CSP de Report-Only a enforce
+
+**Fecha:** 2026-11-13 (Argentina). **Resultado: SIN BLOQUEANTES DE IMPLEMENTACIÓN.** El code review y los gates CI + E2E de producción están verificados en `182d413ae09ab80fa3645aa7b831f134d578b2fb`. **No se aprueba ni mergea**: la decisión final corresponde a Lautaro073. Dos flaky transversales se registran sin atribuirlos falsamente a CSP y sin bloquear esta PR. D4-A exige mutaciones trusted **después del merge**, por lo que #669 debe permanecer abierto.
+
+**Head del autor:** `182d413ae09ab80fa3645aa7b831f134d578b2fb` (merge de `5debe5859e681325b9492bff32944779fc11d421` y `2920268041cd6eac35ef1b6d14b481422da1d00d`). **Base:** `develop@d69eff7e8b6a05dff5535bd5a3da15d85b5c7239`. Comparación con la revisión R2: 2 commits adelante, 0 atrás y 7 archivos cambiados, listados abajo. Comparación con develop: 28 adelante, 0 atrás. No había conflicto detectado por la comparación; `git merge-tree` no ejecutado porque no hay clon local. PR abierta y Draft. Ningún cambio del autor a `docs/revision-pr/pr-740/**` tras R2 (SHA de `ronda-2.md` intacto).
+
+## Alcance y decisión D5-C
+
+Los **siete** archivos del cambio de `29202680` a `182d413a` son:
+1. `src/instrumentation-client.ts` y `src/instrumentation-client.test.ts` **nuevos** (bootstrap temprano de Zod y su test).
+2. `src/app/providers.tsx` y `src/app/providers.test.tsx` **revertidos exactamente a develop**, comprobado por SHA idéntico de ambos archivos a los de develop.
+3. `docs/tasks/T-436.md`, `docs/implementation-plan.md` (`8, fila T-436) y `docs/tasks/log/T-436.md` ajustados para registrar D5-C y su alcance.
+
+La ficha **de develop** no incluía los nuevos archivos; se comparó el cambio de ficha y plan contra ella. Se acepta como **ampliación documentada D5-C** y sustitución de D5-A, no como si el alcance hubiera existido siempre. **Procedencia:** selección automática del agente con la opción recomendada, **sin aprobación personal explícita de Lautaro073**. El usuario aportó esta procedencia antes del cierre de la ronda. No se vuelve a adjudicar aprobación manual. La decisión técnicamente corrige el orden: `src/instrumentation-client.ts` llama `z.config({ jitless: true })` en el bootstrap del navegador antes de la evaluación de módulos y esquemas de la aplicación; `Providers` era demasiado tardío. No se agrega `unsafe-eval` en producción ni se ignoran violaciones `eval` en el E2E.
+
+## PR740-R01 — REGRESIÓN ALTA, ARREGLADA Y VERIFICADA (P01/P08)
+
+**Problema real de D5-A, que nuestra revisión anterior no detectó:** la configuración global de Zod se ejecutaba en el cuerpo de `Providers` **después** de evaluar los imports que ya habían construido esquemas. El unit del flag/configuración no garantizaba el orden del bootstrap Next. La alternativa D5-A fue recomendada en la Ronda 1 por el revisor y elegida automáticamente por el agente; por eso el error de criterio es **compartido (ambos)**. El verdadero E2E exigido en R2 sí lo detectó.
+
+**RED independiente:** [e2e-preview 43394289306](https://github.com/cadeApp/cadeApp/actions/runs/43394289306), job `131781422266`, **checkout exacto `2920268041cd6eac35ef1b6d14b481422da1d00d`**, con código D5-A (incluye `f5f9b580`). Fallaron en todos sus intentos cinco pruebas: admin MFA (`:241`), feed+mapa (`:267`), inventario home/login (`:327`), Storage (`:433`), Realtime (`:471`). Se inspeccionaron **18 líneas `[T-436 csp]`** de `disposition=enforce directiva=script-src origen=eval`. Bypass y captura siguieron PASS. Resumen: **123 passed, 5 failed, 1 flaky**.
+
+**GREEN independiente:** [e2e-preview 43406950298](https://github.com/cadeApp/cadeApp/actions/runs/43406950298), job `131823570973`, **checkout exacto `182d413ae09ab80fa3645aa7b831f134d578b2fb`** y `pnpm build` + `pnpm start` en modo producción (puerto 3100). Pasaron admin MFA, courier feed y mapa de comercio real, inventario home/login, bypass, captura entre documentos, Storage y Realtime. Se verificaron **0 líneas `[T-436 csp]`** (ningún evento inventariado). El bypass imprimió `[T-436 bypass] script=error image=error fetch=rejected scriptRan=false handlers=ninguno`. El job completo concluyó `success`; **127 passed + 7 passed en fase adicional, 2 flaky** fuera de T-436 (ver abajo). `verificado_en_sha=182d413ae09ab80fa3645aa7b831f134d578b2fb`.
+
+**Unit y test del bootstrap:** `src/instrumentation-client.test.ts` espía `globalThis.Function` antes de importar dinámicamente el bootstrap, construye un `z.object` y verifica `z.config().jitless === true`, parse válido y ninguna llamada observada a Function. El autor reportó RED local sin `z.config` (`expected undefined to be true`). CI en SHA `182d413a`, job `unit 131818939969` confirma **210 archivos/3964 tests Vitest**, incluyendo el nuevo spec, y **86/86 workflows + 6/6 ADR**. Independientemente, el revisor ejecutó un harness de bootstrap (el código fuente real con el import sustituido por un objeto Zod *simulado*, NO Vitest ni Zod real): control GREEN y **4 mutaciones propias RED** (eliminar config, poner jitless=false, diferirla en una función no invocada, usar clave incorrecta). El harness está íntegro en `../evidencia/comandos.md` y **no sustituye** los dos E2E reales ni el unit. La prueba concluyente de orden temprano en Next es el contraste RED/GREEN del **mismo E2E productivo**, no el mock del harness.
+
+## Hallazgos previos
+
+- **PR740-H01**: corregido/verificado en `3350cdb4` (contrato `expectedFailure` del manifest). No se tocó de nuevo; D4-A mantiene esos mensajes **provisionales** hasta las mutaciones post-merge.
+- **PR740-H02**: matriz literal de 12 directivas en `headers.test.ts`, CI unit GREEN de `182d413a`, sin modificación en esta ronda. Los ocho mutantes propios de la Ronda 2 siguen cubiertos por ese test. `arreglado-verificado`.
+- **PR740-H03**: acumulador `sessionStorage` y test real `/login` → `/`, ambos verdes en `e2e-preview 43406950298`. `arreglado-verificado`.
+- **PR740-H04**: bypass en Chromium de producción quedó GREEN con todas las aserciones `enforce` y línea de control negativo; el RED positivo Report-Only está documentado en la bitácora de la Ronda 2 (autor, en `pnpm dev`) y el primer RED de CI previo conserva evidencia de que sin enforce falla. En R3 se obtuvo la verificación independiente **GREEN de producción**, así que se actualiza a `arreglado-verificado` sin fingir que el revisor ejecutó el RED local del autor.
+
+## Dos flaky en la suite E2E (no bloquear T-436)
+
+**A. `map-privacy.spec.ts:34`:** en el intento inicial, `/api/live/available-requests` respondió HTTP **500** en vez de 200 (`map-privacy.spec.ts:94`); el primer reintento pasó. Es un problema conocido y ya está registrado en [issue #478](https://github.com/cadeApp/cadeApp/issues/478) como falla intermitente del endpoint, no una nueva regresión demostrada de CSP.
+
+**B. `map-privacy.spec.ts:215`:** el mapa mockeado y la acción de GPS del primer drop (`setGeolocation(-27.55,-65.70)`, permiso y clic «Usar mi ubicación») no produjeron antes de 10 s el mensaje inline `fuera de Aguilares` (`map-privacy.spec.ts:279`); falló el intento y retry #1, **pasó retry #2**. No se tocó ese spec ni el código de mapa en la PR, y los flujos CSP con Google Maps reales pasaron con cero violaciones; **la atribución causal a CSP no está probada**. Se creó [issue #741](https://github.com/cadeApp/cadeApp/issues/741) para investigar separado, sin sleeps, mocks falsos o desactivar pruebas. No se afirma que el flaky sea definitivamente «solo test»: debe diagnosticarse si es una carrera de integración, un defecto de UX real o del propio E2E. Un run GREEN con dos flaky es técnicamente menos fuerte que uno sin reintentos: la reserva queda explícita.
+
+**Criterio de aceptación:** el workflow oficial completó en `success`, los **doce casos del spec security-headers** fueron PASS en primer intento (los cinco T-436 y los de T-391), la diferencia código D5-C no modifica pruebas de mapa/servidor, y ambos flaky transversales están trazados por issues. **No bloquean la entrega de T-436**; no se reescribe el test para hacerlos desaparecer ni se afirma causa raíz.
+
+## CI y pendientes post-merge
+
+**CI [43405560158](https://github.com/cadeApp/cadeApp/actions/runs/43405560158) / SHA `182d413a`:** éxito en `lint`, `unit`, `db-tests`, `audit`, `build`, `typecheck` y `bundle-budget`. El log `db-tests` (job `131818940015`) contiene pgTAP final `Files=47, Tests=3958, Result: PASS` y verificación de tipos `git diff --exit-code` (las fallas intermedias de algunas pruebas son **mutaciones RED intencionales** del job; no son estado final del gate). `unit 131818939969`: **210/210 suites Vitest, 3964/3964 tests, verify-workflows 86/86, ADR 6/6**.
+
+**E2E [43406950298](https://github.com/cadeApp/cadeApp/actions/runs/43406950298):** `success`, checkout exacto, build producción, doce pruebas `security-headers` pasaron, dos flaky en map-privacy trazados. No se exige otra CI/E2E GREEN únicamente porque se añada esta carpeta documental al HEAD.
+
+**Post-merge obligatorio según D4-A:** correr el trusted `e2e-mutation` sobre `develop` **dos veces**, IDs `t436-csp-connect-https` y `t436-csp-connect-wss`, con control GREEN, mutante RED por la aserción concreta y `RED_CONFIRMED`; anotar SHA de develop, run IDs y artifacts. Si falla o el mensaje provisional no coincide, abrir corrección. **Issue #669 permanece ABIERTO** hasta ambas evidencias. La cobertura de REST desde navegador permanece **pendiente expresamente**, no se da por cumplida. La deuda XSS inline por `'unsafe-inline'` corresponde a #739.
+
+**Conclusión:** SIN BLOQUEANTES de implementación. El revisor no aprueba ni mergea; la PR sigue Draft y corresponde a Lautaro073 decidir el merge. La Ronda 3 aporta evidencia independiente de RED→GREEN **de producción**, con la salvedad de dos flaky externos registrados y mutaciones trusted post-merge, no inventadas.

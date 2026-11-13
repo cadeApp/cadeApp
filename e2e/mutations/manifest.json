@@ -44,6 +44,28 @@
         "toBeVisible",
         "Estás en el piloto gratis"
       ]
+    },
+    {
+      "id": "t436-csp-connect-https",
+      "invariant": "T-436: la CSP forzada habilita en connect-src el origen HTTPS de Supabase; sin él, la subida a Storage desde el navegador queda bloqueada.",
+      "patch": "t436-csp-connect-https.patch",
+      "spec": "e2e/specs/security-headers.spec.ts",
+      "grep": "T-436: Storage desde el navegador sube un documento con el origen HTTPS de Supabase y sin violaciones forzadas",
+      "expectedFailure": [
+        "toBe",
+        "subida a Storage desde el navegador respondida OK"
+      ]
+    },
+    {
+      "id": "t436-csp-connect-wss",
+      "invariant": "T-436: la CSP forzada habilita en connect-src el origen WSS de Supabase; sin él, el join de Realtime del feed desde el navegador no se confirma.",
+      "patch": "t436-csp-connect-wss.patch",
+      "spec": "e2e/specs/security-headers.spec.ts",
+      "grep": "T-436: Realtime desde el navegador une el canal del feed por el origen WSS de Supabase y sin violaciones forzadas",
+      "expectedFailure": [
+        "toBe",
+        "join de Realtime confirmado (phx_reply ok)"
+      ]
     }
   ]
 }
