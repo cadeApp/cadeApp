@@ -94,3 +94,88 @@ git diff --stat origin/develop...HEAD
 ```
 
 **No se afirmó su resultado en esta ronda.** Solo stage de `docs/revision-pr/pr-738/**` para el commit del revisor. Tras el commit, `git pull` antes de arreglar y sin rebase/amend/force push.
+
+## Ronda 2 — evidencia por inspección y contrato real de e2e-mutation
+
+**SHA de la corrección:** `865eb34622252153475097c4c05894fa62e971b2`; base `develop@3c4d26b`.
+
+- Diff de commit del autor: **solo tres docs** `docs/tasks/T-436.md`, `docs/tasks/log/T-436.md` y la fila T-436 del plan; la carpeta de revisión conservaba el commit de R1.
+- Inspección estática contra contenido de GitHub SHA: requisitos H01/H02/H03/H04 = **true**; D1-C/D2-A/D3-A = **true**; primer DoD ficha idéntico a columna DoD plan = **true**. Mutaciones independientes de un requisito esencial en cada caso cambian **true → false**; no son pruebas de runtime.
+- Desacople H05: `e2e/AGENTS.md:15-21` exige catálogo `e2e/mutations` versionado en develop y target **solo develop mergeado**; `docs/tasks/T-347.md:31-62` y `.github/workflows/e2e-mutation.yml:3-10,47-65,103-112` lo confirman. `e2e/mutations/manifest.json` no contiene `t436-*`. La ficha en `T-436.md:57-66,120-122` no permite catálogo ni patches, y requiere `RED_CONFIRMED` como DoD. El control de factibilidad documental queda **NO PASA**. Ningún job se disparó.
+- El intento de clonar con `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` falló por DNS: `Could not resolve host: github.com`. No hubo comprobación independiente de GitHub Actions, Vitest ni Playwright. Los **123 tests verdes** son el reporte del autor, no del revisor. No exigir CI nuevo solo por tocar bitácora.
+
+### Script independiente COMPLETO (copiar a /tmp)
+
+El siguiente harness comprueba los cuatro cambios, las decisiones y la igualdad ficha–plan, y **rechaza** la incompatibilidad de catálogo/etapas. `--selftest` se ejecutó en esta sesión con Node 22 y dio `SELFTEST PASS: 4 requisitos + decisiones + DoD; 6 mutaciones RED`. Son mutaciones **sintéticas en memoria** del instrumento; el comando contra el clon debe repetirlo quien tenga el checkout completo. La salida del clon **no fue ejecutada por el revisor**.
+
+```bash
+cat > /tmp/pr738-r2-guard.mjs <<'NODE'
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+const hasAll = (s, words) => words.every((w) => s.includes(w));
+function inspect(ficha, plan, agents, manifest) {
+  const allowed = ficha.split('## Archivos permitidos')[1]?.split('## Fuera de alcance')[0] ?? '';
+  const firstDod = ficha.match(/^- \[ \] (.+)$/m)?.[1];
+  const row = plan.split('\n').find((s) => s.startsWith('| T-436 |'));
+  const planDod = row?.split('|').slice(1,-1).map((s) => s.trim())[5];
+  return {
+    H01: hasAll(ficha,['**REST:**','**Storage:**','**Realtime:**','desde el navegador','join confirmado']),
+    H02: hasAll(ficha,['**origen agregado:**','**origen retirado:**','inventario de peticiones reales','política candidata']),
+    H03: hasAll(ficha,['csp-test.invalid/script.js','csp-test.invalid/probe.png','csp-test.invalid/probe.json','page.route','Access-Control-Allow-Origin']),
+    H04: hasAll(ficha,['page.addInitScript','securitypolicyviolation','blockedURI','effectiveDirective','disposition']),
+    decisions: hasAll(ficha,['D1-C','D2-A','D3-A','issue #739','riesgo residual']),
+    syncDod: Boolean(firstDod && firstDod === planDod),
+    mutationRequired: hasAll(ficha,['e2e-mutation','RED_CONFIRMED']),
+    onlyDevelop: agents.includes('único') && agents.includes('develop'),
+    allowsCatalog: allowed.includes('e2e/mutations/manifest.json') && allowed.includes('t436-csp-connect-https.patch') && allowed.includes('t436-csp-connect-wss.patch'),
+    hasCatalogEntries: manifest.includes('t436-csp-connect-https') && manifest.includes('t436-csp-connect-wss'),
+    postMergeSpecified: ficha.includes('después del merge') && ficha.includes('RED_CONFIRMED'),
+  };
+}
+if (process.argv[2] === '--selftest') {
+  const sample = ['## Archivos permitidos','- src/security/headers.ts','## Fuera de alcance','## DoD','- [ ] DoD principal','**REST:** **Storage:** **Realtime:** desde el navegador join confirmado','**origen agregado:** **origen retirado:** inventario de peticiones reales política candidata','csp-test.invalid/script.js csp-test.invalid/probe.png csp-test.invalid/probe.json page.route Access-Control-Allow-Origin','page.addInitScript securitypolicyviolation blockedURI effectiveDirective disposition','D1-C D2-A D3-A issue #739 riesgo residual','e2e-mutation RED_CONFIRMED'].join('\n');
+  const plan = '| T-436 | P1 | CSP | deps | scope | DoD principal |';
+  const agent = 'único target develop';
+  const fixture = inspect(sample, plan, agent, '{}');
+  assert.deepEqual([fixture.H01,fixture.H02,fixture.H03,fixture.H04,fixture.decisions,fixture.syncDod],[true,true,true,true,true,true]);
+  const mutations = [
+    ['H01',sample.replace('**Realtime:**','sin Realtime')],
+    ['H02',sample.replace('**origen retirado:**','baja')],
+    ['H03',sample.replace('csp-test.invalid/probe.png','no-probe.png')],
+    ['H04',sample.replace('page.addInitScript','no-init')],
+    ['decisions',sample.replace('D1-C','D1-A')],
+  ];
+  for(const [key,mut] of mutations) assert.equal(inspect(mut,plan,agent,'{}')[key],false,'mutación sin detectar: '+key);
+  assert.equal(inspect(sample,plan.replace('DoD principal','DoD diferente'),agent,'{}').syncDod,false);
+  console.log('SELFTEST PASS: 4 requisitos + decisiones + DoD; 6 mutaciones RED');
+} else {
+  const root=resolve(process.argv[2]??process.cwd());
+  const read=(path)=>readFileSync(resolve(root,path),'utf8');
+  const o=inspect(read('docs/tasks/T-436.md'),read('docs/implementation-plan.md'),read('e2e/AGENTS.md'),read('e2e/mutations/manifest.json'));
+  console.log(JSON.stringify(o,null,2));
+  if (![o.H01,o.H02,o.H03,o.H04,o.decisions,o.syncDod].every(Boolean)) process.exitCode=2;
+  else if(o.mutationRequired && o.onlyDevelop && (!o.allowsCatalog || !o.hasCatalogEntries || !o.postMergeSpecified)) process.exitCode=3;
+}
+NODE
+node /tmp/pr738-r2-guard.mjs --selftest
+node /tmp/pr738-r2-guard.mjs "$PWD"
+```
+
+El segundo comando retorna **exit=3** si siguen sin existir catálogo, par de patches autorizados y etapa post-merge; **exit=2** si H01–H04, decisiones o DoD–plan pierden una señal esencial. Esta heurística de texto es un apoyo a inspección: para dar cierre final hace falta comprobar el workflow y los E2E reales cuando se implemente.
+
+### Comprobaciones finales recomendadas (clon real)
+
+```bash
+git fetch origin
+git rev-parse HEAD
+git rev-parse origin/develop
+git diff --name-only dccfdfd976d8c17928e8ed0944f9ed55cb4045cf 865eb34622252153475097c4c05894fa62e971b2
+git diff --check origin/develop...HEAD
+git log --oneline -- docs/revision-pr/pr-738/
+git merge-tree --write-tree origin/develop HEAD
+pnpm exec vitest run tools
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+No leer `.env*` ni disparar `e2e-mutation` o workflows manualmente durante revisión; no levantar Docker ni Supabase. Toda mutación futura de `src/security/headers.ts` se ejecuta solo en runner trusted sobre `develop` ya mergeado, con patch revisado, nunca en un Preview público con secretos.
