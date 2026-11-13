@@ -7,30 +7,31 @@
 | Autor | @Lautaro073 |
 | Rama | `feat/T-437-b05-verified-documents` → `develop` |
 | Base de PR | `f0e217ac028633f22f52d74632f8615ceb886a7e` |
-| SHA revisado | `e96473185354589b3820a345cc7a089127919afd` |
-| Tamaño previo a esta ronda | 51 archivos, +2560/-44 líneas |
-| Estado de R1 | **CON BLOQUEANTES (1)**; revisión independiente sin aprobación ni merge |
+| SHA de implementación revisado más reciente | `a20402a999084fd60d91ca6e62143b10a20d134d` |
+| Tamaño de la PR antes del commit de R2 | 56 archivos, +2935/-44 líneas |
+| Estado de R2 | **SIN BLOQUEANTES DE CÓDIGO**; 2 hallazgos corregidos y verificados estructuralmente, CI unit verde; DB/E2E según condiciones abajo |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `e96473185354589b3820a345cc7a089127919afd` | 2 (1 bloqueante y 1 mejora) | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `a20402a999084fd60d91ca6e62143b10a20d134d` | 0 nuevos; H01/H02 corregidos | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Severidad | Estado |
 |---|---|---|---|
-| PR744-H01 | El fake subsana un documento sin objeto en Storage | alto · bloqueante | abierto, por inspección |
-| PR744-H02 | Estado de subsanación no se refleja en el resumen del perfil | medio · mejora | abierto, por inspección |
+| PR744-H01 | El fake subsana un documento sin objeto en Storage | alto · bloqueante | **arreglado-verificado** en `a20402a9` (oráculo estructural independiente + CI unit) |
+| PR744-H02 | Estado de subsanación no se refleja en el resumen del perfil | medio · mejora | **arreglado-verificado** en `a20402a9` (oráculo estructural independiente + CI unit) |
 
 Datos: [hallazgos.jsonl](hallazgos.jsonl) · [Evidencia y comandos](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
 ## Qué queda por hacer
 
-1. **Agente autor:** corregir H01 en `src/domain/testing/rpc-fake.ts` y los fixtures/tests de `src/domain/cc052-courier-verified-documents.test.ts`, demostrando RED→GREEN sin adulterar pruebas; resolver H02 y probar la consistencia del perfil sin debilitar el E2E.
-2. **Revisión independiente:** ronda 2, verificar cambios en el SHA nuevo, ejecutar controles propios cuando exista clon utilizable; no usar `verificado_en_sha` retroactivo.
-3. **Después del merge:** ejecutar E2E reales y `e2e-mutation` para `t437-ui-approve-guard`, `t437-ui-reactivate-guard` y `t437-ui-reconsider-guard` en Develop con migración CC-052 aplicada. Esto es una condición pendiente, **no una prueba verde**.
+1. **Antes de merge:** completar `db-tests` del CI de `a20402a9` en verde y revisar evidencia de pgTAP y generación de tipos. El CI `unit` ya tiene 212 suites / 4016 tests PASS en este SHA. Los controles de R2 están verificados estructuralmente y mediante CI, **sin Vitest independiente ejecutado por el revisor**.
+2. **Decisión de integración de P1:** mantener Draft/no merge hasta que los gates aplicables estén verdes. No surgieron decisiones nuevas de alcance.
+3. **Después del merge y de migrar Develop:** ejecutar E2E reales (incluida subsanación) y las tres mutaciones `t437-ui-{approve,reactivate,reconsider}-guard`, registrando `RED_CONFIRMED` solo con evidencia. El estado BLOCKED / REQUIRES DEVELOP MIGRATION no se cuenta como PASS.
 
 ## Observaciones de integridad
 

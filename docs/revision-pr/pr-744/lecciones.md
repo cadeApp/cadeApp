@@ -22,3 +22,10 @@ No se crea un nuevo AG porque ambos hallazgos refuerzan reglas existentes y no s
 ## Advertencias
 
 La base fue verificada en CI, no por un Docker local de revisión. La batería RED de guardas es del autor y no debe presentarse como reproducción independiente. La mejora H02 tampoco se verificó con navegador y requiere ejecución posterior.
+
+## Ronda 2 — contraste con los arreglos
+
+- H01 prueba que la fidelidad fake/SQL puede perder una precondición que ya estaba modelada para otra RPC. Se restauró la guarda en el lugar correcto, antes de efectos, y se incorporó un caso `NOT_FOUND` con control del estado anterior.
+- H02 se corrigió usando el callback existente y sin ampliar la arquitectura. La prueba comprueba el estado visible del consumidor, no solo una tarjeta aislada; el E2E también espera el estado de base.
+- El revisor ejecutó un **oráculo estructural** sobre blobs exactos, con mutantes solo en memoria para demostrar que ese oráculo detecta la ausencia de las líneas críticas. **No** sustituye las mutaciones de Vitest, la pgTAP ni el E2E diferido. El job unit de CI en el SHA exacto aporta ejecución real del código.
+- No aparece patrón nuevo que justifique una regla nueva ni un AG nuevo; se refuerzan `pr-68/AG-75` y `pr-56/AG-37`. La mención abreviada `AG-75`/`AG-37` de R1 debe interpretarse con su carpeta para evitar colisiones entre ramas.

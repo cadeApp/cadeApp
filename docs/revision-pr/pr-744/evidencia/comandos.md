@@ -119,3 +119,79 @@ git status --short
 ```
 
 La falta de ejecución de esos comandos en esta sesión **no** equivale a resultado favorable. El entorno no tenía clon ni permiso para invocar Docker local.
+
+
+---
+
+# Ronda 2 — pruebas independientes estructurales, SHA a20402a9
+
+**Estado:** ejecutado sobre los contenidos devueltos por el conector GitHub en `a20402a999084fd60d91ca6e62143b10a20d134d`, 8 aserciones GREEN incluyendo dos mutantes estructurales RED. **No se ejecutó Vitest ni la mutación E2E del autor, y no se dispuso del clon local.** Un paso necesario para reproducirlo es disponer de los cinco archivos exactos.
+
+## Script completo (reproducible sin node_modules)
+
+Ejecutar desde raíz del repositorio con `node`; no escribe archivos y hace las mutaciones **solo en memoria**:
+
+```bash
+node <<'NODE'
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const read = p => fs.readFileSync(p, 'utf8');
+const fake = read('src/domain/testing/rpc-fake.ts');
+const test = read('src/domain/cc052-courier-verified-documents.test.ts');
+const profile = read('src/features/courier-onboarding/components/courier-profile-view.tsx');
+const componentTest = read('src/features/courier-onboarding/components.test.tsx');
+const e2e = read('e2e/specs/courier-onboarding.spec.ts');
+
+const h1 = fake.slice(fake.indexOf('resubmit_courier_required_document: (rawInput) =>'),
+  fake.indexOf('calculate_route_distance: (rawInput) =>'));
+assert(h1.length > 100, 'no se encontró bloque resubmit');
+const guard = "if (!storedCourierDocumentPaths.has(input.storagePath)) return err('NOT_FOUND');";
+function verifyH1(s) {
+  const g = s.indexOf(guard);
+  const idem = s.indexOf('const sameKey = own.find');
+  const previousMutation = s.indexOf('current.isCurrent = false');
+  const insertion = s.indexOf('documents.set(documentId, {');
+  return g > idem && g < previousMutation && g < insertion
+    && s.includes("if (current.status !== 'rejected' && !purged) return err('INVALID_STATE_TRANSITION');");
+}
+assert(verifyH1(h1), 'H01 el guard está en orden incorrecto');
+assert(!verifyH1(h1.replace(guard,'')), 'H01 MUTANTE no detectado');
+assert(test.includes('initialStoragePaths: storagePaths')
+  && test.includes('const missing = asCourier(REJECTED_ID, seeded)')
+  && test.includes("code: 'NOT_FOUND'")
+  && test.includes('getDocument(selfieId)'), 'H01 pruebas no cubren ausencia/estado');
+
+const begin = profile.indexOf('activeProfile.requiredResubmissions.map((item) =>');
+const h2 = profile.slice(begin, profile.indexOf('</Card>',begin));
+assert(begin >= 0 && h2.length > 100, 'no se encontró tarjeta de subsanación');
+const callback = 'onReplaced={handleDocumentReplaced}';
+function verifyH2(s) { return s.includes(callback) && s.indexOf(callback) > s.indexOf('mode="resubmit"'); }
+assert(verifyH2(h2), 'H02 no enlaza el callback');
+assert(!verifyH2(h2.replace(callback,'')), 'H02 MUTANTE no detectado');
+assert(profile.includes('setLocalProfile((prev) =>') && profile.includes('router.refresh();'),
+  'H02 el handler no actualiza/refresh');
+assert(componentTest.includes('PR744-H02: subsanar la selfie')
+  && componentTest.includes('expect(mockRouterRefresh).toHaveBeenCalled()')
+  && componentTest.includes('expect(screen.queryAllByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toHaveLength(0)'),
+  'H02 unit no comprueba resumen');
+assert(e2e.includes('await expect.poll(async () => (await currentSelfie())?.status')
+  && e2e.includes('await expect(page.getByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toHaveCount(0)'),
+  'H02 E2E no espera estado y resumen');
+console.log('PR744-R2 GREEN: 8 controles estructurales');
+console.log('PR744-R2 MUTANTES: 2 detectados al eliminar guard Storage y onReplaced, respectivamente');
+NODE
+```
+
+**Nota sobre el método:** es un oráculo de presencia y posición, **no** una ejecución real de la RPC; el RED refleja una aserción estructural que falla con el fragmento eliminado. El autor sí informa RED funcional en Vitest y el job `unit` ejecutó 4016 tests en el SHA, pero la mutación de Vitest no fue reproducida por el revisor.
+
+## Evidencia del autor, contrastada pero no reejecutada
+
+- `src/domain/cc052-courier-verified-documents.test.ts`: RED `1 failed | 13 passed` por `NOT_FOUND`; GREEN `14 passed`.
+- `src/features/courier-onboarding/components.test.tsx`: RED al quitar `onReplaced`, aserción de badge de rechazado; GREEN `141 passed`.
+- `pnpm typecheck`, `pnpm lint`, `vitest run`: declarados en bitácora; Vitest completo en local `4015/4016` por timeout de `clients.test.ts`; corrida CI `4016/4016` elimina ese fallo en entorno del runner.
+
+## CI y condiciones
+
+`https://github.com/cadeApp/cadeApp/actions/runs/43520180832`: job `unit` 212/4016 PASS, `typecheck/lint/build/audit/bundle-budget` PASS; `db-tests` pendiente al redactar.
+
+Una vez `db-tests` concluya, leer el log completo y cotejar `Files=`, `Tests=`, `Result: PASS`, escenarios `CC-052` 1–5 y paso de comparación `db:types`. No se permite activar Docker local ni workflows remotos manualmente. E2E y `e2e-mutation` se ejecutan **después** de aplicar migración en Develop, conforme al plan ya ratificado.
