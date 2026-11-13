@@ -14,6 +14,7 @@ export const DOMAIN_ERROR_MESSAGES = {
   DNI_ALREADY_REGISTERED: 'No pudimos completar tu alta con esos datos. Si el DNI es tuyo, contactá al soporte de cadeApp.',
   VEHICLE_SWITCH_BLOCKED: 'Retirá tus ofertas pendientes o terminá el viaje para cambiar de vehículo.',
   DUPLICATE_VEHICLE: 'Ya tenés un vehículo de ese tipo cargado.',
+  DOCUMENTS_NOT_VERIFIED: 'Verificá DNI (frente y dorso), selfie y foto de perfil antes de aprobar o rehabilitar.',
 
   // Ofertas y elegibilidad de repartidor (T-101, T-102)
   OFFER_BELOW_MINIMUM: 'La oferta es menor al monto mínimo permitido.',

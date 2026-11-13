@@ -13,7 +13,7 @@ import {
   releaseCourierDniAction,
   verifyCourierDocumentAction,
 } from '../actions';
-import type { ApplicantDetail, ApplicantListItem } from '../types';
+import type { ApplicantDetail, ApplicantDocumentDetail, ApplicantListItem } from '../types';
 
 const refresh = vi.fn();
 const push = vi.fn();
@@ -56,6 +56,7 @@ const mockApplicant: ApplicantDetail = {
       storagePath: 'courier-docs/dni_front.webp',
       status: 'submitted',
       uploadedAt: '2026-09-20T10:05:00.000Z',
+      purgedAt: null,
     },
     {
       id: 'd0000000-0000-0000-0000-000000000002',
@@ -63,9 +64,61 @@ const mockApplicant: ApplicantDetail = {
       storagePath: 'courier-docs/dni_back.webp',
       status: 'submitted',
       uploadedAt: '2026-09-20T10:06:00.000Z',
+      purgedAt: null,
     },
   ],
 };
+
+// CC-052: los cuatro obligatorios vigentes, verificados y sin purgar habilitan aprobar, reactivar y reconsiderar.
+const verifiedRequired = (['dni_front', 'dni_back', 'selfie', 'avatar'] as const).map(
+  (documentType, i): ApplicantDocumentDetail => ({
+    id: `e0000000-0000-0000-0000-00000000000${i}`,
+    documentType,
+    storagePath: `courier-docs/${documentType}.webp`,
+    status: 'verified',
+    uploadedAt: '2026-09-20T10:05:00.000Z',
+    isCurrent: true,
+    purgedAt: null,
+  })
+);
+const readyApplicant: ApplicantDetail = { ...mockApplicant, documents: verifiedRequired };
+
+describe('CC-052: aprobar, reactivar y reconsiderar reflejan la guarda de documentos', () => {
+  const buttons: ReadonlyArray<readonly ['pending' | 'suspended' | 'rejected', RegExp]> = [
+    ['pending', /aprobar repartidor/i],
+    ['suspended', /reactivar repartidor/i],
+    ['rejected', /reconsiderar aprobación/i],
+  ];
+  const reason = /verificá DNI \(frente y dorso\), selfie y foto de perfil vigentes/i;
+
+  it.each(buttons)('con %s y un obligatorio sin verificar, el botón queda deshabilitado con el motivo', (status, name) => {
+    const selfieSubmitted = verifiedRequired.map((d) =>
+      d.documentType === 'selfie' ? { ...d, status: 'submitted' as const } : d
+    );
+    render(<ApplicantDetailView applicant={{ ...readyApplicant, status, documents: selfieSubmitted }} />);
+    const button = screen.getByRole('button', { name });
+    expect(button).toHaveProperty('disabled', true);
+    expect(screen.getByText(reason)).toBeDefined();
+    expect(button.getAttribute('aria-describedby')).toBe('required-documents-reason');
+  });
+
+  it.each(buttons)('con %s y los cuatro verificados, el botón queda habilitado y sin motivo', (status, name) => {
+    render(<ApplicantDetailView applicant={{ ...readyApplicant, status }} />);
+    expect(screen.getByRole('button', { name })).toHaveProperty('disabled', false);
+    expect(screen.queryByText(reason)).toBeNull();
+  });
+
+  it.each([
+    ['ausente', verifiedRequired.filter((d) => d.documentType !== 'avatar')],
+    ['rechazado', verifiedRequired.map((d) => (d.documentType === 'avatar' ? { ...d, status: 'rejected' as const } : d))],
+    ['purgado', verifiedRequired.map((d) => (d.documentType === 'avatar' ? { ...d, purgedAt: '2026-10-01T00:00:00.000Z' } : d))],
+    ['solo histórico', verifiedRequired.map((d) => (d.documentType === 'avatar' ? { ...d, isCurrent: false } : d))],
+    ['duplicado', [...verifiedRequired, { ...verifiedRequired[3], id: 'e0000000-0000-0000-0000-000000000009' } as ApplicantDocumentDetail]],
+  ])('la foto de perfil %s deshabilita aprobar', (_label, documents) => {
+    render(<ApplicantDetailView applicant={{ ...readyApplicant, documents }} />);
+    expect(screen.getByRole('button', { name: /aprobar repartidor/i })).toHaveProperty('disabled', true);
+  });
+});
 
 describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
   beforeEach(() => {
@@ -203,7 +256,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
       data: { success: true },
     });
 
-    render(<ApplicantDetailView applicant={mockApplicant} />);
+    render(<ApplicantDetailView applicant={readyApplicant} />);
 
     const approveApplicantBtn = screen.getByRole('button', { name: /aprobar repartidor/i });
     fireEvent.click(approveApplicantBtn);
@@ -344,6 +397,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
           storagePath: 'courier/x/license_1.jpg',
           status: 'submitted',
           uploadedAt: '2026-09-20T10:08:00.000Z',
+          purgedAt: null,
           vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
         },
         {
@@ -352,6 +406,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
           storagePath: 'courier/x/license_2.jpg',
           status: 'verified',
           uploadedAt: '2026-09-20T10:09:00.000Z',
+          purgedAt: null,
           vehicle: { vehicleType: 'car', plate: 'ELA 666' },
         },
       ],
@@ -373,6 +428,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
           storagePath: 'courier/x/license_3.jpg',
           status: 'submitted',
           uploadedAt: '2026-09-21T10:00:00.000Z',
+          purgedAt: null,
           vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
         },
         {
@@ -381,6 +437,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
           storagePath: 'courier/x/license_4.jpg',
           status: 'verified',
           uploadedAt: '2026-09-01T10:00:00.000Z',
+          purgedAt: null,
           isCurrent: true,
           vehicle: { vehicleType: 'moto', plate: 'AB 123 CD' },
         },
@@ -403,6 +460,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
           storagePath: 'courier-docs/selfie.webp',
           status: 'submitted',
           uploadedAt: '2026-09-20T10:07:00.000Z',
+          purgedAt: null,
         },
       ],
     };
@@ -459,6 +517,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
           storagePath: 'courier-docs/license_v1.webp',
           status: 'rejected',
           uploadedAt: '2026-10-16T10:00:00.000Z',
+          purgedAt: null,
           isCurrent: false,
         },
         {
@@ -467,6 +526,7 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
           storagePath: 'courier-docs/license_v2.webp',
           status: 'submitted',
           uploadedAt: '2026-10-17T10:00:00.000Z',
+          purgedAt: null,
           isCurrent: true,
         },
       ],
@@ -509,7 +569,7 @@ describe('T-380: reactivar o reconsiderar con reinstateCourierAction (CC-034)', 
   const REASON = 'Se revisó el reclamo y no hubo falta del repartidor.';
 
   function openReinstateDialog(status: 'suspended' | 'rejected', buttonName: RegExp) {
-    render(<ApplicantDetailView applicant={{ ...mockApplicant, status }} />);
+    render(<ApplicantDetailView applicant={{ ...readyApplicant, status }} />);
     fireEvent.click(screen.getByRole('button', { name: buttonName }));
     const textarea = screen.getByLabelText(/motivo de la decisión/i);
     fireEvent.change(textarea, { target: { value: REASON } });
@@ -535,7 +595,7 @@ describe('T-380: reactivar o reconsiderar con reinstateCourierAction (CC-034)', 
   });
 
   it('el motivo es obligatorio: sin texto no llama a la acción', async () => {
-    render(<ApplicantDetailView applicant={{ ...mockApplicant, status: 'suspended' }} />);
+    render(<ApplicantDetailView applicant={{ ...readyApplicant, status: 'suspended' }} />);
     fireEvent.click(screen.getByRole('button', { name: /reactivar repartidor/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirmar decisión/i }));
 
@@ -616,7 +676,7 @@ describe('T-380: reactivar o reconsiderar con reinstateCourierAction (CC-034)', 
   it('la primera decisión (pendiente) también muestra el mensaje claro ante INVALID_STATE_TRANSITION', async () => {
     vi.mocked(decideCourierAction).mockResolvedValue({ ok: false, code: 'INVALID_STATE_TRANSITION' });
 
-    render(<ApplicantDetailView applicant={mockApplicant} />);
+    render(<ApplicantDetailView applicant={readyApplicant} />);
     fireEvent.click(screen.getByRole('button', { name: /aprobar repartidor/i }));
     fireEvent.change(screen.getByLabelText(/motivo de la decisión/i), { target: { value: REASON } });
     fireEvent.click(screen.getByRole('button', { name: /confirmar decisión/i }));
@@ -682,6 +742,7 @@ describe('T-387: visor auditado de un PDF', () => {
         storagePath: 'courier/a0000000-0000-0000-0000-000000000001/insurance_1730000000387.pdf',
         status: 'submitted',
         uploadedAt: '2026-10-20T10:05:00.000Z',
+        purgedAt: null,
       },
     ],
   };

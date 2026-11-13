@@ -84,7 +84,25 @@ export interface CourierProfileData {
   /** T-334: `false` si el repartidor nunca envió el onboarding (`couriers.vehicle_type` nulo). */
   readonly onboardingComplete: boolean;
   readonly documents?: readonly DocumentItemData[];
+  /**
+   * CC-052 (D5-A): solo para un rechazado o suspendido con DNI registrado. Obligatorios que puede volver a presentar
+   * (rechazados, o `none` si faltan o fueron purgados). Mientras esté definido, reemplaza a las tarjetas de reemplazo.
+   */
+  readonly requiredResubmissions?: readonly RequiredResubmission[];
 }
+
+export interface RequiredResubmission {
+  readonly kind: 'dni_front' | 'dni_back' | 'selfie' | 'avatar';
+  readonly status: 'rejected' | 'none';
+  readonly rejectionMessage: string | null;
+}
+
+const REQUIRED_DOCUMENT_TITLES: Record<RequiredResubmission['kind'], string> = {
+  dni_front: COURIER_ONBOARDING_COPY.dniFrontTitle,
+  dni_back: COURIER_ONBOARDING_COPY.dniBackTitle,
+  selfie: COURIER_ONBOARDING_COPY.selfieTitle,
+  avatar: COURIER_ONBOARDING_COPY.avatarTitle,
+};
 
 export function getDocumentStatusPresentation(status: DocumentReviewStatus) {
   switch (status) {
@@ -287,6 +305,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
   };
 
   const activeProfile = localProfile ?? profile;
+  const resubmitting = activeProfile?.requiredResubmissions !== undefined;
 
   if (!activeProfile) {
     return (
@@ -533,6 +552,26 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
         </div>
       </Card>
 
+      {/* CC-052 (D5-A): subsanación de obligatorios con la cuenta rechazada o suspendida. */}
+      {activeProfile.requiredResubmissions && activeProfile.requiredResubmissions.length > 0 ? (
+        <Card className="space-y-3 p-4 sm:p-5" data-slot="required-resubmissions">
+          <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">
+            {COURIER_ONBOARDING_COPY.resubmitSectionTitle}
+          </h2>
+          {activeProfile.requiredResubmissions.map((item) => (
+            <DocumentReplacementCard
+              key={item.kind}
+              mode="resubmit"
+              courierId={activeProfile.courierId}
+              kind={item.kind}
+              title={REQUIRED_DOCUMENT_TITLES[item.kind]}
+              initialStatus={item.status}
+              rejectionMessage={item.rejectionMessage}
+            />
+          ))}
+        </Card>
+      ) : null}
+
       {/* Estado de Documentación (R08) */}
       <Card className="space-y-3 p-4 sm:p-5">
         <div className="flex items-center justify-between">
@@ -559,7 +598,8 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                 </div>
                 {getDocStatusBadge(activeProfile.dniFrontStatus ?? activeProfile.dniStatus)}
               </div>
-              {((activeProfile.dniFrontStatus ?? activeProfile.dniStatus) === 'rejected' ||
+              {!resubmitting &&
+                ((activeProfile.dniFrontStatus ?? activeProfile.dniStatus) === 'rejected' ||
                 initialRejectedDocsRef.current.dniFront) && (
                 <div className="py-3">
                   <DocumentReplacementCard
@@ -586,7 +626,8 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                 </div>
                 {getDocStatusBadge(activeProfile.dniBackStatus ?? activeProfile.dniStatus)}
               </div>
-              {((activeProfile.dniBackStatus ?? activeProfile.dniStatus) === 'rejected' ||
+              {!resubmitting &&
+                ((activeProfile.dniBackStatus ?? activeProfile.dniStatus) === 'rejected' ||
                 initialRejectedDocsRef.current.dniBack) && (
                 <div className="py-3">
                   <DocumentReplacementCard
@@ -600,7 +641,8 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
                 </div>
               )}
             </>
-          ) : activeProfile.dniStatus === 'rejected' || initialRejectedDocsRef.current.dniFront || initialRejectedDocsRef.current.dniBack ? (
+          ) : !resubmitting &&
+            (activeProfile.dniStatus === 'rejected' || initialRejectedDocsRef.current.dniFront || initialRejectedDocsRef.current.dniBack) ? (
             <div className="py-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -657,7 +699,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
             </div>
             {getDocStatusBadge(activeProfile.selfieStatus)}
           </div>
-          {(activeProfile.selfieStatus === 'rejected' || initialRejectedDocsRef.current.selfie) && (
+          {!resubmitting && (activeProfile.selfieStatus === 'rejected' || initialRejectedDocsRef.current.selfie) && (
             <div className="py-3">
               <DocumentReplacementCard
                 courierId={activeProfile.courierId}

@@ -58,6 +58,8 @@ export interface ApplicantDocumentDetail {
   readonly uploadedAt: string;
   readonly isCurrent?: boolean;
   readonly rejectionCode?: string | null;
+  /** CC-052 (D6-A): fecha de purga; un documento purgado no cuenta como verificado. */
+  readonly purgedAt: string | null;
   /** CC-042: vehículo de la licencia o el seguro (se verifican por vehículo). */
   readonly vehicle?: { readonly vehicleType: 'walk' | 'bike' | 'moto' | 'car'; readonly plate: string | null } | null;
 }

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { RPC_CONTRACTS } from '@/domain/rpc-contracts';
-import { createFakeRpcClient } from '@/domain/testing/rpc-fake';
+import { createFakeRpcClient, verifiedRequiredDocuments } from '@/domain/testing/rpc-fake';
 import {
   adminDecideCourierRpc,
   adminGetMerchantPublicationCreditsRpc,
@@ -27,6 +27,8 @@ const MERCHANT_ID = '00000000-0000-4000-8000-0000000000b1';
 const COURIER_1_ID = '00000000-0000-4000-8000-0000000000c1';
 const DOC_1_ID = '00000000-0000-4000-8000-0000000000d1';
 const DOC_2_ID = '00000000-0000-4000-8000-0000000000d2';
+// CC-052: versión vigente de admin_decide_courier y admin_reinstate_courier.
+const CC052_MIGRATION = 'supabase/migrations/20261114120000_cc052_courier_verified_documents.sql';
 
 const ADMIN_RPC_NAMES = [
   'admin_decide_courier',
@@ -71,6 +73,8 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
       initialCouriers: [
         { courierId: COURIER_1_ID, status: 'pending', available: false },
       ],
+      // CC-052: aprobar exige los cuatro obligatorios verificados.
+      initialDocuments: verifiedRequiredDocuments(COURIER_1_ID),
     });
 
     const caller: SupabaseRpcCaller = {
@@ -342,13 +346,14 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
         };
       });
 
-    // T-369 / CC-029 redefine admin_set_subscription y admin_update_setting: se verifica su versión vigente; el resto
-    // de las RPC admin se sigue verificando contra rpc_admin_v1.
+    // T-369 / CC-029 redefine admin_set_subscription y admin_update_setting, y CC-052 admin_decide_courier: se verifica
+    // su versión vigente (findLast); el resto de las RPC admin se sigue verificando contra rpc_admin_v1.
     const t369Sql = fs.readFileSync(
       path.resolve(process.cwd(), 'supabase/migrations/20261017090000_t369_publication_credits.sql'),
       'utf8',
     );
-    for (const r of check(sql + '\n' + t369Sql)) {
+    const cc052Sql = fs.readFileSync(path.resolve(process.cwd(), CC052_MIGRATION), 'utf8');
+    for (const r of check(sql + '\n' + t369Sql + '\n' + cc052Sql)) {
       expect({ name: r.name, missing: r.missing, undeclared: r.undeclared }).toEqual({
         name: r.name,
         missing: [],
@@ -1088,7 +1093,6 @@ describe('CC-029 addendum D01-B · admin_list_publication_plans (PR402-H03/H04)'
 });
 
 describe('CC-034 · admin_reinstate_courier (T-385)', () => {
-  const MIGRATION = 'supabase/migrations/20261020113000_cc034_admin_reinstate_courier.sql';
   const caller = (response: { data: unknown; error: { message: string; code?: string } | null }) => {
     const rpc = vi.fn().mockResolvedValue(response);
     return { client: { rpc } as SupabaseRpcCaller, rpc };
@@ -1150,7 +1154,8 @@ describe('CC-034 · admin_reinstate_courier (T-385)', () => {
   });
 
   it('los códigos que levanta la migración coinciden con el contrato y la RPC empieza por assert_admin_aal2', () => {
-    const sql = fs.readFileSync(path.resolve(process.cwd(), MIGRATION), 'utf8');
+    // CC-052 redefine admin_reinstate_courier (guarda de documentos sobre CC-050): se verifica la versión vigente.
+    const sql = fs.readFileSync(path.resolve(process.cwd(), CC052_MIGRATION), 'utf8');
     const admin = fs.readFileSync(
       path.resolve(process.cwd(), 'supabase/migrations/20260924013700_rpc_admin_v1.sql'),
       'utf8',

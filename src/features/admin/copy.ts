@@ -164,6 +164,9 @@ export const ADMIN_COPY = {
       reactivate: 'Reactivar repartidor',
       reconsider: 'Reconsiderar aprobación',
     },
+    // CC-052: motivo visible de los botones deshabilitados (misma regla que la RPC).
+    requiredDocumentsPending:
+      'Para aprobar, reactivar o reconsiderar, verificá DNI (frente y dorso), selfie y foto de perfil vigentes.',
     documentationTitle: (count: number) => `Documentación (${count})`,
     documentationDescription: 'Seleccioná un archivo para revisarlo.',
     documentsAriaLabel: 'Documentos del postulante',
@@ -541,6 +544,7 @@ export const ADMIN_COPY = {
       admin_revoke_courier_consent: 'Pidió que el repartidor vuelva a aceptar los términos',
       add_courier_optional_document: 'Cargó un documento opcional',
       replace_courier_document: 'Reemplazó un documento',
+      resubmit_courier_required_document: 'Volvió a presentar un documento obligatorio',
       add_courier_vehicle: 'Agregó un vehículo',
       update_courier_vehicle: 'Cambió la patente de un vehículo',
       remove_courier_vehicle: 'Quitó un vehículo',

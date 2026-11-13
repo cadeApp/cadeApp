@@ -11,7 +11,11 @@ import {
   validateDocumentFile,
   type CourierDocumentKind,
 } from '../upload-manager';
-import { addCourierOptionalDocumentAction, replaceCourierDocumentAction } from '../actions';
+import {
+  addCourierOptionalDocumentAction,
+  replaceCourierDocumentAction,
+  resubmitRequiredDocumentAction,
+} from '../actions';
 import type { ActionResult, DomainErrorCode } from '@/domain/errors';
 import { COURIER_ONBOARDING_COPY, getSafeRejectionMessage } from '../copy';
 import { DocumentUploadCard, type DocumentUploadStatus } from './document-upload-card';
@@ -28,8 +32,10 @@ export interface DocumentReplacementCardProps {
   /**
    * T-376 / CC-033: `replace` reemplaza un documento rechazado (`replace_courier_document`); `add` sube la licencia o el
    * seguro que no se cargaron en el onboarding (`add_courier_optional_document`) y se muestra solo con estado `none`.
+   * CC-052: `resubmit` es la subsanación de un obligatorio de un rechazado o suspendido
+   * (`resubmit_courier_required_document`): con estado `rejected`, o `none` si falta o fue purgado. No rehabilita.
    */
-  mode?: 'replace' | 'add';
+  mode?: 'replace' | 'add' | 'resubmit';
   /** CC-042: vehículo de la licencia o el seguro; sin él, la RPC usa el vehículo activo. */
   vehicleId?: string;
 }
@@ -202,6 +208,12 @@ export function DocumentReplacementCard({
           setErrorMessage(COURIER_ONBOARDING_COPY.optionalDocumentErrors.network);
           return;
         }
+      } else if (mode === 'resubmit') {
+        result = await resubmitRequiredDocumentAction({
+          kind,
+          storagePath: attempt.storagePath,
+          idempotencyKey: attempt.idempotencyKey,
+        });
       } else {
         result = await replaceCourierDocumentAction(submission);
       }
@@ -209,7 +221,7 @@ export function DocumentReplacementCard({
       if (!result.ok) {
         // PR464-H02: NOT_FOUND = el objeto no está en Storage; el próximo intento tiene que volver a subirlo con otro
         // path y otra clave. Con errores inciertos (red, INTERNAL_ERROR) se conserva el intento para no duplicar.
-        if (mode === 'add' && result.code === 'NOT_FOUND') {
+        if ((mode === 'add' || mode === 'resubmit') && result.code === 'NOT_FOUND') {
           pendingAttemptRef.current = null;
         }
         setUploadStatus('error');
@@ -327,7 +339,8 @@ export function DocumentReplacementCard({
     );
   }
 
-  if (currentStatus !== 'rejected') {
+  const resubmitMissing = mode === 'resubmit' && currentStatus === 'none';
+  if (currentStatus !== 'rejected' && !resubmitMissing) {
     return null;
   }
 
@@ -335,7 +348,7 @@ export function DocumentReplacementCard({
     <div
       data-slot="document-replacement-card"
       data-kind={kind}
-      data-status="rejected"
+      data-status={currentStatus}
       className="rounded-lg border border-destructive/30 bg-destructive/5 p-3.5 space-y-3"
     >
       <div className="flex items-start justify-between gap-2">
@@ -347,13 +360,19 @@ export function DocumentReplacementCard({
           </div>
         </div>
         <Badge variant="destructive" className="text-sm shrink-0">
-          {COURIER_ONBOARDING_COPY.rejectedBadge}
+          {resubmitMissing ? COURIER_ONBOARDING_COPY.resubmitMissingBadge : COURIER_ONBOARDING_COPY.rejectedBadge}
         </Badge>
       </div>
 
-      <div className="rounded bg-background/80 p-2.5 border border-destructive/20 text-sm text-foreground">
-        <p className="font-medium text-destructive">{safeReason}</p>
-      </div>
+      {resubmitMissing ? null : (
+        <div className="rounded bg-background/80 p-2.5 border border-destructive/20 text-sm text-foreground">
+          <p className="font-medium text-destructive">{safeReason}</p>
+        </div>
+      )}
+
+      {mode === 'resubmit' ? (
+        <p className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.resubmitNote}</p>
+      ) : null}
 
       {errorMessage && (
         <p role="alert" className="text-sm font-semibold text-destructive">

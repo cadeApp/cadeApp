@@ -23,11 +23,12 @@ if (!dbContainer) {
   process.exit(1);
 }
 
-// CC-050 redefine admin_reinstate_courier (guarda de alta enviada y DNI): la mutación y la restauración usan esa
-// migración, que es la vigente. Restaurar la de CC-034 dejaría la RPC sin la guarda para los runners siguientes.
+// CC-052 redefine admin_reinstate_courier (guarda de documentos sobre la de CC-050): la mutación y la restauración
+// usan esa migración, que es la vigente. Restaurar una anterior dejaría la RPC sin sus guardas para los runners
+// siguientes.
 const migrationPath = path.resolve(
   process.cwd(),
-  'supabase/migrations/20261113120000_cc050_courier_dni_hardening.sql'
+  'supabase/migrations/20261114120000_cc052_courier_verified_documents.sql'
 );
 
 function runSql(sql) {
@@ -324,7 +325,7 @@ async function scenario3(adminA, adminB, courierId) {
 async function mutationCheck(adminA, adminB, courierId) {
   console.log(`${TAG} --- Control de mutación: admin_reinstate_courier sin "for update" ---`);
   const originalSql = fs.readFileSync(migrationPath, 'utf8');
-  // Solo el lock de admin_reinstate_courier (la migración de CC-050 tiene otros «for update»).
+  // Solo el lock de admin_reinstate_courier (la migración de CC-052 tiene otros «for update»).
   const lockClause =
     /(into v_courier_status, v_vehicle_type, v_dni_hmac, v_application_submitted\s+from public\.couriers\s+where profile_id = p_courier_id)\s+for update;/;
   assert.ok(lockClause.test(originalSql), `${TAG} la migración debe contener el "for update" a mutar`);
@@ -379,6 +380,12 @@ async function main() {
       dni_hmac = encode(sha256(convert_to('${courierId}', 'UTF8')), 'hex')
     where profile_id = '${courierId}';
     commit;
+  `);
+  // CC-052: reinstate exige los cuatro obligatorios vigentes y verificados.
+  runSql(`
+    insert into public.courier_documents (courier_id, kind, storage_path, status)
+    select '${courierId}', k::public.courier_document_kind, 'courier/${courierId}/' || k || '_1.png', 'verified'
+    from unnest(array['dni_front', 'dni_back', 'selfie', 'avatar']) as k;
   `);
 
   if (process.argv.includes('--mutation-check')) {

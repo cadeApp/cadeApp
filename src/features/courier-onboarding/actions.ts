@@ -11,15 +11,18 @@ import { profileRoleSchema } from '@/domain/schemas';
 import {
   addCourierOptionalDocumentInputSchema,
   replaceCourierDocumentInputSchema,
+  resubmitCourierRequiredDocumentInputSchema,
 } from '@/domain/rpc-contracts';
 import type { RpcOutput } from '@/domain/rpc-contracts';
 import {
   addCourierOptionalDocumentRpc,
   courierVehicleRpc,
   replaceCourierDocumentRpc,
+  resubmitCourierRequiredDocumentRpc,
   type AddCourierOptionalDocumentResult,
   type CourierVehicleRpcName,
   type ReplaceCourierDocumentResult,
+  type ResubmitCourierRequiredDocumentResult,
 } from '@/server/rpc/courier';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import type { SupabaseRpcCaller } from '@/server/rpc/offers';
@@ -389,6 +392,43 @@ export async function replaceCourierDocumentAction(
   revalidatePath('/courier/profile');
   revalidatePath('/courier/onboarding/status');
 
+  return ok(rpcResult.data);
+}
+
+/**
+ * CC-052 (D5-A): un repartidor rechazado o suspendido vuelve a presentar un documento obligatorio. Queda en
+ * `submitted` para que el admin lo verifique; no rehabilita la cuenta. La RPC valida estado, DNI y consentimiento.
+ */
+export async function resubmitRequiredDocumentAction(
+  input: unknown
+): Promise<ActionResult<ResubmitCourierRequiredDocumentResult, DomainErrorCode>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError || !user) return err('UNAUTHENTICATED');
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+  if (profileError || !profile) return err('UNAUTHORIZED_ACTOR');
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'courier') return err('UNAUTHORIZED_ACTOR');
+
+  const parsed = resubmitCourierRequiredDocumentInputSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+  const expectedPrefix = `courier/${user.id}/${parsed.data.kind}_`;
+  if (!parsed.data.storagePath.startsWith(expectedPrefix) || parsed.data.storagePath.includes('..')) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const rpcResult = await resubmitCourierRequiredDocumentRpc(supabase, parsed.data);
+  if (!rpcResult.ok) return rpcResult;
+
+  revalidatePath('/courier/profile');
   return ok(rpcResult.data);
 }
 

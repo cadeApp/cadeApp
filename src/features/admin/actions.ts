@@ -278,6 +278,8 @@ export async function decideCourierAction(
     if (rpcResult.code === 'UNAUTHORIZED_ACTOR') return err('UNAUTHORIZED_ACTOR');
     if (rpcResult.code === 'NOT_FOUND') return err('NOT_FOUND');
     if (rpcResult.code === 'INVALID_STATE_TRANSITION') return err('INVALID_STATE_TRANSITION');
+    // CC-052: aprobar sin los cuatro obligatorios verificados.
+    if (rpcResult.code === 'DOCUMENTS_NOT_VERIFIED') return err('DOCUMENTS_NOT_VERIFIED');
     return err('INTERNAL_ERROR');
   }
 

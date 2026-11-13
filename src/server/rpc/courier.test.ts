@@ -331,3 +331,57 @@ describe('CC-042: courierVehicleRpc', () => {
     expect(untouched).not.toHaveBeenCalled();
   });
 });
+
+describe('CC-052 — resubmitCourierRequiredDocumentRpc', () => {
+  const COURIER = '20000000-0000-4000-8000-0000000052c2';
+  const input = {
+    kind: 'selfie',
+    storagePath: `courier/${COURIER}/selfie_1730000000001.png`,
+    idempotencyKey: '00000000-0000-4000-8000-000000005201',
+  };
+
+  it('rechaza un opcional o sin clave antes de llamar a la RPC', async () => {
+    const rpc = vi.fn();
+    const caller = { rpc } as unknown as SupabaseRpcCaller;
+    expect(await courierRpc.resubmitCourierRequiredDocumentRpc(caller, { ...input, kind: 'license' })).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(
+      await courierRpc.resubmitCourierRequiredDocumentRpc(caller, { kind: input.kind, storagePath: input.storagePath })
+    ).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('llama a la RPC con el payload validado y parsea la salida', async () => {
+    const data = {
+      documentId: '00000000-0000-4000-8000-0000000052d1',
+      kind: 'selfie',
+      status: 'submitted',
+      replacedDocumentId: null,
+      idempotent: false,
+    };
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+    const result = await courierRpc.resubmitCourierRequiredDocumentRpc({ rpc } as unknown as SupabaseRpcCaller, input);
+    expect(rpc).toHaveBeenCalledWith('resubmit_courier_required_document', { p_payload: input });
+    expect(result).toEqual({ ok: true, data });
+  });
+
+  it('mapea los códigos de la RPC y lo desconocido a INTERNAL_ERROR', () => {
+    for (const code of ['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'NOT_FOUND', 'INVALID_STATE_TRANSITION', 'VALIDATION_ERROR']) {
+      expect(courierRpc.mapResubmitCourierRequiredDocumentRpcError({ message: code })).toBe(code);
+    }
+    expect(courierRpc.mapResubmitCourierRequiredDocumentRpcError({ message: 'permission denied', code: '42501' })).toBe(
+      'UNAUTHORIZED_ACTOR'
+    );
+    expect(courierRpc.mapResubmitCourierRequiredDocumentRpcError({ message: 'boom' })).toBe('INTERNAL_ERROR');
+  });
+
+  it('una salida con un campo inválido es INTERNAL_ERROR', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { documentId: 'x' }, error: null });
+    expect(await courierRpc.resubmitCourierRequiredDocumentRpc({ rpc } as unknown as SupabaseRpcCaller, input)).toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+  });
+});

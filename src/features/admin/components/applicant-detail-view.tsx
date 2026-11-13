@@ -46,6 +46,7 @@ import {
 import { ADMIN_COPY } from '../copy';
 import type { ApplicantDetail, ApplicantDocumentDetail, DocumentContentType } from '../types';
 import { ApplicantHistory } from './applicant-history';
+import { requiredDocumentsVerified } from '../required-documents';
 
 interface ApplicantDetailViewProps {
   readonly applicant: ApplicantDetail;
@@ -180,6 +181,8 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
   const [selectedDocId, setSelectedDocId] = React.useState<string>(
     applicant.documents[0]?.id ?? ''
   );
+  // CC-052: la UI refleja la guarda de las RPC; aprobar, reactivar y reconsiderar esperan los cuatro obligatorios.
+  const docsReady = requiredDocumentsVerified(applicant.documents);
   const currentDoc: ApplicantDocumentDetail | undefined = applicant.documents.find(
     (d) => d.id === selectedDocId
   );
@@ -798,6 +801,11 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
         aria-label={ADMIN_COPY.detail.actionsBarLabel}
         className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background py-3"
       >
+        {!docsReady && applicant.applicationSubmitted && applicant.status !== 'approved' ? (
+          <p id="required-documents-reason" className="mr-auto text-sm text-muted-foreground">
+            {ADMIN_COPY.detail.requiredDocumentsPending}
+          </p>
+        ) : null}
         {applicant.status === 'pending' && !applicant.applicationSubmitted ? (
           // CC-050 (PR711-H01): una cuenta sin enviar (por ejemplo, un reclamante de disputa) no se decide.
           <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.notSubmittedNote}</p>
@@ -812,7 +820,12 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
             >
               {ADMIN_COPY.detail.applicantActions.reject}
             </Button>
-            <Button variant="default" onClick={() => openDecisionModal('approved')}>
+            <Button
+              variant="default"
+              disabled={!docsReady}
+              aria-describedby={docsReady ? undefined : 'required-documents-reason'}
+              onClick={() => openDecisionModal('approved')}
+            >
               {ADMIN_COPY.detail.applicantActions.approve}
             </Button>
           </>
@@ -824,11 +837,21 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           // CC-050 (PR711-H07): un rechazado o suspendido que nunca envió el alta no se reactiva ni se reconsidera.
           <p className="text-sm text-muted-foreground">{ADMIN_COPY.detail.notSubmittedReinstateNote}</p>
         ) : applicant.status === 'suspended' ? (
-          <Button variant="default" onClick={() => openDecisionModal('reactivate')}>
+          <Button
+            variant="default"
+            disabled={!docsReady}
+            aria-describedby={docsReady ? undefined : 'required-documents-reason'}
+            onClick={() => openDecisionModal('reactivate')}
+          >
             {ADMIN_COPY.detail.applicantActions.reactivate}
           </Button>
         ) : (
-          <Button variant="outline" onClick={() => openDecisionModal('reconsider')}>
+          <Button
+            variant="outline"
+            disabled={!docsReady}
+            aria-describedby={docsReady ? undefined : 'required-documents-reason'}
+            onClick={() => openDecisionModal('reconsider')}
+          >
             {ADMIN_COPY.detail.applicantActions.reconsider}
           </Button>
         )}

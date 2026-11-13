@@ -282,6 +282,7 @@ describe('Admin Queries (T-122 DoD)', () => {
     });
 
     it('CC-025 / T-356: getApplicantDetail proyecta isCurrent, rejectionCode y ordena vigentes primero', async () => {
+      const docsSelect = vi.fn();
       const mockSupabase = {
         from: vi.fn((table: string) => {
           if (table === 'couriers') {
@@ -315,7 +316,7 @@ describe('Admin Queries (T-122 DoD)', () => {
           }
           if (table === 'courier_documents') {
             return {
-              select: vi.fn().mockReturnValue({
+              select: docsSelect.mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   order: vi.fn().mockResolvedValue({
                     data: [
@@ -327,6 +328,7 @@ describe('Admin Queries (T-122 DoD)', () => {
                         uploaded_at: '2026-10-10T10:05:00Z',
                         is_current: false,
                         rejection_code: 'IMAGE_BLURRY',
+                        purged_at: '2026-11-12T03:00:00Z',
                       },
                       {
                         id: 'doc-new',
@@ -367,6 +369,11 @@ describe('Admin Queries (T-122 DoD)', () => {
       expect(detail?.documents[1]?.isCurrent).toBe(false);
       expect(detail?.documents[1]?.status).toBe('rejected');
       expect(detail?.documents[1]?.rejectionCode).toBe('IMAGE_BLURRY');
+
+      // CC-052 (D6-A): purged_at se pide y se proyecta; sin dato queda null.
+      expect(String(docsSelect.mock.calls[0]?.[0])).toContain('purged_at');
+      expect(detail?.documents[1]?.purgedAt).toBe('2026-11-12T03:00:00Z');
+      expect(detail?.documents[0]?.purgedAt).toBeNull();
     });
 
     it('PR624-H07: agrupa licencia y seguro por vehicle_id aunque dos vehículos tengan el mismo tipo y patente', async () => {

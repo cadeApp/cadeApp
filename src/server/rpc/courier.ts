@@ -240,3 +240,45 @@ export async function courierVehicleRpc<K extends CourierVehicleRpcName>(
     return err('INTERNAL_ERROR');
   }
 }
+
+export type ResubmitCourierRequiredDocumentResult = RpcOutput<'resubmit_courier_required_document'>;
+type ResubmitErrorCode = RpcErrorCode<'resubmit_courier_required_document'>;
+
+/** Maps PostgREST / Postgres errors returned by `resubmit_courier_required_document`. */
+export function mapResubmitCourierRequiredDocumentRpcError(
+  error: SupabaseRpcErrorLike,
+): ResubmitErrorCode | 'INTERNAL_ERROR' {
+  const message = error.message.trim();
+  const allowed: readonly ResubmitErrorCode[] = RPC_CONTRACTS.resubmit_courier_required_document.errorCodes;
+  const exact = allowed.find((code) => code === message);
+  if (exact) return exact;
+  const contained = allowed.find((code) => message.includes(code));
+  if (contained) return contained;
+  if (error.code === '42501' || error.code === '28000') return 'UNAUTHORIZED_ACTOR';
+  return 'INTERNAL_ERROR';
+}
+
+/**
+ * Typed server wrapper for `public.resubmit_courier_required_document(p_payload jsonb)`.
+ * CC-052 (D5-A): un rechazado o suspendido vuelve a presentar un obligatorio en `submitted`, sin rehabilitarse.
+ */
+export async function resubmitCourierRequiredDocumentRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<ActionResult<ResubmitCourierRequiredDocumentResult, ResubmitErrorCode | 'INTERNAL_ERROR'>> {
+  const parsedInput = RPC_CONTRACTS.resubmit_courier_required_document.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) return err('VALIDATION_ERROR');
+
+  try {
+    const { data, error } = await client.rpc('resubmit_courier_required_document', {
+      p_payload: parsedInput.data,
+    });
+    if (error) return err(mapResubmitCourierRequiredDocumentRpcError(error));
+
+    const parsedOutput = RPC_CONTRACTS.resubmit_courier_required_document.outputSchema.safeParse(data);
+    if (!parsedOutput.success) return err('INTERNAL_ERROR');
+    return ok(parsedOutput.data);
+  } catch {
+    return err('INTERNAL_ERROR');
+  }
+}

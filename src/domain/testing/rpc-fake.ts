@@ -11,6 +11,7 @@ import {
   type AnnouncementAudience,
   type AnnouncementCta,
   type PublicationBalance,
+  REQUIRED_COURIER_DOCUMENT_KINDS,
   RPC_CONTRACTS,
   validateOfferAmountAgainstFloor,
 } from '../rpc-contracts';
@@ -283,6 +284,17 @@ export interface FakeSeedDocument {
   readonly storagePath?: string;
   readonly purgeAfter?: string | null;
   readonly idempotencyKey?: string | null;
+  readonly purgedAt?: string | null;
+}
+
+/** CC-052: los cuatro obligatorios vigentes y verificados de un repartidor, para sembrar casos que aprueban. */
+export function verifiedRequiredDocuments(courierId: string): FakeSeedDocument[] {
+  return (['dni_front', 'dni_back', 'selfie', 'avatar'] as const).map((kind) => ({
+    documentId: crypto.randomUUID(),
+    courierId,
+    kind,
+    status: 'verified',
+  }));
 }
 
 export interface FakeDocumentRecord {
@@ -295,6 +307,8 @@ export interface FakeDocumentRecord {
   storagePath: string;
   purgeAfter: string | null;
   idempotencyKey: string | null;
+  /** CC-052: un vigente purgado no cuenta como verificado. */
+  purgedAt?: string | null;
 }
 
 export interface FakeSeedIncident {
@@ -527,6 +541,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   get_merchant_request_private_fields: ['merchant'],
   register_push_subscription: ['merchant', 'courier', 'admin'],
   replace_courier_document: ['courier'],
+  resubmit_courier_required_document: ['courier'],
   add_courier_optional_document: ['courier'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
@@ -1415,6 +1430,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       storagePath: d.storagePath ?? `courier/${d.courierId}/${d.kind}_default.jpg`,
       purgeAfter: d.purgeAfter ?? null,
       idempotencyKey: d.idempotencyKey ?? null,
+      purgedAt: d.purgedAt ?? null,
     });
   }
 
@@ -1550,6 +1566,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     courier.insuranceStatus = active.insuranceStatus;
   }
 
+  /** CC-052: misma regla que app_private.courier_required_documents_verified. */
+  function requiredDocumentsVerified(courierId: string): boolean {
+    return REQUIRED_COURIER_DOCUMENT_KINDS.every((kind) => {
+      const current = [...documents.values()].filter((d) => d.courierId === courierId && d.kind === kind && d.isCurrent);
+      return current.length === 1 && current[0]?.status === 'verified' && (current[0].purgedAt ?? null) === null;
+    });
+  }
+
   async function executeRpc<K extends RpcName>(
     rpcName: K,
     rawInput: RpcInput<K>,
@@ -1587,7 +1611,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         rpcName === 'report_incident' ||
         rpcName === 'submit_offer' ||
         rpcName === 'take_request' ||
-        (rpcName === 'replace_courier_document' || rpcName === 'add_courier_optional_document')) &&
+        rpcName === 'replace_courier_document' ||
+        rpcName === 'resubmit_courier_required_document' ||
+        rpcName === 'add_courier_optional_document') &&
       (actor.consentStatus ?? 'active') !== 'active'
     ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
@@ -3395,6 +3421,51 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         });
       }),
 
+    resubmit_courier_required_document: (rawInput) =>
+      executeRpc('resubmit_courier_required_document', rawInput, false, (input) => {
+        const prefix = `courier/${actor.userId}/${input.kind}_`;
+        const suffix = input.storagePath.slice(prefix.length);
+        if (!input.storagePath.startsWith(prefix) || input.storagePath.includes('..') || !/^[0-9]+[.](png|jpe?g|webp|pdf)$/i.test(suffix)) {
+          return err('VALIDATION_ERROR');
+        }
+        const courier = couriers.get(actor.userId);
+        if (!courier) return err('NOT_FOUND');
+        // pending y approved usan replace_courier_document; con el DNI liberado no hay subsanación (D7-A).
+        if ((courier.status !== 'rejected' && courier.status !== 'suspended') || !courier.applicationSubmitted || !courier.hasDni) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        const own = [...documents.values()].filter((d) => d.courierId === actor.userId && d.kind === input.kind);
+        const sameKey = own.find((d) => d.idempotencyKey === input.idempotencyKey);
+        if (sameKey) {
+          if (sameKey.storagePath !== input.storagePath) return err('VALIDATION_ERROR');
+          return ok({ documentId: sameKey.documentId, kind: input.kind, status: sameKey.status, replacedDocumentId: null, idempotent: true });
+        }
+        const current = own.find((d) => d.isCurrent);
+        if (current) {
+          if (current.status === 'submitted' && current.storagePath === input.storagePath) {
+            return ok({ documentId: current.documentId, kind: input.kind, status: current.status, replacedDocumentId: null, idempotent: true });
+          }
+          const purged = current.status === 'verified' && (current.purgedAt ?? null) !== null;
+          if (current.status !== 'rejected' && !purged) return err('INVALID_STATE_TRANSITION');
+          current.isCurrent = false;
+          current.purgeAfter ??= new Date(nowFn().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        }
+        const documentId = crypto.randomUUID();
+        documents.set(documentId, {
+          documentId,
+          courierId: actor.userId,
+          kind: input.kind,
+          status: 'submitted',
+          isCurrent: true,
+          rejectionCode: null,
+          storagePath: input.storagePath,
+          purgeAfter: null,
+          idempotencyKey: input.idempotencyKey,
+          purgedAt: null,
+        });
+        return ok({ documentId, kind: input.kind, status: 'submitted', replacedDocumentId: current?.documentId ?? null, idempotent: false });
+      }),
+
     calculate_route_distance: (rawInput) =>
       executeRpc('calculate_route_distance', rawInput, false, (input) => {
         if (
@@ -3434,6 +3505,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (!courier) return err('NOT_FOUND');
         // CC-050 (PR711-H01): solo decide postulaciones enviadas.
         if (courier.status !== 'pending' || !courier.applicationSubmitted) return err('INVALID_STATE_TRANSITION');
+        // CC-052: aprobar exige los cuatro obligatorios verificados.
+        if (input.decision === 'approved' && !requiredDocumentsVerified(input.courierId)) {
+          return err('DOCUMENTS_NOT_VERIFIED');
+        }
         courier.status = input.decision;
         return ok({
           courierId: input.courierId,
@@ -3514,6 +3589,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (!courier.applicationSubmitted || !courier.hasDni) {
           return err('INVALID_STATE_TRANSITION');
         }
+        // CC-052: rehabilitar exige los cuatro obligatorios verificados.
+        if (!requiredDocumentsVerified(input.courierId)) return err('DOCUMENTS_NOT_VERIFIED');
         const previousStatus = courier.status;
         courier.status = 'approved';
         return ok({ courierId: input.courierId, previousStatus, status: 'approved', idempotent: false });
