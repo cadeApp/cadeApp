@@ -212,3 +212,50 @@ pnpm exec vitest run tools
 ```
 
 La revisión termina con cero bloqueantes técnicos del contrato documental y `PR742-H04` de ratificación personal pendiente. Sin aprobación ni merge.
+
+
+# Ronda 4 — Evidencia sobre b00032ba98c950d34c6a8326dc58eee5b1094a07
+
+- GitHub compare `b0b48c517ac3ffe07a008bb7a4d519ae1aa417b7..b00032ba98c950d34c6a8326dc58eee5b1094a07`: 2 commits adelante, **3 archivos**: CC, ficha y bitácora. Ningún cambio autoral en `docs/revision-pr/**`. HEAD de PR y base confirmados.
+- Inspección ejecutada: **11 invariantes de documentos y metadata GREEN** y **8 mutaciones en memoria GREEN→RED**: ratificación CC, cuatro casillas, ficha 0 abiertas, conservación de la primera corrida fallida, declaración en cuerpo del PR.
+- Cita «aprobadas las deciciones», opciones D1-A, D2-A, D3-A, D4-C, D5-A, D6-A y D7-A, fecha y autoría **declaradas** en CC, ficha, bitácora y PR body. Mensaje original de la otra sesión **no accesible**, por tanto no autenticado.
+- Pruebas reportadas por autor: primera `pnpm exec vitest run tools` con 1 archivo fallido/109 pasados/14 omitidos **sin log**; dos siguientes exit 0, 10/123. `git diff --check` limpio, según bitácora. No repetido por revisor, sin causa del fallo conocida.
+- CI informada cancelada por docs, API devolvió lista vacía de runs; no verde confirmado. Sin clone, pnpm, pgTAP, E2E, Supabase/Docker, merge-tree ni analizador completo.
+
+
+### Harness de contenido documental para repetir en checkout de b00032ba
+
+El siguiente script es repetible si se copia a \`/tmp/pr742-r4.mjs\` y se ejecuta **desde la raíz del checkout de SHA b00032ba98c950d34c6a8326dc58eee5b1094a07**. El control del cuerpo de la PR se hace **aparte** por API GitHub, pues no es un archivo local.
+
+\`\`\`js
+import {readFileSync} from 'node:fs';
+const cc = readFileSync('docs/contracts/CC-052.md','utf8');
+const task = readFileSync('docs/tasks/T-437.md','utf8');
+const log = readFileSync('docs/tasks/log/T-437.md','utf8');
+const codes=['D1-A','D2-A','D3-A','D4-C','D5-A','D6-A','D7-A'];
+function assert(ok,label){if(!ok)throw Error('RED baseline: '+label);console.log('GREEN: '+label);}
+function mut(name,text,needle,to,check){
+ if(text.split(needle).length!==2||!check(text)||check(text.replace(needle,to)))throw Error('Mutante ciego: '+name);
+ console.log(name+': baseline GREEN, mutante RED');
+}
+assert(codes.every(c=>[cc,task,log].every(s=>s.includes(c))),'7 opciones en docs');
+assert([cc,task,log].every(s=>s.includes('aprobadas las deciciones')),'cita textual');
+assert([cc,task,log].every(s=>s.includes('D8-B')),'historia de seleccion automatica');
+assert(task.includes('Decisiones abiertas: 0.'),'cero abiertas');
+const app=cc.slice(cc.indexOf('## Aprobaciones')).split('\n').filter(s=>s.startsWith('- ['));
+assert(app.length===4&&app.every(s=>s.startsWith('- [x]')),'4 casillas');
+assert(log.includes('La primera dio 1 archivo fallido'),'primer test fallido no oculto');
+mut('ratificacion',cc,'Lautaro073 las ratificó personalmente el 2026-11-13','pendiente',s=>s.includes('Lautaro073 las ratificó personalmente el 2026-11-13'));
+for(const [id,needle] of [
+ ['P1','- [x] P1 (dueño de esquema/RPC)'],
+ ['P2','- [x] P2 (dueña de domain/ui)'],
+ ['UI','- [x] Lautaro073 (comportamiento visible del admin)'],
+ ['ficha','- [x] Ficha T-437 reconciliada']
+])mut(id,cc,needle,needle.replace('- [x]','- [ ]'),s=>s.includes(needle));
+mut('abiertas',task,'Decisiones abiertas: 0.','Decisiones abiertas: 7.',s=>s.includes('Decisiones abiertas: 0.'));
+mut('primer-fallo',log,'La primera dio 1 archivo fallido','Las tres fueron verdes',s=>s.includes('La primera dio 1 archivo fallido'));
+mut('cita-log',log,'«aprobadas las deciciones»','«seleccion del agente»',s=>s.includes('«aprobadas las deciciones»'));
+\`\`\`
+
+Este harness solo valida **texto**, no autoría personal, SQL o tests de producto; no fue ejecutado en worktree local de esta sesión. Las comprobaciones equivalentes sí se ejecutaron in-memory con contenido remoto. Los ocho mutantes de la sesión fueron los mismos salvo que el último operó sobre **PR body** y no sobre el log.
+

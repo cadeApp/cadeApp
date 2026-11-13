@@ -26,3 +26,10 @@ Esta ronda documental no crea numeración AG nueva: existen `pr-82/AG-97` y rama
 - **R3-L03 / H04:** D7-A y D1-A…D6-A siguen como elecciones automáticas; D8-B es constancia de no ratificación. Sin casillas aprobadas, ningún agente autoriza merge.
 - **R3-L04 / alcance de evidencia:** 123 tests son declaración de bitácora; los probes del revisor son textuales y no prueban pgTAP, E2E, transacciones ni seguridad en runtime.
 - **R3-L05 / datos:** `origen` es enum sin categoría «error del revisor»; se mantiene por compatibilidad con el analizador y se añade `falso_positivo: true` y `rectificado_por: revisor`. Excluir R03 de cálculos de culpa hasta que el agregador admita rectificaciones.
+
+
+## Ronda 4 — Cierre, trazabilidad y pruebas
+
+- **R4-L01 (H04):** conservar cronología: selección automática inicial → D8-B (agente incapaz de ratificar) → ratificación personal **declarada** del 2026-11-13 («aprobadas las deciciones»). Cuatro fuentes concuerdan, pero el revisor no accedió a la sesión original: distinguir consistencia del registro de autenticar identidad.
+- **R4-L02:** el autor registró una primera corrida fallida sin detalle, y luego dos 123/123 verdes. No inferir flaky demostrado ni borrar ese historial. Los probes de texto no sustituyen pruebas de producción.
+- **R4-L03:** informe técnico sin bloqueantes no es GitHub APPROVE/merge; el responsable decide eso. La implementación de T-437 tendrá revisión y pruebas de DB/E2E aparte.
