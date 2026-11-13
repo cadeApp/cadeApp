@@ -191,7 +191,7 @@ export async function getApplicantDetail(
     supabase
       .from('courier_documents')
       .select(
-        'id, kind, storage_path, status, uploaded_at, is_current, rejection_code, vehicle_id, vehicle:courier_vehicles!courier_documents_vehicle_id_fkey(vehicle_type, plate)'
+        'id, kind, storage_path, status, uploaded_at, is_current, rejection_code, vehicle_id, purged_at, vehicle:courier_vehicles!courier_documents_vehicle_id_fkey(vehicle_type, plate)'
       )
       .eq('courier_id', courierId)
       .order('uploaded_at', { ascending: true }),
@@ -230,6 +230,7 @@ export async function getApplicantDetail(
     is_current?: boolean | null;
     rejection_code?: string | null;
     vehicle_id?: string | null;
+    purged_at?: string | null;
     vehicle?: { vehicle_type: 'walk' | 'bike' | 'moto' | 'car'; plate: string | null } | null;
   }
 
@@ -255,6 +256,8 @@ export async function getApplicantDetail(
     uploadedAt: d.uploaded_at,
     isCurrent: d.is_current !== false,
     rejectionCode: d.rejection_code ?? null,
+    // CC-052 (D6-A): la UI no habilita aprobar ni rehabilitar con un obligatorio purgado.
+    purgedAt: d.purged_at ?? null,
     vehicle: d.vehicle ? { vehicleType: d.vehicle.vehicle_type, plate: d.vehicle.plate } : null,
   }));
 

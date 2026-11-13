@@ -86,6 +86,10 @@ export const COURIER_ONBOARDING_COPY = {
 
   // CC-025 / T-356 - Reemplazo de documentos rechazados
   rejectedBadge: 'Rechazado / requiere corrección',
+  // CC-052 (D5-A): subsanación de un obligatorio con la cuenta rechazada o suspendida.
+  resubmitSectionTitle: 'Corregí tus documentos',
+  resubmitMissingBadge: 'Falta cargarlo',
+  resubmitNote: 'Corregir este documento no reactiva tu cuenta: un admin lo revisa y decide.',
   rejectedStatus: 'Rechazado / requiere corrección',
   btnReplace: 'Reemplazar',
   replacingDocument: 'Reemplazando...',

@@ -63,7 +63,11 @@ function fake(now: () => Date = () => new Date('2026-11-12T15:00:00.000Z')) {
         phone: '3815551234',
       },
     ],
-    initialDocuments: [...docsFor(CLAIMANT_ID, '50d00001'), ...docsFor(PENDING_SUBMITTED_ID, '50d00002')],
+    initialDocuments: [
+      ...docsFor(CLAIMANT_ID, '50d00001'),
+      // CC-052: el pendiente enviado se aprueba con los cuatro obligatorios verificados.
+      ...docsFor(PENDING_SUBMITTED_ID, '50d00002').map((doc) => ({ ...doc, status: 'verified' as const })),
+    ],
   });
 }
 

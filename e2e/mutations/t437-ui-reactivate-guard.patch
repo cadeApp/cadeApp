@@ -1,0 +1,12 @@
+diff --git a/src/features/admin/components/applicant-detail-view.tsx b/src/features/admin/components/applicant-detail-view.tsx
+index b9276473..fcac19d2 100644
+--- a/src/features/admin/components/applicant-detail-view.tsx
++++ b/src/features/admin/components/applicant-detail-view.tsx
+@@ -839,7 +839,6 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
+         ) : applicant.status === 'suspended' ? (
+           <Button
+             variant="default"
+-            disabled={!docsReady}
+             aria-describedby={docsReady ? undefined : 'required-documents-reason'}
+             onClick={() => openDecisionModal('reactivate')}
+           >

@@ -400,6 +400,28 @@ export async function finalizeSeededCourierApplication(
   }
 }
 
+/**
+ * CC-052: marca `verified` los cuatro obligatorios vigentes de un repartidor sembrado (solo el arnés, con service role),
+ * como si el admin los hubiera verificado. `except` deja uno sin verificar para los casos de bypass.
+ */
+export async function verifySeededCourierDocuments(
+  admin: AdminClientType,
+  courierId: string,
+  options: { except?: 'dni_front' | 'dni_back' | 'selfie' | 'avatar' } = {}
+): Promise<void> {
+  assertValidUuid(courierId, 'courierId');
+  const kinds = (['dni_front', 'dni_back', 'selfie', 'avatar'] as const).filter((kind) => kind !== options.except);
+  const { error } = await admin
+    .from('courier_documents')
+    .update({ status: 'verified' })
+    .eq('courier_id', courierId)
+    .eq('is_current', true)
+    .in('kind', kinds);
+  if (error) {
+    throw new Error(`[E2E Seed Error] Falló la verificación de documentos del courier ${courierId}: ${error.message}`);
+  }
+}
+
 export async function seedStagingData(
   context: StagingSeedContext,
   options?: SeedStagingOptions,

@@ -361,6 +361,10 @@ select lives_ok($$ select public.replace_courier_document(jsonb_build_object('ki
 select pg_temp.as_postgres();
 select ok(pg_temp.unchanged(), 'replace_courier_document no cambia la fecha');
 
+-- CC-052: aprobar y rehabilitar exigen los cuatro obligatorios verificados (fixture, como su dueño).
+update public.courier_documents set status = 'verified'
+where courier_id = pg_temp.c(13) and kind in ('dni_front', 'dni_back', 'selfie', 'avatar') and is_current;
+
 select pg_temp.act_as(pg_temp.admin(), 'aal2');
 select lives_ok($$ select public.admin_decide_courier(pg_temp.c(13), 'approved') $$, 'admin_decide_courier corre');
 select pg_temp.as_postgres();

@@ -49,7 +49,7 @@ export default async function CourierProfilePage() {
       }>(),
     supabase
       .from('courier_documents')
-      .select('kind, status, rejection_code, is_current, vehicle_id')
+      .select('kind, status, rejection_code, is_current, vehicle_id, purged_at')
       .eq('courier_id', user.id),
   ]);
 
@@ -76,6 +76,7 @@ export default async function CourierProfilePage() {
     rejection_code?: string | null;
     is_current?: boolean;
     vehicle_id?: string | null;
+    purged_at?: string | null;
   }>;
   // Solo consideramos vigentes (is_current !== false); CC-042: licencia y seguro del vehículo activo, o los que todavía
   // no tienen vehículo si no hay activo (misma regla que isActiveVehicleDocument, PR624-H05).
@@ -116,6 +117,27 @@ export default async function CourierProfilePage() {
   }
 
   const dniStatus = combineDniDocumentStatus(dniFrontStatus, dniBackStatus);
+  const { getSafeRejectionMessage } = await import('@/features/courier-onboarding/copy');
+
+  // CC-052 (D5-A): un rechazado o suspendido con el alta enviada y DNI registrado puede volver a presentar cada
+  // obligatorio rechazado, purgado o ausente. Con el DNI liberado (D7-A) no se ofrece: la RPC lo rechazaría.
+  const canResubmit =
+    (courier.status === 'rejected' || courier.status === 'suspended') &&
+    courier.application_submitted === true &&
+    Boolean(courier.dni_hmac);
+  type RequiredResubmission = NonNullable<CourierProfileData['requiredResubmissions']>[number];
+  const requiredResubmissions: RequiredResubmission[] | undefined = canResubmit
+    ? (['dni_front', 'dni_back', 'selfie', 'avatar'] as const).flatMap((kind): RequiredResubmission[] => {
+        const doc = docsMap.get(kind);
+        if (doc?.status === 'rejected') {
+          return [{ kind, status: 'rejected', rejectionMessage: getSafeRejectionMessage(doc.rejection_code) }];
+        }
+        if (!doc || (doc.status === 'verified' && doc.purged_at)) {
+          return [{ kind, status: 'none', rejectionMessage: null }];
+        }
+        return [];
+      })
+    : undefined;
 
   const profileData: CourierProfileData = {
     courierId: user.id,
@@ -166,6 +188,7 @@ export default async function CourierProfilePage() {
     courierStatus: courier.status,
     // CC-043: misma definición que el guard (`parseOnboardingComplete`): sin postulación enviada no hay registro.
     onboardingComplete: courier.application_submitted === true,
+    requiredResubmissions,
     documents: currentDocs.map((d) => ({
       kind: d.kind as import('@/domain/schemas').CourierDocumentKind,
       status: d.status,

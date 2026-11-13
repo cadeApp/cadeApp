@@ -1,0 +1,12 @@
+diff --git a/src/features/admin/components/applicant-detail-view.tsx b/src/features/admin/components/applicant-detail-view.tsx
+index b9276473..ae658153 100644
+--- a/src/features/admin/components/applicant-detail-view.tsx
++++ b/src/features/admin/components/applicant-detail-view.tsx
+@@ -848,7 +848,6 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
+         ) : (
+           <Button
+             variant="outline"
+-            disabled={!docsReady}
+             aria-describedby={docsReady ? undefined : 'required-documents-reason'}
+             onClick={() => openDecisionModal('reconsider')}
+           >

@@ -40,7 +40,7 @@ import {
   validateOfferAmountAgainstFloor,
   validateRoutePointsAndCalculateDistanceM,
 } from './index';
-import { type FakePlatformSettings, createFakeRpcClient } from './testing/rpc-fake';
+import { type FakePlatformSettings, createFakeRpcClient, verifiedRequiredDocuments } from './testing/rpc-fake';
 
 const BASE_SETTINGS: FakePlatformSettings = {
   minOfferArs: 1200,
@@ -1364,6 +1364,8 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       fake.seedCourier({ courierId: COURIER_1, status: 'pending', available: false });
       fake.seedDocument({ documentId: DOC_1, courierId: COURIER_1, kind: 'license', status: 'submitted' });
       fake.seedDocument({ documentId: DOC_2, courierId: COURIER_1, kind: 'insurance', status: 'submitted' });
+      // CC-052: aprobar exige los cuatro obligatorios verificados.
+      verifiedRequiredDocuments(COURIER_1).forEach((doc) => fake.seedDocument(doc));
       expect(
         await fake.admin_decide_courier({ courierId: COURIER_1, decision: 'approved' })
       ).toEqual({

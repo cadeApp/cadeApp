@@ -765,6 +765,23 @@ export const replaceCourierDocumentOutputSchema = z.object({
   idempotent: z.boolean(),
 });
 
+// CC-052 (D5-A): subsanación de un obligatorio por un rechazado o suspendido. No rehabilita.
+export const REQUIRED_COURIER_DOCUMENT_KINDS = ['dni_front', 'dni_back', 'selfie', 'avatar'] as const;
+export const resubmitCourierRequiredDocumentInputSchema = z
+  .object({
+    kind: z.enum(REQUIRED_COURIER_DOCUMENT_KINDS),
+    storagePath: z.string().trim().min(1).max(500),
+    idempotencyKey: uuidSchema,
+  })
+  .strict();
+export const resubmitCourierRequiredDocumentOutputSchema = z.object({
+  documentId: uuidSchema,
+  kind: z.enum(REQUIRED_COURIER_DOCUMENT_KINDS),
+  status: documentReviewStatusSchema,
+  replacedDocumentId: uuidSchema.nullable(),
+  idempotent: z.boolean(),
+});
+
 // CC-033: alta posterior de licencia o seguro opcionales.
 export const addCourierOptionalDocumentInputSchema = z.object({
   kind: z.enum(['license', 'insurance']),
@@ -1808,6 +1825,8 @@ export const RPC_CONTRACTS = {
       'NOT_FOUND',
       'REASON_REQUIRED',
       'INVALID_STATE_TRANSITION',
+      // CC-052: aprobar exige los cuatro obligatorios verificados.
+      'DOCUMENTS_NOT_VERIFIED',
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
@@ -1834,6 +1853,8 @@ export const RPC_CONTRACTS = {
       'NOT_FOUND',
       'REASON_REQUIRED',
       'INVALID_STATE_TRANSITION',
+      // CC-052: rehabilitar exige los cuatro obligatorios verificados.
+      'DOCUMENTS_NOT_VERIFIED',
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
@@ -1883,6 +1904,17 @@ export const RPC_CONTRACTS = {
       'AAL2_REQUIRED',
       'NOT_FOUND',
       'REASON_REQUIRED',
+      'INVALID_STATE_TRANSITION',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  resubmit_courier_required_document: {
+    inputSchema: resubmitCourierRequiredDocumentInputSchema,
+    outputSchema: resubmitCourierRequiredDocumentOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
@@ -2242,6 +2274,7 @@ export const ALL_RPC_NAMES = [
   'admin_find_courier_dni_reservation',
   'admin_verify_document',
   'replace_courier_document',
+  'resubmit_courier_required_document',
   'add_courier_optional_document',
   'get_my_courier_vehicles',
   'add_courier_vehicle',

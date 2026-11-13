@@ -118,6 +118,11 @@ begin
     (pg_temp.doc_already_verified_id(), pg_temp.courier_approved_id(), 'license', 'courier-docs/old_license.pdf', 'verified', null, null),
     (pg_temp.doc_purged_submitted_id(), pg_temp.courier_pending_2_id(), 'license', 'courier-docs/purged.pdf', 'submitted', now() - interval '1 day', now());
 
+  -- CC-052: aprobar exige los cuatro obligatorios verificados; pending_1 es el que se aprueba en 1.x.
+  insert into public.courier_documents (courier_id, kind, storage_path, status)
+  select pg_temp.courier_pending_1_id(), k::public.courier_document_kind, 'courier-docs/' || k || '.png', 'verified'
+  from unnest(array['dni_front', 'dni_back', 'selfie', 'avatar']) as k;
+
   -- Solicitudes de prueba en solicitudes separadas para no violar offers_one_active_per_courier_request_idx
   insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, status)
   values

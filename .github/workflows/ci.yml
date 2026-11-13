@@ -224,6 +224,9 @@ jobs:
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc034_concurrency.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc034_concurrency.mjs --mutation-check
 
+            # Documentos obligatorios verificados CC-052 (T-437): verificar/rechazar ↔ aprobar y subsanar ↔ rehabilitar
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc052_concurrency.mjs
+
             # Registro de suscripciones push CC-035 (T-386): carreras alta/alta y reasignar/reasignar y control RED->GREEN
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc035_concurrency.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc035_concurrency.mjs --mutation-check

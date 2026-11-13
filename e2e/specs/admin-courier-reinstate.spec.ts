@@ -12,6 +12,7 @@ import { waitForNoSkeletons } from '../helpers/skeletons';
 import { waitForFormHydration } from '../helpers/hydration';
 import { LoginPage } from '../pages';
 import { createAdminClient } from '@/server/supabase/admin';
+import { verifySeededCourierDocuments } from '@/server/e2e/staging-seed';
 
 /**
  * T-380 / CC-034: reactivar un repartidor suspendido desde el detalle del admin.
@@ -25,6 +26,7 @@ import { createAdminClient } from '@/server/supabase/admin';
 async function seedAdminWithTotp(context: StagingSeedContext): Promise<{
   credentials: UserCredentials;
   totpSecret: string;
+  client: Awaited<ReturnType<typeof createAuthenticatedClient>>;
 }> {
   const credentials = await seedAdminUser(context);
   const client = await createAuthenticatedClient(credentials);
@@ -39,7 +41,7 @@ async function seedAdminWithTotp(context: StagingSeedContext): Promise<{
   if (verifyErr) {
     throw new Error(`[E2E MFA Error] Error al verificar TOTP inicial: ${verifyErr.message}`);
   }
-  return { credentials, totpSecret: enrolled.totp.secret };
+  return { credentials, totpSecret: enrolled.totp.secret, client };
 }
 
 async function loginAdminWithMfa(page: Page, credentials: UserCredentials, totpSecret: string) {
@@ -91,6 +93,9 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
     if (typeof baseURL !== 'string' || baseURL.length === 0) {
       throw new Error('[E2E Error] Falta baseURL para crear el contexto aislado del repartidor');
     }
+
+    // CC-052: reactivar exige los cuatro obligatorios verificados (seed del arnés, antes de abrir el detalle).
+    await verifySeededCourierDocuments(createAdminClient(), courier.id);
 
     // 1. Admin con MFA en el detalle del repartidor aprobado.
     const { credentials, totpSecret } = await seedAdminWithTotp(stagingContext);
@@ -191,5 +196,62 @@ test.describe('T-380 — reactivar un repartidor suspendido (CC-034)', () => {
     } finally {
       await courierContext.close();
     }
+  });
+});
+
+/** T-437 (CC-052): con la selfie sin verificar, el botón de rehabilitar queda deshabilitado y la RPC lo rechaza. */
+async function expectReinstateBlocked(
+  page: Page,
+  stagingContext: StagingSeedContext,
+  status: 'suspended' | 'rejected',
+  actionName: 'Reactivar repartidor' | 'Reconsiderar aprobación'
+) {
+  const courier = stagingContext.courierUsers?.[0];
+  if (!courier) throw new Error('[E2E Error] No courier user in stagingContext');
+  const dbAdmin = createAdminClient();
+  // Todos verificados salvo la selfie: el único motivo del bloqueo es ese documento.
+  await verifySeededCourierDocuments(dbAdmin, courier.id, { except: 'selfie' });
+  const { error: statusErr } = await dbAdmin
+    .from('couriers')
+    .update({ status, available: false })
+    .eq('profile_id', courier.id);
+  if (statusErr) throw new Error(`[E2E Seed Error] estado ${status}: ${statusErr.message}`);
+
+  const { credentials, totpSecret, client } = await seedAdminWithTotp(stagingContext);
+  await loginAdminWithMfa(page, credentials, totpSecret);
+  await page.goto(`/admin/applicants/${courier.id}`);
+  await waitForNoSkeletons(page);
+  await expect(
+    page.getByRole('button', { name: actionName }),
+    `T-437: «${actionName}» deshabilitado con la selfie sin verificar`
+  ).toBeDisabled();
+  await expect(page.getByText(/verificá DNI \(frente y dorso\), selfie y foto de perfil vigentes/i)).toBeVisible();
+
+  // La RPC con el JWT AAL2 del admin también lo rechaza, sin update ni auditoría.
+  const { data, error } = await client.rpc('admin_reinstate_courier', {
+    p_courier_id: courier.id,
+    p_reason: `Bypass E2E ${stagingContext.testRunId}`,
+  });
+  expect(data).toBeNull();
+  expect(error?.message).toContain('DOCUMENTS_NOT_VERIFIED');
+  const { data: courierRow } = await dbAdmin.from('couriers').select('status').eq('profile_id', courier.id).single();
+  expect(courierRow?.status).toBe(status);
+  const { count } = await dbAdmin
+    .from('audit_log')
+    .select('id', { count: 'exact', head: true })
+    .eq('target_id', courier.id)
+    .eq('action', 'admin_reinstate_courier');
+  expect(count).toBe(0);
+}
+
+test.describe('T-437 (CC-052) — rehabilitar refleja la guarda de documentos', () => {
+  test('bypass: un suspendido con la selfie sin verificar no se puede reactivar', async ({ page, stagingContext }) => {
+    test.setTimeout(120_000);
+    await expectReinstateBlocked(page, stagingContext, 'suspended', 'Reactivar repartidor');
+  });
+
+  test('bypass: un rechazado con la selfie sin verificar no se puede reconsiderar', async ({ page, stagingContext }) => {
+    test.setTimeout(120_000);
+    await expectReinstateBlocked(page, stagingContext, 'rejected', 'Reconsiderar aprobación');
   });
 });

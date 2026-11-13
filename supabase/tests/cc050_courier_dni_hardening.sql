@@ -220,6 +220,11 @@ update public.couriers set status = 'rejected' where profile_id in (pg_temp.c(10
   pg_temp.c(14), pg_temp.c(15), pg_temp.c(16), pg_temp.c(17));
 update public.couriers set status = 'suspended' where profile_id = pg_temp.c(11);
 update public.couriers set status = 'approved' where profile_id = pg_temp.c(19);
+-- CC-052: c15 (se reconsidera) y c18 (se aprueba) con los cuatro obligatorios verificados; c11 también, para que su
+-- rechazo por DNI liberado no dependa de los documentos.
+update public.courier_documents set status = 'verified'
+where courier_id in (pg_temp.c(11), pg_temp.c(15), pg_temp.c(18))
+  and kind in ('dni_front', 'dni_back', 'selfie', 'avatar') and is_current;
 
 select pg_temp.act_as(pg_temp.c(10), 'aal2');
 select throws_ok($$ select public.admin_release_courier_dni(pg_temp.c(10), 'reclamo del titular') $$,

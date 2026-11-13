@@ -1204,6 +1204,7 @@ describe('T-380: reinstateCourierAction y mapeo de INVALID_STATE_TRANSITION (CC-
     'NOT_FOUND',
     'UNAUTHENTICATED',
     'VALIDATION_ERROR',
+    'DOCUMENTS_NOT_VERIFIED',
   ] as const)('mapea %s de la RPC sin convertirlo en INTERNAL_ERROR', async (code) => {
     mockSession({ role: 'admin' });
     vi.mocked(adminRpc.adminReinstateCourierRpc).mockResolvedValue({ ok: false, code });
@@ -1233,6 +1234,20 @@ describe('T-380: reinstateCourierAction y mapeo de INVALID_STATE_TRANSITION (CC-
     });
 
     expect(result).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('CC-052: decideCourierAction propaga DOCUMENTS_NOT_VERIFIED sin revalidar', async () => {
+    mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminDecideCourierRpc).mockResolvedValue({ ok: false, code: 'DOCUMENTS_NOT_VERIFIED' });
+
+    const result = await decideCourierAction({
+      courierId: VALID_COURIER_ID,
+      decision: 'approved',
+      reason: 'Documentación completa',
+    });
+
+    expect(result).toEqual({ ok: false, code: 'DOCUMENTS_NOT_VERIFIED' });
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

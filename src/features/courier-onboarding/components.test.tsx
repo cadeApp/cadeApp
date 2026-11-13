@@ -2931,3 +2931,132 @@ describe('T-387: PDF de licencia y seguro en el alta y el reemplazo', () => {
     expect((screen.getByLabelText('Selfie con el DNI') as HTMLInputElement).accept).toBe('image/jpeg,image/png,image/webp');
   });
 });
+
+describe('CC-052 (D5-A): subsanación de obligatorios con la cuenta rechazada o suspendida', () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'courier-052' } }, error: null });
+  });
+
+  it('con un obligatorio faltante muestra la carga, la aclaración y llama a la subsanación (no al reemplazo)', async () => {
+    mockUploadCourierDocument.mockResolvedValueOnce({ storagePath: 'courier/courier-052/selfie_1730000000501.jpg' });
+    const resubmit = vi.spyOn(actionsModule, 'resubmitRequiredDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        documentId: 'd0000000-0000-4000-8000-000000000521',
+        kind: 'selfie',
+        status: 'submitted',
+        replacedDocumentId: null,
+        idempotent: false,
+      },
+    });
+    const replace = vi.spyOn(actionsModule, 'replaceCourierDocumentAction');
+
+    render(
+      <DocumentReplacementCard mode="resubmit" courierId="courier-052" kind="selfie" title="Selfie con el DNI" initialStatus="none" />
+    );
+    expect(screen.getByText(COURIER_ONBOARDING_COPY.resubmitNote)).toBeDefined();
+    expect(screen.getByText(COURIER_ONBOARDING_COPY.resubmitMissingBadge)).toBeDefined();
+
+    const input = screen.getByLabelText(/^Reemplazar selfie con el dni$/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(['selfie'], 'selfie.jpg', { type: 'image/jpeg', lastModified: 52 })] } });
+
+    await waitFor(() => expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined());
+    expect(resubmit).toHaveBeenCalledWith({
+      kind: 'selfie',
+      storagePath: 'courier/courier-052/selfie_1730000000501.jpg',
+      idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('con un obligatorio rechazado muestra el motivo y la aclaración de que no reactiva la cuenta', () => {
+    render(
+      <DocumentReplacementCard
+        mode="resubmit"
+        courierId="courier-052"
+        kind="dni_front"
+        title="DNI frente"
+        initialStatus="rejected"
+        rejectionMessage="La imagen está borrosa."
+      />
+    );
+    expect(screen.getByText('La imagen está borrosa.')).toBeDefined();
+    expect(screen.getByText(COURIER_ONBOARDING_COPY.resubmitNote)).toBeDefined();
+  });
+
+  it('PR744-H02: subsanar la selfie actualiza el resumen documental de «Observado» a «En revisión» y refresca', async () => {
+    mockUploadCourierDocument.mockResolvedValueOnce({ storagePath: 'courier/courier-052/selfie_1730000000502.jpg' });
+    vi.spyOn(actionsModule, 'resubmitRequiredDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        documentId: 'd0000000-0000-4000-8000-000000000522',
+        kind: 'selfie',
+        status: 'submitted',
+        replacedDocumentId: 'd0000000-0000-4000-8000-000000000520',
+        idempotent: false,
+      },
+    });
+    render(
+      <CourierProfileView
+        profile={{
+          courierId: 'courier-052',
+          displayName: 'Carla Rechazada',
+          email: 'carla@test.com',
+          vehicleType: 'bike',
+          plate: null,
+          dniStatus: 'verified',
+          selfieStatus: 'rejected',
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          courierStatus: 'rejected',
+          onboardingComplete: true,
+          requiredResubmissions: [{ kind: 'selfie', status: 'rejected', rejectionMessage: 'La imagen está borrosa.' }],
+        }}
+      />
+    );
+    // El badge de rechazado aparece en el resumen y en la tarjeta de subsanación.
+    expect(screen.getAllByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toHaveLength(2);
+    expect(screen.queryByText('En revisión')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/^Reemplazar selfie con el dni$/i), {
+      target: { files: [new File(['selfie'], 'selfie.jpg', { type: 'image/jpeg', lastModified: 53 })] },
+    });
+
+    await waitFor(() => expect(screen.getByText(COURIER_ONBOARDING_COPY.underReviewBadge)).toBeDefined());
+    // El resumen ya no dice rechazado: la selfie figura «En revisión».
+    expect(screen.queryAllByText(COURIER_ONBOARDING_COPY.rejectedBadge)).toHaveLength(0);
+    expect(screen.getByText('En revisión')).toBeDefined();
+    expect(mockRouterRefresh).toHaveBeenCalled();
+  });
+
+  it('el perfil muestra la sección de subsanación y no las tarjetas de reemplazo de los obligatorios', () => {
+    render(
+      <CourierProfileView
+        profile={{
+          courierId: 'courier-052',
+          displayName: 'Carla Rechazada',
+          email: 'carla@test.com',
+          vehicleType: 'moto',
+          plate: 'AB 123 CD',
+          dniStatus: 'rejected',
+          dniFrontStatus: 'rejected',
+          dniBackStatus: 'verified',
+          selfieStatus: 'verified',
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          courierStatus: 'rejected',
+          onboardingComplete: true,
+          requiredResubmissions: [
+            { kind: 'dni_front', status: 'rejected', rejectionMessage: 'La imagen está borrosa.' },
+            { kind: 'avatar', status: 'none', rejectionMessage: null },
+          ],
+        }}
+      />
+    );
+    expect(screen.getByText(COURIER_ONBOARDING_COPY.resubmitSectionTitle)).toBeDefined();
+    const cards = document.querySelectorAll('[data-slot="document-replacement-card"]');
+    expect([...cards].map((card) => card.getAttribute('data-kind'))).toEqual(['dni_front', 'avatar']);
+  });
+});

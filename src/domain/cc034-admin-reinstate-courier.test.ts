@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_RPC_NAMES, RPC_CONTRACTS } from './index';
-import { type FakePlatformSettings, createFakeRpcClient } from './testing/rpc-fake';
+import { type FakePlatformSettings, createFakeRpcClient, verifiedRequiredDocuments } from './testing/rpc-fake';
 
 const SETTINGS: FakePlatformSettings = {
   minOfferArs: 1200,
@@ -32,6 +32,8 @@ function fake() {
       { courierId: PENDING_ID, status: 'pending', available: false, vehicleType: 'moto' },
       { courierId: INCOMPLETE_ID, status: 'suspended', available: false, vehicleType: null },
     ],
+    // CC-052: rehabilitar exige los cuatro obligatorios verificados.
+    initialDocuments: [...verifiedRequiredDocuments(SUSPENDED_ID), ...verifiedRequiredDocuments(REJECTED_ID)],
   });
 }
 
@@ -45,6 +47,7 @@ describe('CC-034 — admin_reinstate_courier', () => {
       'NOT_FOUND',
       'REASON_REQUIRED',
       'INVALID_STATE_TRANSITION',
+      'DOCUMENTS_NOT_VERIFIED',
       'VALIDATION_ERROR',
     ]);
   });
@@ -118,6 +121,7 @@ describe('CC-034 — admin_reinstate_courier', () => {
       initialCouriers: [
         { courierId: availableRejectedId, status: 'rejected', available: true, vehicleType: 'bike', hasDni: true },
       ],
+      initialDocuments: verifiedRequiredDocuments(availableRejectedId),
     });
     expect(client.getCourier(availableRejectedId)?.available).toBe(true);
 
@@ -208,6 +212,8 @@ describe('CC-050 (PR711-H07): reinstate solo con el alta enviada y DNI', () => {
           hasDni: true,
         },
       ],
+      // CC-052: el caso positivo tiene los cuatro obligatorios verificados.
+      initialDocuments: verifiedRequiredDocuments(REJECTED_ID),
     });
     expect(await client.admin_reinstate_courier({ courierId: unsentId, reason: 'Revisión administrativa' })).toEqual({
       ok: false,

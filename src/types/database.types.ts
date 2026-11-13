@@ -1786,6 +1786,10 @@ export type Database = {
         Args: { p_reason?: string; p_request_id: string }
         Returns: Json
       }
+      resubmit_courier_required_document: {
+        Args: { p_payload: Json }
+        Returns: Json
+      }
       set_active_courier_vehicle: {
         Args: { p_vehicle_id: string }
         Returns: Json

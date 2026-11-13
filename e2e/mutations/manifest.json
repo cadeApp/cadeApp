@@ -66,6 +66,39 @@
         "toBe",
         "join de Realtime confirmado (phx_reply ok)"
       ]
+    },
+    {
+      "id": "t437-ui-approve-guard",
+      "invariant": "T-437 (CC-052): con un obligatorio sin verificar, «Aprobar repartidor» queda deshabilitado; sin la guarda de UI, el botón se habilita aunque la RPC lo rechace.",
+      "patch": "t437-ui-approve-guard.patch",
+      "spec": "e2e/specs/courier-onboarding.spec.ts",
+      "grep": "T-437 (CC-052) bypass: con la selfie sin verificar «Aprobar repartidor» está deshabilitado y la RPC lo rechaza",
+      "expectedFailure": [
+        "toBeDisabled",
+        "T-437: «Aprobar repartidor» deshabilitado con la selfie sin verificar"
+      ]
+    },
+    {
+      "id": "t437-ui-reactivate-guard",
+      "invariant": "T-437 (CC-052): con un obligatorio sin verificar, «Reactivar repartidor» queda deshabilitado para un suspendido; sin la guarda de UI, se habilita.",
+      "patch": "t437-ui-reactivate-guard.patch",
+      "spec": "e2e/specs/admin-courier-reinstate.spec.ts",
+      "grep": "bypass: un suspendido con la selfie sin verificar no se puede reactivar",
+      "expectedFailure": [
+        "toBeDisabled",
+        "T-437: «Reactivar repartidor» deshabilitado con la selfie sin verificar"
+      ]
+    },
+    {
+      "id": "t437-ui-reconsider-guard",
+      "invariant": "T-437 (CC-052): con un obligatorio sin verificar, «Reconsiderar aprobación» queda deshabilitado para un rechazado; sin la guarda de UI, se habilita.",
+      "patch": "t437-ui-reconsider-guard.patch",
+      "spec": "e2e/specs/admin-courier-reinstate.spec.ts",
+      "grep": "bypass: un rechazado con la selfie sin verificar no se puede reconsiderar",
+      "expectedFailure": [
+        "toBeDisabled",
+        "T-437: «Reconsiderar aprobación» deshabilitado con la selfie sin verificar"
+      ]
     }
   ]
 }

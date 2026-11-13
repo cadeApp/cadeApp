@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import {
   courierOnboardingAction,
   replaceCourierDocumentAction,
+  resubmitRequiredDocumentAction,
   addCourierOptionalDocumentAction,
   addCourierVehicleAction,
   updateCourierVehiclePlateAction,
@@ -2220,5 +2221,68 @@ describe('T-419 / CC-042: acciones de vehículos del repartidor (RPC, sin update
     expect(rpc).toHaveBeenCalledWith('add_courier_optional_document', {
       p_payload: { kind: 'license', storagePath: 'courier/courier-419/license_1730000000000.jpg', vehicleId: VEHICLE },
     });
+  });
+});
+
+describe('CC-052 (D5-A): resubmitRequiredDocumentAction', () => {
+  const courierId = '20000000-0000-4000-8000-0000000052c2';
+  const input = {
+    kind: 'selfie',
+    storagePath: `courier/${courierId}/selfie_1730000000001.png`,
+    idempotencyKey: '00000000-0000-4000-8000-000000005201',
+  };
+
+  function setup({ user = { id: courierId } as { id: string } | null, role = 'courier' as string | null, rpcResult = {
+    data: {
+      documentId: '00000000-0000-4000-8000-0000000052d1',
+      kind: 'selfie',
+      status: 'submitted',
+      replacedDocumentId: null,
+      idempotent: false,
+    },
+    error: null,
+  } as { data: unknown; error: unknown } } = {}) {
+    const rpc = vi.fn().mockResolvedValue(rpcResult);
+    const maybeSingle = vi.fn().mockResolvedValue({ data: role ? { role } : null, error: null });
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user }, error: user ? null : new Error('No auth') }) },
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle }) }) }),
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+    return { rpc };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sin sesión, sin rol courier o con ruta ajena no llama a la RPC', async () => {
+    const noUser = setup({ user: null });
+    expect(await resubmitRequiredDocumentAction(input)).toEqual({ ok: false, code: 'UNAUTHENTICATED' });
+    expect(noUser.rpc).not.toHaveBeenCalled();
+
+    const merchant = setup({ role: 'merchant' });
+    expect(await resubmitRequiredDocumentAction(input)).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    expect(merchant.rpc).not.toHaveBeenCalled();
+
+    const foreign = setup();
+    expect(
+      await resubmitRequiredDocumentAction({ ...input, storagePath: 'courier/otro/selfie_1730000000001.png' })
+    ).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(foreign.rpc).not.toHaveBeenCalled();
+  });
+
+  it('llama a la RPC de subsanación y revalida el perfil', async () => {
+    const { rpc } = setup();
+    const result = await resubmitRequiredDocumentAction(input);
+    expect(rpc).toHaveBeenCalledWith('resubmit_courier_required_document', { p_payload: input });
+    expect(result.ok).toBe(true);
+    expect(revalidatePath).toHaveBeenCalledWith('/courier/profile');
+  });
+
+  it('propaga INVALID_STATE_TRANSITION de la RPC sin revalidar', async () => {
+    setup({ rpcResult: { data: null, error: { message: 'INVALID_STATE_TRANSITION' } } });
+    expect(await resubmitRequiredDocumentAction(input)).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

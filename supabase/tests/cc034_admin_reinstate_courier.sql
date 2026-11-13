@@ -125,6 +125,12 @@ begin
   where profile_id = pg_temp.courier_rej();
   perform set_config('app.courier_application_finalize', 'off', true);
 
+  -- CC-052: rehabilitar exige los cuatro obligatorios verificados en los dos casos positivos.
+  insert into public.courier_documents (courier_id, kind, storage_path, status)
+  select c, k::public.courier_document_kind, 'courier/' || c || '/' || k || '_1.png', 'verified'
+  from unnest(array[pg_temp.courier_susp(), pg_temp.courier_rej()]) as c,
+       unnest(array['dni_front', 'dni_back', 'selfie', 'avatar']) as k;
+
   insert into public.platform_settings (key, value)
   values ('min_offer_ars', '1000'::jsonb)
   on conflict (key) do update set value = '1000'::jsonb;

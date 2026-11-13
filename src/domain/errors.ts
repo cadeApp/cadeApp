@@ -33,6 +33,9 @@ export const DOMAIN_ERROR_CODES = [
   'VEHICLE_SWITCH_BLOCKED',
   'DUPLICATE_VEHICLE',
 
+  // Documentos obligatorios del repartidor (CC-052)
+  'DOCUMENTS_NOT_VERIFIED',
+
   // Administración y plataforma (T-105)
   'INVALID_SETTING_KEY',
   'INVALID_SETTING_VALUE',
