@@ -938,9 +938,11 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     await page.goto(`/admin/applicants/${courier.id}`);
     await waitForNoSkeletons(page);
-    await expect(page.getByText(ADMIN_COPY.detail.requiredDocumentsPending)).toBeVisible();
+    // Acotado a la barra: durante el streaming el DOM puede tener una segunda copia fuera de ella (run 43532734795).
+    const toolbar = page.getByRole('toolbar', { name: ADMIN_COPY.detail.actionsBarLabel });
+    await expect(toolbar.getByText(ADMIN_COPY.detail.requiredDocumentsPending)).toBeVisible();
     await expect(
-      page.getByRole('button', { name: ADMIN_COPY.detail.applicantActions.approve }),
+      toolbar.getByRole('button', { name: ADMIN_COPY.detail.applicantActions.approve }),
       'T-437: «Aprobar repartidor» deshabilitado con la selfie sin verificar'
     ).toBeDisabled();
 
