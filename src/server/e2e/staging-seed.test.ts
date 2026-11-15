@@ -838,7 +838,7 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         NODE_ENV: 'test',
         SUPABASE_SERVICE_ROLE_KEY: 'mock_service_role_key_for_test',
         DNI_HMAC_SECRET: 'min_16_characters_secret_key_123',
-        CRON_SECRET: 'mock_cron_secret',
+        CRON_SECRET: 'mock_cron_secret_with_32_chars_min',
         NEXT_PUBLIC_APP_URL: 'https://cadeapp-staging.vercel.app',
         NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
         NEXT_PUBLIC_SUPABASE_ANON_KEY: 'mock_anon_key',
