@@ -135,7 +135,8 @@ Si la misma oferta ya estaba aceptada, devuelve éxito (idempotente). Cualquier 
 - sus ofertas `pending` pasan a `withdrawn`;
 - no puede ser aceptado, porque `accept_offer` vuelve a verificar su estado;
 - sus envíos asignados y todavía no retirados (`matched`) vuelven a `published`, y el comercio ve en el historial
-  del pedido un aviso neutro, sin el motivo (CC-053, D1-A y D3-A);
+  del pedido el aviso neutro «El repartidor asignado ya no está disponible» (código público
+  `assignment_unavailable`), sin el motivo ni la suspensión y sin push (CC-053, D1-A y D3-C);
 - puede terminar los viajes que ya retiró (`in_transit`): marcar entregado o no entregado y reportar un incidente,
   y nada más (CC-053, D2-A).
 
