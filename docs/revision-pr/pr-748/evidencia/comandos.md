@@ -153,3 +153,123 @@ git status --short
 ```
 
 La revisión futura ejecutará los checks en SHA nuevo y comparará el comportamiento/documentación con este registro. El CI cancelado del commit documental no puede convertirse en prueba.
+
+
+---
+
+## Ronda 2 — control independiente del contrato
+
+**Autor SHA:** `4129bf6f6ec56bf1f1eb7f57702d3b6c39c8a0f7`  
+**Base:** `4c85b8da207f9ac7f3ae53234f7a2bab55aa8e1a`  
+**Fuente:** archivos de contrato/ficha/plan/bitácora obtenidos del conector GitHub; SQL fuente de `develop` inspeccionado por comparación.
+
+### Alcance y resultados reales
+
+- `GitHub compare(7503f0a7,4129bf6f)`: `ahead_by=1`, `behind_by=0`; seis rutas modificadas: CC-032, CC-053, ficha, plan, `6.3 y bitácora; ninguna en el directorio de revisión.
+- La PR está abierta y Draft, `mergeable=true`, base sin cambios; `CI 43687525249`: `completed/cancelled`.
+- Controles JS independientes evaluados sobre texto real de GitHub: **H01–H09: 9/9 afirmaciones estáticas presentes**. Nueve mutaciones controladas de las afirmaciones, **en memoria**, produjeron nueve fallos del control específico; las originales no fallaron. **Esto prueba sensibilidad de los controles de texto, NO comportamiento SQL/UI**.
+- El usuario declara `git diff --check` sin salida y `git merge-tree` sin conflictos; **revisor no los ejecutó**. No se ejecutó PostgreSQL, Supabase, Docker, pnpm, pgTAP ni E2E.
+- Se detectó y corrigió **un error del registro de ronda 1**: los nueve JSONL no tenían `linea` por un fallo de serialización del script inicial. En esta ronda se restituyeron las líneas sin cambiar `ronda-1.md`.
+
+### Script completo (copiar a /tmp desde raíz de un clon limpio)
+
+```bash
+cat > /tmp/pr748-round2-static-audit.mjs <<'NODE'
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+
+const SHA = '4129bf6f6ec56bf1f1eb7f57702d3b6c39c8a0f7';
+const BASE = '4c85b8da207f9ac7f3ae53234f7a2bab55aa8e1a';
+const files = {
+  C: 'docs/contracts/CC-053.md',
+  D: 'docs/contracts/CC-032.md',
+  T: 'docs/tasks/T-438.md',
+  P: 'docs/implementation-plan.md',
+  M: 'docs/master-plan.md',
+};
+const get = (rev, path) => execFileSync('git', ['show', rev + ':' + path], { encoding: 'utf8' });
+const original = Object.fromEntries(Object.entries(files).map(([k, p]) => [k, get(SHA, p)]));
+const sql = get(BASE, 'supabase/migrations/20261019060000_cc032_request_cancellation_history_rpc.sql');
+const offers = get(BASE, 'src/server/rpc/offers.ts');
+
+const check = {
+  H01: d => d.C.includes('admin_resolve_incident(preventive_suspension)') &&
+    !d.C.includes('admin_resolve_incident(suspend_courier)'),
+  H02: d => d.C.includes('Conjunto visible, calculado **antes** de paginar:') &&
+    d.C.includes('El repartidor **nunca** lo ve') &&
+    d.C.includes('`hasMore` y `nextCursor` salen del conjunto visible') &&
+    sql.includes("and rcr.action = 'courier_cancel_match'") &&
+    d.T.includes('páginas mixtas'),
+  H03: d => d.C.includes("`action: 'assignment_unavailable'`") &&
+    d.C.includes('`actor: null`') && d.C.includes('`offerId: null`') &&
+    d.C.includes('`rawReason: null`'),
+  H04: d => ['cancellation-history-list', 'cancellation-history-copy',
+    'cancellation-history.test.tsx', 'cc032_request_cancellation_history.sql', 'CC-032']
+    .every(s => d.C.includes(s) && d.T.includes(s) && d.P.includes(s)),
+  H05: d => d.C.includes('8 funciones con cambio de orden de locks') &&
+    d.C.includes('9 redefiniciones funcionales') &&
+    d.T.includes('las 9 funciones'),
+  H06: d => d.C.includes('p_include_assignment_unavailable boolean default false') &&
+    d.C.includes('`drop` de la firma de 4 argumentos') &&
+    d.C.includes('`PGRST202`') &&
+    d.C.includes('repite **una vez**') &&
+    d.C.includes('viejo | nuevo') && d.C.includes('nuevo | viejo') &&
+    d.C.includes('nuevo | nuevo'),
+  H07: d => d.D.includes('**Adenda (CC-053, autorizada por Lautaro073 el 2026-11-15):**') &&
+    d.D.includes('única excepción a 1-A') &&
+    d.D.includes('2-A, 3-A y 4-A no cambian'),
+  H08: d => d.C.includes('los wrappers de `src/server/rpc/` no reconocen ese SQLSTATE y lo devuelven como `INTERNAL_ERROR`') &&
+    offers.includes('INTERNAL_ERROR'),
+  H09: d => d.C.includes("`app_private.unconsume_publication(request_id, p_actor_id, 'courier_suspended')`") &&
+    d.C.includes('`cancel_reason` en `null`') &&
+    d.C.includes('`decided_at = v_now`'),
+};
+const mutant = {
+  H01: ['C', 'admin_resolve_incident(preventive_suspension)', 'admin_resolve_incident(suspend_courier)'],
+  H02: ['C', 'Conjunto visible, calculado **antes** de paginar:', 'Conjunto visible, calculado **después** de paginar:'],
+  H03: ['C', "`action: 'assignment_unavailable'`", "`action: 'courier_suspended'`"],
+  H04: ['T', 'cancellation-history-list', 'cancellation-history-removed'],
+  H05: ['C', '9 redefiniciones funcionales', '8 redefiniciones funcionales'],
+  H06: ['C', 'p_include_assignment_unavailable boolean default false', 'p_include_assignment_unavailable boolean default true'],
+  H07: ['D', '**Adenda (CC-053, autorizada por Lautaro073 el 2026-11-15):**', '**Adenda retirada:**'],
+  H08: ['C', 'los wrappers de `src/server/rpc/` no reconocen ese SQLSTATE y lo devuelven como `INTERNAL_ERROR`', 'los wrappers de `src/server/rpc/` no reconocen ese SQLSTATE y lo devuelven como `DATABASE_ERROR`'],
+  H09: ['C', "`app_private.unconsume_publication(request_id, p_actor_id, 'courier_suspended')`", "`app_private.skip_unconsume_publication(request_id, p_actor_id, 'courier_suspended')`"],
+};
+let green = 0, red = 0;
+for (const [id, predicate] of Object.entries(check)) {
+  if (!predicate(original)) { console.error('BASE FAIL', id); continue; }
+  green++;
+  const [file, from, to] = mutant[id];
+  if (!original[file].includes(from)) { console.error('MUTATION NO TARGET', id); continue; }
+  const changed = { ...original, [file]: original[file].replace(from, to) };
+  if (predicate(changed)) { console.error('MUTATION NOT CAUGHT', id); continue; }
+  red++;
+}
+console.log('BASE PASS=' + green + '/9 ; CONTROLLED MUTATIONS DETECTED=' + red + '/9');
+if (green !== 9 || red !== 9) process.exitCode = 1;
+NODE
+node /tmp/pr748-round2-static-audit.mjs
+```
+
+**Interpretación estricta:** los checks son anclas de texto para contrastar las **nueve correcciones documentales**; no son una prueba de que la migración futura funcione. El script usa `git show` para leer los SHA sin editar el working tree; el mutante vive solo en memoria. Ejecutar `node` en el clon puede fallar si los textos cambian: el SHA es fijo y su falla debe investigarse, no taparse. La ejecución de referencia en esta revisión usó el conector GitHub y JavaScript de inspección: primero H01/H03/H04/H06/H07/H09, después H02/H05/H08, con las nueve mutaciones detectadas.
+
+### Checkpoints del rollout que deberán ejecutarse en la implementación
+
+1. **Viejo + viejo:** llamar firma CC-032 con 4 args, salida estricta de `courier_cancel_match`.
+2. **Viejo + nuevo:** omitir quinto argumento, deben quedar fuera `assignment_unavailable`; comprobar contrato exacto de CC-032.
+3. **Nuevo + viejo:** quinto argumento no existe: `PGRST202`; reintentar **una vez**, mismos cuatro argumentos previos, sin error visible ni acción nueva.
+4. **Nuevo + nuevo:** flag `true`; página con acción `assignment_unavailable`, campos sensibles nulos, paginación mixta estable, acción neutral renderizada. Verificar primer fetch y «Ver más».
+5. **Cache de esquema:** después del despliegue SQL, verificar que PostgREST reconozca la nueva firma de 5 args. `PGRST202` puede ser cache stale incluso con SQL nueva; fallback puede ocultar temporalmente el evento. No asumir que el estado nuevo+nuevo está confirmado solo por el éxito de la migración.
+
+### Cierre documental (reproducible cuando haya clon)
+
+```bash
+git fetch origin
+git rev-parse origin/develop origin/cc/CC-053-suspension-active-trips
+git diff --check origin/develop...4129bf6f6ec56bf1f1eb7f57702d3b6c39c8a0f7
+git merge-tree --write-tree origin/develop 4129bf6f6ec56bf1f1eb7f57702d3b6c39c8a0f7
+node docs/revision-pr/analizar.mjs verificacion
+git status --short
+```
+
+No se requiere reejecutar un CI solo para los cambios de `docs/revision-pr/**` o la bitácora.

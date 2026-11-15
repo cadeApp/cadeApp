@@ -19,3 +19,12 @@ Un CC puede ser extenso y cubrir seguridad, carreras, impacto y rollout, pero co
 Antes de cerrar un CC que agrega una variante de un payload: 1) enumerar productores de eventos, consumidores y tests de todos los tipos; 2) reconciliar rutas exactas con ficha/plan; 3) probar la matriz `viejo/nuevo` de schema y UI; 4) registrar **en la fuente previa** toda enmienda autorizada a una decisión ratificada. La evidencia de «Actual» tiene que citar la versión vigente de la RPC, no solo un contrato histórico.
 
 **No se propone AG-xx nueva.** Además de evitar colisiones de numeración entre ramas, una sola PR documental no justifica modificar `AGENTS.md`. Se consolidará el aprendizaje al cerrar los hallazgos con verificación independiente. Los controles RED→GREEN de SQL y concurrencia quedan pendientes de la PR real T-438, sin falsificar resultados.
+
+
+## Ronda 2 — 2026-11-15 · Cierre documental
+
+Los 9 hallazgos de la ronda 1 están corregidos por inspección en `4129bf6f`, sin hallazgos nuevos. No se creó otra regla AG ni se modificó `AGENTS.md`.
+
+**Lección positiva sobre compatibilidad de contratos:** la recomendación de «dos PRs» era una forma válida de evitar romper al lector viejo, pero **no era la única**. El autor diseñó un contrato con evento opt-in y salida legacy por defecto, más fallback del servidor ante `PGRST202`. Es una solución compatible de **una PR** en el papel y se debe aceptar si la implementación comprueba los cuatro cuadrantes en CI. Evitar recomendaciones basadas únicamente en el número de despliegues; comprobar la matriz cliente/esquema antes de exigir una excepción a la regla 50.
+
+**Tareas de revisión futura, no nuevos hallazgos documentales:** verificar PostgREST schema cache después de la nueva firma; que el primer fetch y «Ver más» soliciten el evento; y demostrar los cinco escenarios con SQL real, RED de mutaciones no tautológicas y E2E de Develop. No se ejecutó DB en esta revisión.

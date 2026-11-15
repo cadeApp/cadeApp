@@ -3,45 +3,40 @@
 | Campo | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/748 |
-| Tarea / contrato | T-438 / CC-053, issue #671 (B-06) |
-| Autor | @Lautaro073 |
+| Contrato / tarea | CC-053 / T-438 (#671, B-06) |
 | Rama | `cc/CC-053-suspension-active-trips` → `develop` |
 | Base revisada | `4c85b8da207f9ac7f3ae53234f7a2bab55aa8e1a` |
-| HEAD revisado | `93b34c056d039e0ec66785fb5d82221e5f566898` |
-| Cambios del autor | 4 archivos, +367/-1; exclusivamente docs |
-| Estado ronda 1 | **CON BLOQUEANTES**: 8; MEJORAS: 1 |
-| Decisiones | D1-A y D2-A: Lautaro073, 2026-11-13. D3-C: Lautaro073, 2026-11-15; autorizó modificar CC-032 1-A. |
-| CI de HEAD | `43660925817` cancelado; no se considera verde ni rojo |
+| Autor, SHA ronda 1 | Lautaro073 · `93b34c056d039e0ec66785fb5d82221e5f566898` |
+| Autor, SHA ronda 2 | Lautaro073 · `4129bf6f6ec56bf1f1eb7f57702d3b6c39c8a0f7` |
+| Estado de revisión | **Ronda 2: SIN BLOQUEANTES DOCUMENTALES** |
+| Decisiones | D1-A, D2-A (2026-11-13); D3-C y enmienda CC-032 1-A (2026-11-15); todas de Lautaro073 |
+| CI del SHA de autor de ronda 2 | `43687525249`: **cancelled** (PR solo docs; no verde) |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA del autor revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `93b34c056d039e0ec66785fb5d82221e5f566898` | 8 bloqueantes, 1 mejora; 9 abiertos | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `93b34c056d039e0ec66785fb5d82221e5f566898` | 8 bloqueantes + 1 mejora | [Ronda 1](revisiones/ronda-1.md) |
+| 2 | `4129bf6f6ec56bf1f1eb7f57702d3b6c39c8a0f7` | **0 bloqueantes, 0 hallazgos nuevos**; 9 corregidos por inspección | [Ronda 2](revisiones/ronda-2.md) |
 
-## Hallazgos
+## Estado de hallazgos
 
-| ID | Tipo | Resumen | Estado |
-|---|---|---|---|
-| PR748-H01 | BLOQUEANTE | Nombre incorrecto de decisión en admin_resolve_incident | Abierto |
-| PR748-H02 | BLOQUEANTE | Falta contrato SQL detallado del historial ampliado | Abierto |
-| PR748-H03 | BLOQUEANTE | Acción pública filtra la suspensión; D3-C exige código neutro | Abierto |
-| PR748-H04 | BLOQUEANTE | La ficha omite archivos/suites existentes indispensables | Abierto |
-| PR748-H05 | BLOQUEANTE | Ocho funciones de locks, nueve redefiniciones funcionales | Abierto |
-| PR748-H06 | BLOQUEANTE | Rollout viejo lector / nuevo esquema incompatible | Abierto |
-| PR748-H07 | BLOQUEANTE | Enmienda de CC-032 1-A autorizada pero todavía no registrada | Abierto (decisión ya tomada) |
-| PR748-H08 | MEJORA | 40P01 mapea a INTERNAL_ERROR, no DATABASE_ERROR | Abierto |
-| PR748-H09 | BLOQUEANTE | Efectos completos D1-A / control RED insuficientemente enumerados | Abierto |
+| ID | Resumen | Ronda 2 |
+|---|---|---|
+| H01 | Decisión de incidente | Corregido por inspección |
+| H02 | Historial: filtro, roles y paginación | Corregido por inspección |
+| H03 | Código público D3-C neutro | Corregido por inspección |
+| H04 | Inventarios CC / ficha / plan | Corregido por inspección |
+| H05 | Ocho locks, nueve redefiniciones | Corregido por inspección |
+| H06 | Opt-in + fallback compatible en una PR | Corregido por inspección; runtime futuro |
+| H07 | Adenda autorizada CC-032 1-A | Corregido por inspección |
+| H08 | `40P01` → `INTERNAL_ERROR` | Corregido por inspección |
+| H09 | Efectos completos + RED futuro | Corregido por inspección |
 
-**Datos:** [hallazgos.jsonl](hallazgos.jsonl) · **Reproducción:** [evidencia/comandos.md](evidencia/comandos.md) · **Lecciones:** [lecciones.md](lecciones.md).
+**Semántica del JSONL:** `arreglado-sin-verificar` con `verificado_en_sha=null` significa **corrección documental por inspección independiente**, **no** comportamiento ejecutado de SQL/UI. En esta PR solo se modificaron documentos.
 
-## Próximos pasos
+[Datos estructurados](hallazgos.jsonl) · [Comandos y evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md)
 
-1. El autor hace `git pull` y modifica únicamente los cinco archivos documentales autorizados en el prompt publicado en la PR, más la bitácora si corresponde. **Nunca** modifica `docs/revision-pr/pr-748/**`.
-2. Actualiza CC-053 a D3-C (15/11/2026), enmienda CC-032 decisión 1-A con referencia a CC-053 y reconcilia plan, ficha, DoD y archivos permitidos.
-3. Aporta sesión de bitácora, commit, push y SHA remoto. La revisión independiente abre **ronda 2**, no sobrescribe ronda 1, y verifica de nuevo.
-4. La PR documental no se mergea hasta cerrar los bloqueantes. La implementación de T-438 se inicia después del merge del CC; los pgTAP, concurrencia y E2E pertenecen a esa implementación.
+## Próxima acción
 
-## Límites
-
-No se corrió Supabase, Docker, pgTAP ni un E2E. Las constataciones son **inspección estática de GitHub sobre SHAs citados**, no resultados de ejecución. La metadata de GitHub indica mergeable=true y avance 1/0 respecto de la base; no se ejecutó `git merge-tree` local por ausencia de clon/red Git en el entorno de revisión. No se aprobaron ni mergearon ramas.
+Esta revisión no aprueba ni mergea. Lautaro073 decide manualmente cuándo retirar Draft y mergear el CC; solo **después** comienza la implementación T-438. No pedir CI green nuevo por modificar bitácora o la carpeta de revisión. El commit de la ronda 2 mueve el HEAD: `git pull` antes de seguir.
