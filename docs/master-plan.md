@@ -133,7 +133,12 @@ Si la misma oferta ya estaba aceptada, devuelve éxito (idempotente). Cualquier 
 ### 6.3 Autorización al ofertar
 `submit_offer` verifica, **en cada llamada**, que el repartidor esté `approved`, no esté `suspended` y esté `available`. Una suspensión hecha por el admin tiene efecto inmediato:
 - sus ofertas `pending` pasan a `withdrawn`;
-- no puede ser aceptado, porque `accept_offer` vuelve a verificar su estado.
+- no puede ser aceptado, porque `accept_offer` vuelve a verificar su estado;
+- sus envíos asignados y todavía no retirados (`matched`) vuelven a `published`, y el comercio ve en el historial
+  del pedido el aviso neutro «El repartidor asignado ya no está disponible» (código público
+  `assignment_unavailable`), sin el motivo ni la suspensión y sin push (CC-053, D1-A y D3-C);
+- puede terminar los viajes que ya retiró (`in_transit`): marcar entregado o no entregado y reportar un incidente,
+  y nada más (CC-053, D2-A).
 
 ### 6.4 Prioridad por documentación (D9)
 - `doc_level` = cantidad de documentos opcionales verificados por el admin (licencia, seguro). Va de 0 a 2.
